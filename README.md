@@ -241,3 +241,13 @@ Hasło administratora Grafany: `grep GRAFANA_ADMIN_PASSWORD ~/siem-lab/.env`.
 Zweryfikowane: 40 290 zdarzeń z agenta w ClickHouse bez braków i duplikatów,
 kompresja ~15× (31,6 MB → 2,1 MB), czas od zdarzenia do zapisu w bazie ~0,8 s,
 zatrzymanie ClickHouse – zdarzenia czekają w NATS i są zapisywane po powrocie.
+
+### Skalowanie
+
+Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z jednej kolejki NATS):
+
+```bash
+docker compose up -d --scale normalizer=3 --scale writer=2
+```
+
+Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).

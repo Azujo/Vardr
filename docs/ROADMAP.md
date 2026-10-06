@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3.1 • 06.10.2026
+Wersja planistyczna 1.3.2 • 06.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -14,6 +14,7 @@ Wersja planistyczna 1.3.1 • 06.10.2026
 | Wdrażanie agentów | **Rejestracja tokenem**: panel generuje token i instalator bez klucza prywatnego; agent sam tworzy klucz i otrzymuje certyfikat od serwera. Paczki z kluczem (`siem-pki package`) tylko w laboratorium | Załącznik C |
 | Kolejność etapów | Panel (moduły: logowanie, agenci, wdrażanie, zdarzenia) razem z etapem 2 **przed** detekcją | Sekcja 17 |
 | Nazwa i nazewnictwo | Produkt: **Heimdall** (repozytorium `heimdall`). Komponenty nazwane według mitologii nordyckiej w panelu, dokumentacji i nazwach usług; w kodzie nazwy opisowe | Załącznik D |
+| Skalowanie | Elementy bez stanu (ingest, normalizator, writer, później detekcja) **poziomo** – dokładanie kopii; elementy z danymi (NATS, ClickHouse) **najpierw pionowo**, potem klaster. Przeciążenie ma kończyć się opóźnieniem, nigdy utratą danych | Załącznik E |
 
 ## 0. Co zmieniło się względem wersji 1.1
 
@@ -412,6 +413,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Etap 1 **ukończony**: agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana, na VM w Proxmoxie.
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
+- **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
 
 **Kamienie milowe po drodze:**
 
@@ -656,3 +658,81 @@ Zmiany robimy przy okazji pracy w danym obszarze, a nie jednym dużym przemianow
 | Etap 4 | Silnik detekcji i powiadomień od razu jako **Gjallarhorn** | nowy komponent |
 | Instalator MSI (etap 2) | Nazwa wyświetlana usługi: „Heimdall Huginn (agent SIEM)”; nazwa usługi `SiemAgent` i źródło w Podglądzie zdarzeń **bez zmian** | zmiana nazwy usługi wymagałaby migracji na wszystkich komputerach – tylko jeśli będzie wyraźny powód |
 | Bez zmian | Polecenie `siem_agent`, baza ClickHouse `siem`, prefiks identyfikatorów `agt-`, ścieżki `C:\Program Files\SiemAgent` i `C:\ProgramData\SiemAgent` | stabilne nazwy techniczne – zmiana kosztuje migrację, nie daje wartości |
+
+## Załącznik E. Skalowanie i przeciążenie
+
+Wnioski z przeglądu systemu po ukończeniu etapu 1 (06.10.2026).
+
+### Zasada skalowania
+
+Każdy etap przetwarzania jest osobną usługą. Pod obciążeniem dokłada się kopie **tylko tego etapu, który jest wąskim gardłem**. W Wazuhu jeden worker robi wszystko naraz (odbiór, dekodowanie, reguły), więc skaluje się całe workery.
+
+| Element | Jak skalować | Dlaczego |
+|---|---|---|
+| Ingest – Bifröst | **poziomo**: N kopii za load balancerem | bez stanu; każda kopia tylko zapisuje paczkę do kolejki |
+| Normalizator – Bragi | **poziomo**: `docker compose up -d --scale normalizer=N` | kopie dzielą pracę z jednej kolejki (wspólny trwały konsument NATS) |
+| Writer – Verðandi | **poziomo**: `--scale writer=N` | jak wyżej; duplikaty usuwa ClickHouse (ReplacingMergeTree) |
+| Detekcja – Gjallarhorn (etap 4) | **poziomo** | ten sam wzorzec konsumenta kolejki |
+| Kolejka NATS – Ratatoskr | **najpierw pionowo**, potem klaster 3 węzłów | jeden węzeł przyjmuje setki MB/s; klaster głównie dla odporności na awarię |
+| Baza – Mímir (ClickHouse) | **najpierw pionowo** (CPU, RAM, dyski), potem shardy i repliki | jeden serwer przyjmuje zwykle setki tysięcy wierszy/s; wcześniej kończy się dysk |
+
+**Zasada:** elementy bez stanu poziomo, elementy przechowujące dane najpierw pionowo.
+
+**Sprawdzone (06.10.2026):** 3 normalizatory i 2 writery na VM laboratoryjnej, 24 zdarzenia testowe. Wszystkie zapisane, bez duplikatów. Dokładanie workerów działa bez zmian w kodzie.
+
+**Load balancer dla ingestu** musi przekazywać połączenie TLS **bez rozszyfrowania** (TCP passthrough, np. HAProxy). Rozszyfrowanie na load balancerze odcięłoby certyfikat klienta, a więc tożsamość agenta. Agenci zachowują jeden adres (adres load balancera lub nazwa DNS).
+
+### Obsługa przeciążenia: trzy warstwy
+
+```
+3500 agentów ──► [1] ingest: przyjmuje tylko tyle, ile zdąży trwale zapisać;
+                      nadmiar → HTTP 429 „spróbuj za X s” (X losowe)
+                 [2] kolejka NATS: wyrównuje skoki; workery nadrabiają we własnym tempie;
+                      pełna kolejka → odmowa zapisu (ingest odpowiada 503), nigdy usuwanie danych
+                 [3] agent: ponawia z losowym rozrzutem; niewysłane dane czekają
+                      w dzienniku Windows (później także w buforze dyskowym)
+```
+
+Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożenie z `start_at: oldest`) ma się kończyć **opóźnieniem, a nie utratą danych ani awarią serwera**.
+
+**Kiedy dokładać workery:** gdy rośnie zaległość konsumentów w NATS (wiadomości czekające na normalizator lub writer) albo opóźnienie od wystąpienia zdarzenia do zapisu. Na początku ręcznie, później automatycznie na podstawie metryk.
+
+### Pomiary i wyliczenia (06.10.2026)
+
+| Element | Wartość | Przy 10 000 zdarzeń/s |
+|---|---|---|
+| Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | 21 µs (System 7045), 33 µs (Security 4625) | jedna kopia na VM ok. 10–20 tys./s – **pierwsze wąskie gardło** |
+| Kolejka NATS (oba strumienie, retencja 48 h) | ok. 200 B na zdarzenie | ok. 340 GB – przy limicie 20 GB i dysku 48 GB |
+| ClickHouse | 55 B na zdarzenie (dane laboratoryjne, kompresja ok. 15×); surowy XML 52%, pola 28% miejsca | ok. 47 GB/dzień, ok. 235 GB przy 5 dniach; logi Security kompresują się gorzej |
+| Dziennik Windows jako bufor agenta | System i Application 20 MB (domyślnie); Security domyślnie też 20 MB | stacja (2 zdarzenia/s) ok. 2 h zapasu, serwer (1000/s) ok. 15 s |
+| Agent | ok. 23 µs CPU na zdarzenie, 22–26 MB pamięci roboczej | 1000 zdarzeń/s ≈ 2,3% jednego rdzenia |
+
+### Niedociągnięcia wykryte w przeglądzie
+
+**Krytyczne**
+
+| # | Problem | Skutek | Poprawka |
+|---|---|---|---|
+| K1 | Strumienie NATS: `discard: old`, retencja czasowa, limit 20 GB | przy dłuższej awarii writera lub bazy kolejka usuwa najstarsze **nieprzetworzone** dane, a agenci mają już potwierdzenie – cicha utrata | retencja do potwierdzenia przez wszystkich odbiorców, limit rozmiaru z `discard: new` (ingest → 503), limit przyjmowania w ingest (429), alarm zaległości |
+| K2 | Writer ponawia całą paczkę po błędzie ClickHouse | jeden wadliwy wiersz (np. data poza zakresem przy zepsutym zegarze komputera) zatrzymuje zapis wszystkich agentów | dzielenie paczki do wykrycia wadliwego wiersza → kwarantanna; korekta dat spoza zakresu |
+| K3 | Dziennik Windows (domyślnie 20 MB) jest jedynym buforem agenta | przy przerwie w łączności dłuższej niż minuty (serwer) lub godziny (stacja) zdarzenia zostają nadpisane | GPO: Security 512 MB–1 GB na serwerach i DC; ostrzeżenie agenta o zbliżającym się nadpisaniu; bufor dyskowy (etap 2) |
+| K4 | Brak testu obciążenia i metryk | nie wiadomo, gdzie system pęknie ani kiedy dokładać workery | generator ruchu symulujący tysiące agentów, metryki Prometheus, pulpit „zdrowie potoku” |
+
+**Ważne**
+
+| # | Problem | Poprawka |
+|---|---|---|
+| W1 | Normalizator przetwarza sekwencyjnie w jednym wątku | pula wątków w procesie + kopie usługi; zmierzyć generatorem |
+| W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności |
+| W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest |
+| W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo) |
+| W5 | Konfiguracja agenta wyłącznie lokalna | konfiguracja z serwera per grupa (etap 2) |
+| W6 | Każdy element w jednej kopii na jednej VM | laboratorium: kopia VM w Proxmoxie; HA w etapie 8 |
+
+**Mniejsze**
+- M1: brak CI na GitHubie i testu wyścigów;
+- M2: nieczytelne wiadomości w normalizatorze są pomijane zamiast trafiać do kwarantanny;
+- M3: brak czytelnego opisu większości zdarzeń (decyzja: opis renderowany przez agenta czy mapowanie na serwerze);
+- M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn;
+- M5: Grafana i ingest otwarte na całą sieć lokalną, brak zapory na VM;
+- M6: brak raportowania synchronizacji czasu przez agenta (zaobserwowana różnica ok. 1 s).
