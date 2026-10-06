@@ -21,6 +21,9 @@ type Record struct {
 type Position struct {
 	RecordID uint64
 	Valid    bool
+	// Oldest (gdy Valid=false): zacznij od najstarszego zdarzenia niezależnie
+	// od ustawienia start_at – używane po utracie stanu agenta.
+	Oldest bool
 }
 
 // Source to źródło logów (np. jeden kanał Event Log).

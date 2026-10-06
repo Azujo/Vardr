@@ -10,7 +10,9 @@ package secure
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/windows"
@@ -112,4 +114,97 @@ func IsPrivileged() bool {
 	}
 	system, err := windows.CreateWellKnownSid(windows.WinLocalSystemSid)
 	return err == nil && user.User.Sid.Equals(system)
+}
+
+// Konto TrustedInstaller (właściciel plików systemowych).
+const trustedInstaller = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+
+// adminTrustees to konta, które mogą zapisywać pliki usługi bez ryzyka
+// eskalacji uprawnień (i tak mają pełną kontrolę nad systemem).
+var adminTrustees = map[string]bool{"SY": true, "BA": true, trustedInstaller: true}
+
+// Bity praw pozwalających zmienić plik/folder lub jego uprawnienia.
+const writeMask = 0x2 | 0x4 | 0x10 | 0x40 | 0x100 | // zapis, dopisywanie, EA, usuwanie dzieci, atrybuty
+	0x10000 | 0x40000 | 0x80000 | // DELETE, WRITE_DAC, WRITE_OWNER
+	0x10000000 | 0x40000000 // GENERIC_ALL, GENERIC_WRITE
+
+// Dwuliterowe skróty praw SDDL oznaczające możliwość zapisu.
+var writeCodes = map[string]bool{"FA": true, "FW": true, "GA": true, "GW": true, "WD": true, "WO": true,
+	"SD": true, "WP": true, "CC": true, "DC": true}
+
+var (
+	sddlOwner = regexp.MustCompile(`^O:([^:]+?)(?:G:|D:|S:|$)`)
+	sddlACE   = regexp.MustCompile(`\(([A-Z]+);([A-Z]*);([^;]*);[^;]*;[^;]*;([^)]+)\)`)
+)
+
+// writeRisks analizuje SDDL i zwraca konta spoza administratorów, które
+// mogą zmodyfikować obiekt (prawo zapisu albo bycie właścicielem).
+func writeRisks(sddl string) []string {
+	var risks []string
+	if m := sddlOwner.FindStringSubmatch(sddl); m != nil && !adminTrustees[m[1]] {
+		risks = append(risks, m[1]+" (właściciel)")
+	}
+	i := strings.Index(sddl, "D:")
+	if i < 0 {
+		return append(risks, "brak listy DACL")
+	}
+	for _, m := range sddlACE.FindAllStringSubmatch(sddl[i:], -1) {
+		typ, flags, rights, who := m[1], m[2], m[3], m[4]
+		if typ != "A" || strings.Contains(flags, "IO") || adminTrustees[who] {
+			continue // nie-zezwalające, tylko-dziedziczone lub administratorzy
+		}
+		if rightsAllowWrite(rights) {
+			risks = append(risks, who)
+		}
+	}
+	return risks
+}
+
+func rightsAllowWrite(rights string) bool {
+	if strings.HasPrefix(rights, "0x") {
+		v, err := strconv.ParseUint(rights[2:], 16, 32)
+		return err != nil || v&writeMask != 0 // nieczytelna maska = traktuj jako ryzyko
+	}
+	for j := 0; j+2 <= len(rights); j += 2 {
+		if writeCodes[rights[j:j+2]] {
+			return true
+		}
+	}
+	return false
+}
+
+// WritableByNonAdmins sprawdza, czy plik lub folder może zmodyfikować ktoś
+// spoza SYSTEM / Administratorów / TrustedInstaller. Dla pliku usługi
+// działającej jako SYSTEM oznacza to możliwość eskalacji uprawnień
+// (podmiana pliku wykonywalnego).
+func WritableByNonAdmins(path string) (bool, string, error) {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return true, "", err
+	}
+	risks := writeRisks(sd.String())
+	if len(risks) == 0 {
+		return false, "", nil
+	}
+	names := make([]string, len(risks))
+	for i, r := range risks {
+		sid, suffix, _ := strings.Cut(r, " ")
+		names[i] = strings.TrimSpace(accountName(sid) + " " + suffix)
+	}
+	return true, strings.Join(names, ", "), nil
+}
+
+// ServiceBinarySafe sprawdza plik wykonywalny usługi i jego folder.
+func ServiceBinarySafe(exe string) (bool, string) {
+	for _, p := range []string{exe, filepath.Dir(exe)} {
+		w, who, err := WritableByNonAdmins(p)
+		if err != nil {
+			return false, fmt.Sprintf("%s: nie można sprawdzić uprawnień: %v", p, err)
+		}
+		if w {
+			return false, fmt.Sprintf("%s: zapis mogą wykonać: %s", p, who)
+		}
+	}
+	return true, ""
 }

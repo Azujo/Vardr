@@ -106,10 +106,20 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 	}
 }
 
-func installService(cfgPath string) error {
+func installService(cfgPath string, allowUnsafe bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	// Usługa działa jako SYSTEM: jeśli zwykły użytkownik może podmienić plik
+	// programu (lub jego folder), uzyska uprawnienia SYSTEM.
+	if ok, why := secure.ServiceBinarySafe(exe); !ok {
+		if !allowUnsafe {
+			return fmt.Errorf("odmowa instalacji – %s\n"+
+				"Skopiuj program do folderu dostępnego do zapisu tylko dla administratorów, np. %s,\n"+
+				"albo (wyłącznie w laboratorium) użyj -allow-unsafe-path", why, `C:\Program Files\SiemAgent`)
+		}
+		fmt.Fprintln(os.Stderr, "UWAGA: instalacja z niebezpiecznej lokalizacji (-allow-unsafe-path):", why)
 	}
 	absCfg, err := filepath.Abs(cfgPath)
 	if err != nil {

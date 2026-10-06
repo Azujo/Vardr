@@ -41,7 +41,8 @@ func usage() {
 
 Użycie:
   siem-agent [-config plik] run        uruchomienie w konsoli (Ctrl+C kończy)
-  siem-agent [-config plik] install    instalacja usługi Windows (wymaga administratora)
+  siem-agent [-config plik] install    instalacja usługi Windows (wymaga administratora; program
+                                       musi leżeć w folderze chronionym, np. C:\Program Files\SiemAgent)
   siem-agent uninstall                 usunięcie usługi
   siem-agent start | stop              sterowanie usługą
   siem-agent [-config plik] status     stan usługi, połączenia, kanałów i limitów
@@ -55,6 +56,7 @@ Domyślny plik konfiguracji: agent.yaml obok pliku wykonywalnego.
 func main() {
 	exe, _ := os.Executable()
 	cfgPath := flag.String("config", filepath.Join(filepath.Dir(exe), "agent.yaml"), "plik konfiguracji")
+	allowUnsafe := flag.Bool("allow-unsafe-path", false, "install: pozwól na instalację z folderu, do którego mogą pisać zwykli użytkownicy (tylko laboratorium)")
 	flag.Usage = usage
 	flag.Parse()
 
@@ -70,7 +72,7 @@ func main() {
 	case "check":
 		err = check(*cfgPath)
 	case "install":
-		err = installService(*cfgPath)
+		err = installService(*cfgPath, *allowUnsafe)
 	case "uninstall":
 		err = uninstallService()
 	case "start":
@@ -115,6 +117,12 @@ func check(cfgPath string) error {
 	fmt.Printf("Konfiguracja poprawna.\n  agent_id:  %s\n  serwer:    %s\n  state_dir: %s\n", agentID, cfg.Server.URL, cfg.StateDir)
 	fmt.Printf("  limity:    %s\n", formatKV(limitAttrs(cfg.Limits)))
 	fmt.Printf("  klucz:     %s – %s\n", cfg.Server.KeyFile, protection(cfg.Server.KeyFile))
+	exe, _ := os.Executable()
+	if ok, why := secure.ServiceBinarySafe(exe); ok {
+		fmt.Printf("  program:   %s – chroniony przed zapisem przez zwykłych użytkowników\n", exe)
+	} else {
+		fmt.Printf("  program:   UWAGA – %s\n             (usługa uruchomiona z tego miejsca pozwoliłaby podmienić program działający jako SYSTEM)\n", why)
+	}
 	if _, err := os.Stat(cfg.StateDir); err == nil {
 		fmt.Printf("  stan:      %s – %s\n", cfg.StateDir, protection(cfg.StateDir))
 	}
@@ -185,6 +193,29 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	log.Info("limity zasobów aktywne", limitAttrs(cfg.Limits)...)
 
 	tracker := status.NewTracker(version, agentID, cfg.Server.URL, limitMap(cfg.Limits))
+	privileged := secure.IsPrivileged()
+	if exe, err := os.Executable(); err == nil && privileged {
+		if ok, why := secure.ServiceBinarySafe(exe); !ok {
+			msg := "plik programu agenta może zostać podmieniony przez zwykłego użytkownika – ryzyko eskalacji uprawnień: " + why
+			log.Error(msg)
+			tracker.Warn(msg)
+		}
+	}
+
+	// Stan: plik w state_dir + kopia w rejestrze (znacznik wcześniejszego działania).
+	backup := state.NewRegistryBackup(privileged, cfg.StateDir)
+	store := state.NewStore(cfg.StateDir)
+	store.Backup = backup
+	store.OnRecreate = func(dir string) error {
+		msg := "katalog stanu agenta został usunięty – utworzono go ponownie (możliwa manipulacja)"
+		log.Error(msg, "dir", dir)
+		tracker.Warn(msg)
+		if privileged {
+			return secure.RestrictDir(dir)
+		}
+		return nil
+	}
+	log.Info("kopia stanu agenta", "location", backup.Location())
 	tracker.AddProbe(func(s *status.Status) {
 		s.Warnings = append(s.Warnings, warnings...)
 		s.Process.CPUTime = processCPUTime()
@@ -222,7 +253,7 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		MaxEPS:        cfg.Limits.MaxEPS,
 		Status:        tracker,
 		ClassifyError: classifyError,
-	}, sources, sender, state.NewStore(cfg.StateDir), log)
+	}, sources, sender, store, log)
 
 	statusCtx, stopStatus := context.WithCancel(context.Background())
 	statusDone := make(chan struct{})

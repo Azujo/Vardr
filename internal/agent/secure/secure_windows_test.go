@@ -77,3 +77,38 @@ func TestRestrictFileAndIsRestricted(t *testing.T) {
 		t.Fatalf("plik powinien być zawężony: %s", why)
 	}
 }
+
+func TestWriteRisksOnRealSDDL(t *testing.T) {
+	const ti = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+	const user = "S-1-5-21-807202919-2637959309-2781131931-1001"
+	cases := []struct {
+		name  string
+		sddl  string
+		risky bool
+	}{
+		{"Program Files", "O:" + ti + "G:" + ti + "D:PAI(A;OICIIO;GA;;;CO)(A;OICIIO;GA;;;SY)(A;;0x1301bf;;;SY)(A;OICIIO;GA;;;BA)(A;;0x1301bf;;;BA)(A;OICIIO;GXGR;;;BU)(A;;0x1200a9;;;BU)(A;CIIO;GA;;;" + ti + ")(A;;FA;;;" + ti + ")(A;;0x1200a9;;;AC)(A;OICIIO;GXGR;;;AC)", false},
+		{"svchost.exe", "O:" + ti + "G:" + ti + "D:P(A;;0x1200a9;;;SY)(A;;0x1200a9;;;BA)(A;;0x1200a9;;;BU)(A;;FA;;;" + ti + ")", false},
+		{"folder projektu (właściciel i pełny dostęp użytkownika)", "O:" + user + "G:" + user + "D:(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)(A;OICIID;FA;;;" + user + ")", true},
+		{"Użytkownicy z prawem modyfikacji", "O:BAD:(A;;0x1301bf;;;BU)", true},
+		{"Wszyscy z GENERIC_WRITE", "O:SYD:(A;;GW;;;WD)", true},
+		{"odmowa nie jest ryzykiem", "O:BAD:(D;;FA;;;BU)(A;;FA;;;SY)", false},
+	}
+	for _, c := range cases {
+		if got := writeRisks(c.sddl); (len(got) > 0) != c.risky {
+			t.Errorf("%s: ryzyka %q, oczekiwano ryzyka=%v", c.name, got, c.risky)
+		}
+	}
+}
+
+func TestServiceBinarySafeOnThisMachine(t *testing.T) {
+	if ok, why := ServiceBinarySafe(`C:\Windows\System32\svchost.exe`); !ok {
+		t.Errorf("plik systemowy powinien być bezpieczny: %s", why)
+	}
+	exe := filepath.Join(t.TempDir(), "agent.exe")
+	if err := os.WriteFile(exe, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := ServiceBinarySafe(exe); ok {
+		t.Error("plik w katalogu tymczasowym użytkownika nie może być uznany za bezpieczny")
+	}
+}

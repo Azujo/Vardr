@@ -143,6 +143,20 @@ func (t *Tracker) ChannelRead(name string, recordID uint64, readAt time.Time, la
 	c.LastRecordID, c.LastReadAt, c.LastLag = recordID, readAt, lag
 }
 
+// Warn dodaje trwałe ostrzeżenie widoczne w statusie (maks. 20 ostatnich).
+func (t *Tracker) Warn(msg string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	w := t.now().Local().Format("2006-01-02 15:04:05") + " " + msg
+	t.s.Warnings = append(t.s.Warnings, w)
+	if n := len(t.s.Warnings); n > 20 {
+		t.s.Warnings = t.s.Warnings[n-20:]
+	}
+}
+
 // SendOK odnotowuje przyjęcie paczki przez serwer.
 func (t *Tracker) SendOK() {
 	if t == nil {
@@ -169,6 +183,7 @@ func (t *Tracker) SendFailed(errMsg string) {
 func (t *Tracker) Snapshot() Status {
 	t.mu.Lock()
 	s := t.s
+	s.Warnings = append([]string{}, t.s.Warnings...)
 	s.UpdatedAt = t.now()
 	s.Channels = make([]ChannelStatus, 0, len(t.channels))
 	for _, c := range t.channels {

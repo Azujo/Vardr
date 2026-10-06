@@ -146,7 +146,7 @@ func (r *Reader) subscribe(signal windows.Handle, pos source.Position) (evtHandl
 		}
 		defer evtClose(bm)
 		bookmark, flags = bm, evtSubscribeStartAfterBookmark
-	case r.startAt == "oldest":
+	case pos.Oldest || r.startAt == "oldest":
 		flags = evtSubscribeStartAtOldestRecord
 	default:
 		flags = evtSubscribeToFutureEvents

@@ -45,16 +45,40 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
 
 ## Usługa Windows (wymaga administratora)
 
+Program usługi musi leżeć w folderze, do którego zapisywać mogą tylko
+administratorzy – inaczej zwykły użytkownik mógłby podmienić plik uruchamiany
+jako SYSTEM. `install` odmawia instalacji z niebezpiecznej lokalizacji
+(w laboratorium można to obejść flagą `-allow-unsafe-path`).
+
 ```powershell
-bin\siem-agent.exe -config C:\ProgramData\SiemAgent\agent.yaml install
-bin\siem-agent.exe start
-bin\siem-agent.exe status
-bin\siem-agent.exe stop
-bin\siem-agent.exe uninstall
+New-Item -ItemType Directory -Force "C:\Program Files\SiemAgent"
+Copy-Item bin\siem-agent.exe "C:\Program Files\SiemAgent\"
+& "C:\Program Files\SiemAgent\siem-agent.exe" -config C:\ProgramData\SiemAgent\agent.yaml install
+& "C:\Program Files\SiemAgent\siem-agent.exe" start
+& "C:\Program Files\SiemAgent\siem-agent.exe" -config C:\ProgramData\SiemAgent\agent.yaml status
+& "C:\Program Files\SiemAgent\siem-agent.exe" uninstall
 ```
 
 Usługa działa jako LocalSystem (dostęp do kanału Security), startuje automatycznie
 i jest restartowana po awarii (5 s / 30 s / 60 s). Log: `<state_dir>\agent.log`.
+
+## Odporność na usunięcie stanu
+
+Pozycje odczytu są zapisywane w `<state_dir>\state.json` oraz (co 30 s) w kopii
+w rejestrze `HKLM\SOFTWARE\SiemAgent\Instances\<id>` (agent w konsoli bez
+uprawnień: `HKCU`). Kopia jest też znacznikiem, że agent już działał:
+
+| Sytuacja | Zachowanie |
+|---|---|
+| pierwsze uruchomienie | odczyt zgodnie z `start_at` |
+| usunięty / uszkodzony `state.json` | pozycje z kopii w rejestrze – możliwe duplikaty, bez luk |
+| usunięty plik i pozycje w kopii (znacznik został) | odczyt od najstarszych zdarzeń dziennika |
+| usunięty plik lub katalog w trakcie pracy | odtworzenie w ciągu ~2 s z pamięci |
+
+Każdy z tych przypadków jest zgłaszany jako błąd (log, Podgląd zdarzeń,
+`status`). Usunięcie przez administratora zarówno pliku, jak i całego klucza
+w rejestrze wygląda dla agenta jak pierwsze uruchomienie – to wykryje dopiero
+serwer (heartbeat, etap 2). Odinstalowanie usługi nie usuwa klucza w rejestrze.
 
 ## Jak działa gwarancja dostarczania
 

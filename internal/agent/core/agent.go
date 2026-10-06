@@ -29,8 +29,10 @@ type Sender interface {
 
 // StateStore zapisuje potwierdzone pozycje.
 type StateStore interface {
-	Load() (state.State, error)
+	Load() (state.State, state.Origin, error)
 	Save(state.State) error
+	// Missing zwraca true, gdy plik stanu zniknął w trakcie pracy.
+	Missing() bool
 }
 
 // Options konfiguruje rdzeń agenta.
@@ -100,11 +102,33 @@ const eventOverhead = 256
 
 // Run działa do anulowania kontekstu.
 func (a *Agent) Run(ctx context.Context) error {
-	st, err := a.store.Load()
+	st, origin, err := a.store.Load()
 	if err != nil {
 		return err
 	}
-	a.log.Info("agent uruchomiony", "sources", len(a.sources), "resumed_channels", len(st.Channels))
+	a.log.Info("agent uruchomiony", "sources", len(a.sources), "resumed_channels", len(st.Channels), "state_origin", origin.String())
+
+	// Brak stanu u agenta, który już działał, NIE jest pierwszym
+	// uruchomieniem: czytamy od najstarszych zdarzeń (duplikaty usunie
+	// serwer), żeby usunięcie stanu nie ukryło zdarzeń z czasu przerwy.
+	forceOldest := false
+	switch origin {
+	case state.OriginBackup:
+		msg := "plik stanu agenta zniknął lub jest uszkodzony – odtworzono pozycje z kopii zapasowej (możliwa manipulacja)"
+		a.log.Error(msg)
+		a.opts.Status.Warn(msg)
+	case state.OriginLost:
+		forceOldest = true
+		msg := "UTRACONO STAN AGENTA (plik i pozycje w kopii) – odczyt od najstarszych zdarzeń; możliwa manipulacja"
+		a.log.Error(msg)
+		a.opts.Status.Warn(msg)
+	}
+	if origin != state.OriginFile {
+		// Utrwal stan (i znacznik) od razu, a nie dopiero po pierwszej paczce.
+		if err := a.store.Save(st); err != nil {
+			a.log.Error("nie udało się zapisać stanu", "err", err)
+		}
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -113,9 +137,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	recs := make(chan source.Record, a.opts.MaxEvents)
 	var wg sync.WaitGroup
 	for _, src := range a.sources {
-		start := source.Position{}
+		start := source.Position{Oldest: forceOldest}
 		if cs, ok := st.Channels[src.Channel()]; ok {
 			start = source.Position{RecordID: cs.RecordID, Valid: true}
+		} else if origin == state.OriginBackup {
+			// Kanał bez pozycji w (starszej) kopii – bezpieczniej od najstarszych.
+			start.Oldest = true
 		}
 		wg.Add(1)
 		go func() {
@@ -147,6 +174,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			if err := b.flush(ctx); err != nil {
 				return ignoreCanceled(err)
 			}
+			b.checkStateFile()
 		case <-statsTick.C:
 			b.logStats()
 		}
@@ -295,6 +323,21 @@ func (b *batcher) flush(ctx context.Context) error {
 	b.bytes = 0
 	b.advance = nil
 	return nil
+}
+
+// checkStateFile wykrywa usunięcie pliku (lub katalogu) stanu w trakcie
+// pracy i od razu zapisuje stan ponownie z pamięci.
+func (b *batcher) checkStateFile() {
+	a := b.agent
+	if !a.store.Missing() {
+		return
+	}
+	msg := "plik stanu agenta został usunięty w trakcie pracy – zapisano ponownie z pamięci (możliwa manipulacja)"
+	a.log.Error(msg)
+	a.opts.Status.Warn(msg)
+	if err := a.store.Save(b.st); err != nil {
+		a.log.Error("nie udało się odtworzyć pliku stanu", "err", err)
+	}
 }
 
 // truncateUTF8 przycina tekst do limit bajtów, nie rozcinając znaku UTF-8.

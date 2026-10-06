@@ -66,23 +66,50 @@ func (f *fakeSender) events() []contract.Event {
 }
 
 type memStore struct {
-	mu sync.Mutex
-	st state.State
+	mu      sync.Mutex
+	st      state.State
+	origin  state.Origin
+	missing bool
+	saves   int
 }
 
-func (m *memStore) Load() (state.State, error) {
+func (m *memStore) Load() (state.State, state.Origin, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := state.State{Channels: map[string]state.ChannelState{}}
 	for k, v := range m.st.Channels {
 		st.Channels[k] = v
 	}
-	return st, nil
+	origin := m.origin
+	if origin == state.OriginFresh && len(st.Channels) > 0 {
+		origin = state.OriginFile
+	}
+	return st, origin, nil
+}
+
+func (m *memStore) Missing() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.missing
+}
+
+func (m *memStore) setMissing() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.missing = true
+}
+
+func (m *memStore) saveCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.saves
 }
 
 func (m *memStore) Save(st state.State) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.saves++
+	m.missing = false
 	m.st = state.State{Channels: map[string]state.ChannelState{}}
 	for k, v := range st.Channels {
 		m.st.Channels[k] = v
@@ -303,5 +330,73 @@ func TestTruncatesOversizedEventsAndReportsStatus(t *testing.T) {
 	s := tr.Snapshot()
 	if s.Counters.Truncated != 1 || s.Counters.Read != 2 || len(s.Channels) != 1 || s.Channels[0].State != status.ChannelOK || s.Channels[0].LastRecordID != 2 {
 		t.Fatalf("status: %+v", s)
+	}
+}
+
+func waitPos(t *testing.T, src *fakeSource, store *memStore) source.Position {
+	t.Helper()
+	var pos source.Position
+	run(t, Options{}, src, &fakeSender{}, store, func() bool {
+		select {
+		case pos = <-src.gotPos:
+			return true
+		default:
+			return false
+		}
+	})
+	return pos
+}
+
+func TestLostStateStartsFromOldest(t *testing.T) {
+	src := &fakeSource{channel: "Security", gotPos: make(chan source.Position, 1)}
+	store := &memStore{origin: state.OriginLost}
+
+	if pos := waitPos(t, src, store); pos.Valid || !pos.Oldest {
+		t.Fatalf("po utracie stanu odczyt musi zacząć się od najstarszych: %+v", pos)
+	}
+	if store.saveCount() == 0 {
+		t.Fatal("stan po utracie powinien zostać od razu utrwalony")
+	}
+}
+
+func TestBackupOriginResumesKnownChannelsAndOldestForOthers(t *testing.T) {
+	store := &memStore{origin: state.OriginBackup,
+		st: state.State{Channels: map[string]state.ChannelState{"Security": {RecordID: 77}}}}
+
+	known := &fakeSource{channel: "Security", gotPos: make(chan source.Position, 1)}
+	if pos := waitPos(t, known, store); pos != (source.Position{RecordID: 77, Valid: true}) {
+		t.Fatalf("kanał z kopii: %+v", pos)
+	}
+	other := &fakeSource{channel: "System", gotPos: make(chan source.Position, 1)}
+	if pos := waitPos(t, other, store); !pos.Oldest {
+		t.Fatalf("kanał bez pozycji w kopii: %+v", pos)
+	}
+}
+
+func TestFreshStartUsesConfiguredStart(t *testing.T) {
+	src := &fakeSource{channel: "System", gotPos: make(chan source.Position, 1)}
+	if pos := waitPos(t, src, &memStore{}); pos.Valid || pos.Oldest {
+		t.Fatalf("pierwsze uruchomienie powinno użyć start_at z konfiguracji: %+v", pos)
+	}
+}
+
+func TestDeletedStateFileIsRewrittenDuringRun(t *testing.T) {
+	src := &fakeSource{channel: "System", records: recs("System", 1, 2), gotPos: make(chan source.Position, 1)}
+	store := &memStore{}
+	tr := status.NewTracker("t", "agt-t", "u", nil)
+
+	deleted := false
+	run(t, Options{Status: tr}, src, &fakeSender{}, store, func() bool {
+		if store.get("System").RecordID == 2 && !deleted {
+			store.setMissing() // „ktoś usunął state.json”
+			deleted = true
+		}
+		return deleted && !store.Missing()
+	})
+	if w := tr.Snapshot().Warnings; len(w) == 0 || !strings.Contains(w[0], "usunięty w trakcie pracy") {
+		t.Fatalf("brak ostrzeżenia w statusie: %q", w)
+	}
+	if store.get("System").RecordID != 2 {
+		t.Fatal("odtworzony stan musi zawierać potwierdzone pozycje")
 	}
 }
