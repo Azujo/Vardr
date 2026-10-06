@@ -1,7 +1,7 @@
 # SIEM – własny system SIEM
 
 Projekt według roadmapy `Roadmap_wlasnego_SIEM_v1.2.md` (wersja 1.2.2).
-Obecny stan: **etap 1 – agent Windows i testowy endpoint przyjmujący**.
+Obecny stan: **etap 1 ukończony – agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana**.
 
 ## Struktura
 
@@ -185,4 +185,40 @@ go test ./...
 - instalator MSI (etap 2)
 - token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu i synchronizacji czasu (razem z heartbeatem)
-- właściwy serwer: NATS JetStream → normalizator → ClickHouse (etap 1, część serwerowa)
+- archiwum NIS2 (etap 3), detekcja (etap 4), własny panel (etap 5)
+
+## Serwer laboratoryjny (`deploy/lab`)
+
+```
+agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► siem-normalizer ──► NATS SIEM_EVENTS ──► siem-writer ──► ClickHouse ──► Grafana :3000
+```
+
+| Usługa | Rola |
+|---|---|
+| `siem-ingest` | endpoint `/v1/ingest` (mTLS); potwierdza paczkę po zapisie w JetStream (deduplikacja po `batch_id`, okno 10 min) |
+| `siem-normalizer` | XML Windows → wspólny schemat (`event.dataset`, `event.action`, użytkownik, IP, proces, pola `fields`); błędne zdarzenia → kwarantanna |
+| `siem-writer` | zapis do ClickHouse paczkami (do 20 000 wierszy / 1 s), potwierdzenie z kolejki dopiero po udanym INSERT |
+| NATS JetStream | trwała kolejka, retencja 48 h – bufor na czas awarii odbiorców |
+| ClickHouse | `siem.events` (retencja 5 dni od przyjęcia), `siem.quarantine`; konta `siem_writer` (zapis) i `grafana` (odczyt) |
+| Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
+
+Wdrożenie (stacja z Windows → VM z Dockerem):
+
+```powershell
+# binaria serwera dla Linuksa
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./cmd/siem-ingest ./cmd/siem-normalizer ./cmd/siem-writer
+Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
+
+# certyfikat serwera z adresem VM + kopia do stosu (katalog certs jest ignorowany przez git)
+bin\siem-pki.exe server -hosts 192.168.88.98,siem,localhost,127.0.0.1
+Copy-Item certs\ca.crt, certs\server.crt, certs\server.key deploy\lab\certs\
+```
+
+Na VM (katalog `~/siem-lab`): plik `.env` z hasłami według `.env.example`,
+`chmod 600 certs/server.key`, następnie `docker compose up -d --build`.
+Hasło administratora Grafany: `grep GRAFANA_ADMIN_PASSWORD ~/siem-lab/.env`.
+
+Zweryfikowane: 40 290 zdarzeń z agenta w ClickHouse bez braków i duplikatów,
+kompresja ~15× (31,6 MB → 2,1 MB), czas od zdarzenia do zapisu w bazie ~0,8 s,
+zatrzymanie ClickHouse – zdarzenia czekają w NATS i są zapisywane po powrocie.

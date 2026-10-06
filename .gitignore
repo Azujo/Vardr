@@ -9,3 +9,6 @@ data/
 # Binaria
 bin/
 *.exe
+
+# Sekrety stosu laboratoryjnego
+.env

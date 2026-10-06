@@ -1,0 +1,129 @@
+// Package ingest to endpoint /v1/ingest przyjmujący paczki od agentów
+// (roadmapa, załącznik A). Paczka jest potwierdzana („accepted”) dopiero
+// po trwałym zapisie w strumieniu NATS JetStream.
+package ingest
+
+import (
+	"compress/gzip"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"regexp"
+	"strconv"
+	"sync/atomic"
+	"time"
+
+	"siem/internal/contract"
+)
+
+const (
+	MaxCompressed   = 8 << 20
+	MaxDecompressed = 16 << 20
+)
+
+// Publisher zapisuje surową paczkę w trwałym strumieniu. Zwraca
+// duplicate=true, gdy paczka o tym batch_id była już zapisana.
+type Publisher interface {
+	PublishRaw(ctx context.Context, agentID, batchID string, receivedAt time.Time, gzipBody []byte) (duplicate bool, err error)
+}
+
+// agentIDPattern ogranicza identyfikatory do znaków bezpiecznych w tematach NATS.
+var agentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// Handler obsługuje POST /v1/ingest.
+type Handler struct {
+	Pub Publisher
+	Log *slog.Logger
+	// PublishTimeout ogranicza czas oczekiwania na potwierdzenie z NATS.
+	PublishTimeout time.Duration
+
+	Batches, Events, Duplicates, Rejected atomic.Int64
+}
+
+func (h *Handler) reply(w http.ResponseWriter, code int, resp contract.Response) {
+	if code != http.StatusOK {
+		h.Rejected.Add(1)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Tożsamość wynika wyłącznie z certyfikatu klienta (mTLS).
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		h.reply(w, http.StatusUnauthorized, contract.Response{Error: "brak certyfikatu klienta"})
+		return
+	}
+	agentID := r.TLS.PeerCertificates[0].Subject.CommonName
+	if !agentIDPattern.MatchString(agentID) {
+		h.reply(w, http.StatusForbidden, contract.Response{Error: "niepoprawny identyfikator agenta w certyfikacie"})
+		return
+	}
+
+	// Odczyt skompresowanej treści (przekazywana dalej bez ponownej kompresji).
+	compressed, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxCompressed))
+	var mbe *http.MaxBytesError
+	switch {
+	case errors.As(err, &mbe):
+		h.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "paczka za duża"})
+		return
+	case err != nil:
+		h.reply(w, http.StatusBadRequest, contract.Response{Error: "błąd odczytu"})
+		return
+	}
+	if enc := r.Header.Get("Content-Encoding"); enc != "gzip" {
+		h.reply(w, http.StatusUnsupportedMediaType, contract.Response{Error: "wymagane Content-Encoding: gzip"})
+		return
+	}
+	zr, err := gzip.NewReader(bytesReader(compressed))
+	if err != nil {
+		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny gzip"})
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(zr, MaxDecompressed+1))
+	if err != nil {
+		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny gzip"})
+		return
+	}
+	if len(data) > MaxDecompressed {
+		h.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "paczka po rozpakowaniu za duża"})
+		return
+	}
+
+	var b contract.Batch
+	if err := json.Unmarshal(data, &b); err != nil {
+		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny JSON"})
+		return
+	}
+	if b.AgentID != agentID {
+		h.Log.Warn("niezgodna tożsamość agenta", "cert_cn", agentID, "batch_agent_id", b.AgentID, "remote", r.RemoteAddr)
+		h.reply(w, http.StatusForbidden, contract.Response{BatchID: b.BatchID, Error: "agent_id niezgodny z certyfikatem"})
+		return
+	}
+	if err := b.Validate(); err != nil {
+		h.reply(w, http.StatusBadRequest, contract.Response{BatchID: b.BatchID, Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.PublishTimeout)
+	defer cancel()
+	dup, err := h.Pub.PublishRaw(ctx, agentID, b.BatchID, time.Now().UTC(), compressed)
+	if err != nil {
+		// Kolejka niedostępna – agent ponowi, dane czekają u niego.
+		h.Log.Error("zapis paczki w kolejce nieudany", "agent_id", agentID, "batch_id", b.BatchID, "err", err)
+		w.Header().Set("Retry-After", strconv.Itoa(2))
+		h.reply(w, http.StatusServiceUnavailable, contract.Response{BatchID: b.BatchID, Error: "kolejka chwilowo niedostępna"})
+		return
+	}
+	h.Batches.Add(1)
+	if dup {
+		h.Duplicates.Add(1)
+	} else {
+		h.Events.Add(int64(len(b.Events)))
+	}
+	h.reply(w, http.StatusOK, contract.Response{BatchID: b.BatchID, Status: contract.StatusAccepted})
+}

@@ -1,0 +1,122 @@
+# Stos laboratoryjny SIEM (etap 1 roadmapy):
+#   agent → siem-ingest (mTLS :8443) → NATS SIEM_RAW → siem-normalizer
+#         → NATS SIEM_EVENTS → siem-writer → ClickHouse → Grafana (:3000)
+#
+# Hasła w pliku .env (wzór: .env.example). Binaria serwera w ./bin
+# (budowane na stacji: GOOS=linux, patrz README).
+
+name: siem
+
+x-server: &server
+  restart: unless-stopped
+  user: "1000:1000"          # właściciel plików certyfikatów na VM
+  environment: &server-env
+    SIEM_NATS_URL: nats://nats:4222
+    SIEM_QUEUE_RETENTION: 48h
+  depends_on:
+    nats:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "3" }
+
+services:
+  nats:
+    image: nats:2.12-alpine
+    restart: unless-stopped
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:8222:8222"   # monitoring tylko lokalnie
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    logging: *logging
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      SIEM_WRITER_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      SIEM_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
+    volumes:
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config.d/siem.xml:/etc/clickhouse-server/config.d/siem.xml:ro
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "127.0.0.1:8123:8123"   # HTTP tylko lokalnie (diagnostyka)
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 4g
+    logging: *logging
+
+  ingest:
+    <<: *server
+    build: { context: ., args: { BIN: siem-ingest } }
+    image: siem/ingest:lab
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      - "8443:8443"
+    mem_limit: 256m
+
+  normalizer:
+    <<: *server
+    build: { context: ., args: { BIN: siem-normalizer } }
+    image: siem/normalizer:lab
+    mem_limit: 512m
+
+  writer:
+    <<: *server
+    build: { context: ., args: { BIN: siem-writer } }
+    image: siem/writer:lab
+    environment:
+      <<: *server-env
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_writer
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+    depends_on:
+      nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 512m
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      clickhouse: { condition: service_healthy }
+    mem_limit: 512m
+    logging: *logging
+
+volumes:
+  nats-data:
+  clickhouse-data:
+  grafana-data:

@@ -1,0 +1,120 @@
+{
+  "uid": "siem-overview",
+  "title": "SIEM – przegląd zdarzeń",
+  "tags": ["siem"],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+        "query": "SELECT DISTINCT host_name FROM siem.events WHERE ingested > now() - INTERVAL 5 DAY ORDER BY host_name",
+        "definition": "SELECT DISTINCT host_name FROM siem.events WHERE ingested > now() - INTERVAL 5 DAY ORDER BY host_name",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "szukaj",
+        "label": "Szukaj w treści",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Zdarzenia w zakresie",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS zdarzenia FROM siem.events WHERE $__timeFilter(timestamp) AND host_name IN (${host:singlequote})" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" }
+    },
+    {
+      "id": 2, "type": "stat", "title": "Aktywni agenci (ostatnie 15 min)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT uniqExact(agent_id) AS agenci FROM siem.events WHERE ingested > now() - INTERVAL 15 MINUTE" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" }
+    },
+    {
+      "id": 3, "type": "stat", "title": "Nieudane logowania",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS nieudane FROM siem.events WHERE $__timeFilter(timestamp) AND event_action = 'logon-failed' AND host_name IN (${host:singlequote})" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 10 }, { "color": "red", "value": 50 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+    {
+      "id": 4, "type": "stat", "title": "Kwarantanna (zakres)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT count() AS kwarantanna FROM siem.quarantine WHERE $__timeFilter(ingested)" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+    {
+      "id": 5, "type": "table", "title": "Agenci – ostatnio widziani",
+      "description": "Agent, od którego od dłuższego czasu nic nie przyszło, może być wyłączony lub odinstalowany.",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT agent_id AS agent, any(host_name) AS host, max(ingested) AS ostatnio, dateDiff('minute', max(ingested), now()) AS minut_temu, count() AS zdarzen_5d FROM siem.events WHERE ingested > now() - INTERVAL 5 DAY GROUP BY agent_id ORDER BY ostatnio" }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [ { "matcher": { "id": "byName", "options": "minut_temu" },
+          "properties": [ { "id": "custom.cellOptions", "value": { "type": "color-background" } },
+            { "id": "thresholds", "value": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 15 }, { "color": "red", "value": 60 } ] } } ] } ]
+      }
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Zdarzenia w czasie wg źródła",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 0,
+        "rawSql": "SELECT $__timeInterval(timestamp) AS time, event_dataset, count() AS c FROM siem.events WHERE $__timeFilter(timestamp) AND host_name IN (${host:singlequote}) GROUP BY time, event_dataset ORDER BY time" }],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "id": 7, "type": "table", "title": "Nieudane logowania – konto i źródło",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT user_domain AS domena, user_name AS konto, replaceOne(toString(source_ip), '::ffff:', '') AS ip, host_name AS host, count() AS prob, min(timestamp) AS pierwsza, max(timestamp) AS ostatnia FROM siem.events WHERE $__timeFilter(timestamp) AND event_action IN ('logon-failed', 'kerberos-preauth-failed') AND host_name IN (${host:singlequote}) GROUP BY domena, konto, ip, host ORDER BY prob DESC LIMIT 100" }]
+    },
+    {
+      "id": 8, "type": "table", "title": "Najczęstsze zdarzenia",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT event_dataset AS zrodlo, event_code AS kod, event_action AS akcja, any(event_provider) AS dostawca, count() AS liczba FROM siem.events WHERE $__timeFilter(timestamp) AND host_name IN (${host:singlequote}) GROUP BY zrodlo, kod, akcja ORDER BY liczba DESC LIMIT 50" }]
+    },
+    {
+      "id": 9, "type": "table", "title": "Ostatnie zdarzenia",
+      "description": "Pole „Szukaj w treści” filtruje po surowym XML zdarzenia (bez rozróżniania wielkości liter).",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 12 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT timestamp AS czas, host_name AS host, event_dataset AS zrodlo, event_code AS kod, event_action AS akcja, event_outcome AS wynik, user_name AS konto, replaceOne(toString(source_ip), '::ffff:', '') AS ip, process_name AS proces, message AS komunikat, event_id FROM siem.events WHERE $__timeFilter(timestamp) AND host_name IN (${host:singlequote}) AND (${szukaj:sqlstring} = '' OR positionCaseInsensitive(raw, ${szukaj:sqlstring}) > 0) ORDER BY timestamp DESC LIMIT 500" }]
+    },
+    {
+      "id": 10, "type": "table", "title": "Kwarantanna – powody",
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 6 },
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse-siem" },
+      "targets": [{ "refId": "A", "editorType": "sql", "format": 1,
+        "rawSql": "SELECT source AS zrodlo, reason AS powod, count() AS liczba, max(ingested) AS ostatnio, any(substring(raw, 1, 200)) AS przyklad FROM siem.quarantine WHERE $__timeFilter(ingested) GROUP BY zrodlo, powod ORDER BY liczba DESC LIMIT 50" }]
+    }
+  ]
+}

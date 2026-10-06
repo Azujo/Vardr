@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: ClickHouse SIEM
+    type: grafana-clickhouse-datasource
+    uid: clickhouse-siem
+    isDefault: true
+    editable: false
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      username: grafana
+      defaultDatabase: siem
+    secureJsonData:
+      password: ${CLICKHOUSE_GRAFANA_PASSWORD}
