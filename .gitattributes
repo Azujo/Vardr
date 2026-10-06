@@ -1,0 +1,12 @@
+# Pliki uruchamiane lub montowane na serwerze Linux muszą mieć końce linii LF,
+# niezależnie od ustawienia core.autocrlf na stacji Windows.
+deploy/** text eol=lf
+*.sh      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.conf    text eol=lf
+
+# Binaria i klucze nigdy nie są przetwarzane jako tekst.
+*.exe binary
+*.key binary
+*.crt binary
