@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3 • 06.10.2026
+Wersja planistyczna 1.3.1 • 06.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -13,6 +13,7 @@ Wersja planistyczna 1.3 • 06.10.2026
 | Konsola zarządzania | **Własny panel** (React + TypeScript, backend `siem-api` w Go, PostgreSQL) w stylu Wazuh Dashboard; Grafana zostaje do monitorowania samego SIEM | Załącznik C |
 | Wdrażanie agentów | **Rejestracja tokenem**: panel generuje token i instalator bez klucza prywatnego; agent sam tworzy klucz i otrzymuje certyfikat od serwera. Paczki z kluczem (`siem-pki package`) tylko w laboratorium | Załącznik C |
 | Kolejność etapów | Panel (moduły: logowanie, agenci, wdrażanie, zdarzenia) razem z etapem 2 **przed** detekcją | Sekcja 17 |
+| Nazwa i nazewnictwo | Produkt: **Heimdall** (repozytorium `heimdall`). Komponenty nazwane według mitologii nordyckiej w panelu, dokumentacji i nazwach usług; w kodzie nazwy opisowe | Załącznik D |
 
 ## 0. Co zmieniło się względem wersji 1.1
 
@@ -564,3 +565,94 @@ agent ──mTLS──► siem-ingest  └──► rejestracja agentów, heartb
 6. Ten sam token może posłużyć do wdrożenia masowego (GPO / Intune / SCCM) w ramach limitu użyć.
 
 `siem-pki package` (paczka z kluczem prywatnym) pozostaje wyłącznie narzędziem laboratoryjnym.
+
+## Załącznik D. Nazewnictwo – Heimdall i jego świat
+
+> Heimdall, strażnik bogów, widzi na sto mil we dnie i w nocy i słyszy, jak rośnie trawa.
+> Pilnuje mostu Bifröst, a gdy nadchodzi zagrożenie, dmie w róg Gjallarhorn.
+
+Trudno o lepszy opis SIEM-a. System nazywa się **Heimdall**, a jego części biorą imiona z tego samego świata.
+
+### Mapa świata
+
+```
+            Huginn (agent na komputerze)
+               │   kruk Odyna – lata po świecie i donosi, co widział
+               ▼
+   ════════ Bifröst ════════  szyfrowany most (mTLS, endpoint przyjmujący)
+               │
+               ▼
+          Ratatoskr  ─────────────────────────────►  Urd
+   (kolejka zdarzeń)                             (archiwum NIS2:
+               │                                  co zapisane, tego się nie zmienia)
+               ▼
+            Bragi        tłumaczy „języki” logów na jeden wspólny (normalizacja, dekodery)
+               │
+               ▼
+          Verðandi       spisuje to, co dzieje się teraz (zapis zdarzeń)
+               │
+               ▼
+            Mímir        studnia mądrości – baza zdarzeń
+               │
+      ┌────────┴─────────┐
+      ▼                  ▼
+ Gjallarhorn         Hliðskjálf      ◄──── Saga
+ (detekcja,          (panel – tron       (pamięć: użytkownicy, agenci,
+  alerty)             Odyna, z którego    reguły, alerty)
+                      widać wszystkie
+                      światy)
+```
+
+### Słownik nazw
+
+| Komponent | Nazwa | Postać w mitologii | Nazwa techniczna (kod, katalogi) |
+|---|---|---|---|
+| Cały system | **Heimdall** | strażnik bogów, widzi i słyszy wszystko | repozytorium `heimdall` |
+| Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `siem_agent`, `internal/agent` |
+| Kanał agent → serwer (mTLS, ingest) | **Bifröst** | tęczowy most do Asgardu, którego strzeże Heimdall | `siem-ingest`, `internal/server/ingest` |
+| Kolejka (NATS JetStream) | **Ratatoskr** | wiewiórka biegająca po Yggdrasilu z wiadomościami | `nats`, `internal/server/bus` |
+| Normalizator i dekodery | **Bragi** | bóg poezji i słowa | `siem-normalizer`, `internal/server/normalize` |
+| Zapis zdarzeń do bazy | **Verðandi** | norna teraźniejszości („to, co się staje”) | `siem-writer`, `internal/server/chwriter` |
+| Baza zdarzeń (ClickHouse) | **Mímir** | studnia mądrości, za łyk z której Odyn oddał oko | `clickhouse`, baza `siem` |
+| Archiwum NIS2 (WORM) | **Urd** | norna przeszłości i jej studnia – przeszłości nie da się zmienić | etap 3 |
+| Detekcja i alerty | **Gjallarhorn** | róg Heimdalla, ogłaszający nadejście zagrożenia | etap 4 |
+| Panel | **Hliðskjálf** | tron Odyna, z którego widać wszystkie dziewięć światów | `siem-api` + frontend (załącznik C) |
+| Konfiguracja i stan (PostgreSQL) | **Saga** | bogini, z którą Odyn codziennie pije ze złotych pucharów (Grímnismál); imię wiąże się z opowieścią i pamięcią | `postgres` |
+| Monitorowanie potoku (Grafana) | – | narzędzie zewnętrzne, bez nazwy z mitologii | `grafana` |
+
+Wolne nazwy na przyszłość:
+- **Muninn** – drugi kruk Odyna („pamięć”), np. agent Linux lub kolektor syslog;
+- **Skuld** – norna przyszłości, np. analiza anomalii i UEBA;
+- **Gungnir** – włócznia Odyna, która nigdy nie chybia, np. automatyczna reakcja;
+- **Yggdrasil** – drzewo łączące światy, np. nazwa całego wdrożenia lub klastra HA.
+
+### Zasady
+
+1. **Nazwy z mitologii** stosujemy tam, gdzie widzi je człowiek:
+   - panel i jego menu;
+   - dokumentacja i diagramy;
+   - nazwy usług i kontenerów;
+   - tytuły pulpitów;
+   - komunikaty w stylu „Bifröst: 3 agentów nie łączy się od 15 min”.
+2. **Nazwy opisowe** zostają w kodzie i tam, gdzie liczy się czytelność przy diagnozie:
+   - pakiety i katalogi Go;
+   - kolumny i tabele bazy;
+   - zmienne środowiskowe;
+   - logi techniczne (`component=ingest`).
+3. Przy pierwszym wystąpieniu w dokumentacji zawsze podajemy obie formy: „Bifröst (ingest)”.
+4. **Polecenie agenta zostaje `siem_agent`.** To nazwa, którą wpisuje administrator, i powinna mówić sama za siebie.
+
+### Plan zmiany nazw
+
+Zmiany robimy przy okazji pracy w danym obszarze, a nie jednym dużym przemianowaniem.
+
+| Kiedy | Co zmienić | Uwagi |
+|---|---|---|
+| Start panelu (załącznik C) | Tytuł i logo panelu: „Heimdall”; sekcje menu: Huginn (agenci), Mímir (zdarzenia), Gjallarhorn (alerty), Bifröst (wdrażanie i łączność) | nowy kod – bez migracji |
+| Start panelu | Usługi w `docker-compose.yml`: `ingest`→`bifrost`, `nats`→`ratatoskr`, `normalizer`→`bragi`, `writer`→`verdandi`, `clickhouse`→`mimir`, nowe `saga` (PostgreSQL) i `hlidskjalf` (API + frontend) | zmiana nazw hostów w zmiennych środowiskowych (`SIEM_NATS_URL`, `SIEM_CLICKHOUSE_ADDR`), datasource Grafany i certyfikatu serwera (`-hosts`) |
+| Start panelu | Moduł Go `siem` → `heimdall` (ścieżka importu) | jednorazowa zamiana w całym repozytorium |
+| Start panelu | Pulpit Grafany: „Heimdall – zdrowie potoku” zamiast przeglądu zdarzeń (przegląd zdarzeń przejmuje Hliðskjálf) | Grafana zostaje do monitorowania |
+| Etap 3 | Archiwizator od razu jako **Urd** (usługa `urd`) | nowy komponent |
+| Etap 4 | Silnik detekcji i powiadomień od razu jako **Gjallarhorn** | nowy komponent |
+| Instalator MSI (etap 2) | Nazwa wyświetlana usługi: „Heimdall Huginn (agent SIEM)”; nazwa usługi `SiemAgent` i źródło w Podglądzie zdarzeń **bez zmian** | zmiana nazwy usługi wymagałaby migracji na wszystkich komputerach – tylko jeśli będzie wyraźny powód |
+| Bez zmian | Polecenie `siem_agent`, baza ClickHouse `siem`, prefiks identyfikatorów `agt-`, ścieżki `C:\Program Files\SiemAgent` i `C:\ProgramData\SiemAgent` | stabilne nazwy techniczne – zmiana kosztuje migrację, nie daje wartości |
