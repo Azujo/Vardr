@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
@@ -15,9 +14,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	"siem/internal/contract"
 	"siem/internal/server/bus"
 	"siem/internal/server/ingest"
+	"siem/internal/server/metrics"
 	"siem/internal/server/normalize"
 	"siem/internal/server/svc"
 )
@@ -59,7 +58,9 @@ func run(log *slog.Logger) error {
 	var batches, events, quarantined atomic.Int64
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
-	go svc.WatchQueue(ctx, log, js, bus.StreamRaw, bus.ConsumerNormalizer, 0.5, 0.8)
+	m := metrics.NewNormalizer()
+	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
+	go svc.WatchQueue(ctx, log, js, bus.StreamRaw, bus.ConsumerNormalizer, 0.5, 0.8, metrics.NewQueue())
 	log.Info("normalizator uruchomiony")
 
 	for ctx.Err() == nil {
@@ -75,58 +76,49 @@ func run(log *slog.Logger) error {
 			continue
 		}
 		for msg := range msgs.Messages() {
+			start := time.Now()
 			n, q, err := process(ctx, js, msg)
 			switch {
-			case errors.Is(err, errPoison):
+			case errors.Is(err, normalize.ErrUnreadable):
 				log.Error("nieczytelna paczka w kolejce – pominięta", "subject", msg.Subject(), "err", err)
 				_ = msg.Term()
+				m.Batches.WithLabelValues("poison").Inc()
 			case err != nil:
 				log.Warn("publikacja wyniku nieudana – ponowię", "err", err)
 				_ = msg.NakWithDelay(5 * time.Second)
+				m.Batches.WithLabelValues("retry").Inc()
 			default:
 				_ = msg.Ack()
 				batches.Add(1)
 				events.Add(int64(n))
 				quarantined.Add(int64(q))
+				m.Batches.WithLabelValues("ok").Inc()
+				m.Events.Add(float64(n))
+				m.Quarantined.Add(float64(q))
+				m.Duration.Observe(time.Since(start).Seconds())
 			}
 		}
 	}
 	return nil
 }
 
-var errPoison = errors.New("nieczytelna wiadomość")
-
 func process(ctx context.Context, js jetstream.JetStream, msg jetstream.Msg) (events, quarantined int, err error) {
 	h := msg.Headers()
 	agentID := h.Get(bus.HdrAgent)
 	receivedAt, terr := time.Parse(time.RFC3339Nano, h.Get(bus.HdrReceivedAt))
 	if agentID == "" || terr != nil {
-		return 0, 0, errors.Join(errPoison, errors.New("brak nagłówków agenta lub czasu"))
+		return 0, 0, errors.Join(normalize.ErrUnreadable, errors.New("brak nagłówków agenta lub czasu"))
 	}
-	data, err := bus.Gunzip(msg.Data(), ingest.MaxDecompressed)
-	if err != nil {
-		return 0, 0, errors.Join(errPoison, err)
-	}
-	var b contract.Batch
-	if err := json.Unmarshal(data, &b); err != nil {
-		return 0, 0, errors.Join(errPoison, err)
-	}
-
-	nb := normalize.Batch(b, agentID, receivedAt)
-	out, err := json.Marshal(nb)
-	if err != nil {
-		return 0, 0, errors.Join(errPoison, err)
-	}
-	gz, err := bus.Gzip(out)
+	gz, nb, err := normalize.Encoded(msg.Data(), agentID, receivedAt, ingest.MaxDecompressed)
 	if err != nil {
 		return 0, 0, err
 	}
 	pub := &nats.Msg{Subject: bus.EventsSubject(agentID), Data: gz, Header: nats.Header{}}
 	pub.Header.Set(bus.HdrAgent, agentID)
-	pub.Header.Set(bus.HdrBatch, b.BatchID)
+	pub.Header.Set(bus.HdrBatch, nb.BatchID)
 	pub.Header.Set(bus.HdrEncoding, "gzip")
 	// Ten sam identyfikator przy ponownym przetworzeniu = duplikat odrzucony przez JetStream.
-	if _, err := js.PublishMsg(ctx, pub, jetstream.WithMsgID(b.BatchID)); err != nil {
+	if _, err := js.PublishMsg(ctx, pub, jetstream.WithMsgID(nb.BatchID)); err != nil {
 		return 0, 0, err
 	}
 	return len(nb.Events), len(nb.Quarantine), nil

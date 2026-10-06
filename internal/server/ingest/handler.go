@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/server/metrics"
 )
 
 const (
@@ -43,6 +44,8 @@ type Handler struct {
 	Admission *Admission
 	// QueueFull (opcjonalna) rozpoznaje błąd publikacji „kolejka pełna”.
 	QueueFull func(error) bool
+	// Metrics (opcjonalne) – metryki Prometheus.
+	Metrics *metrics.Ingest
 
 	// Rejected: paczki odrzucone (błąd agenta lub danych);
 	// Throttled: paczki odesłane do ponowienia (429/503).
@@ -78,25 +81,32 @@ func (h *Handler) write(w http.ResponseWriter, code int, resp contract.Response)
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	result, events := h.handle(w, r)
+	h.Metrics.Observe(result, events, time.Since(start))
+}
+
+// handle obsługuje paczkę i zwraca wynik (etykieta metryk) oraz liczbę zdarzeń.
+func (h *Handler) handle(w http.ResponseWriter, r *http.Request) (string, int) {
 	// Tożsamość wynika wyłącznie z certyfikatu klienta (mTLS).
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
 		h.reply(w, http.StatusUnauthorized, contract.Response{Error: "brak certyfikatu klienta"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	agentID := r.TLS.PeerCertificates[0].Subject.CommonName
 	if !agentIDPattern.MatchString(agentID) {
 		h.reply(w, http.StatusForbidden, contract.Response{Error: "niepoprawny identyfikator agenta w certyfikacie"})
-		return
+		return metrics.ResultRejected, 0
 	}
 
 	// Kontrola przyjęcia przed odczytem treści – odmowa jest tania.
 	switch h.Admission.Acquire() {
 	case Busy:
 		h.throttle(w, http.StatusTooManyRequests, retryBusy, "", "serwer zajęty, ponów później")
-		return
+		return metrics.ResultBusy, 0
 	case QueueFull:
 		h.throttle(w, http.StatusServiceUnavailable, retryQueueFull, "", "kolejka pełna, ponów później")
-		return
+		return metrics.ResultQueueFull, 0
 	}
 	defer h.Admission.Release()
 
@@ -106,43 +116,43 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.As(err, &mbe):
 		h.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "paczka za duża"})
-		return
+		return metrics.ResultRejected, 0
 	case err != nil:
 		h.reply(w, http.StatusBadRequest, contract.Response{Error: "błąd odczytu"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	if enc := r.Header.Get("Content-Encoding"); enc != "gzip" {
 		h.reply(w, http.StatusUnsupportedMediaType, contract.Response{Error: "wymagane Content-Encoding: gzip"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	zr, err := gzip.NewReader(bytesReader(compressed))
 	if err != nil {
 		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny gzip"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	data, err := io.ReadAll(io.LimitReader(zr, MaxDecompressed+1))
 	if err != nil {
 		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny gzip"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	if len(data) > MaxDecompressed {
 		h.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "paczka po rozpakowaniu za duża"})
-		return
+		return metrics.ResultRejected, 0
 	}
 
 	var b contract.Batch
 	if err := json.Unmarshal(data, &b); err != nil {
 		h.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny JSON"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	if b.AgentID != agentID {
 		h.Log.Warn("niezgodna tożsamość agenta", "cert_cn", agentID, "batch_agent_id", b.AgentID, "remote", r.RemoteAddr)
 		h.reply(w, http.StatusForbidden, contract.Response{BatchID: b.BatchID, Error: "agent_id niezgodny z certyfikatem"})
-		return
+		return metrics.ResultRejected, 0
 	}
 	if err := b.Validate(); err != nil {
 		h.reply(w, http.StatusBadRequest, contract.Response{BatchID: b.BatchID, Error: err.Error()})
-		return
+		return metrics.ResultRejected, 0
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.PublishTimeout)
@@ -153,17 +163,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.QueueFull != nil && h.QueueFull(err) {
 			h.Admission.SetFill(1) // od razu, bez czekania na kolejny pomiar
 			h.throttle(w, http.StatusServiceUnavailable, retryQueueFull, b.BatchID, "kolejka pełna, ponów później")
-			return
+			return metrics.ResultQueueFull, 0
 		}
 		h.Log.Error("zapis paczki w kolejce nieudany", "agent_id", agentID, "batch_id", b.BatchID, "err", err)
 		h.throttle(w, http.StatusServiceUnavailable, retryNoQueue, b.BatchID, "kolejka chwilowo niedostępna")
-		return
+		return metrics.ResultQueueError, 0
 	}
 	h.Batches.Add(1)
+	h.reply(w, http.StatusOK, contract.Response{BatchID: b.BatchID, Status: contract.StatusAccepted})
 	if dup {
 		h.Duplicates.Add(1)
-	} else {
-		h.Events.Add(int64(len(b.Events)))
+		return metrics.ResultDuplicate, 0
 	}
-	h.reply(w, http.StatusOK, contract.Response{BatchID: b.BatchID, Status: contract.StatusAccepted})
+	h.Events.Add(int64(len(b.Events)))
+	return metrics.ResultAccepted, len(b.Events)
 }

@@ -1,0 +1,23 @@
+# Prometheus dla laboratorium SIEM – metryki potoku (etap 1.5, K4).
+# Kopie usług (docker compose --scale) są wykrywane przez DNS Dockera:
+# nazwa usługi zwraca adresy wszystkich jej kontenerów.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: siem
+    dns_sd_configs:
+      - names: [ingest, normalizer, writer]
+        type: A
+        port: 9100
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: service
+
+  - job_name: clickhouse
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["clickhouse:9363"]
+        labels: { service: clickhouse }

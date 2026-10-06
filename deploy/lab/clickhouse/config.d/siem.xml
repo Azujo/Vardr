@@ -13,4 +13,13 @@
     <asynchronous_metric_log remove="1"/>
     <text_log remove="1"/>
     <part_log remove="1"/>
+
+    <!-- Metryki serwera dla Prometheusa (tylko w sieci Dockera). -->
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
 </clickhouse>

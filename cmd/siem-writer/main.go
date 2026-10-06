@@ -14,6 +14,7 @@ import (
 
 	"siem/internal/server/bus"
 	"siem/internal/server/chwriter"
+	"siem/internal/server/metrics"
 	"siem/internal/server/model"
 	"siem/internal/server/svc"
 )
@@ -70,8 +71,9 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), maxRows: maxRows}
-	go svc.WatchQueue(ctx, log, js, bus.StreamEvents, bus.ConsumerWriter, 0.5, 0.8)
+	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), maxRows: maxRows, m: metrics.NewWriter()}
+	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
+	go svc.WatchQueue(ctx, log, js, bus.StreamEvents, bus.ConsumerWriter, 0.5, 0.8, metrics.NewQueue())
 	log.Info("zapis do ClickHouse uruchomiony", "max_rows", maxRows, "flush_every", flushEvery)
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
@@ -112,6 +114,7 @@ type pipeline struct {
 	w       *chwriter.Writer
 	log     *slog.Logger
 	seen    *chwriter.Seen
+	m       *metrics.Writer
 	maxRows int
 
 	msgs       []jetstream.Msg
@@ -136,6 +139,7 @@ func (p *pipeline) add(msg jetstream.Msg) {
 	for _, e := range b.Events {
 		if p.seen.Has(e.ID) {
 			p.dups++
+			p.m.Duplicates.Inc()
 			continue
 		}
 		p.events = append(p.events, e)
@@ -148,6 +152,8 @@ func (p *pipeline) add(msg jetstream.Msg) {
 // ClickHouse nie przyjmie z powodu treści, trafiają do kwarantanny.
 func (p *pipeline) flush(ctx context.Context) {
 	defer func() { p.msgs, p.events, p.quarantine = nil, nil, nil }()
+	start := time.Now()
+	defer func() { p.m.InsertDuration.Observe(time.Since(start).Seconds()) }()
 
 	rejected, err := chwriter.Bisect(ctx, p.events, p.w.InsertEvents, func(ok []model.Event) {
 		// Zapisane od razu oznaczamy – po ponownym dostarczeniu zostaną pominięte.
@@ -155,10 +161,16 @@ func (p *pipeline) flush(ctx context.Context) {
 			p.seen.Add(e.ID)
 		}
 		p.rows += int64(len(ok))
+		p.m.Rows.Add(float64(len(ok)))
+		now := time.Now()
+		for _, e := range ok {
+			p.m.Latency.Observe(now.Sub(e.Ingested).Seconds())
+		}
 	})
 	quarantine := p.quarantine
 	for _, r := range rejected {
 		p.rejected++
+		p.m.Rejected.Inc()
 		p.log.Error("ClickHouse odrzucił zdarzenie – przenoszę do kwarantanny", "event_id", r.Event.ID, "err", r.Err)
 		quarantine = append(quarantine, r.Quarantined())
 	}
@@ -167,6 +179,7 @@ func (p *pipeline) flush(ctx context.Context) {
 	}
 	if err != nil {
 		p.errors++
+		p.m.InsertErrors.Inc()
 		p.log.Error("zapis do ClickHouse nieudany – ponowię", "rows", len(p.events), "err", err)
 		for _, m := range p.msgs {
 			_ = m.NakWithDelay(5 * time.Second)
@@ -177,4 +190,5 @@ func (p *pipeline) flush(ctx context.Context) {
 		_ = m.Ack()
 	}
 	p.quarantined += int64(len(quarantine))
+	p.m.Quarantined.Add(float64(len(quarantine)))
 }

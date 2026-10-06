@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3.3 • 06.10.2026
+Wersja planistyczna 1.3.4 • 07.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -414,7 +414,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
-- **Etap 1.5 – postęp:** K1, K2 i W3 zrobione (06.10.2026); K1 sprawdzone na VM, K2 i W3 testami jednostkowymi. Dalej: K4, W1, W2, K3, M1.
+- **Etap 1.5 – postęp:** K1, K2, W3 i K4 zrobione (06–07.10.2026). K1 i K4 sprawdzone na VM, K2 i W3 testami jednostkowymi. Test obciążenia wskazał normalizator jako wąskie gardło, więc następny jest W1. Dalej: W2, K3, M1.
 
 **Kamienie milowe po drodze:**
 
@@ -702,7 +702,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 | Element | Wartość | Przy 10 000 zdarzeń/s |
 |---|---|---|
-| Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | 21 µs (System 7045), 33 µs (Security 4625) | jedna kopia na VM ok. 10–20 tys./s – **pierwsze wąskie gardło** |
+| Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | 21 µs (System 7045), 33 µs (Security 4625) | **zaniżone** – to samo parsowanie. Cała ścieżka paczki: 56 µs na Ryzenie, na VM zmierzone ok. 4500 zdarzeń/s na kopię (K4) – **pierwsze wąskie gardło** |
 | Kolejka NATS (oba strumienie) | ok. 200 B na zdarzenie | przy retencji 48 h było to ok. 340 GB; po poprawce K1 kolejka trzyma tylko zaległości: 8 GB na strumień ≈ 2 h zatoru przy 10 000/s |
 | ClickHouse | 55 B na zdarzenie (dane laboratoryjne, kompresja ok. 15×); surowy XML 52%, pola 28% miejsca | ok. 47 GB/dzień, ok. 235 GB przy 5 dniach; logi Security kompresują się gorzej |
 | Dziennik Windows jako bufor agenta | System i Application 20 MB (domyślnie); Security domyślnie też 20 MB | stacja (2 zdarzenia/s) ok. 2 h zapasu, serwer (1000/s) ok. 15 s |
@@ -717,13 +717,13 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | K1 | Strumienie NATS: `discard: old`, retencja czasowa, limit 20 GB | przy dłuższej awarii writera lub bazy kolejka usuwa najstarsze **nieprzetworzone** dane, a agenci mają już potwierdzenie – cicha utrata | retencja do potwierdzenia przez wszystkich odbiorców, limit rozmiaru z `discard: new` (ingest → 503), limit przyjmowania w ingest (429), alarm zaległości. **Zrobione 06.10.2026** |
 | K2 | Writer ponawia całą paczkę po błędzie ClickHouse | jeden wadliwy wiersz (np. data poza zakresem przy zepsutym zegarze komputera) zatrzymuje zapis wszystkich agentów | dzielenie paczki do wykrycia wadliwego wiersza → kwarantanna; korekta dat spoza zakresu. **Zrobione 06.10.2026** |
 | K3 | Dziennik Windows (domyślnie 20 MB) jest jedynym buforem agenta | przy przerwie w łączności dłuższej niż minuty (serwer) lub godziny (stacja) zdarzenia zostają nadpisane | GPO: Security 512 MB–1 GB na serwerach i DC; ostrzeżenie agenta o zbliżającym się nadpisaniu; bufor dyskowy (etap 2) |
-| K4 | Brak testu obciążenia i metryk | nie wiadomo, gdzie system pęknie ani kiedy dokładać workery | generator ruchu symulujący tysiące agentów, metryki Prometheus, pulpit „zdrowie potoku” |
+| K4 | Brak testu obciążenia i metryk | nie wiadomo, gdzie system pęknie ani kiedy dokładać workery | generator ruchu symulujący tysiące agentów, metryki Prometheus, pulpit „zdrowie potoku”. **Zrobione 06–07.10.2026** |
 
 **Ważne**
 
 | # | Problem | Poprawka |
 |---|---|---|
-| W1 | Normalizator przetwarza sekwencyjnie w jednym wątku | pula wątków w procesie + kopie usługi; zmierzyć generatorem |
+| W1 | Normalizator przetwarza sekwencyjnie w jednym wątku i jest kosztowny (pomiar K4: ok. 4500 zdarzeń/s na kopię, 1,1 rdzenia) | własny parser XML zamiast `encoding/xml` (53% czasu), szybsza kompresja wewnętrzna, mniej alokacji, pula wątków i publikacja asynchroniczna; dokładanie kopii pomaga dopiero przy wolnych rdzeniach |
 | W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności |
 | W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest. **Zrobione 06.10.2026** |
 | W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo) |
@@ -769,3 +769,35 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 - Agent czeka co najmniej tyle, ile podaje `Retry-After`, plus losowe 0–50%. Przy kolejnych odmowach czas rośnie jak zwykły backoff.
 - Dzięki temu tysiące agentów odrzuconych w tej samej chwili nie wracają w tej samej sekundzie.
+
+**K4 – test obciążenia i metryki (06–07.10.2026)**
+
+- `siem-loadgen` symuluje N agentów:
+  - każdy ma własny certyfikat i połączenie TLS;
+  - wysyła realistyczną mieszankę zdarzeń: 4624, 4634, 4688, 4625, Application 1000, System 7036 i 7045;
+  - reaguje na 429 i 503 jak agent;
+  - ma bufor z limitem (symulacja dziennika Windows) i liczy zdarzenia utracone po jego przepełnieniu.
+- Metryki Prometheus w ingest, normalizatorze i writerze:
+  - paczki według wyniku;
+  - zdarzenia na etapach;
+  - czasy pracy etapów;
+  - opóźnienie od przyjęcia do zapisu;
+  - zajętość i zaległości kolejek;
+  - CPU i pamięć usług.
+
+  Do tego metryki ClickHouse. Prometheus wykrywa kopie usług przez DNS Dockera. Pulpit Grafany: „SIEM – zdrowie potoku”.
+- Wyniki na VM laboratoryjnej (4 vCPU, 10 GB RAM; generator na stacji w tej samej sieci):
+
+| Test | Przyjęte przez ingest | Odmowy | Odpowiedź ingest p99 | W bazie | Obserwacje |
+|---|---|---|---|---|---|
+| 200 agentów × 10/s = 2000/s, 2 min | 259 832 (100%) | 0 | 6 ms | 259 832 (100%) od razu | opóźnienie potoku p99 2,6 s; CPU: ingest 0,66, normalizator 0,15, writer 0,25 rdzenia |
+| 500 × 20/s = 10 000/s, 3 min, 1 normalizator | 1 899 141 (100%) | 374 × 429 (krótka przerwa, ok. 2 s) | 28 ms | 1 899 141 (100%), ale dopiero po ok. 4 min | **normalizator nie nadąża: ok. 4500/s**; kolejka urosła do 25 tys. paczek (1,4% limitu), opóźnienie potoku p99 ok. 200 s; ingest 0,5 rdzenia, writer 0,55, ClickHouse 0,3 |
+| jak wyżej, 3 normalizatory | 1 898 969 (100%) | 1646 × 429 | 653 ms | 100% po opróżnieniu kolejki | **gorzej**: normalizatory zajęły 2,3 rdzenia i zagłodziły ingest, NATS i ClickHouse (INSERT p99 3,5 s). Na 4 vCPU dokładanie kopii nie pomaga |
+
+- Wnioski:
+  - Ingest, NATS, writer i ClickHouse przy 10 000 zdarzeń/s mają duży zapas (razem ok. 1,5 rdzenia).
+  - Przeciążenie przebiegło zgodnie z założeniami: przyjęte 100% zdarzeń, 0 utraconych, 0 duplikatów, kwarantanna pusta.
+  - Wąskie gardło to koszt normalizatora: na Ryzenie ok. 56 µs na zdarzenie za całą ścieżkę paczki, ok. 410 alokacji i 48 KB śmieci na zdarzenie.
+  - Rozkład kosztu: parser XML 53%, JSON wyniku 16%, gzip wyniku 15%, odczyt JSON 10%.
+  - Wcześniejszy benchmark (21–33 µs) mierzył tylko parsowanie.
+  - Poziome skalowanie działa dopiero wtedy, gdy kopie mają własne rdzenie (osobne maszyny). Na jednej VM trzeba najpierw obniżyć koszt na zdarzenie (W1).

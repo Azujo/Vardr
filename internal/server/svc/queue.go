@@ -8,6 +8,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/server/bus"
+	"siem/internal/server/metrics"
 )
 
 // QueueLimits czyta pojemność kolejek ze zmiennych środowiskowych
@@ -32,13 +33,17 @@ func QueueLimits() (bus.Limits, error) {
 	return l, nil
 }
 
-// WatchQueue co minutę sprawdza zaległości konsumenta i zajętość strumienia.
-// Rosnąca kolejka to sygnał, że etap nie nadąża i trzeba dodać repliki
-// (roadmapa, załącznik E). Ostrzega powyżej warn, alarmuje powyżej alarm.
-func WatchQueue(ctx context.Context, log *slog.Logger, js jetstream.JetStream, stream, consumer string, warn, alarm float64) {
-	t := time.NewTicker(time.Minute)
+// WatchQueue co 15 s mierzy zaległości odbiorcy i zajętość strumienia,
+// zapisuje je w metrykach (m może być nil) i ostrzega w logu, gdy kolejka
+// rośnie: powyżej warn ostrzeżenie, powyżej alarm błąd. Log pojawia się
+// przy zmianie stanu oraz co 5 minut, dopóki problem trwa. Rosnąca kolejka
+// to sygnał, że etap nie nadąża i trzeba dodać repliki (roadmapa, zał. E).
+func WatchQueue(ctx context.Context, log *slog.Logger, js jetstream.JetStream, stream, consumer string,
+	warn, alarm float64, m *metrics.Queue) {
+	const interval, remind = 15 * time.Second, 5 * time.Minute
+	t := time.NewTicker(interval)
 	defer t.Stop()
-	level := slog.LevelInfo
+	level, lastLog := slog.LevelInfo, time.Time{}
 	for {
 		select {
 		case <-t.C:
@@ -53,7 +58,7 @@ func WatchQueue(ctx context.Context, log *slog.Logger, js jetstream.JetStream, s
 			if c, err = js.Consumer(qctx, stream, consumer); err == nil {
 				var info *jetstream.ConsumerInfo
 				if info, err = c.Info(qctx); err == nil {
-					pending = info.NumPending
+					pending = info.NumPending + uint64(info.NumAckPending)
 				}
 			}
 		}
@@ -62,6 +67,8 @@ func WatchQueue(ctx context.Context, log *slog.Logger, js jetstream.JetStream, s
 			log.Warn("odczyt stanu kolejki nieudany", "stream", stream, "err", err)
 			continue
 		}
+		m.Set(stream, consumer, fill.Ratio, fill.Bytes, pending)
+
 		next := slog.LevelInfo
 		switch {
 		case fill.Ratio >= alarm:
@@ -71,12 +78,11 @@ func WatchQueue(ctx context.Context, log *slog.Logger, js jetstream.JetStream, s
 		}
 		attrs := []any{"stream", stream, "fill", round(fill.Ratio), "bytes", fill.Bytes, "pending", pending}
 		switch {
-		case next > slog.LevelInfo:
+		case next > slog.LevelInfo && (next != level || time.Since(lastLog) >= remind):
 			log.Log(ctx, next, "kolejka rośnie – etap nie nadąża (rozważ więcej replik)", attrs...)
-		case level > slog.LevelInfo:
+			lastLog = time.Now()
+		case next == slog.LevelInfo && level > slog.LevelInfo:
 			log.Info("kolejka wróciła do normy", attrs...)
-		default:
-			log.Debug("stan kolejki", attrs...)
 		}
 		level = next
 	}

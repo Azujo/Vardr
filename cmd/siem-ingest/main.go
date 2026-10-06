@@ -15,6 +15,7 @@ import (
 	"siem/internal/contract"
 	"siem/internal/server/bus"
 	"siem/internal/server/ingest"
+	"siem/internal/server/metrics"
 	"siem/internal/server/svc"
 )
 
@@ -65,7 +66,9 @@ func run(log *slog.Logger) error {
 		return f.Ratio, err
 	})
 	h := &ingest.Handler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, PublishTimeout: 10 * time.Second,
-		Admission: adm, QueueFull: bus.IsQueueFull}
+		Admission: adm, QueueFull: bus.IsQueueFull,
+		Metrics: metrics.NewIngest(func() float64 { return float64(adm.InFlight()) }, adm.Fill)}
+	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	mux := http.NewServeMux()
 	mux.Handle("POST "+contract.IngestPath, h)
 	srv := &http.Server{

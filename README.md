@@ -10,6 +10,10 @@ cmd/
   siem_agent/          agent Windows (instalator, usługa, konsola)
   siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
   siem-pki/            certyfikaty laboratoryjne (CA, serwer, agenci)
+  siem-ingest/         serwer: odbiór paczek (mTLS) → NATS
+  siem-normalizer/     serwer: XML Windows → wspólny schemat
+  siem-writer/         serwer: zapis do ClickHouse
+  siem-loadgen/        generator ruchu: symulacja wielu agentów
 internal/
   contract/            kontrakt paczki agent → serwer (załącznik A)
   agent/config/        konfiguracja YAML agenta
@@ -18,6 +22,9 @@ internal/
   agent/state/         atomowy zapis bookmarków (state.json)
   agent/source/        interfejs źródeł logów
   agent/winevt/        Windows Event Log (wevtapi: subskrypcja + bookmarki)
+  server/              ingest, kolejka (bus), normalizacja, zapis, metryki
+  loadgen/             szablony zdarzeń Windows do testów obciążenia
+deploy/lab/            stos serwera (docker compose: NATS, ClickHouse, Prometheus, Grafana)
 configs/
   agent.example.yaml   profil domyślny (załącznik B)
   agent.lab.yaml       test bez uprawnień administratora (System, Application)
@@ -268,5 +275,27 @@ Ustawienia (w `.env`, wspólne dla usług serwera):
 | `SIEM_INGEST_QUEUE_HIGH_WATER` | 0.9 | zajętość kolejki, od której ingest odmawia |
 
 Zaległości widać w logach normalizatora i writera: od 50% zajętości ostrzeżenie „kolejka rośnie”. To sygnał, że trzeba dołożyć kopie.
+
+### Metryki i test obciążenia
+
+Usługi serwera wystawiają metryki Prometheus na porcie 9100 (tylko w sieci Dockera). Prometheus zbiera je co 5 s i sam znajduje dodatkowe kopie usług. W Grafanie jest pulpit **„SIEM – zdrowie potoku”**:
+
+- przepływ zdarzeń przez etapy;
+- odmowy 429 i 503;
+- zajętość i zaległości kolejek;
+- opóźnienie od przyjęcia do zapisu;
+- CPU i pamięć usług;
+- metryki ClickHouse.
+
+Interfejs Prometheusa jest dostępny tylko z VM (`127.0.0.1:9090`, np. przez `ssh -L 9090:127.0.0.1:9090`).
+
+Generator ruchu udaje wielu agentów. Każdy dostaje własny certyfikat, wystawiany w pamięci z `certs.key`, i realistyczną mieszankę zdarzeń Security, System i Application:
+
+```powershell
+go build -o bin/siem-loadgen.exe ./cmd/siem-loadgen
+binsiem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 20 -duration 3m
+```
+
+Co 10 s generator pokazuje zdarzenia wygenerowane i przyjęte, odmowy, opóźnienie odpowiedzi i bufor agentów. Gdy bufor agenta się przepełni (`-backlog`, domyślnie 50 000), zdarzenia przepadają jak w nadpisanym dzienniku Windows i generator je liczy. Zdarzenia testowe mają `agent_id` z prefiksem `agt-load-` i znikają z bazy razem z retencją (5 dni).
 
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).

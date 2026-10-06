@@ -1,6 +1,7 @@
 # Stos laboratoryjny SIEM (etap 1 roadmapy):
 #   agent → siem-ingest (mTLS :8443) → NATS SIEM_RAW → siem-normalizer
 #         → NATS SIEM_EVENTS → siem-writer → ClickHouse → Grafana (:3000)
+#   metryki: usługi :9100 (sieć Dockera) → Prometheus → Grafana „Zdrowie potoku”
 #
 # Hasła w pliku .env (wzór: .env.example). Binaria serwera w ./bin
 # (budowane na stacji: GOOS=linux, patrz README).
@@ -101,6 +102,22 @@ services:
       clickhouse: { condition: service_healthy }
     mem_limit: 512m
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"   # interfejs tylko lokalnie (tunel SSH)
+    mem_limit: 512m
+    logging: *logging
+
   grafana:
     image: grafana/grafana:12.2.0
     restart: unless-stopped
@@ -120,10 +137,12 @@ services:
       - "3000:3000"
     depends_on:
       clickhouse: { condition: service_healthy }
+      prometheus: { condition: service_started }
     mem_limit: 512m
     logging: *logging
 
 volumes:
   nats-data:
+  prometheus-data:
   clickhouse-data:
   grafana-data:
