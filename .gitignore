@@ -12,3 +12,6 @@ bin/
 
 # Sekrety stosu laboratoryjnego
 .env
+
+# Paczki instalacyjne agentów (zawierają klucze prywatne)
+dist/

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -305,4 +306,45 @@ func NewTLSClient(caFile, certFile, keyFile string, timeout time.Duration) (*htt
 	}
 	tr.Proxy = nil // ruch agenta nie powinien przechodzić przez proxy systemowe
 	return &http.Client{Transport: tr, Timeout: timeout}, agentID, nil
+}
+
+// CheckServer sprawdza połączenie z serwerem: TLS, weryfikację certyfikatu
+// serwera i akceptację certyfikatu agenta (mTLS). Wysyła GET na endpoint –
+// serwer odpowiada 405 (endpoint przyjmuje tylko POST), co oznacza, że
+// połączenie i uwierzytelnienie działają.
+func CheckServer(ctx context.Context, client *http.Client, url string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return explainConnError(err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("serwer odrzucił tożsamość agenta (HTTP %d): %s", resp.StatusCode, truncate(body))
+	}
+	return nil
+}
+
+func explainConnError(err error) error {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "certificate signed by unknown authority"):
+		return fmt.Errorf("certyfikat serwera nie jest podpisany przez CA z konfiguracji agenta: %w", err)
+	case strings.Contains(msg, "certificate is valid for"), strings.Contains(msg, "doesn't contain any IP SANs"):
+		return fmt.Errorf("certyfikat serwera nie obejmuje tego adresu – wygeneruj go z właściwym -hosts: %w", err)
+	case strings.Contains(msg, "certificate required"), strings.Contains(msg, "bad certificate"), strings.Contains(msg, "unknown certificate authority"):
+		return fmt.Errorf("serwer odrzucił certyfikat agenta (inne CA, wygasły lub unieważniony): %w", err)
+	case strings.Contains(msg, "refused"), strings.Contains(msg, "odmawia"):
+		return fmt.Errorf("serwer nie przyjmuje połączeń na tym porcie (usługa ingest nie działa lub zapora): %w", err)
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline"):
+		return fmt.Errorf("brak odpowiedzi serwera (zły adres, zapora lub brak trasy w sieci): %w", err)
+	case strings.Contains(msg, "no such host"):
+		return fmt.Errorf("nie można rozwiązać nazwy serwera (DNS): %w", err)
+	}
+	return err
 }

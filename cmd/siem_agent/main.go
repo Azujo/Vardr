@@ -1,6 +1,6 @@
 //go:build windows
 
-// Command siem-agent to agent Windows zbierający zdarzenia z Event Log
+// Command siem_agent to agent Windows zbierający zdarzenia z Event Log
 // i wysyłający je po mTLS do serwera SIEM.
 package main
 
@@ -34,56 +34,120 @@ import (
 	"siem/internal/agent/winevt"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `siem-agent %s
+	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
 
-Użycie:
-  siem-agent [-config plik] run        uruchomienie w konsoli (Ctrl+C kończy)
-  siem-agent [-config plik] install    instalacja usługi Windows (wymaga administratora; program
-                                       musi leżeć w folderze chronionym, np. C:\Program Files\SiemAgent)
-  siem-agent uninstall                 usunięcie usługi
-  siem-agent start | stop              sterowanie usługą
-  siem-agent [-config plik] status     stan usługi, połączenia, kanałów i limitów
-  siem-agent [-config plik] check      walidacja konfiguracji, certyfikatów i uprawnień
-  siem-agent version
+Instalacja (PowerShell lub cmd jako administrator, w folderze z siem_agent.exe,
+ca.crt, agent.crt i agent.key):
+  siem_agent install [-server adres] [-profile workstation|server|dc] [-start-at now|oldest] [-no-start]
+      -server   adres serwera, np. 192.168.88.98 lub siem.firma.local:8443 (bez -server: pytanie)
+      -profile  zestaw zbieranych zdarzeń (domyślnie workstation)
+      -ca, -cert, -key   inne położenie certyfikatów
 
-Domyślny plik konfiguracji: agent.yaml obok pliku wykonywalnego.
-`, version)
+Sterowanie (po instalacji polecenie działa z każdego miejsca):
+  siem_agent status                 stan usługi, połączenia, kanałów i limitów
+  siem_agent start | stop | restart
+  siem_agent test                   sprawdzenie połączenia z serwerem
+  siem_agent set-server <adres>     zmiana adresu serwera (restartuje agenta)
+  siem_agent uninstall [-purge]     odinstalowanie (-purge: także dane i certyfikaty)
+
+Diagnostyka:
+  siem_agent check                  walidacja konfiguracji, certyfikatów i uprawnień
+  siem_agent run                    uruchomienie w konsoli zamiast usługi (Ctrl+C kończy)
+  siem_agent version
+
+Opcja -config <plik> (przed lub po poleceniu) wskazuje inną konfigurację.
+Domyślnie: %s (po instalacji) lub agent.yaml obok programu.
+`, version, installCfg)
+}
+
+// defaultConfigPath: konfiguracja zainstalowanego agenta, a jeśli jej nie ma –
+// agent.yaml obok programu (uruchamianie z folderu, laboratorium).
+func defaultConfigPath() string {
+	if _, err := os.Stat(installCfg); err == nil || errors.Is(err, fs.ErrPermission) {
+		return installCfg
+	}
+	exe, _ := os.Executable()
+	return filepath.Join(filepath.Dir(exe), "agent.yaml")
 }
 
 func main() {
-	exe, _ := os.Executable()
-	cfgPath := flag.String("config", filepath.Join(filepath.Dir(exe), "agent.yaml"), "plik konfiguracji")
-	allowUnsafe := flag.Bool("allow-unsafe-path", false, "install: pozwól na instalację z folderu, do którego mogą pisać zwykli użytkownicy (tylko laboratorium)")
-	flag.Usage = usage
-	flag.Parse()
+	global := flag.NewFlagSet("siem_agent", flag.ExitOnError)
+	global.Usage = usage
+	cfgFlag := global.String("config", "", "plik konfiguracji")
+	_ = global.Parse(os.Args[1:])
 
 	if isSvc, err := svc.IsWindowsService(); err == nil && isSvc {
-		runService(*cfgPath)
+		path := *cfgFlag
+		if path == "" {
+			path = defaultConfigPath()
+		}
+		runService(path)
 		return
 	}
 
-	var err error
-	switch cmd := flag.Arg(0); cmd {
-	case "run":
-		err = runConsole(*cfgPath)
-	case "check":
-		err = check(*cfgPath)
+	args := global.Args()
+	if len(args) == 0 {
+		usage()
+		os.Exit(2)
+	}
+	cmd, rest := args[0], args[1:]
+	cf := flag.NewFlagSet(cmd, flag.ExitOnError)
+	cf.Usage = usage
+	cfgPath := cf.String("config", *cfgFlag, "plik konfiguracji")
+	var opts installOptions
+	purge := new(bool)
+	switch cmd {
 	case "install":
-		err = installService(*cfgPath, *allowUnsafe)
+		cf.StringVar(&opts.server, "server", "", "adres serwera")
+		cf.StringVar(&opts.profile, "profile", "workstation", "profil zdarzeń")
+		cf.StringVar(&opts.startAt, "start-at", "now", "now | oldest")
+		cf.StringVar(&opts.ca, "ca", "", "plik CA")
+		cf.StringVar(&opts.cert, "cert", "", "certyfikat agenta")
+		cf.StringVar(&opts.key, "key", "", "klucz agenta")
+		cf.BoolVar(&opts.noStart, "no-start", false, "nie uruchamiaj usługi po instalacji")
 	case "uninstall":
-		err = uninstallService()
+		purge = cf.Bool("purge", false, "usuń także dane, konfigurację i certyfikaty")
+	}
+	_ = cf.Parse(rest)
+	if *cfgPath == "" {
+		*cfgPath = defaultConfigPath()
+	}
+
+	var err error
+	switch cmd {
+	case "install":
+		err = install(opts)
+	case "uninstall":
+		err = uninstall(*purge)
 	case "start":
 		err = startService()
 	case "stop":
 		err = stopService()
+	case "restart":
+		err = restartService()
 	case "status":
 		err = showStatus(*cfgPath)
+	case "test":
+		err = testConnection(*cfgPath)
+	case "set-server":
+		if cf.NArg() != 1 {
+			err = errors.New("użycie: siem_agent set-server <adres>, np. siem_agent set-server 192.168.88.98")
+		} else {
+			err = setServer(*cfgPath, cf.Arg(0))
+		}
+	case "check":
+		err = check(*cfgPath)
+	case "run":
+		err = runConsole(*cfgPath)
 	case "version":
 		fmt.Println(version)
+	case "help", "-h", "--help", "/?":
+		usage()
 	default:
+		fmt.Fprintf(os.Stderr, "nieznane polecenie %q\n\n", cmd)
 		usage()
 		os.Exit(2)
 	}
@@ -274,10 +338,26 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 }
 
 func showStatus(cfgPath string) error {
-	if err := serviceStatus(); err != nil {
-		fmt.Printf("%s: nie można sprawdzić usługi (%v)\n", serviceName, err)
+	st, err := queryService()
+	switch {
+	case errors.Is(err, errNotInstalled):
+		fmt.Println("Usługa SiemAgent: nie jest zainstalowana")
+	case err != nil:
+		fmt.Printf("Usługa SiemAgent: nie można sprawdzić (%v)\n", err)
+	default:
+		fmt.Printf("Usługa SiemAgent: %s", stateNames[st.State])
+		if st.ProcessId != 0 {
+			fmt.Printf(" (PID %d)", st.ProcessId)
+		}
+		fmt.Println()
 	}
+
 	cfg, err := config.Load(cfgPath)
+	if errors.Is(err, fs.ErrPermission) {
+		fmt.Println("\nSzczegóły (połączenie, kanały, liczniki) są dostępne tylko dla administratora –")
+		fmt.Println("uruchom PowerShell lub cmd jako administrator.")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -287,7 +367,8 @@ func showStatus(cfgPath string) error {
 	case errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("brak pliku statusu %s – agent jeszcze nie był uruchomiony z tą konfiguracją", p)
 	case errors.Is(err, fs.ErrPermission):
-		return fmt.Errorf("brak dostępu do %s – plik jest chroniony, uruchom polecenie jako administrator", p)
+		fmt.Println("\nSzczegóły są dostępne tylko dla administratora – uruchom PowerShell lub cmd jako administrator.")
+		return nil
 	case err != nil:
 		return err
 	}

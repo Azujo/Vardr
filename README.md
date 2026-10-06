@@ -7,7 +7,7 @@ Obecny stan: **etap 1 ukończony – agent Windows → mTLS → NATS JetStream �
 
 ```
 cmd/
-  siem-agent/          agent Windows (konsola + usługa Windows)
+  siem_agent/          agent Windows (instalator, usługa, konsola)
   siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
   siem-pki/            certyfikaty laboratoryjne (CA, serwer, agenci)
 internal/
@@ -37,30 +37,49 @@ bin\siem-pki.exe agent -id agt-lab-pc01
 bin\siem-ingest-stub.exe
 
 # terminal 2 – agent w konsoli
-bin\siem-agent.exe -config configs\agent.lab.yaml check
-bin\siem-agent.exe -config configs\agent.lab.yaml run
+bin\siem_agent.exe -config configs\agent.lab.yaml check
+bin\siem_agent.exe -config configs\agent.lab.yaml run
 ```
 
 Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.json`.
 
-## Usługa Windows (wymaga administratora)
+## Instalacja agenta na komputerze
 
-Program usługi musi leżeć w folderze, do którego zapisywać mogą tylko
-administratorzy – inaczej zwykły użytkownik mógłby podmienić plik uruchamiany
-jako SYSTEM. `install` odmawia instalacji z niebezpiecznej lokalizacji
-(w laboratorium można to obejść flagą `-allow-unsafe-path`).
+1. Na stacji administratora przygotuj paczkę dla komputera (certyfikat z
+   identyfikatorem agenta, CA, program i domyślny adres serwera):
 
-```powershell
-New-Item -ItemType Directory -Force "C:\Program Files\SiemAgent"
-Copy-Item bin\siem-agent.exe "C:\Program Files\SiemAgent\"
-& "C:\Program Files\SiemAgent\siem-agent.exe" -config C:\ProgramData\SiemAgent\agent.yaml install
-& "C:\Program Files\SiemAgent\siem-agent.exe" start
-& "C:\Program Files\SiemAgent\siem-agent.exe" -config C:\ProgramData\SiemAgent\agent.yaml status
-& "C:\Program Files\SiemAgent\siem-agent.exe" uninstall
-```
+   ```powershell
+   go build -o bin\siem_agent.exe .\cmd\siem_agent
+   bin\siem-pki.exe package -id agt-pc01 -server 192.168.88.98
+   ```
 
-Usługa działa jako LocalSystem (dostęp do kanału Security), startuje automatycznie
-i jest restartowana po awarii (5 s / 30 s / 60 s). Log: `<state_dir>\agent.log`.
+   Powstaje folder `dist\agt-pc01` (ignorowany przez git – zawiera klucz prywatny).
+
+2. Skopiuj folder na komputer i w PowerShell lub cmd **jako administrator**:
+
+   ```powershell
+   .\siem_agent.exe install                       # adres z server.txt albo pytanie o adres
+   .\siem_agent.exe install -server 10.0.0.5      # adres podany wprost
+   .\siem_agent.exe install -profile dc           # profil zdarzeń: workstation | server | dc
+   ```
+
+   Instalator kopiuje program do `C:\Program Files\SiemAgent`, konfigurację
+   i certyfikaty do `C:\ProgramData\SiemAgent` (dostęp tylko SYSTEM
+   i Administratorzy), sprawdza połączenie z serwerem, rejestruje usługę
+   `SiemAgent` (start automatyczny, restart po awarii), uruchamia ją i dodaje
+   `C:\Program Files\SiemAgent` do PATH.
+
+3. Sterowanie (nowe okno, z dowolnego folderu):
+
+   | Polecenie | Działanie | Administrator |
+   |---|---|---|
+   | `siem_agent status` | stan usługi; szczegóły: serwer, kanały, liczniki, limity | szczegóły – tak |
+   | `siem_agent start` / `stop` / `restart` | sterowanie usługą | tak |
+   | `siem_agent test` | test połączenia z serwerem (TLS + certyfikaty) | tak |
+   | `siem_agent set-server <adres>` | zmiana adresu, test, restart agenta | tak |
+   | `siem_agent uninstall [-purge]` | odinstalowanie (`-purge`: także dane i certyfikaty) | tak |
+
+Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\ProgramData\SiemAgent\agent.log`.
 
 ## Odporność na usunięcie stanu
 
@@ -98,7 +117,7 @@ po twardym zabiciu agenta, 30% odrzuceń 503 i wyłączeniu serwera – bez brak
 ## Diagnostyka
 
 ```powershell
-bin\siem-agent.exe -config C:\ProgramData\SiemAgent\agent.yaml status
+siem_agent status
 ```
 
 Pokazuje stan usługi, połączenia z serwerem (ostatnia przyjęta paczka, ostatni
@@ -118,7 +137,7 @@ Uprawnienia `0600` nie działają na Windows – pliki dziedziczą ACL folderu,
 a w `C:\ProgramData` zwykli użytkownicy mają prawo odczytu. Agent działający
 jako SYSTEM / administrator przy każdym starcie (i instalator usługi) ustawia
 na katalogu stanu i kluczu prywatnym chronioną listę dostępu: tylko SYSTEM
-i Administratorzy. `siem-agent check` pokazuje, czy klucz i katalog stanu są
+i Administratorzy. `siem_agent check` pokazuje, czy klucz i katalog stanu są
 chronione. Uruchomiony bez uprawnień administratora agent nie zawęża ACL
 (odciąłby sam siebie) i zgłasza to w statusie.
 

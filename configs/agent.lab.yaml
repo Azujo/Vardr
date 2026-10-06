@@ -1,6 +1,6 @@
 # Konfiguracja do testu na własnym komputerze BEZ uprawnień administratora:
 # kanały System i Application są czytelne dla zwykłego użytkownika.
-# Uruchomienie: bin\siem-agent.exe -config configs\agent.lab.yaml run
+# Uruchomienie: bin\siem_agent.exe -config configs\agent.lab.yaml run
 
 server:
   url: https://localhost:8443/v1/ingest

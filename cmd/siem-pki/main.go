@@ -31,6 +31,8 @@ Użycie:
   siem-pki ca     [-out certs]                                  nowy urząd certyfikacji
   siem-pki server [-out certs] [-hosts localhost,127.0.0.1]     certyfikat serwera
   siem-pki agent  [-out certs] [-id agt-...] [-name agent]      certyfikat agenta (CN = identyfikator agenta)
+  siem-pki package -id agt-pc01 [-server 192.168.88.98] [-agent bin/siem_agent.exe] [-out dist] [-ca-dir certs]
+                                                               paczka instalacyjna agenta dla jednego komputera
 `)
 }
 
@@ -44,6 +46,9 @@ func main() {
 	hosts := fs.String("hosts", "localhost,127.0.0.1", "nazwy DNS i adresy IP serwera (po przecinku)")
 	id := fs.String("id", "", "identyfikator agenta (domyślnie losowy agt-...)")
 	name := fs.String("name", "agent", "prefiks nazw plików certyfikatu agenta")
+	caDir := fs.String("ca-dir", "certs", "package: katalog z CA")
+	agentExe := fs.String("agent", filepath.Join("bin", "siem_agent.exe"), "package: plik programu agenta")
+	server := fs.String("server", "", "package: domyślny adres serwera zapisany w paczce")
 	_ = fs.Parse(os.Args[2:])
 
 	var err error
@@ -58,6 +63,16 @@ func main() {
 			agentID = randomAgentID()
 		}
 		err = makeAgent(*out, *name, agentID)
+	case "package":
+		if *id == "" {
+			fmt.Fprintln(os.Stderr, "błąd: podaj -id, np. -id agt-pc01 (identyfikator widoczny w SIEM)")
+			os.Exit(2)
+		}
+		outDir := *out
+		if outDir == "certs" { // domyślny -out dla paczek
+			outDir = "dist"
+		}
+		err = makePackage(*caDir, filepath.Join(outDir, *id), *id, *agentExe, *server)
 	default:
 		usage()
 		os.Exit(2)
@@ -134,7 +149,12 @@ func loadCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 }
 
 func issue(dir, name string, tmpl *x509.Certificate) error {
-	ca, caKey, err := loadCA(dir)
+	return issueTo(dir, dir, name, tmpl)
+}
+
+// issueTo podpisuje certyfikat CA z caDir i zapisuje go w outDir.
+func issueTo(caDir, outDir, name string, tmpl *x509.Certificate) error {
+	ca, caKey, err := loadCA(caDir)
 	if err != nil {
 		return err
 	}
@@ -149,7 +169,7 @@ func issue(dir, name string, tmpl *x509.Certificate) error {
 	if err != nil {
 		return err
 	}
-	return write(dir, name, der, key)
+	return write(outDir, name, der, key)
 }
 
 func makeServer(dir string, hosts []string) error {
@@ -173,13 +193,16 @@ func makeServer(dir string, hosts []string) error {
 	return nil
 }
 
-func makeAgent(dir, name, agentID string) error {
-	tmpl := &x509.Certificate{
+func agentTemplate(agentID string) *x509.Certificate {
+	return &x509.Certificate{
 		Subject:     pkix.Name{CommonName: agentID, Organization: []string{"SIEM Lab Agents"}},
 		NotAfter:    time.Now().AddDate(0, 3, 0), // krótko żyjące certyfikaty agentów
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
-	if err := issue(dir, name, tmpl); err != nil {
+}
+
+func makeAgent(dir, name, agentID string) error {
+	if err := issue(dir, name, agentTemplate(agentID)); err != nil {
 		return err
 	}
 	fmt.Printf("Utworzono certyfikat agenta %s: %s.crt / %s.key\n", agentID, filepath.Join(dir, name), filepath.Join(dir, name))
@@ -200,4 +223,67 @@ func write(dir, name string, der []byte, key *ecdsa.PrivateKey) error {
 	}
 	return os.WriteFile(filepath.Join(dir, name+".key"),
 		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: kb}), 0o600)
+}
+
+// makePackage tworzy folder z wszystkim, czego potrzeba do instalacji
+// agenta na jednym komputerze: program, CA, certyfikat i klucz agenta,
+// opcjonalnie domyślny adres serwera i instrukcję.
+func makePackage(caDir, outDir, agentID, agentExe, server string) error {
+	if _, err := os.Stat(outDir); err == nil {
+		return fmt.Errorf("%s już istnieje – usuń go lub wybierz inny -id", outDir)
+	}
+	if err := os.MkdirAll(outDir, 0o700); err != nil {
+		return err
+	}
+	if err := issueTo(caDir, outDir, "agent", agentTemplate(agentID)); err != nil {
+		return err
+	}
+	if err := copyFile(filepath.Join(caDir, "ca.crt"), filepath.Join(outDir, "ca.crt")); err != nil {
+		return err
+	}
+	if err := copyFile(agentExe, filepath.Join(outDir, "siem_agent.exe")); err != nil {
+		return fmt.Errorf("program agenta (%s): %w – zbuduj go: go build -o bin/siem_agent.exe ./cmd/siem_agent", agentExe, err)
+	}
+	if server != "" {
+		if err := os.WriteFile(filepath.Join(outDir, "server.txt"), []byte(server+"\r\n"), 0o644); err != nil {
+			return err
+		}
+	}
+	serverArg := " -server <adres serwera>"
+	if server != "" {
+		serverArg = ""
+	}
+	instr := strings.ReplaceAll(fmt.Sprintf(`Paczka instalacyjna agenta SIEM: %s
+
+Zawartość:
+  siem_agent.exe   program agenta
+  ca.crt           certyfikat urzędu (weryfikacja serwera)
+  agent.crt        certyfikat tego agenta
+  agent.key        klucz prywatny agenta - TAJNY, nie udostępniaj
+  server.txt       domyślny adres serwera (jeśli został podany)
+
+Instalacja (PowerShell lub cmd uruchomione JAKO ADMINISTRATOR, w tym folderze):
+  .\siem_agent.exe install%s
+
+Po instalacji (nowe okno, jako administrator):
+  siem_agent status
+  siem_agent stop | start | restart
+  siem_agent test
+  siem_agent set-server <adres>
+
+Po instalacji usuń ten folder - kopia klucza jest już w C:\ProgramData\SiemAgent\certs.
+`, agentID, serverArg), "\n", "\r\n")
+	if err := os.WriteFile(filepath.Join(outDir, "INSTRUKCJA.txt"), []byte(instr), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("Utworzono paczkę %s (agent %s)\n", outDir, agentID)
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o600)
 }

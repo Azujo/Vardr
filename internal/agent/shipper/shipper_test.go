@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -185,5 +186,28 @@ func TestQuarantineCapAndStatus(t *testing.T) {
 	}
 	if st := tr.Snapshot(); !st.Server.Healthy || st.Counters.Accepted != 1 {
 		t.Fatalf("status po sukcesie: %+v / %+v", st.Server, st.Counters)
+	}
+}
+
+func TestCheckServer(t *testing.T) {
+	ok := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}))
+	defer ok.Close()
+	if err := CheckServer(context.Background(), ok.Client(), ok.URL+contract.IngestPath); err != nil {
+		t.Fatalf("405 oznacza działające połączenie: %v", err)
+	}
+
+	denied := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "agent_id niezgodny", http.StatusForbidden)
+	}))
+	defer denied.Close()
+	if err := CheckServer(context.Background(), denied.Client(), denied.URL); err == nil {
+		t.Fatal("403 powinno być błędem")
+	}
+
+	// Klient bez zaufania do CA serwera testowego.
+	if err := CheckServer(context.Background(), &http.Client{}, ok.URL); err == nil || !strings.Contains(err.Error(), "CA") {
+		t.Fatalf("nieznane CA: %v", err)
 	}
 }
