@@ -1,0 +1,11 @@
+# Klucze i certyfikaty – nigdy do repozytorium
+certs/
+*.key
+*.pem
+
+# Dane i stan lokalny
+data/
+
+# Binaria
+bin/
+*.exe

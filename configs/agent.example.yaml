@@ -1,0 +1,77 @@
+# Konfiguracja agenta SIEM – profil domyślny (roadmapa, załącznik B).
+# Ścieżki względne są liczone od katalogu tego pliku.
+
+server:
+  url: https://siem.example.local:8443/v1/ingest
+  ca_file: certs/ca.crt        # CA, którym serwer podpisuje certyfikaty
+  cert_file: certs/agent.crt   # certyfikat agenta – CN to identyfikator agenta
+  key_file: certs/agent.key
+  timeout: 30s
+
+# Katalog stanu (bookmarki, log usługi, lokalna kwarantanna).
+# Domyślnie: C:\ProgramData\SiemAgent
+# state_dir: C:\ProgramData\SiemAgent
+
+# Skąd zacząć, gdy dla kanału nie ma zapisanej pozycji:
+#   now    – tylko nowe zdarzenia (domyślnie)
+#   oldest – od najstarszego zdarzenia w dzienniku
+start_at: now
+
+batch:
+  max_events: 500       # paczka po zebraniu tylu zdarzeń…
+  max_bytes: 4194304    # …albo po przekroczeniu tylu bajtów (przed kompresją)…
+  flush_interval: 2s    # …albo po tym czasie
+
+# Kanały i Event ID. Pusta lista event_ids = wszystkie zdarzenia kanału.
+# Wymaga włączenia zaawansowanej polityki audytu przez GPO (patrz README).
+channels:
+  - name: Security
+    event_ids:
+      # logowania, wylogowania, jawne poświadczenia, uprawnienia specjalne
+      - 4624
+      - 4625
+      - 4634
+      - 4647
+      - 4648
+      - 4672
+      # procesy, usługi, zadania harmonogramu
+      - 4688
+      - 4697
+      - 4698
+      - 4702
+      # polityka audytu, wyczyszczenie dziennika
+      - 4719
+      - 1102
+      # konta (serwery, DC)
+      - 4720
+      - 4722
+      - 4723
+      - 4724
+      - 4725
+      - 4726
+      - 4738
+      - 4740
+      - 4767
+      # grupy (serwery, DC)
+      - 4728
+      - 4729
+      - 4732
+      - 4733
+      - 4756
+      - 4757
+      # Kerberos / NTLM (DC)
+      - 4768
+      - 4769
+      - 4771
+      - 4776
+
+  - name: System
+    event_ids: [7036, 7040, 7045]
+
+  - name: Microsoft-Windows-PowerShell/Operational
+    event_ids: [4104]
+
+  # Jeśli Sysmon nie jest zainstalowany, agent zgłosi brak kanału
+  # i będzie sprawdzał go ponownie co 5 minut.
+  - name: Microsoft-Windows-Sysmon/Operational
+    event_ids: [1, 3, 11, 13, 22]
