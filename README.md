@@ -1,6 +1,6 @@
 # SIEM – własny system SIEM
 
-Projekt według roadmapy `Roadmap_wlasnego_SIEM_v1.2.md` (wersja 1.2.2).
+Projekt według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (wersja 1.3).
 Obecny stan: **etap 1 ukończony – agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana**.
 
 ## Struktura

@@ -1,0 +1,566 @@
+# Roadmapa własnego systemu SIEM
+
+Wersja planistyczna 1.3 • 06.10.2026
+
+## Decyzje ustalone (06.10.2026)
+
+| Decyzja | Ustalenie | Szczegóły |
+|---|---|---|
+| Backend magazynu zdarzeń | **ClickHouse** (zmiana z OpenSearch: odporność na duży wolumen, kompresja, szybkie agregacje); dostęp przez warstwę abstrakcji | Sekcje 15, 15a |
+| Kontrakt paczki agent → serwer | `HTTPS POST /v1/ingest` po mTLS, JSON skompresowany gzip/zstd, surowe logi, ACK po trwałym zapisie | Załącznik A |
+| Retencja w laboratorium | Kolejka NATS: 1–2 dni • Magazyn zdarzeń ClickHouse: **5 dni** • Archiwum NIS2: **30 dni** | Sekcje 5, 6 |
+| Domyślna lista zdarzeń Windows | Lista kanałów i Event ID, konfigurowalna per grupa agentów | Załącznik B |
+| Konsola zarządzania | **Własny panel** (React + TypeScript, backend `siem-api` w Go, PostgreSQL) w stylu Wazuh Dashboard; Grafana zostaje do monitorowania samego SIEM | Załącznik C |
+| Wdrażanie agentów | **Rejestracja tokenem**: panel generuje token i instalator bez klucza prywatnego; agent sam tworzy klucz i otrzymuje certyfikat od serwera. Paczki z kluczem (`siem-pki package`) tylko w laboratorium | Załącznik C |
+| Kolejność etapów | Panel (moduły: logowanie, agenci, wdrażanie, zdarzenia) razem z etapem 2 **przed** detekcją | Sekcja 17 |
+
+## 0. Co zmieniło się względem wersji 1.1
+
+- Projekt jest **własny, rozwijany po godzinach przez jedną osobę**. Firma (ok. 2000 osób, ok. 3500 agentów, obecnie ELK SIEM) służy jako wzorzec środowiska, a nie jako miejsce wdrożenia produkcyjnego.
+- **Windows jako pierwszy system**, Linux później.
+- Skala docelowa rośnie z 1000 EPS do szacunkowych **5 000–15 000 EPS** (do zmierzenia).
+- Nowa, niezależna oś konfiguracji: **`raw_archive`**, czyli archiwum oryginalnych logów pod wymagania NIS2, dostępne w obu profilach analizy.
+- Nowe wyróżniki produktu: **edytor dekoderów w panelu**, **agent odporny na wyłączenie i deinstalację** (w realnych granicach), **agent jako kolektor syslog**, **mapowanie tożsamości** do korelacji.
+- Lista integracji z priorytetami. Pierwsze trzy: **Windows/AD, FortiGate, Entra ID/M365**.
+- Detekcja budowana **funkcjami w obu silnikach jednocześnie**, z testami zgodności, a język reguł MVP ograniczony do tego, co oba silniki wykonują identycznie.
+- Harmonogram w **godzinach pracy**, przeliczony na pracę po godzinach.
+
+## 1. Cel projektu
+
+**Cele:**
+
+1. Zbudować działający SIEM, w którym administrator wybiera sposób działania:
+   - **profil wydajnościowy (jak Wazuh)**: analiza w locie, do indeksu trafiają alerty;
+   - **profil pełny (jak Elastic Security)**: wszystkie zdarzenia w indeksie, reguły wykonywane cyklicznie na indeksie.
+2. Niezależnie od profilu zapewnić możliwość **archiwizacji oryginalnych logów w sposób wspierający wymagania NIS2**.
+3. Zweryfikować system w laboratorium odwzorowującym firmę: Windows/AD, IIS, FortiGate, Entra ID/M365, oraz w teście obciążenia symulującym ok. 3500 agentów.
+
+**Nie-cele tej roadmapy:**
+
+- zastąpienie produkcyjnego ELK SIEM w firmie;
+- automatyczna reakcja na endpointach (izolacja hosta, blokowanie kont);
+- obsługa wielu organizacji (multi-tenancy). Pole `siem.tenant_id` zostaje w schemacie, ale izolacja nie jest implementowana.
+
+**Dodatkowy cel poznawczy:** w laboratorium porównać wyniki detekcji własnego systemu z Elastic Security na tych samych danych.
+
+## 2. Założenia
+
+| Obszar | Założenie | Uwagi |
+|---|---|---|
+| Środowisko wzorcowe | ~2000 pracowników, ~3500 agentów (stacje, serwery, urządzenia sieciowe) | Witryny na Kentico i IIS |
+| Obciążenie | 5 000–15 000 EPS średnio, wyższe szczyty | Szacunek, patrz sekcja 3 |
+| Pierwszy system | Windows (stacje, serwery, kontrolery domeny) | Linux w późniejszym etapie |
+| Wykonawca | 1 osoba, po godzinach, ok. 10–15 h tygodniowo | Harmonogram w godzinach, sekcja 17 |
+| Języki | Go (rdzeń, agent), Python (konektory API, narzędzia, dane testowe) | C++ niepotrzebny |
+| Wdrożenie | Laboratorium on-premises (VM + kontenery) | HA poza zakresem MVP |
+| Tryb pracy | Detekcja i analiza, bez automatycznej reakcji | |
+
+## 3. Szacunek obciążenia
+
+| Źródło | Ilość | EPS (orientacyjnie) |
+|---|---|---|
+| Stacje Windows z polityką audytu (+ Sysmon) | ~2000–2500 | 2 000–5 000 |
+| Serwery, w tym IIS | kilkaset | 2 000–5 000 |
+| Kontrolery domeny | kilka | 500–2 000 |
+| FortiGate, F5, GreyCortex | kilka–kilkanaście | 1 000–5 000 |
+| **Razem** | | **~5 000–15 000** |
+
+Przy 10 000 EPS i średnio ~1 KB na zdarzenie: **~864 GB surowych danych dziennie**, ok. 26 TB przez 30 dni, przed narzutem indeksu i replikami. Wzór i metodyka z wersji 1.1 (sekcja 13) pozostają aktualne.
+
+Wnioski projektowe:
+
+- Profil pełny przy indeksowaniu wszystkiego wymaga realnego klastra. To uzasadnia profil wydajnościowy i tanie archiwum obiektowe.
+- **Filtrowanie u źródła** jest elementem produktu: przemyślana polityka audytu i lista Event ID w konfiguracji agenta.
+- Laboratorium nie odtworzy tego ruchu z VM. Potrzebny jest **generator obciążenia** symulujący tysiące agentów (sekcja 16).
+
+## 4. Kluczowe cechy produktu
+
+| Cecha | Opis | Sekcja |
+|---|---|---|
+| Wybór profilu analizy | Strumieniowy albo indeksowy, ten sam model reguł i alertów | 5, 11 |
+| Archiwum NIS2 | Oryginalne logi, ochrona przed modyfikacją, retencja, weryfikacja integralności | 6 |
+| Lekki agent z ochroną | Tylko zbieranie logów, bufor offline, token deinstalacji, wykrywanie wyłączenia | 7 |
+| Agent jako kolektor | Przyjmuje syslog z urządzeń sieciowych i przesyła dalej szyfrowanym kanałem | 7, 9 |
+| Edytor dekoderów | Użytkownik mapuje fragmenty nieznanego logu na pola, z testem na próbce | 10 |
+| Korelacja tożsamości | Jedna osoba / host rozpoznawana w AD, Entra, EDR i firewallu | 12 |
+
+## 5. Architektura i konfiguracja
+
+### Przepływ
+
+```
+źródła (Event Log, pliki, syslog)        API chmurowe (Entra, M365, S1)
+        │                                          │
+     agent (bufor, mTLS)                  konektory API (Python/Go)
+        └──────────────┬───────────────────────────┘
+                       ▼
+            endpoint przyjmujący (mTLS, ACK po trwałym zapisie)
+                       ▼
+            NATS JetStream: strumień surowy
+               ├──► archiwizator ──► magazyn obiektowy WORM + łańcuch hashy   [raw_archive]
+               └──► normalizator + dekodery ──► strumień zdarzeń   (błędy → kwarantanna)
+                                                   ├──► [stream] silnik w locie ──┐
+                                                   └──► zapis paczkami ──► ClickHouse │
+                                                          └──► [index_query] harmonogram reguł
+                                                                                  ▼
+                                                   PostgreSQL: alerty + outbox ──► powiadomienia
+```
+
+Strumień surowy i strumień zdarzeń mają **niezależnych odbiorców** (każdy widzi wszystkie dane), a nie wspólną kolejkę roboczą. Zasada z wersji 1.1 pozostaje bez zmian.
+
+### Trzy niezależne osie konfiguracji
+
+| Oś | Wartości | Znaczenie |
+|---|---|---|
+| `detection_mode` | `stream` / `index_query` | Gdzie wykonują się reguły |
+| `event_storage` | `alerts_only` / `selected` / `indexed_events` | Co trafia do indeksu wyszukiwania |
+| `raw_archive` | `off` / `on` (+ polityka per źródło) | Archiwum oryginałów pod NIS2 |
+
+### Profile w instalatorze
+
+| | **Wydajnościowy (jak Wazuh)** | **Pełny (jak Elastic)** |
+|---|---|---|
+| `detection_mode` | `stream` | `index_query` |
+| `event_storage` | `alerts_only` | `indexed_events` |
+| `raw_archive` | wybór użytkownika | wybór użytkownika |
+
+Zakładka zaawansowana pozwala łączyć osie dowolnie, np. `stream` + `indexed_events`. Przejście z profilu wydajnościowego na pełny może **zaindeksować historię z archiwum**, jeśli archiwum było włączone.
+
+### Gdzie ustawiany jest przełącznik NIS2
+
+- **Config serwera / instalator** określa, czy archiwum *może* działać: backend (MinIO, S3-kompatybilny, dysk lokalny), poświadczenia, tryb blokady (WORM), maksymalna i minimalna retencja.
+- **Panel** określa politykę: włączenie, retencję, wybór źródeł objętych archiwum.
+- Zasady:
+  - włączenie jest proste, a **wyłączenie lub skrócenie retencji wymaga ponownego uwierzytelnienia** (docelowo z MFA), trafia do audytu i generuje alert systemowy;
+  - wyłączenie zatrzymuje archiwizację **nowych** logów, a dane już zarchiwizowane pozostają do końca retencji;
+  - panel pokazuje stan zgodności: archiwum aktywne, wynik ostatniej weryfikacji integralności, źródła bez archiwizacji.
+
+## 6. Archiwum NIS2
+
+**Zakres funkcji:**
+
+- Zapis **oryginalnych** paczek logów (przed normalizacją), skompresowanych, w magazynie obiektowym.
+- **Blokada usuwania i modyfikacji** (Object Lock w trybie compliance lub governance) na czas retencji.
+- **Łańcuch hashy**: każda paczka ma sumę SHA-256, a manifest okresowy (np. godzinowy) zawiera sumy paczek i hash poprzedniego manifestu. Manifesty są dodatkowo zapisywane w PostgreSQL. Usunięcie lub podmiana paczki są wykrywalne.
+- **Okresowa weryfikacja integralności** z wynikiem widocznym w panelu i alertem przy niezgodności.
+- **Polityka per źródło**: które źródła są archiwizowane i z jaką retencją.
+- **Audyt dostępu** do archiwum: kto, kiedy, jaki zakres. Oddzielenie uprawnień administratora aplikacji od możliwości kasowania archiwum.
+- **Eksport dla audytora**: wybrany zakres czasu i źródeł z manifestem i sumami kontrolnymi.
+- **Re-indeksacja / replay** z archiwum do osobnego strumienia, domyślnie bez powiadomień produkcyjnych.
+- **Synchronizacja czasu**: agent raportuje stan synchronizacji zegara, a zdarzenia mają `siem.time_quality`.
+
+**Uwagi prawne (do potwierdzenia):** NIS2 i rozporządzenie wykonawcze 2024/2690 opisują logowanie ogólnie: kategorie zdarzeń, ochrona przed zmianą, ustalona retencja, synchronizacja czasu. Konkretne okresy zależą od krajowej implementacji (nowelizacja ustawy o KSC) i od sektora. Domyślną retencję w produkcie należy uzgodnić z audytorem. W laboratorium przyjmujemy 30 dni dla archiwum (indeks: 5 dni, kolejka: 1–2 dni).
+
+Logi zawierają dane osobowe pracowników. Wdrożenie w firmie wymagałoby uzgodnienia celu, retencji i dostępu z IOD. System powinien to wspierać przez RBAC, retencję i audyt.
+
+## 7. Agent
+
+### Zakres
+
+Agent **tylko zbiera, opisuje pochodzenie, buforuje i wysyła logi**. Nie wykonuje poleceń zdalnych, nie analizuje zdarzeń i nie jest powłoką administracyjną.
+
+### Windows (pierwszy)
+
+- Usługa Windows w Go, jeden plik binarny.
+- Event Log przez subskrypcje z **bookmarkami** (wevtapi: EvtSubscribe, EvtRender, EvtCreateBookmark). Kanały: Security, System, Application, PowerShell/Operational, Sysmon/Operational.
+- Pliki tekstowe z obsługą rotacji, np. **logi IIS w formacie W3C**.
+- **Filtrowanie u źródła**: lista Event ID i kanałów w konfiguracji pobieranej z serwera.
+- Wytyczne do polityki audytu (GPO) i konfiguracji Sysmon dostarczane w dokumentacji. Agent nie włącza brakującej telemetrii sam.
+
+### Bufor offline
+
+- **Najpierw dziennik źródła jako bufor**: bez połączenia agent nie przesuwa bookmarka i po powrocie czyta od miejsca, w którym skończył.
+- **Bufor dyskowy** dla źródeł, które mogą nadpisać dane (rotacja plików, przepełnienie Event Logu) i dla trybu kolektora syslog.
+- Usuwanie z bufora dopiero po **potwierdzeniu trwałego przyjęcia** przez serwer.
+- Konfigurowalny **limit bufora** (np. 1 GB lub X% dysku) i polityka przepełnienia (usuwanie najstarszych / wstrzymanie). Licznik strat zgłaszany serwerowi po połączeniu.
+- **Szyfrowanie bufora na dysku** (Windows: DPAPI w kontekście konta usługi), ACL ograniczające dostęp.
+
+### Ochrona przed wyłączeniem i deinstalacją
+
+Pełnej blokady nie da się zapewnić: lokalny administrator lub SYSTEM zawsze może zatrzymać proces, a ochrona na poziomie jądra (ELAM/PPL) wymaga certyfikacji Microsoft. Cel: **utrudnić i wykryć**.
+
+- Zawężony deskryptor bezpieczeństwa usługi (zwykli użytkownicy i część narzędzi nie zatrzymają usługi).
+- Automatyczny restart po awarii (recovery actions).
+- **Deinstalacja wymaga tokenu**: osobnego, jednorazowego dla każdego agenta, generowanego w panelu i zapisywanego w audycie. Na endpoincie przechowywany jest tylko hash.
+- Agent zgłasza próbę zatrzymania lub deinstalacji, jeśli zdąży.
+- **Serwer alarmuje** przy braku heartbeatu, przerwie w danych ze źródła, zmianie stanu usługi (np. Event ID 7036/7040) i wyczyszczeniu dziennika (Event ID 1102).
+- Jedno wspólne hasło administratora SIEM nie jest używane do deinstalacji, bo jego wyciek odblokowuje wszystkie stacje naraz.
+
+### Zarządzanie flotą (3500 agentów)
+
+- Instalator **MSI z cichą instalacją** i tokenem rejestracyjnym. Wdrażanie przez GPO, Intune lub SCCM.
+- Rejestracja: jednorazowy token → wygenerowanie klucza na hoście → podpisanie certyfikatu przez serwer.
+- **Grupy agentów** (stacje, serwery, DC, kolektory) z osobnymi konfiguracjami.
+- Konfiguracja wersjonowana, pobierana przez połączenie inicjowane przez agenta.
+- Status każdego źródła (uprawnienia, opóźnienie, błędy), a nie tylko heartbeat procesu.
+- Kontrolowane aktualizacje z podpisanymi paczkami i rollbackiem (przed produkcją).
+
+### Tryb kolektora
+
+Agent zainstalowany na wybranym hoście w sieci urządzeń przyjmuje **syslog (UDP/TCP/TLS)** lokalnie i przesyła go dalej po mTLS, z buforem offline. Dzięki temu nieszyfrowany syslog nie przechodzi przez sieć do serwera, a urządzenia sieciowe korzystają z tej samej niezawodności co agenci.
+
+### Linux (później)
+
+journald z kursorem, pliki z rotacją, auditd. Pakiety deb/rpm, usługa systemd.
+
+### Budżet zasobów (cel laboratoryjny do zmierzenia)
+
+Poniżej 100 MiB RSS i średnio poniżej 2% jednego rdzenia przy 100 EPS na stacji. Sysmon zwiększa koszt na endpoincie niezależnie od agenta.
+
+## 8. Komunikacja i tożsamość
+
+- **mTLS, TLS 1.3**: osobny certyfikat dla każdego agenta i konektora, weryfikacja serwera, krótkie certyfikaty z automatyczną rotacją, lista unieważnień.
+- Tożsamość agenta wynika z certyfikatu i rejestru po stronie serwera, nie z pól w przesyłanym logu.
+- Szyfrowanie również między usługami serwera w sieci, szyfrowanie dysków i archiwum.
+- Agent nie wymaga portu przychodzącego. Wszystkie połączenia inicjuje on sam.
+
+## 9. Źródła i integracje
+
+| Źródło | Sposób | Komponent | Priorytet |
+|---|---|---|---|
+| **Windows / AD (DC, serwery, stacje)** | Agent: Event Log, Sysmon | Agent Windows | **MVP – 1** |
+| **FortiGate** | Syslog (key=value) przez agenta-kolektora | Kolektor + dekoder | **MVP – 2** |
+| **Entra ID / M365** | API: Microsoft Graph (logi logowań i audytu), Office 365 Management Activity API | Konektor API | **MVP – 3** |
+| IIS | Agent: pliki W3C | Agent + dekoder | v1 |
+| SentinelOne | API (zdarzenia, alerty) lub syslog | Konektor API | v1 |
+| F5 | Syslog / High Speed Logging | Kolektor + dekoder | v1 |
+| Forcepoint DLP | Syslog (CEF) | Kolektor + dekoder | v1 |
+| GreyCortex Mendel | Syslog | Kolektor + dekoder | v1 |
+| Kentico | Dziennik zdarzeń w bazie danych (do potwierdzenia dla posiadanej wersji) | Konektor SQL | v2 |
+| Linux | Agent: journald, pliki, auditd | Agent Linux | v1 |
+
+**Konektory API:**
+
+- osobne procesy (Python lub Go) z certyfikatem jak agent, wysyłające do tego samego endpointu;
+- trwały kursor (ostatni pobrany znacznik czasu / token), obsługa limitów (429, Retry-After), paginacji i opóźnień po stronie dostawcy;
+- sekrety (client secret / certyfikat aplikacji) w magazynie sekretów, nigdy w logach.
+
+**Uwagi do Entra/M365:** wymagana rejestracja aplikacji w tenancie i zgoda administratora. Część logów logowania przez API wymaga licencji Entra ID P1/P2. Do laboratorium potrzebny jest testowy tenant z odpowiednią licencją lub trialem.
+
+## 10. Normalizacja i edytor dekoderów
+
+### Model
+
+- Wersjonowany podzbiór **ECS** + przestrzeń `siem.*` (pola z wersji 1.1, sekcja 7).
+- Każdy dekoder ma: ID, wersję, **warunek dopasowania** (źródło, `event.dataset`, nazwa programu, prefiks), typ parsera, mapowanie pól, transformacje (np. parsowanie czasu, konwersja typów), właściciela.
+- Logi bez dekodera lub z błędem parsowania trafiają do **kwarantanny** z oryginałem i powodem.
+
+### Typy dekoderów (w kolejności implementacji)
+
+1. JSON: automatyczne rozpoznanie pól, użytkownik tylko mapuje je na ECS.
+2. key=value: FortiGate i wiele urządzeń sieciowych.
+3. Rozdzielane (CSV, TSV, spacje z nagłówkiem): logi IIS W3C (`#Fields`).
+4. CEF / LEEF: Forcepoint, F5, wiele produktów bezpieczeństwa.
+5. Syslog RFC 3164 / 5424 jako warstwa zewnętrzna, z dekoderem treści wewnątrz.
+6. Regex / grok dla wolnego tekstu.
+
+### Edytor w panelu
+
+1. Panel pokazuje logi z kwarantanny pogrupowane według źródła i podobieństwa, np. „2000 nieznanych logów z 10.0.5.1”.
+2. Użytkownik wybiera przykładowy log. System rozpoznaje format i proponuje podział na fragmenty.
+3. Użytkownik zaznacza fragmenty i przypisuje je do pól (`source.ip`, `host.name`, `event.action`, `message` itd.). Panel podpowiada pola ECS i waliduje typ (np. czy fragment jest adresem IP).
+4. **Test na próbce**: dekoder uruchamiany na ostatnich np. 500 logach ze źródła, z wynikiem w rodzaju „pasuje 487/500” i listą niepasujących.
+5. Zapis wersji → publikacja → opcjonalne **ponowne przetworzenie kwarantanny**.
+
+### Zasady bezpieczeństwa
+
+- Dekoder to dane, nie kod. Bez skryptów i bez wywołań zewnętrznych.
+- Regex w silniku RE2 (Go `regexp`, czas liniowy, odporność na ReDoS), limity długości wzorca, liczby pól i rozmiaru wpisu.
+- Testy kontraktowe dla dekoderów wbudowanych na próbkach z repozytorium.
+
+Wbudowane dekodery dla integracji z sekcji 9 są dostarczane z produktem. Edytor służy do pozostałych źródeł i lokalnych poprawek.
+
+## 11. Detekcja
+
+### Format reguł
+
+- **Sigma (YAML) jako model logiczny** z własnymi polami rozszerzeń: `siem.execution_mode`, wyciszenie, klucz deduplikacji, właściciel, instrukcja analizy.
+- Dwa kompilatory w Go:
+  - do **drzewa predykatów** wykonywanego w silniku strumieniowym;
+  - do **zapytań i agregacji** dla indeksu.
+- Nieobsługiwane konstrukcje Sigma są jawnie odrzucane przy imporcie.
+- Python (pySigma, SigmaHQ) może służyć jako narzędzie pomocnicze do testów i porównań, ale nie w ścieżce wykonania.
+
+### Język reguł MVP
+
+Tylko konstrukcje wykonywane **identycznie w obu silnikach**:
+
+1. dopasowanie pojedynczego zdarzenia (warunki na polach, AND/OR/NOT, listy, ograniczony zestaw operatorów);
+2. progi: `count` i `count distinct` w oknie czasowym z kluczem grupowania.
+
+Sekwencje, korelacje między źródłami i reguły na historii dochodzą w v1. Wtedy pojawia się realna potrzeba oznaczania zgodności `stream` / `index_query` / `both`.
+
+### Kolejność budowy
+
+Budowa **funkcjami, nie silnikami**:
+
+1. pojedyncze zdarzenie w obu silnikach + test zgodności;
+2. progi w obu silnikach + test zgodności;
+3. dopiero potem rozszerzenia.
+
+**Zestaw testów zgodności** powstaje przed drugim silnikiem: uporządkowany zbiór zdarzeń + oczekiwane alerty, uruchamiany w CI na obu silnikach. Różnice muszą być udokumentowane w semantyce reguły.
+
+Szczegóły checkpointów, zakładek czasowych, watermarków i deduplikacji: wersja 1.1, sekcje 6 i 8.
+
+### Pierwsze scenariusze detekcji (do laboratorium)
+
+| Scenariusz | Źródła |
+|---|---|
+| Brute force na konto domenowe (4625) | Windows/AD |
+| Password spraying (wiele kont z jednego źródła) | Windows/AD, Entra ID |
+| Dodanie konta do grupy uprzywilejowanej (4728/4732/4756) | Windows/AD |
+| Wyczyszczenie dziennika zdarzeń (1102) | Windows |
+| Podejrzane uruchomienie PowerShell (zakodowane polecenia) | Sysmon / PowerShell |
+| Seria nieudanych logowań VPN | FortiGate |
+| Logowanie z nowego kraju / nietypowej lokalizacji | Entra ID |
+| Utrata heartbeatu agenta lub przerwa w źródle | System SIEM |
+
+## 12. Korelacja i tożsamość encji
+
+Korelacja między źródłami wymaga **mapowania encji**:
+
+- **Użytkownik**: `DOMENA\jkowalski` (AD) ↔ `jan.kowalski@firma.pl` (Entra) ↔ zapis w EDR i VPN. Źródło mapowania: AD/Entra (`sAMAccountName`, UPN, `objectSid`, `onPremisesSecurityIdentifier`), uzupełniane ręcznie.
+- **Host**: nazwa NetBIOS ↔ FQDN ↔ `host.id` agenta ↔ ID w EDR.
+- **Adres IP ↔ host w czasie**: na podstawie DHCP, VPN i logów agenta. Przypisanie jest ważne w przedziale czasu.
+
+Normalizator dopisuje pola wzbogacone, np. `user.siem_id` i `host.siem_id`, więc reguły korelacyjne operują na jednej tożsamości. Mapowanie jest wersjonowane w PostgreSQL. Etap: v1, po trzech integracjach MVP.
+
+## 13. Alerty i powiadomienia
+
+Bez zmian względem wersji 1.1 (sekcja 9): statusy, przypisanie, komentarze, powody zamknięcia, transactional outbox, ochrona przed SSRF. Kanały w MVP: webhook, Discord, e-mail. SMS i eskalacje w v1.
+
+Nowe alerty systemowe:
+
+- utrata heartbeatu / przerwa w źródle / próba deinstalacji agenta;
+- zmiana polityki archiwum NIS2 i błąd weryfikacji integralności;
+- przepełnienie kwarantanny, wzrost liczby nieznanych logów;
+- zaleganie odbiorców strumienia ponad próg.
+
+## 14. Bezpieczeństwo SIEM
+
+Wszystkie punkty z wersji 1.1 (sekcja 10) pozostają. Dodatkowo:
+
+- tokeny deinstalacji per agent, generowane wyłącznie przez rolę administratora, z audytem;
+- operacje na archiwum NIS2 (wyłączenie, skrócenie retencji, eksport) wymagają ponownego uwierzytelnienia;
+- dekodery i reguły to dane bez wykonywalnego kodu, z limitami kosztu;
+- sekrety konektorów API w magazynie sekretów, rotacja, brak zwracania do przeglądarki.
+
+## 15. Stos technologiczny
+
+| Element | Wybór | Uwagi |
+|---|---|---|
+| Agent, endpoint przyjmujący, normalizator, detekcja | Go | Jeden język rdzenia |
+| Konektory API, narzędzia, dane testowe | Python (lub Go) | Osobne procesy przez ten sam endpoint |
+| Trwały strumień | NATS JetStream | Retencja według najwolniejszego odbiorcy |
+| Magazyn zdarzeń | **ClickHouse** (decyzja podjęta) | Kolumnowy, wysoka kompresja, szybkie agregacje, SQL, TTL; słabsze wyszukiwanie pełnotekstowe i brak gotowego UI |
+| Konfiguracja, alerty, stan reguł, manifesty | PostgreSQL | Outbox, wersje |
+| Archiwum | MinIO (S3 + Object Lock) | W produkcji dowolny magazyn S3 z blokadą |
+| Panel | React + TypeScript | Do czasu etapu 5 przeglądanie zdarzeń przez Grafanę z wtyczką ClickHouse |
+| Monitoring | Prometheus + Grafana | Poza samym SIEM |
+
+**OpenSearch vs ClickHouse:** wybrany ClickHouse. Uzasadnienie: docelowe 5 000–15 000 EPS (setki GB dziennie) — kolumnowa kompresja i agregacje (progi, `count distinct`) są kluczowe dla detekcji w profilu pełnym i dla wyszukiwania na dużych zakresach. Dostęp do magazynu odbywa się przez warstwę abstrakcji (interfejs zapisu i zapytań).
+
+### 15a. Model danych w ClickHouse
+
+- **Tabela zdarzeń** `events` (MergeTree): stałe kolumny dla rdzenia ECS (`timestamp`, `event_id`, `event_dataset`, `event_code`, `event_action`, `event_outcome`, `host_name`, `host_id`, `agent_id`, `user_name`, `user_domain`, `source_ip`, `destination_ip`, `process_*` …) z właściwymi typami (`DateTime64`, `IPv6`/`IPv4`, `LowCardinality(String)`).
+- **Pola zmienne** z dekoderów: kolumna `fields Map(LowCardinality(String), String)` (lub typ JSON, jeśli okaże się stabilny w wybranej wersji). Pola często używane w regułach można „awansować” do stałych kolumn bez zmiany reguł (warstwa abstrakcji mapuje nazwę pola ECS na kolumnę lub klucz mapy).
+- **Oryginał** w kolumnie `raw String CODEC(ZSTD)` — wysoka kompresja, nieindeksowany.
+- **Partycjonowanie** po dniu, **`ORDER BY (event_dataset, host_id, timestamp)`** — dobór klucza sortowania do zweryfikowania na typowych zapytaniach.
+- **Retencja:** `TTL timestamp + INTERVAL 5 DAY` (wartość z konfiguracji).
+- **Wyszukiwanie tekstowe:** indeksy pomijające (`tokenbf_v1` / `ngrambf_v1`) na `raw` i `message`; pełnotekstowe indeksy nowszych wersji ClickHouse do oceny. Wyszukiwanie zawsze z zakresem czasu.
+- **Duplikaty:** dostarczanie co najmniej raz może zapisać to samo zdarzenie dwa razy. Deduplikacja przed zapisem po `event_id` (okno w zapisującym procesie) + `ReplacingMergeTree` jako zabezpieczenie; deduplikacja w ClickHouse jest odroczona (przy scalaniu), więc detekcja nie może na niej polegać.
+- **Zapis:** wyłącznie paczkami (np. 10–50 tys. wierszy lub co 1–2 s) przez własny proces czytający z NATS — potwierdzenie wiadomości w NATS dopiero po udanym `INSERT`. Bez wbudowanego silnika tabel NATS, aby zachować kontrolę nad potwierdzeniami.
+- **Alerty** pozostają w PostgreSQL (źródło prawdy); tabela `alerts` w ClickHouse opcjonalnie jako projekcja do analiz.
+- **Detekcja `index_query`:** reguły kompilowane do SQL, z checkpointem i zakładką czasową jak w wersji 1.1.
+
+## 16. Laboratorium
+
+| Element | Cel |
+|---|---|
+| Kontroler domeny (Windows Server) + 2–3 stacje Windows 10/11 | AD, polityki audytu, Sysmon, agent |
+| Serwer Windows z IIS (opcjonalnie Kentico) | Logi W3C, dekoder plików |
+| Host Linux | Serwer SIEM w kontenerach, później agent Linux |
+| FortiGate-VM (wersja ewaluacyjna) lub generator logów FortiGate | Syslog key=value, tryb kolektora |
+| Testowy tenant Entra ID/M365 (z licencją lub trialem P1/P2) | Konektor API |
+| Atomic Red Team / własne skrypty ataków | Weryfikacja scenariuszy detekcji |
+| Publiczne zbiory danych (np. próbki EVTX z atakami, OTRF Security-Datasets) | Testy reguł i dekoderów bez dostępu do danych firmy |
+| **Generator obciążenia w Go** | Symulacja 3500 agentów, 5 000–15 000 EPS, bursty, rozłączenia |
+| Elastic Security (lokalnie) | Porównanie wyników detekcji na tych samych danych |
+
+Żadne logi z firmy nie trafiają do laboratorium bez zgody firmy i anonimizacji.
+
+## 17. Etapy
+
+Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. To budżet planistyczny z dużą niepewnością, uwzględniający naukę Go w trakcie.
+
+| Etap | Godziny | Rezultat | Warunek ukończenia |
+|---|---|---|---|
+| **0. Fundamenty** | 30–50 | Laboratorium AD, repozytorium, CI, kontrakt paczki i ID (załącznik A), schemat zdarzenia v1, polityka audytu wg załącznika B | Zdarzenie 4624 z DC ma opisaną drogę i docelowy kształt ECS |
+| **1. Szkielet end-to-end** | 80–120 | Prosty agent Windows (Event Log + bookmark) → mTLS → JetStream → normalizator → ClickHouse, przeglądanie w Grafanie | Zdarzenie z DC widoczne w wyszukiwarce i śledzone po stałym ID |
+| **2. Niezawodny agent** | 100–150 | Bufor offline, rejestracja tokenem, certyfikaty, heartbeat, konfiguracja z serwera, usługa, MSI | Restart, brak sieci przez 30 min i rotacja nie powodują luk; instalacja MSI w trybie cichym działa |
+| **3. Archiwum NIS2** | 50–80 | Archiwizator, MinIO z Object Lock, łańcuch hashy, weryfikacja, konfiguracja `raw_archive` | Usunięcie lub podmiana paczki wykrywana przez weryfikację; replay z archiwum działa |
+| **4. Detekcja – podstawy** | 100–150 | Kompilator Sigma, pojedyncze zdarzenia i progi w **obu** silnikach, testy zgodności, alerty w PostgreSQL, outbox, Discord/webhook | Scenariusze z sekcji 11 (Windows) wykryte w obu profilach; restart i replay nie dublują alertów |
+| **5. Panel MVP** | 150–250 | Alerty (triage), reguły (wersje, test), agenci (status, grupy, tokeny deinstalacji), przełącznik archiwum, profile, RBAC, audyt | Pełny scenariusz: atak w labie → alert → powiadomienie → analiza → zamknięcie |
+| **6. Kolektor syslog + dekodery** | 100–150 | Tryb kolektora w agencie, dekoder FortiGate, edytor dekoderów (JSON, kv, CSV/W3C), kwarantanna z ponownym przetwarzaniem | Logi FortiGate i IIS znormalizowane; nowy dekoder utworzony w panelu przechodzi test na próbce |
+| **7. Entra/M365 + korelacja** | 80–120 | Konektor API z kursorem, mapowanie tożsamości, pierwsze reguły międzyźródłowe | Password spraying wykryty łącznie z AD i Entra; logowanie VPN i Entra powiązane z tą samą osobą |
+| **8. Ochrona agenta + skala** | 100–150 | Zabezpieczenie usługi, token deinstalacji, alerty sabotażu; test obciążenia generatorem | Próba zatrzymania lub deinstalacji wykryta; 24 h przy docelowym EPS bez narastającego zalegania |
+| **Razem do MVP** | **790–1220** | | **ok. 20–30 miesięcy przy 12 h/tydz.** |
+
+**Stan i zmiana kolejności (aktualizacja 1.3):**
+
+- Etap 1 **ukończony**: agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana, na VM w Proxmoxie.
+- Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
+- Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
+
+**Kamienie milowe po drodze:**
+
+- po etapie 1 (ok. 3–4 miesiące): logi Windows widoczne w wyszukiwarce;
+- po etapie 4 (ok. 9–14 miesięcy): działająca detekcja w obu profilach i archiwum NIS2. To pierwsza wersja, którą da się sensownie pokazać;
+- po etapie 5: używalny produkt z własnym panelem.
+
+**Po MVP (v1/v2):** agent Linux, SentinelOne, F5, Forcepoint, GreyCortex, Kentico, sekwencje i korelacje zaawansowane, edytor regex/grok, SMS i eskalacje, MFA przez dostawcę tożsamości, polityki per `event.dataset`, aktualizacje agentów, HA.
+
+**Sposoby skrócenia ścieżki, jeśli zajdzie potrzeba:**
+
+- w etapie 1 jako tymczasowy agent użyć gotowego kolektora (Vector, Fluent Bit) z tym samym kontraktem endpointu;
+- etap 5 ograniczyć do alertów i agentów, a reguły edytować jako pliki w repozytorium;
+- etap 8 (test skali) przesunąć za etap 4, jeśli wyniki etapu 0 sugerują problemy wydajnościowe.
+
+## 18. Pierwsze kroki (etap 0)
+
+1. Postawić laboratorium: DC + 1 stacja Windows, polityka audytu (logowania, zarządzanie kontami, grupami, procesy), Sysmon z gotową konfiguracją bazową.
+2. Wyeksportować próbkę zdarzeń (4624, 4625, 4688, 4720, 4728, 1102, Sysmon 1/3) i opisać ich mapowanie na ECS.
+3. Kontrakt paczki: ustalony w załączniku A; w etapie 0 zamienić go na schemat JSON i testy kontraktowe.
+4. Utworzyć repozytorium (monorepo Go: `agent/`, `server/ingest`, `server/normalizer`, `server/detection`, `server/archiver`, `pkg/schema`, `deploy/compose`), CI z testami i lintem.
+5. `docker compose`: NATS JetStream, ClickHouse, Grafana (wtyczka ClickHouse), PostgreSQL, MinIO.
+6. Prosty skrypt PKI: CA laboratoryjne, certyfikat serwera, certyfikat testowego agenta.
+7. Zapisać podjęte decyzje (ClickHouse, kontrakt paczki, retencje) jako ADR w repozytorium.
+8. Licznik zdarzeń wysłanych, przyjętych i zapisanych od pierwszego dnia.
+
+## 19. Testy i bramki jakości
+
+Wszystkie testy z wersji 1.1 (sekcja 12) pozostają. Dodatkowo:
+
+| Test | Oczekiwany wynik |
+|---|---|
+| Zgodność silników | Ta sama reguła na tym samym zbiorze daje ten sam logiczny alert w `stream` i `index_query` |
+| Integralność archiwum | Usunięcie, podmiana lub zmiana kolejności paczki wykryte przez weryfikację |
+| Wyłączenie archiwum | Wymaga ponownego uwierzytelnienia, tworzy wpis audytu i alert; dane historyczne nienaruszone |
+| Zmiana profilu | Przejście wydajnościowy → pełny z re-indeksacją z archiwum bez duplikatów |
+| Zatrzymanie / deinstalacja agenta | Bez tokenu deinstalacja się nie udaje; zatrzymanie usługi wykryte po stronie serwera |
+| Przepełnienie Event Logu w trakcie przerwy sieci | Zdarzenia zachowane w buforze dyskowym albo jawny licznik strat |
+| Dekoder z panelu | Test na próbce pokazuje poprawny wynik dopasowania; złośliwy regex nie blokuje normalizatora |
+| Kolektor syslog | Przerwa łączności kolektor–serwer nie gubi logów z urządzeń w granicach bufora |
+| Konektor API | 429/5xx, wygaśnięcie sekretu i opóźnione logi dostawcy obsłużone bez luk w kursorze |
+| Skala | 3500 symulowanych agentów, docelowe EPS przez 24 h, uzgodniony burst, masowe ponowne połączenie po awarii serwera |
+
+## 20. Ryzyka i otwarte decyzje
+
+| Ryzyko / decyzja | Wpływ | Działanie |
+|---|---|---|
+| Czas: projekt po godzinach, 1 osoba | Utrata tempa, porzucenie | Kamienie milowe z działającym rezultatem co 2–4 miesiące; ścieżki skrócenia z sekcji 17 |
+| Dwa silniki detekcji | Rozjazd semantyki, podwójna praca | Ograniczony język MVP, budowa funkcjami, testy zgodności w CI |
+| Koszt magazynu przy 5–15 tys. EPS | Sprzęt w profilu pełnym | ClickHouse, filtrowanie u źródła (załącznik B), archiwum zamiast pełnego magazynu |
+| Wyszukiwanie tekstowe w ClickHouse | Wolniejszy threat hunting po dowolnym tekście | Indeksy pomijające, obowiązkowy zakres czasu, normalizacja kluczowych pól do kolumn |
+| Brak gotowego UI dla ClickHouse | Brak wyszukiwarki przed etapem 5 | Grafana jako rozwiązanie tymczasowe, wyszukiwarka w panelu etapu 5 |
+| Agent Windows (wevtapi, usługa, MSI) w Go | Krzywa nauki | Etap 1 z prostym agentem; w razie blokady tymczasowo gotowy kolektor |
+| Dostęp do Entra/M365 z licencją | Brak danych do etapu 7 | Wcześnie zorganizować testowy tenant lub trial |
+| Wymagania NIS2 dla retencji | Błędne wartości domyślne | Retencja konfigurowalna, wartości uzgadniane z audytorem |
+| Dane osobowe w logach | Zgodność z RODO przy wdrożeniu | RBAC, retencja, audyt; uzgodnienie z IOD przed użyciem danych firmy |
+
+**Decyzje etapu 0:** podjęte 06.10.2026, patrz tabela „Decyzje ustalone” na początku dokumentu.
+
+## Załącznik A. Kontrakt paczki agent → serwer (v1)
+
+**Transport:** `HTTPS POST /v1/ingest`, TLS 1.3 z mTLS (certyfikat agenta), nagłówek `Content-Encoding: gzip` lub `zstd`, `Content-Type: application/json`.
+
+**Paczkowanie:** agent wysyła paczkę po zebraniu limitu zdarzeń (domyślnie 500) albo po upływie czasu (domyślnie 2 s), w zależności co nastąpi pierwsze. Limit rozmiaru paczki po dekompresji: domyślnie 5 MiB.
+
+**Treść paczki:**
+
+```json
+{
+  "schema": "siem.batch.v1",
+  "batch_id": "UUIDv7",
+  "agent_id": "agt-...",
+  "sent_at": "2026-10-06T14:03:12.481Z",
+  "events": [
+    {
+      "id": "agt-...:Security:g1:1849302",
+      "source": "wineventlog:Security",
+      "read_at": "2026-10-06T14:03:11.902Z",
+      "raw": "<Event xmlns=...>...</Event>"
+    }
+  ]
+}
+```
+
+- `agent_id` w paczce służy tylko diagnostyce. Serwer ustala tożsamość agenta wyłącznie na podstawie certyfikatu i odrzuca paczki z niezgodnym `agent_id`.
+- `id` zdarzenia = `{agent_id}:{kanał}:g{generacja}:{EventRecordID}`. Generacja rośnie, gdy agent wykryje reset numeracji dziennika (np. numer rekordu mniejszy niż w bookmarku po odtworzeniu dziennika). Dla plików: `{agent_id}:{ścieżka-hash}:g{generacja}:{offset}`.
+- Agent wysyła **surowy log** (`raw`): dla Event Log XML, dla plików linię tekstu. Parsowanie i normalizacja odbywają się na serwerze.
+- Ponowne wysłanie paczki używa tego samego `batch_id` i tych samych `id` zdarzeń. Serwer deduplikuje po `id`.
+
+**Odpowiedzi serwera:**
+
+| Kod | Znaczenie | Zachowanie agenta |
+|---|---|---|
+| `200` + `{"batch_id": "...", "status": "accepted"}` | Paczka trwale zapisana w kolejce | Przesunięcie bookmarka, usunięcie z bufora |
+| `400` | Paczka niepoprawna | Bez ponawiania; paczka do lokalnej kwarantanny, licznik błędów |
+| `401` / `403` | Certyfikat nieważny, unieważniony lub niezgodna tożsamość | Wstrzymanie wysyłki, ponowna próba rejestracji / zgłoszenie stanu |
+| `413` | Paczka za duża | Podział paczki na mniejsze i ponowienie |
+| `429` / `503` | Przeciążenie | Ponowienie po `Retry-After` lub z rosnącym opóźnieniem i losowym rozproszeniem |
+| `5xx`, timeout, brak połączenia | Błąd przejściowy | Ponowienie z rosnącym opóźnieniem; dane pozostają w źródle / buforze |
+
+## Załącznik B. Domyślna lista zdarzeń Windows
+
+Agent zbiera tylko zdarzenia, które Windows faktycznie zapisuje: większość wymaga włączenia zaawansowanej polityki audytu przez GPO (dla 4688 także opcji „Include command line in process creation events”), a kanał Sysmon wymaga instalacji Sysmona z konfiguracją. Lista jest konfigurowalna z serwera per grupa agentów (stacje / serwery / kontrolery domeny).
+
+| Kanał | Event ID | Opis | Grupy |
+|---|---|---|---|
+| Security | 4624, 4625, 4634, 4647, 4648 | Logowania udane i nieudane, wylogowania, logowanie jawnymi poświadczeniami | wszystkie |
+| Security | 4672 | Logowanie z uprawnieniami specjalnymi | wszystkie |
+| Security | 4688 | Utworzenie procesu (z linią poleceń) | wszystkie |
+| Security | 4697, 4698, 4702 | Instalacja usługi, utworzenie i zmiana zadania harmonogramu | wszystkie |
+| Security | 4719, 1102 | Zmiana polityki audytu, wyczyszczenie dziennika | wszystkie |
+| Security | 4720, 4722–4726, 4738, 4740, 4767 | Cykl życia kont, zmiany, blokady i odblokowania | serwery, DC |
+| Security | 4728, 4729, 4732, 4733, 4756, 4757 | Zmiany członkostwa w grupach | serwery, DC |
+| Security | 4768, 4769, 4771, 4776 | Kerberos (TGT, TGS, błędy pre-auth), walidacja NTLM | DC |
+| System | 7036, 7040, 7045 | Zmiana stanu usługi, zmiana typu uruchamiania, nowa usługa | wszystkie |
+| Microsoft-Windows-PowerShell/Operational | 4104 | Script Block Logging | wszystkie |
+| Microsoft-Windows-Sysmon/Operational | 1, 3, 11, 13, 22 | Procesy, połączenia sieciowe, pliki, rejestr, DNS | wszystkie (jeśli Sysmon zainstalowany) |
+
+**Celowo pomijane domyślnie (szum):** 5156/5158 (połączenia filtrowane przez WFP), 4656/4658/4663 (uchwyty i dostęp do obiektów), 4662 na DC (dostęp do obiektów katalogu, włączany tylko pod konkretne detekcje, np. DCSync, z filtrem). Można je włączyć regułą per grupa.
+
+## Załącznik C. Panel zarządzania i wdrażanie agentów
+
+### Architektura
+
+```
+przeglądarka ──HTTPS──► siem-api (Go) ──► PostgreSQL  (użytkownicy, role, agenci, grupy, tokeny, reguły, alerty, audyt)
+                             │        └──► ClickHouse  (wyszukiwanie zdarzeń)
+agent ──mTLS──► siem-ingest  └──► rejestracja agentów, heartbeat, konfiguracja dla agentów
+```
+
+- Frontend: React + TypeScript, serwowany przez `siem-api`.
+- Grafana pozostaje narzędziem do monitorowania potoku (kolejki, opóźnienia, zapis), nie konsolą analityka.
+
+### Moduły w kolejności
+
+| # | Moduł | Zakres |
+|---|---|---|
+| 1 | Logowanie i role | konta lokalne, role administrator / analityk / tylko odczyt, audyt zmian; później SSO (Entra ID) i MFA |
+| 2 | Agenci | lista (online/offline z heartbeatu, wersja, host), szczegóły (zdalny odpowiednik `siem_agent status`), grupy, profile zdarzeń, limity zasobów |
+| 3 | Wdrażanie | tokeny rejestracyjne (jednorazowe lub czasowe, przypisane do grupy), pobranie instalatora (ZIP, później MSI budowane `wixl`), gotowe polecenie instalacji |
+| 4 | Zdarzenia | wyszukiwarka po ClickHouse z filtrami, szczegóły zdarzenia (pola, surowy XML) |
+| 5 | Alerty, reguły, dekodery, archiwum NIS2 | razem z etapami 3–4 |
+
+### Rejestracja agenta tokenem
+
+1. Administrator w panelu tworzy token dla grupy (np. „Stacje – księgowość”, profil `workstation`, ważny 7 dni lub N użyć).
+2. Panel udostępnia instalator: program, adres serwera, certyfikat CA i token – **bez klucza prywatnego**.
+3. `siem_agent install -server <adres> -token <token>`: agent generuje klucz lokalnie (nigdy nie opuszcza komputera), wysyła prośbę o certyfikat (CSR) z tokenem przez TLS z weryfikacją CA.
+4. Serwer sprawdza token, nadaje identyfikator agenta, podpisuje krótkoterminowy certyfikat, zapisuje agenta w grupie i zwraca konfigurację.
+5. Dalej: heartbeat co ~60 s (stan, wersja, limity, błędy kanałów), automatyczne odnawianie certyfikatu, konfiguracja pobierana z serwera.
+6. Ten sam token może posłużyć do wdrożenia masowego (GPO / Intune / SCCM) w ramach limitu użyć.
+
+`siem-pki package` (paczka z kluczem prywatnym) pozostaje wyłącznie narzędziem laboratoryjnym.
