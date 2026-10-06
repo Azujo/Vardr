@@ -132,10 +132,7 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 			wait = backoff(s.MinBackoff*10, s.AuthBackoff, attempt)
 
 		case status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable:
-			wait = retryAfter
-			if wait <= 0 {
-				wait = backoff(s.MinBackoff, s.MaxBackoff, attempt)
-			}
+			wait = afterServerHint(retryAfter, backoff(s.MinBackoff, s.MaxBackoff, attempt))
 			s.Log.Info("serwer przeciążony, czekam", "status", status, "wait", wait)
 
 		default:
@@ -237,6 +234,18 @@ func encode(b *contract.Batch) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// afterServerHint wylicza czekanie po odpowiedzi 429/503: co najmniej tyle,
+// ile prosi serwer (Retry-After), plus losowe 0–50%, żeby tysiące agentów
+// odrzuconych w tej samej chwili nie wróciły w tej samej sekundzie. Przy
+// kolejnych odmowach rośnie jak zwykły backoff.
+func afterServerHint(retryAfter, fallback time.Duration) time.Duration {
+	if retryAfter <= 0 {
+		return fallback
+	}
+	d := max(retryAfter, fallback)
+	return d + time.Duration(rand.Int64N(int64(d/2)+1))
 }
 
 // backoff zwraca opóźnienie wykładnicze z losowym rozproszeniem (połowa–całość).

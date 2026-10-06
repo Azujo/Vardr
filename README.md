@@ -216,8 +216,8 @@ agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► sie
 |---|---|
 | `siem-ingest` | endpoint `/v1/ingest` (mTLS); potwierdza paczkę po zapisie w JetStream (deduplikacja po `batch_id`, okno 10 min) |
 | `siem-normalizer` | XML Windows → wspólny schemat (`event.dataset`, `event.action`, użytkownik, IP, proces, pola `fields`); błędne zdarzenia → kwarantanna |
-| `siem-writer` | zapis do ClickHouse paczkami (do 20 000 wierszy / 1 s), potwierdzenie z kolejki dopiero po udanym INSERT |
-| NATS JetStream | trwała kolejka, retencja 48 h – bufor na czas awarii odbiorców |
+| `siem-writer` | zapis do ClickHouse paczkami (do 20 000 wierszy / 1 s), potwierdzenie z kolejki dopiero po udanym INSERT; wiersz odrzucony przez bazę → kwarantanna, reszta zapisana |
+| NATS JetStream | trwała kolejka zaległości (wiadomość znika po przetworzeniu); po zapełnieniu ingest odmawia przyjęcia, nic nie jest usuwane po cichu |
 | ClickHouse | `siem.events` (retencja 5 dni od przyjęcia), `siem.quarantine`; konta `siem_writer` (zapis) i `grafana` (odczyt) |
 | Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
 
@@ -249,5 +249,24 @@ Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z
 ```bash
 docker compose up -d --scale normalizer=3 --scale writer=2
 ```
+
+### Przeciążenie
+
+Gdy agentów jest za dużo naraz albo dalsze etapy nie nadążają, serwer **odkłada przyjęcie**, a nie gubi dane. Dane czekają u agentów.
+
+- Za dużo paczek w obsłudze naraz: `429` z `Retry-After: 5`.
+- Kolejka zajęta w 90%: `503` z `Retry-After: 30`.
+- Agent czeka co najmniej tyle, ile poda serwer, plus losowe 0–50%.
+
+Ustawienia (w `.env`, wspólne dla usług serwera):
+
+| Zmienna | Domyślnie | Znaczenie |
+|---|---|---|
+| `SIEM_QUEUE_RAW_MAX_MB` | 8192 | pojemność kolejki surowych paczek |
+| `SIEM_QUEUE_EVENTS_MAX_MB` | 8192 | pojemność kolejki znormalizowanych zdarzeń |
+| `SIEM_INGEST_MAX_INFLIGHT` | 64 | paczki obsługiwane jednocześnie przez jedną kopię ingest |
+| `SIEM_INGEST_QUEUE_HIGH_WATER` | 0.9 | zajętość kolejki, od której ingest odmawia |
+
+Zaległości widać w logach normalizatora i writera: od 50% zajętości ostrzeżenie „kolejka rośnie”. To sygnał, że trzeba dołożyć kopie.
 
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).

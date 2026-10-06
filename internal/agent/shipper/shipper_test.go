@@ -211,3 +211,24 @@ func TestCheckServer(t *testing.T) {
 		t.Fatalf("nieznane CA: %v", err)
 	}
 }
+
+func TestRetryAfterIsJittered(t *testing.T) {
+	seen := map[time.Duration]bool{}
+	for i := 0; i < 50; i++ {
+		d := afterServerHint(30*time.Second, 2*time.Second)
+		if d < 30*time.Second || d > 45*time.Second {
+			t.Fatalf("%v poza zakresem 30–45 s", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 10 {
+		t.Fatal("czekanie po Retry-After powinno być rozproszone")
+	}
+	// Przy kolejnych odmowach dłuższy backoff wygrywa z krótką wskazówką serwera.
+	if d := afterServerHint(5*time.Second, time.Minute); d < time.Minute {
+		t.Fatalf("%v < backoff", d)
+	}
+	if d := afterServerHint(0, 3*time.Second); d != 3*time.Second {
+		t.Fatalf("bez Retry-After: %v", d)
+	}
+}

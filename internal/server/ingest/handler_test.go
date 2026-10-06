@@ -116,3 +116,52 @@ func TestRejectsInvalidBatch(t *testing.T) {
 		t.Errorf("pusta treść zdarzenia: %d", code)
 	}
 }
+
+func TestAdmissionThrottlesBeforeReadingBody(t *testing.T) {
+	p := &fakePub{}
+	h := newHandler(p)
+	h.Admission = NewAdmission(1, 0.9)
+
+	// Jedno miejsce zajęte przez trwającą paczkę → kolejna dostaje 429.
+	if h.Admission.Acquire() != Admit {
+		t.Fatal("pierwsze miejsce powinno być wolne")
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, request(t, "agt-1", batch("agt-1")))
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("zajęty serwer: %d %q", w.Code, w.Header().Get("Retry-After"))
+	}
+	h.Admission.Release()
+
+	// Kolejka prawie pełna → 503 z dłuższym Retry-After, nic nie trafia do kolejki.
+	h.Admission.SetFill(0.95)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, request(t, "agt-1", batch("agt-1")))
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "30" || len(p.got) != 0 {
+		t.Fatalf("pełna kolejka: %d %q got=%d", w.Code, w.Header().Get("Retry-After"), len(p.got))
+	}
+
+	// Po opróżnieniu kolejki przyjmujemy, a miejsca są zwalniane.
+	h.Admission.SetFill(0.1)
+	if code, _ := serve(h, request(t, "agt-1", batch("agt-1"))); code != 200 || h.Admission.InFlight() != 0 {
+		t.Fatalf("po odblokowaniu: %d in_flight=%d", code, h.Admission.InFlight())
+	}
+	if h.Throttled.Load() != 2 || h.Rejected.Load() != 0 {
+		t.Fatalf("throttled=%d rejected=%d", h.Throttled.Load(), h.Rejected.Load())
+	}
+}
+
+func TestQueueFullOnPublishBlocksFurtherBatches(t *testing.T) {
+	full := errors.New("maximum bytes exceeded")
+	h := newHandler(&fakePub{err: full})
+	h.Admission = NewAdmission(0, 0.9)
+	h.QueueFull = func(err error) bool { return errors.Is(err, full) }
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, request(t, "agt-1", batch("agt-1")))
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") != "30" {
+		t.Fatalf("%d %q", w.Code, w.Header().Get("Retry-After"))
+	}
+	if h.Admission.Fill() < 0.9 {
+		t.Fatal("po odmowie zapisu kolejka powinna zostać oznaczona jako pełna")
+	}
+}

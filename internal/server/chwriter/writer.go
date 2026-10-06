@@ -41,41 +41,43 @@ func Open(ctx context.Context, addr, user, password string) (*Writer, error) {
 	return &Writer{Conn: conn}, nil
 }
 
-// Insert zapisuje zdarzenia i wpisy kwarantanny (każdy rodzaj jednym INSERT-em).
-func (w *Writer) Insert(ctx context.Context, events []model.Event, quarantine []model.Quarantined) error {
-	if len(events) > 0 {
-		b, err := w.Conn.PrepareBatch(ctx, insertEvents)
-		if err != nil {
-			return err
+// InsertEvents zapisuje zdarzenia jednym INSERT-em. Błąd konwersji wiersza
+// po stronie klienta jest błędem danych (patrz IsDataError).
+func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	b, err := w.Conn.PrepareBatch(ctx, insertEvents)
+	if err != nil {
+		return err
+	}
+	for _, e := range events {
+		if err := b.Append(e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
+			e.Provider, e.Action, e.Outcome, e.HostName, e.UserName, e.UserDomain, ipv6(e.SourceIP), e.ProcessName,
+			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality); err != nil {
+			_ = b.Abort()
+			return &dataError{fmt.Errorf("zdarzenie %s: %w", e.ID, err)}
 		}
-		for _, e := range events {
-			if err := b.Append(e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
-				e.Provider, e.Action, e.Outcome, e.HostName, e.UserName, e.UserDomain, ipv6(e.SourceIP), e.ProcessName,
-				e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality); err != nil {
-				_ = b.Abort()
-				return fmt.Errorf("zdarzenie %s: %w", e.ID, err)
-			}
-		}
-		if err := b.Send(); err != nil {
+	}
+	return b.Send()
+}
+
+// InsertQuarantine zapisuje wpisy kwarantanny jednym INSERT-em.
+func (w *Writer) InsertQuarantine(ctx context.Context, quarantine []model.Quarantined) error {
+	if len(quarantine) == 0 {
+		return nil
+	}
+	b, err := w.Conn.PrepareBatch(ctx, insertQuarantine)
+	if err != nil {
+		return err
+	}
+	for _, q := range quarantine {
+		if err := b.Append(q.Ingested, q.AgentID, q.EventID, q.Source, q.Reason, q.Raw); err != nil {
+			_ = b.Abort()
 			return err
 		}
 	}
-	if len(quarantine) > 0 {
-		b, err := w.Conn.PrepareBatch(ctx, insertQuarantine)
-		if err != nil {
-			return err
-		}
-		for _, q := range quarantine {
-			if err := b.Append(q.Ingested, q.AgentID, q.EventID, q.Source, q.Reason, q.Raw); err != nil {
-				_ = b.Abort()
-				return err
-			}
-		}
-		if err := b.Send(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return b.Send()
 }
 
 // ipv6 zamienia tekst na adres dla kolumny IPv6 (IPv4 jako ::ffff:a.b.c.d).

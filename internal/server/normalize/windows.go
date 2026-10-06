@@ -56,6 +56,15 @@ const (
 // ta wartość jest oznaczany jako podejrzany (time_quality=future).
 const MaxFutureSkew = 5 * time.Minute
 
+// Zakres dat przyjmowanych w kolumnie timestamp. Czas spoza zakresu (np.
+// zerowy FILETIME = 1601 r. albo zepsuty zegar) zastępujemy czasem
+// przyjęcia i oznaczamy time_quality=invalid – inaczej ClickHouse
+// odrzuciłby wiersz albo zapisał bzdurną datę.
+var (
+	minEventTime = time.Date(1970, 1, 2, 0, 0, 0, 0, time.UTC)
+	maxEventTime = time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC)
+)
+
 // ErrUnsupportedSource oznacza źródło, dla którego nie ma dekodera.
 var ErrUnsupportedSource = errors.New("brak dekodera dla źródła")
 
@@ -155,6 +164,9 @@ func eventTime(systemTime string, ingested time.Time) (time.Time, string) {
 		return ingested, "missing"
 	}
 	t = t.UTC()
+	if t.Before(minEventTime) || !t.Before(maxEventTime) {
+		return ingested, "invalid"
+	}
 	if t.Sub(ingested) > MaxFutureSkew {
 		return t, "future"
 	}

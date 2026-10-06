@@ -30,7 +30,15 @@ func run(log *slog.Logger) error {
 	ctx, stop := svc.Context()
 	defer stop()
 
-	retention, err := svc.EnvDuration("SIEM_QUEUE_RETENTION", 48*time.Hour)
+	limits, err := svc.QueueLimits()
+	if err != nil {
+		return err
+	}
+	maxInFlight, err := svc.EnvInt("SIEM_INGEST_MAX_INFLIGHT", 64)
+	if err != nil {
+		return err
+	}
+	highWater, err := svc.EnvFloat("SIEM_INGEST_QUEUE_HIGH_WATER", 0.9)
 	if err != nil {
 		return err
 	}
@@ -40,7 +48,7 @@ func run(log *slog.Logger) error {
 	}
 	defer nc.Close()
 	if err := svc.Retry(ctx, log, "konfiguracja strumieni NATS", func() error {
-		return bus.EnsureStreams(ctx, js, retention)
+		return bus.EnsurePipeline(ctx, js, limits)
 	}); err != nil {
 		return err
 	}
@@ -51,7 +59,13 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	h := &ingest.Handler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, PublishTimeout: 10 * time.Second}
+	adm := ingest.NewAdmission(maxInFlight, highWater)
+	go adm.WatchFill(ctx, log, 2*time.Second, func(ctx context.Context) (float64, error) {
+		f, err := bus.StreamFill(ctx, js, bus.StreamRaw)
+		return f.Ratio, err
+	})
+	h := &ingest.Handler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, PublishTimeout: 10 * time.Second,
+		Admission: adm, QueueFull: bus.IsQueueFull}
 	mux := http.NewServeMux()
 	mux.Handle("POST "+contract.IngestPath, h)
 	srv := &http.Server{
@@ -71,7 +85,8 @@ func run(log *slog.Logger) error {
 			select {
 			case <-t.C:
 				log.Info("statystyki", "batches", h.Batches.Load(), "events", h.Events.Load(),
-					"duplicates", h.Duplicates.Load(), "rejected", h.Rejected.Load())
+					"duplicates", h.Duplicates.Load(), "rejected", h.Rejected.Load(),
+					"throttled", h.Throttled.Load(), "in_flight", adm.InFlight(), "queue_fill", adm.Fill())
 			case <-ctx.Done():
 				return
 			}
@@ -84,7 +99,8 @@ func run(log *slog.Logger) error {
 		_ = srv.Shutdown(sh)
 	}()
 
-	log.Info("nasłuchuję", "addr", srv.Addr, "queue_retention", retention)
+	log.Info("nasłuchuję", "addr", srv.Addr, "raw_queue_max_bytes", limits.RawMaxBytes,
+		"max_in_flight", maxInFlight, "queue_high_water", highWater)
 	if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -87,3 +87,16 @@ func Retry(ctx context.Context, log *slog.Logger, what string, fn func() error) 
 		}
 	}
 }
+
+// EnvFloat czyta liczbę zmiennoprzecinkową.
+func EnvFloat(key string, def float64) (float64, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", key, err)
+	}
+	return f, nil
+}

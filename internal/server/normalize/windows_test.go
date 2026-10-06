@@ -97,6 +97,12 @@ func TestTimeQuality(t *testing.T) {
 	if e, _ := Event(ev("wineventlog:Application", missing), "a", ingested); e.TimeQuality != "missing" || !e.Timestamp.Equal(ingested) {
 		t.Errorf("brak czasu: %q %v", e.TimeQuality, e.Timestamp)
 	}
+	for _, bad := range []string{"1601-01-01T00:00:00Z", "2999-01-01T00:00:00Z"} {
+		x := strings.Replace(app999, "2026-10-06T11:16:20.9860775Z", bad, 1)
+		if e, _ := Event(ev("wineventlog:Application", x), "a", ingested); e.TimeQuality != "invalid" || !e.Timestamp.Equal(ingested) {
+			t.Errorf("czas %s: %q %v", bad, e.TimeQuality, e.Timestamp)
+		}
+	}
 }
 
 func TestBatchQuarantinesBadEventsWithoutStoppingOthers(t *testing.T) {

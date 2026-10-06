@@ -30,7 +30,7 @@ func run(log *slog.Logger) error {
 	ctx, stop := svc.Context()
 	defer stop()
 
-	retention, err := svc.EnvDuration("SIEM_QUEUE_RETENTION", 48*time.Hour)
+	limits, err := svc.QueueLimits()
 	if err != nil {
 		return err
 	}
@@ -60,22 +60,18 @@ func run(log *slog.Logger) error {
 	defer nc.Close()
 	var cons jetstream.Consumer
 	if err := svc.Retry(ctx, log, "konsument SIEM_EVENTS", func() error {
-		if err := bus.EnsureStreams(ctx, js, retention); err != nil {
+		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
 			return err
 		}
 		var err error
-		cons, err = js.CreateOrUpdateConsumer(ctx, bus.StreamEvents, jetstream.ConsumerConfig{
-			Durable:       "clickhouse-writer",
-			AckPolicy:     jetstream.AckExplicitPolicy,
-			AckWait:       2 * time.Minute,
-			MaxAckPending: 1024,
-		})
+		cons, err = js.Consumer(ctx, bus.StreamEvents, bus.ConsumerWriter)
 		return err
 	}); err != nil {
 		return err
 	}
 
 	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), maxRows: maxRows}
+	go svc.WatchQueue(ctx, log, js, bus.StreamEvents, bus.ConsumerWriter, 0.5, 0.8)
 	log.Info("zapis do ClickHouse uruchomiony", "max_rows", maxRows, "flush_every", flushEvery)
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
@@ -84,7 +80,7 @@ func run(log *slog.Logger) error {
 	for ctx.Err() == nil {
 		select {
 		case <-statsTick.C:
-			log.Info("statystyki", "rows", p.rows, "quarantine", p.quarantined, "duplicates_skipped", p.dups, "insert_errors", p.errors)
+			log.Info("statystyki", "rows", p.rows, "quarantine", p.quarantined, "rejected_by_db", p.rejected, "duplicates_skipped", p.dups, "insert_errors", p.errors)
 		default:
 		}
 		msgs, err := cons.Fetch(64, jetstream.FetchMaxWait(flushEvery/2))
@@ -122,7 +118,7 @@ type pipeline struct {
 	events     []model.Event
 	quarantine []model.Quarantined
 
-	rows, quarantined, dups, errors int64
+	rows, quarantined, rejected, dups, errors int64
 }
 
 func (p *pipeline) add(msg jetstream.Msg) {
@@ -148,24 +144,37 @@ func (p *pipeline) add(msg jetstream.Msg) {
 }
 
 // flush zapisuje zgromadzone wiersze; po sukcesie potwierdza wiadomości,
-// po błędzie prosi o ponowne dostarczenie (nic nie ginie).
+// po awarii prosi o ponowne dostarczenie (nic nie ginie). Wiersze, których
+// ClickHouse nie przyjmie z powodu treści, trafiają do kwarantanny.
 func (p *pipeline) flush(ctx context.Context) {
-	err := p.w.Insert(ctx, p.events, p.quarantine)
+	defer func() { p.msgs, p.events, p.quarantine = nil, nil, nil }()
+
+	rejected, err := chwriter.Bisect(ctx, p.events, p.w.InsertEvents, func(ok []model.Event) {
+		// Zapisane od razu oznaczamy – po ponownym dostarczeniu zostaną pominięte.
+		for _, e := range ok {
+			p.seen.Add(e.ID)
+		}
+		p.rows += int64(len(ok))
+	})
+	quarantine := p.quarantine
+	for _, r := range rejected {
+		p.rejected++
+		p.log.Error("ClickHouse odrzucił zdarzenie – przenoszę do kwarantanny", "event_id", r.Event.ID, "err", r.Err)
+		quarantine = append(quarantine, r.Quarantined())
+	}
+	if err == nil {
+		err = p.w.InsertQuarantine(ctx, quarantine)
+	}
 	if err != nil {
 		p.errors++
 		p.log.Error("zapis do ClickHouse nieudany – ponowię", "rows", len(p.events), "err", err)
 		for _, m := range p.msgs {
 			_ = m.NakWithDelay(5 * time.Second)
 		}
-	} else {
-		for _, e := range p.events {
-			p.seen.Add(e.ID)
-		}
-		for _, m := range p.msgs {
-			_ = m.Ack()
-		}
-		p.rows += int64(len(p.events))
-		p.quarantined += int64(len(p.quarantine))
+		return
 	}
-	p.msgs, p.events, p.quarantine = nil, nil, nil
+	for _, m := range p.msgs {
+		_ = m.Ack()
+	}
+	p.quarantined += int64(len(quarantine))
 }

@@ -34,7 +34,7 @@ func run(log *slog.Logger) error {
 	ctx, stop := svc.Context()
 	defer stop()
 
-	retention, err := svc.EnvDuration("SIEM_QUEUE_RETENTION", 48*time.Hour)
+	limits, err := svc.QueueLimits()
 	if err != nil {
 		return err
 	}
@@ -46,16 +46,11 @@ func run(log *slog.Logger) error {
 
 	var cons jetstream.Consumer
 	if err := svc.Retry(ctx, log, "konsument SIEM_RAW", func() error {
-		if err := bus.EnsureStreams(ctx, js, retention); err != nil {
+		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
 			return err
 		}
 		var err error
-		cons, err = js.CreateOrUpdateConsumer(ctx, bus.StreamRaw, jetstream.ConsumerConfig{
-			Durable:       "normalizer",
-			AckPolicy:     jetstream.AckExplicitPolicy,
-			AckWait:       time.Minute,
-			MaxAckPending: 256,
-		})
+		cons, err = js.Consumer(ctx, bus.StreamRaw, bus.ConsumerNormalizer)
 		return err
 	}); err != nil {
 		return err
@@ -64,6 +59,7 @@ func run(log *slog.Logger) error {
 	var batches, events, quarantined atomic.Int64
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
+	go svc.WatchQueue(ctx, log, js, bus.StreamRaw, bus.ConsumerNormalizer, 0.5, 0.8)
 	log.Info("normalizator uruchomiony")
 
 	for ctx.Err() == nil {

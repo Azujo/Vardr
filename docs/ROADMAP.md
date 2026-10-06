@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3.2 • 06.10.2026
+Wersja planistyczna 1.3.3 • 06.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -8,7 +8,7 @@ Wersja planistyczna 1.3.2 • 06.10.2026
 |---|---|---|
 | Backend magazynu zdarzeń | **ClickHouse** (zmiana z OpenSearch: odporność na duży wolumen, kompresja, szybkie agregacje); dostęp przez warstwę abstrakcji | Sekcje 15, 15a |
 | Kontrakt paczki agent → serwer | `HTTPS POST /v1/ingest` po mTLS, JSON skompresowany gzip/zstd, surowe logi, ACK po trwałym zapisie | Załącznik A |
-| Retencja w laboratorium | Kolejka NATS: 1–2 dni • Magazyn zdarzeń ClickHouse: **5 dni** • Archiwum NIS2: **30 dni** | Sekcje 5, 6 |
+| Retencja w laboratorium | Kolejka NATS: tylko nieprzetworzone wiadomości, limit rozmiaru zamiast wieku (zmiana 1.3.3, ustalenie K1) • Magazyn zdarzeń ClickHouse: **5 dni** • Archiwum NIS2: **30 dni** | Sekcje 5, 6 |
 | Domyślna lista zdarzeń Windows | Lista kanałów i Event ID, konfigurowalna per grupa agentów | Załącznik B |
 | Konsola zarządzania | **Własny panel** (React + TypeScript, backend `siem-api` w Go, PostgreSQL) w stylu Wazuh Dashboard; Grafana zostaje do monitorowania samego SIEM | Załącznik C |
 | Wdrażanie agentów | **Rejestracja tokenem**: panel generuje token i instalator bez klucza prywatnego; agent sam tworzy klucz i otrzymuje certyfikat od serwera. Paczki z kluczem (`siem-pki package`) tylko w laboratorium | Załącznik C |
@@ -414,6 +414,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
+- **Etap 1.5 – postęp:** K1, K2 i W3 zrobione (06.10.2026); K1 sprawdzone na VM, K2 i W3 testami jednostkowymi. Dalej: K4, W1, W2, K3, M1.
 
 **Kamienie milowe po drodze:**
 
@@ -702,7 +703,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | Element | Wartość | Przy 10 000 zdarzeń/s |
 |---|---|---|
 | Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | 21 µs (System 7045), 33 µs (Security 4625) | jedna kopia na VM ok. 10–20 tys./s – **pierwsze wąskie gardło** |
-| Kolejka NATS (oba strumienie, retencja 48 h) | ok. 200 B na zdarzenie | ok. 340 GB – przy limicie 20 GB i dysku 48 GB |
+| Kolejka NATS (oba strumienie) | ok. 200 B na zdarzenie | przy retencji 48 h było to ok. 340 GB; po poprawce K1 kolejka trzyma tylko zaległości: 8 GB na strumień ≈ 2 h zatoru przy 10 000/s |
 | ClickHouse | 55 B na zdarzenie (dane laboratoryjne, kompresja ok. 15×); surowy XML 52%, pola 28% miejsca | ok. 47 GB/dzień, ok. 235 GB przy 5 dniach; logi Security kompresują się gorzej |
 | Dziennik Windows jako bufor agenta | System i Application 20 MB (domyślnie); Security domyślnie też 20 MB | stacja (2 zdarzenia/s) ok. 2 h zapasu, serwer (1000/s) ok. 15 s |
 | Agent | ok. 23 µs CPU na zdarzenie, 22–26 MB pamięci roboczej | 1000 zdarzeń/s ≈ 2,3% jednego rdzenia |
@@ -713,8 +714,8 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 | # | Problem | Skutek | Poprawka |
 |---|---|---|---|
-| K1 | Strumienie NATS: `discard: old`, retencja czasowa, limit 20 GB | przy dłuższej awarii writera lub bazy kolejka usuwa najstarsze **nieprzetworzone** dane, a agenci mają już potwierdzenie – cicha utrata | retencja do potwierdzenia przez wszystkich odbiorców, limit rozmiaru z `discard: new` (ingest → 503), limit przyjmowania w ingest (429), alarm zaległości |
-| K2 | Writer ponawia całą paczkę po błędzie ClickHouse | jeden wadliwy wiersz (np. data poza zakresem przy zepsutym zegarze komputera) zatrzymuje zapis wszystkich agentów | dzielenie paczki do wykrycia wadliwego wiersza → kwarantanna; korekta dat spoza zakresu |
+| K1 | Strumienie NATS: `discard: old`, retencja czasowa, limit 20 GB | przy dłuższej awarii writera lub bazy kolejka usuwa najstarsze **nieprzetworzone** dane, a agenci mają już potwierdzenie – cicha utrata | retencja do potwierdzenia przez wszystkich odbiorców, limit rozmiaru z `discard: new` (ingest → 503), limit przyjmowania w ingest (429), alarm zaległości. **Zrobione 06.10.2026** |
+| K2 | Writer ponawia całą paczkę po błędzie ClickHouse | jeden wadliwy wiersz (np. data poza zakresem przy zepsutym zegarze komputera) zatrzymuje zapis wszystkich agentów | dzielenie paczki do wykrycia wadliwego wiersza → kwarantanna; korekta dat spoza zakresu. **Zrobione 06.10.2026** |
 | K3 | Dziennik Windows (domyślnie 20 MB) jest jedynym buforem agenta | przy przerwie w łączności dłuższej niż minuty (serwer) lub godziny (stacja) zdarzenia zostają nadpisane | GPO: Security 512 MB–1 GB na serwerach i DC; ostrzeżenie agenta o zbliżającym się nadpisaniu; bufor dyskowy (etap 2) |
 | K4 | Brak testu obciążenia i metryk | nie wiadomo, gdzie system pęknie ani kiedy dokładać workery | generator ruchu symulujący tysiące agentów, metryki Prometheus, pulpit „zdrowie potoku” |
 
@@ -724,7 +725,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 |---|---|---|
 | W1 | Normalizator przetwarza sekwencyjnie w jednym wątku | pula wątków w procesie + kopie usługi; zmierzyć generatorem |
 | W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności |
-| W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest |
+| W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest. **Zrobione 06.10.2026** |
 | W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo) |
 | W5 | Konfiguracja agenta wyłącznie lokalna | konfiguracja z serwera per grupa (etap 2) |
 | W6 | Każdy element w jednej kopii na jednej VM | laboratorium: kopia VM w Proxmoxie; HA w etapie 8 |
@@ -736,3 +737,35 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 - M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn;
 - M5: Grafana i ingest otwarte na całą sieć lokalną, brak zapory na VM;
 - M6: brak raportowania synchronizacji czasu przez agenta (zaobserwowana różnica ok. 1 s).
+
+### Etap 1.5 – wykonane poprawki
+
+**K1 – kolejka bez cichych strat (06.10.2026)**
+
+- Oba strumienie mają retencję *interest*: wiadomość znika dopiero po potwierdzeniu przez wszystkich odbiorców, więc kolejka zawiera tylko zaległości. Limit rozmiaru z `discard: new` (domyślnie 8 GB na strumień), bez limitu wieku.
+- Odbiorców (normalizator, writer) zakładają wszystkie usługi przy starcie, także ingest. Przy retencji *interest* wiadomość opublikowana przed powstaniem odbiorcy zostałaby od razu usunięta.
+- Ingest sprawdza dwie rzeczy, zanim odczyta treść paczki:
+  - więcej niż 64 paczki w obsłudze naraz → 429 i `Retry-After: 5`;
+  - kolejka zajęta w ≥ 90% (pomiar co 2 s) albo NATS odmówił zapisu → 503 i `Retry-After: 30`.
+- Normalizator i writer co minutę sprawdzają zajętość swojej kolejki. Od 50% zgłaszają ostrzeżenie, od 80% błąd z podpowiedzią, żeby dołożyć kopie.
+- Ustawienia (zmienne środowiskowe, te same dla wszystkich usług): `SIEM_QUEUE_RAW_MAX_MB`, `SIEM_QUEUE_EVENTS_MAX_MB`, `SIEM_QUEUE_MAX_AGE` (domyślnie brak), `SIEM_INGEST_MAX_INFLIGHT`, `SIEM_INGEST_QUEUE_HIGH_WATER`.
+- **Test na VM:** kolejka zmniejszona do 1 MB, normalizator zatrzymany, agent z pustym stanem wysyła całą historię (System 20 462 + Application 19 880 zdarzeń).
+  - Kolejka zatrzymała się na 1 026 791 z 1 048 576 B.
+  - Ingest odpowiadał 503, a agent czekał 30–45 s (Retry-After plus rozrzut).
+  - Po włączeniu normalizatora w ClickHouse znalazło się **40 342 z 40 342** zdarzeń, kwarantanna pusta.
+- Zmiana retencji istniejących strumieni (limits → interest) przeszła bez ich usuwania. Już przetworzone wiadomości zniknęły od razu, co zwolniło miejsce na dysku.
+
+**K2 – wadliwy wiersz nie zatrzymuje zapisu (06.10.2026)**
+
+- Writer rozróżnia błąd danych od awarii:
+  - błąd danych: błąd konwersji wiersza albo wyjątek ClickHouse z listy kodów „złe dane”;
+  - awaria: każdy inny błąd, w tym nieznany kod.
+- Przy błędzie danych writer dzieli paczkę na połowy aż do pojedynczych wierszy. Złe wiersze trafiają do `siem.quarantine` z oryginałem i powodem, reszta jest zapisywana. Przy 2 złych wierszach na 1000 to mniej niż 45 prób zapisu (test jednostkowy).
+- Lista kodów jest celowo zachowawcza: nieznany błąd jest ponawiany. Pomyłka w drugą stronę wysłałaby poprawne zdarzenia do kwarantanny, np. przy braku pamięci serwera.
+- Normalizator zastępuje czasem przyjęcia czas zdarzenia spoza zakresu 1970–2200 (np. zerowy FILETIME) i oznacza go `time_quality=invalid`.
+- Sprawdzone testami jednostkowymi. Na VM nie da się łatwo wywołać odrzucenia wiersza, bo korekta dat usuwa jedyną znaną przyczynę.
+
+**W3 – rozrzut ponowień (06.10.2026)**
+
+- Agent czeka co najmniej tyle, ile podaje `Retry-After`, plus losowe 0–50%. Przy kolejnych odmowach czas rośnie jak zwykły backoff.
+- Dzięki temu tysiące agentów odrzuconych w tej samej chwili nie wracają w tej samej sekundzie.

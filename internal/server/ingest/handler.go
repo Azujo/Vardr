@@ -39,14 +39,39 @@ type Handler struct {
 	Log *slog.Logger
 	// PublishTimeout ogranicza czas oczekiwania na potwierdzenie z NATS.
 	PublishTimeout time.Duration
+	// Admission (opcjonalna) ogranicza przyjęcia przy przeciążeniu.
+	Admission *Admission
+	// QueueFull (opcjonalna) rozpoznaje błąd publikacji „kolejka pełna”.
+	QueueFull func(error) bool
 
-	Batches, Events, Duplicates, Rejected atomic.Int64
+	// Rejected: paczki odrzucone (błąd agenta lub danych);
+	// Throttled: paczki odesłane do ponowienia (429/503).
+	Batches, Events, Duplicates, Rejected, Throttled atomic.Int64
 }
+
+// Wskazówki Retry-After (sekundy). Agent dodaje do nich losowy rozrzut,
+// żeby tysiące agentów nie wróciły w tej samej sekundzie.
+const (
+	retryBusy      = 5
+	retryQueueFull = 30
+	retryNoQueue   = 5
+)
 
 func (h *Handler) reply(w http.ResponseWriter, code int, resp contract.Response) {
 	if code != http.StatusOK {
 		h.Rejected.Add(1)
 	}
+	h.write(w, code, resp)
+}
+
+// throttle odsyła paczkę do ponowienia za retryAfter sekund.
+func (h *Handler) throttle(w http.ResponseWriter, code, retryAfter int, batchID, msg string) {
+	h.Throttled.Add(1)
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+	h.write(w, code, contract.Response{BatchID: batchID, Error: msg})
+}
+
+func (h *Handler) write(w http.ResponseWriter, code int, resp contract.Response) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -63,6 +88,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.reply(w, http.StatusForbidden, contract.Response{Error: "niepoprawny identyfikator agenta w certyfikacie"})
 		return
 	}
+
+	// Kontrola przyjęcia przed odczytem treści – odmowa jest tania.
+	switch h.Admission.Acquire() {
+	case Busy:
+		h.throttle(w, http.StatusTooManyRequests, retryBusy, "", "serwer zajęty, ponów później")
+		return
+	case QueueFull:
+		h.throttle(w, http.StatusServiceUnavailable, retryQueueFull, "", "kolejka pełna, ponów później")
+		return
+	}
+	defer h.Admission.Release()
 
 	// Odczyt skompresowanej treści (przekazywana dalej bez ponownej kompresji).
 	compressed, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxCompressed))
@@ -113,10 +149,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	dup, err := h.Pub.PublishRaw(ctx, agentID, b.BatchID, time.Now().UTC(), compressed)
 	if err != nil {
-		// Kolejka niedostępna – agent ponowi, dane czekają u niego.
+		// Kolejka pełna lub niedostępna – agent ponowi, dane czekają u niego.
+		if h.QueueFull != nil && h.QueueFull(err) {
+			h.Admission.SetFill(1) // od razu, bez czekania na kolejny pomiar
+			h.throttle(w, http.StatusServiceUnavailable, retryQueueFull, b.BatchID, "kolejka pełna, ponów później")
+			return
+		}
 		h.Log.Error("zapis paczki w kolejce nieudany", "agent_id", agentID, "batch_id", b.BatchID, "err", err)
-		w.Header().Set("Retry-After", strconv.Itoa(2))
-		h.reply(w, http.StatusServiceUnavailable, contract.Response{BatchID: b.BatchID, Error: "kolejka chwilowo niedostępna"})
+		h.throttle(w, http.StatusServiceUnavailable, retryNoQueue, b.BatchID, "kolejka chwilowo niedostępna")
 		return
 	}
 	h.Batches.Add(1)

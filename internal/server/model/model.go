@@ -29,7 +29,7 @@ type Event struct {
 	Raw         string            `json:"raw"`
 	Truncated   bool              `json:"truncated"`
 	Parser      string            `json:"parser_version"`
-	TimeQuality string            `json:"time_quality"` // "" | "missing" | "future"
+	TimeQuality string            `json:"time_quality"` // "" | "missing" | "future" | "invalid"
 }
 
 // Quarantined to zdarzenie, którego nie udało się znormalizować.

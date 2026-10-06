@@ -12,7 +12,10 @@ x-server: &server
   user: "1000:1000"          # właściciel plików certyfikatów na VM
   environment: &server-env
     SIEM_NATS_URL: nats://nats:4222
-    SIEM_QUEUE_RETENTION: 48h
+    # Pojemność kolejek (MB). Po zapełnieniu ingest odpowiada 503, a dane
+    # czekają u agentów – nic nie jest usuwane po cichu (roadmapa, zał. E).
+    SIEM_QUEUE_RAW_MAX_MB: ${SIEM_QUEUE_RAW_MAX_MB:-8192}
+    SIEM_QUEUE_EVENTS_MAX_MB: ${SIEM_QUEUE_EVENTS_MAX_MB:-8192}
   depends_on:
     nats:
       condition: service_healthy
@@ -70,6 +73,10 @@ services:
     image: siem/ingest:lab
     volumes:
       - ./certs:/certs:ro
+    environment:
+      <<: *server-env
+      SIEM_INGEST_MAX_INFLIGHT: ${SIEM_INGEST_MAX_INFLIGHT:-64}
+      SIEM_INGEST_QUEUE_HIGH_WATER: ${SIEM_INGEST_QUEUE_HIGH_WATER:-0.9}
     ports:
       - "8443:8443"
     mem_limit: 256m

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -21,6 +22,10 @@ const (
 	StreamEvents     = "SIEM_EVENTS"
 	SubjectEventsAll = "siem.events.>"
 
+	// Trwali konsumenci (jeden na etap; repliki etapu dzielą się wiadomościami).
+	ConsumerNormalizer = "normalizer"
+	ConsumerWriter     = "clickhouse-writer"
+
 	// Nagłówki wiadomości.
 	HdrAgent      = "Siem-Agent"
 	HdrBatch      = "Siem-Batch"
@@ -29,7 +34,25 @@ const (
 
 	// MaxMessageBytes musi być ≤ max_payload w konfiguracji serwera NATS.
 	MaxMessageBytes = 8 << 20
+
+	// errCodeStoreFailed: JetStream odmówił zapisu (np. „maximum bytes
+	// exceeded” przy Discard New).
+	errCodeStoreFailed jetstream.ErrorCode = 10077
 )
+
+// Limits określa pojemność kolejek. Po zapełnieniu strumień odrzuca NOWE
+// wiadomości (Discard New) – ingest odpowiada wtedy agentom 503, a dane
+// czekają u agentów. Nic nie jest usuwane po cichu.
+type Limits struct {
+	RawMaxBytes    int64
+	EventsMaxBytes int64
+	// MaxAge > 0 usuwa nieprzetworzone wiadomości starsze niż MaxAge
+	// (ostatnia linia obrony dysku). 0 = bez limitu wieku (zalecane).
+	MaxAge time.Duration
+}
+
+// DefaultLimits pasuje do laboratorium (max_file_store 20 GB w nats.conf).
+var DefaultLimits = Limits{RawMaxBytes: 8 << 30, EventsMaxBytes: 8 << 30}
 
 // RawSubject / EventsSubject budują temat dla agenta.
 func RawSubject(agentID string) string    { return "siem.raw." + agentID }
@@ -49,24 +72,93 @@ func Connect(url, name string) (*nats.Conn, jetstream.JetStream, error) {
 	return nc, js, nil
 }
 
-// EnsureStreams tworzy lub aktualizuje strumienie. Retencja zgodna
-// z roadmapą: kolejka 1–2 dni (tu 48 h), okno deduplikacji 10 min.
-func EnsureStreams(ctx context.Context, js jetstream.JetStream, retention time.Duration) error {
-	for _, cfg := range []jetstream.StreamConfig{
-		{Name: StreamRaw, Subjects: []string{SubjectRawAll}},
-		{Name: StreamEvents, Subjects: []string{SubjectEventsAll}},
-	} {
-		cfg.Storage = jetstream.FileStorage
-		cfg.Retention = jetstream.LimitsPolicy // każdy odbiorca czyta niezależnie
-		cfg.MaxAge = retention
-		cfg.Duplicates = 10 * time.Minute
-		cfg.MaxMsgSize = MaxMessageBytes
-		cfg.Discard = jetstream.DiscardOld
+// StreamConfigs zwraca konfigurację obu strumieni.
+//
+// Retencja Interest: wiadomość znika dopiero, gdy potwierdzą ją wszyscy
+// konsumenci – kolejka zawiera wyłącznie zaległości, a jej zapełnienie
+// oznacza zator, nie upływ czasu. Discard New + MaxBytes zamienia zator
+// w odmowę przyjęcia (backpressure) zamiast cichej utraty najstarszych
+// danych (ustalenie K1 w roadmapie, załącznik E).
+func StreamConfigs(l Limits) []jetstream.StreamConfig {
+	cfgs := []jetstream.StreamConfig{
+		{Name: StreamRaw, Subjects: []string{SubjectRawAll}, MaxBytes: l.RawMaxBytes},
+		{Name: StreamEvents, Subjects: []string{SubjectEventsAll}, MaxBytes: l.EventsMaxBytes},
+	}
+	for i := range cfgs {
+		cfgs[i].Storage = jetstream.FileStorage
+		cfgs[i].Retention = jetstream.InterestPolicy
+		cfgs[i].Discard = jetstream.DiscardNew
+		cfgs[i].MaxAge = l.MaxAge
+		cfgs[i].Duplicates = 10 * time.Minute
+		cfgs[i].MaxMsgSize = MaxMessageBytes
+	}
+	return cfgs
+}
+
+// ConsumerConfigs zwraca konfigurację trwałych konsumentów (klucz: strumień).
+func ConsumerConfigs() map[string]jetstream.ConsumerConfig {
+	return map[string]jetstream.ConsumerConfig{
+		StreamRaw: {
+			Durable:       ConsumerNormalizer,
+			AckPolicy:     jetstream.AckExplicitPolicy,
+			AckWait:       time.Minute,
+			MaxAckPending: 256,
+		},
+		StreamEvents: {
+			Durable:       ConsumerWriter,
+			AckPolicy:     jetstream.AckExplicitPolicy,
+			AckWait:       2 * time.Minute,
+			MaxAckPending: 1024,
+		},
+	}
+}
+
+// EnsurePipeline tworzy lub aktualizuje strumienie i ich konsumentów.
+// Wywołują ją wszystkie programy serwera: przy retencji Interest
+// wiadomość opublikowana, zanim istnieje konsument, zostałaby od razu
+// usunięta – dlatego ingest zakłada konsumentów, zanim cokolwiek przyjmie.
+func EnsurePipeline(ctx context.Context, js jetstream.JetStream, l Limits) error {
+	consumers := ConsumerConfigs()
+	for _, cfg := range StreamConfigs(l) {
 		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
 			return fmt.Errorf("strumień %s: %w", cfg.Name, err)
 		}
+		if _, err := js.CreateOrUpdateConsumer(ctx, cfg.Name, consumers[cfg.Name]); err != nil {
+			return fmt.Errorf("konsument %s/%s: %w", cfg.Name, consumers[cfg.Name].Durable, err)
+		}
 	}
 	return nil
+}
+
+// IsQueueFull rozpoznaje odmowę zapisu z powodu zapełnionego strumienia.
+func IsQueueFull(err error) bool {
+	var apiErr *jetstream.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode == errCodeStoreFailed
+}
+
+// Fill to zajętość strumienia (0–1) i liczba zaległych wiadomości.
+type Fill struct {
+	Bytes, MaxBytes uint64
+	Msgs            uint64
+	Ratio           float64
+}
+
+// StreamFill odczytuje zajętość strumienia.
+func StreamFill(ctx context.Context, js jetstream.JetStream, stream string) (Fill, error) {
+	s, err := js.Stream(ctx, stream)
+	if err != nil {
+		return Fill{}, err
+	}
+	info, err := s.Info(ctx)
+	if err != nil {
+		return Fill{}, err
+	}
+	f := Fill{Bytes: info.State.Bytes, Msgs: info.State.Msgs}
+	if info.Config.MaxBytes > 0 {
+		f.MaxBytes = uint64(info.Config.MaxBytes)
+		f.Ratio = float64(f.Bytes) / float64(f.MaxBytes)
+	}
+	return f, nil
 }
 
 // Gzip / Gunzip – pomocnicze kompresowanie treści wiadomości.
