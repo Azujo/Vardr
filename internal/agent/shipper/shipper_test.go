@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"siem/internal/agent/status"
 	"siem/internal/contract"
 )
 
@@ -150,5 +151,39 @@ func TestBackoffBounds(t *testing.T) {
 		if d < 500*time.Millisecond || d > time.Minute {
 			t.Fatalf("attempt %d: %v poza zakresem", attempt, d)
 		}
+	}
+}
+
+func TestQuarantineCapAndStatus(t *testing.T) {
+	f := &fakeServer{responses: []int{503, 400, 400}}
+	srv := httptest.NewTLSServer(f)
+	defer srv.Close()
+	qdir := t.TempDir()
+	s := newSender(t, srv, qdir)
+	tr := status.NewTracker("t", "agt-t", srv.URL, nil)
+	s.AttachStatus(tr)
+
+	// Pierwsza paczka: 503 (błąd w statusie), potem 400 → kwarantanna.
+	if err := s.Send(context.Background(), batch(1)); err != nil {
+		t.Fatal(err)
+	}
+	if st := tr.Snapshot(); st.Server.Healthy || st.Server.LastError == "" || st.Counters.Quarantined != 1 {
+		t.Fatalf("status po błędach: %+v", st.Server)
+	}
+
+	// Limit kwarantanny = rozmiar istniejącego pliku → druga paczka nie trafia na dysk.
+	s.QuarantineMaxBytes = dirSize(qdir)
+	if err := s.Send(context.Background(), batch(1)); err != nil {
+		t.Fatal(err)
+	}
+	if entries, _ := os.ReadDir(qdir); len(entries) != 1 {
+		t.Fatalf("kwarantanna przekroczyła limit: %d plików", len(entries))
+	}
+
+	if err := s.Send(context.Background(), batch(1)); err != nil {
+		t.Fatal(err)
+	}
+	if st := tr.Snapshot(); !st.Server.Healthy || st.Counters.Accepted != 1 {
+		t.Fatalf("status po sukcesie: %+v / %+v", st.Server, st.Counters)
 	}
 }

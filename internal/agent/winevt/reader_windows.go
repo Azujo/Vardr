@@ -68,17 +68,26 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 	var buf []uint16
 
 	for {
-		// Czekamy na sygnał nowych zdarzeń; timeout to dodatkowe zabezpieczenie.
-		windows.WaitForSingleObject(signal, uint32(r.pollEvery.Milliseconds()))
+		// Czekamy na sygnał nowych zdarzeń. Timeout służy tylko do sprawdzania
+		// kontekstu – EvtNext bez sygnału zwraca ERROR_INVALID_OPERATION.
+		ev, err := windows.WaitForSingleObject(signal, uint32(r.pollEvery.Milliseconds()))
 		if err := ctx.Err(); err != nil {
 			return pos, err
+		}
+		if err != nil {
+			return pos, fmt.Errorf("WaitForSingleObject: %w", err)
+		}
+		if ev == uint32(windows.WAIT_TIMEOUT) {
+			continue
 		}
 		windows.ResetEvent(signal)
 
 		for {
 			n, err := evtNext(sub, handles)
 			if err != nil {
-				if errors.Is(err, errorNoMoreItems) {
+				// ERROR_INVALID_OPERATION po opróżnieniu subskrypcji też
+				// oznacza brak nowych zdarzeń (nie błąd czytnika).
+				if errors.Is(err, errorNoMoreItems) || errors.Is(err, errorInvalidOperation) {
 					break
 				}
 				if errors.Is(err, errorEvtQueryResultStale) {

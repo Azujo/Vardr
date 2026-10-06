@@ -13,9 +13,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"siem/internal/agent/source"
 	"siem/internal/agent/state"
+	"siem/internal/agent/status"
 	"siem/internal/agent/throttle"
 	"siem/internal/contract"
 )
@@ -48,6 +50,12 @@ type Options struct {
 	// LagWarn: próg opóźnienia (czas odczytu − czas wystąpienia), po którym
 	// agent ostrzega, że nie nadąża (np. przez zbyt ciasny kaganiec).
 	LagWarn time.Duration
+	// MaxEventBytes: dłuższe zdarzenia są przycinane (0 = brak limitu).
+	MaxEventBytes int
+	// Status (opcjonalny) otrzymuje stan kanałów i liczniki.
+	Status *status.Tracker
+	// ClassifyError zamienia błąd źródła na stan kanału (status.Channel*).
+	ClassifyError func(error) string
 }
 
 // Agent to rdzeń agenta.
@@ -58,8 +66,8 @@ type Agent struct {
 	store   StateStore
 	log     *slog.Logger
 
-	read, filtered, sent atomic.Int64
-	eps                  *throttle.Limiter
+	read, filtered, sent, truncated atomic.Int64
+	eps                             *throttle.Limiter
 }
 
 // New tworzy agenta.
@@ -73,8 +81,18 @@ func New(opts Options, sources []source.Source, sender Sender, store StateStore,
 	if opts.LagWarn == 0 {
 		opts.LagWarn = 5 * time.Minute
 	}
-	return &Agent{opts: opts, sources: sources, sender: sender, store: store, log: log,
+	if opts.ClassifyError == nil {
+		opts.ClassifyError = func(error) string { return status.ChannelError }
+	}
+	a := &Agent{opts: opts, sources: sources, sender: sender, store: store, log: log,
 		eps: throttle.New(float64(opts.MaxEPS), float64(opts.MaxEPS))}
+	opts.Status.AddProbe(func(s *status.Status) {
+		s.Counters.Read = a.read.Load()
+		s.Counters.Filtered = a.filtered.Load()
+		s.Counters.Truncated = a.truncated.Load()
+		s.Throttle.EPS = a.eps.Waited()
+	})
+	return a
 }
 
 // eventOverhead to przybliżony narzut JSON na zdarzenie poza polem raw.
@@ -138,11 +156,13 @@ func (a *Agent) Run(ctx context.Context) error {
 func (a *Agent) runSource(ctx context.Context, src source.Source, start source.Position, out chan<- source.Record) {
 	pos := start
 	for {
+		a.opts.Status.ChannelState(src.Channel(), status.ChannelStarting, "")
 		var err error
 		pos, err = src.Run(ctx, pos, out)
 		if ctx.Err() != nil {
 			return
 		}
+		a.opts.Status.ChannelState(src.Channel(), a.opts.ClassifyError(err), err.Error())
 		delay := a.opts.RetryDelay(err)
 		a.log.Warn("źródło zatrzymane, ponowię", "channel", src.Channel(), "err", err, "retry_in", delay)
 		select {
@@ -180,11 +200,14 @@ type batcher struct {
 func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	a := b.agent
 	a.read.Add(1)
+	var lag time.Duration
 	if !rec.CreatedAt.IsZero() {
-		if lag := rec.ReadAt.Sub(rec.CreatedAt); lag > b.maxLag {
+		lag = rec.ReadAt.Sub(rec.CreatedAt)
+		if lag > b.maxLag {
 			b.maxLag = lag
 		}
 	}
+	a.opts.Status.ChannelRead(rec.Channel, rec.RecordID, rec.ReadAt, lag)
 
 	cs := b.lastSeen[rec.Channel]
 	if cs.RecordID != 0 && rec.RecordID < cs.RecordID {
@@ -205,18 +228,25 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	if err := a.eps.Wait(ctx, 1); err != nil {
 		return err
 	}
-	size := len(rec.Raw) + eventOverhead
+	ev := contract.Event{
+		Source: "wineventlog:" + rec.Channel,
+		ReadAt: rec.ReadAt,
+		Raw:    rec.Raw,
+	}
+	if limit := a.opts.MaxEventBytes; limit > 0 && len(ev.Raw) > limit {
+		ev.Raw, ev.Truncated, ev.OriginalSize = truncateUTF8(ev.Raw, limit), true, len(rec.Raw)
+		a.truncated.Add(1)
+		a.log.Warn("zdarzenie przekracza limit rozmiaru – przycięte", "channel", rec.Channel,
+			"record", rec.RecordID, "size", len(rec.Raw), "limit", limit)
+	}
+	size := len(ev.Raw) + eventOverhead
 	if len(b.pending) > 0 && b.bytes+size > a.opts.MaxBytes {
 		if err := b.flush(ctx); err != nil {
 			return err
 		}
 	}
-	b.pending = append(b.pending, contract.Event{
-		ID:     contract.EventID(a.opts.AgentID, rec.Channel, cs.Generation, rec.RecordID),
-		Source: "wineventlog:" + rec.Channel,
-		ReadAt: rec.ReadAt,
-		Raw:    rec.Raw,
-	})
+	ev.ID = contract.EventID(a.opts.AgentID, rec.Channel, cs.Generation, rec.RecordID)
+	b.pending = append(b.pending, ev)
 	b.bytes += size
 	b.markAdvance(rec.Channel, cs)
 
@@ -265,6 +295,17 @@ func (b *batcher) flush(ctx context.Context) error {
 	b.bytes = 0
 	b.advance = nil
 	return nil
+}
+
+// truncateUTF8 przycina tekst do limit bajtów, nie rozcinając znaku UTF-8.
+func truncateUTF8(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	for limit > 0 && !utf8.RuneStart(s[limit]) {
+		limit--
+	}
+	return s[:limit]
 }
 
 func ignoreCanceled(err error) error {

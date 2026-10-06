@@ -42,6 +42,10 @@ type Event struct {
 	Source string    `json:"source"`
 	ReadAt time.Time `json:"read_at"`
 	Raw    string    `json:"raw"`
+	// Truncated: raw został przycięty do limitu rozmiaru zdarzenia agenta;
+	// OriginalSize to pierwotny rozmiar w bajtach. Pola opcjonalne (v1).
+	Truncated    bool `json:"truncated,omitempty"`
+	OriginalSize int  `json:"original_size,omitempty"`
 }
 
 // Response to odpowiedź serwera na paczkę.

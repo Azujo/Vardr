@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"siem/internal/agent/status"
 	"siem/internal/agent/throttle"
 	"siem/internal/contract"
 )
@@ -43,6 +44,10 @@ type HTTPSender struct {
 	Stats         *Stats
 	// Bandwidth ogranicza przepustowość wysyłki (bajty po kompresji); nil = brak.
 	Bandwidth *throttle.Limiter
+	// QuarantineMaxBytes ogranicza rozmiar lokalnej kwarantanny na dysku.
+	QuarantineMaxBytes int64
+	// Status (opcjonalny) otrzymuje stan połączenia z serwerem.
+	Status *status.Tracker
 
 	MinBackoff  time.Duration // pierwsze opóźnienie ponowienia
 	MaxBackoff  time.Duration // limit dla błędów przejściowych
@@ -54,7 +59,19 @@ func NewHTTPSender(client *http.Client, url, quarantineDir string, log *slog.Log
 	return &HTTPSender{
 		Client: client, URL: url, QuarantineDir: quarantineDir, Log: log, Stats: &Stats{},
 		MinBackoff: time.Second, MaxBackoff: time.Minute, AuthBackoff: 5 * time.Minute,
+		QuarantineMaxBytes: 100 << 20,
 	}
+}
+
+// AttachStatus podłącza tracker stanu i rejestruje liczniki wysyłki.
+func (s *HTTPSender) AttachStatus(t *status.Tracker) {
+	s.Status = t
+	t.AddProbe(func(st *status.Status) {
+		st.Counters.Accepted = s.Stats.EventsAccepted.Load()
+		st.Counters.Quarantined = s.Stats.EventsQuarantined.Load()
+		st.Counters.Retries = s.Stats.Retries.Load()
+		st.Throttle.Bandwidth = s.Bandwidth.Waited()
+	})
 }
 
 // Send wysyła paczkę. Zwraca błąd wyłącznie przy anulowaniu kontekstu –
@@ -80,6 +97,11 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 		}
 
 		var wait time.Duration
+		if err != nil {
+			s.Status.SendFailed(err.Error())
+		} else if status != http.StatusOK {
+			s.Status.SendFailed(fmt.Sprintf("HTTP %d: %s", status, truncate(respBody)))
+		}
 		switch {
 		case err != nil:
 			s.Log.Warn("wysyłka nieudana, ponowię", "batch_id", b.BatchID, "attempt", attempt+1, "err", err)
@@ -90,6 +112,7 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 			if err := json.Unmarshal(respBody, &resp); err == nil &&
 				resp.Status == contract.StatusAccepted && resp.BatchID == b.BatchID {
 				s.Stats.BatchesAccepted.Add(1)
+				s.Status.SendOK()
 				s.Stats.EventsAccepted.Add(int64(len(b.Events)))
 				return nil
 			}
@@ -177,6 +200,11 @@ func (s *HTTPSender) quarantine(b *contract.Batch, reason string) {
 		s.Log.Error("nie można utworzyć katalogu kwarantanny", "err", err)
 		return
 	}
+	if used := dirSize(s.QuarantineDir); s.QuarantineMaxBytes > 0 && used >= s.QuarantineMaxBytes {
+		s.Log.Error("lokalna kwarantanna pełna – paczka NIE została zapisana na dysku",
+			"batch_id", b.BatchID, "used_bytes", used, "limit_bytes", s.QuarantineMaxBytes)
+		return
+	}
 	data, _ := json.Marshal(struct {
 		Reason string          `json:"reason"`
 		Batch  *contract.Batch `json:"batch"`
@@ -185,6 +213,17 @@ func (s *HTTPSender) quarantine(b *contract.Batch, reason string) {
 	if err := os.WriteFile(p, data, 0o600); err != nil {
 		s.Log.Error("nie można zapisać kwarantanny", "path", p, "err", err)
 	}
+}
+
+func dirSize(dir string) int64 {
+	var total int64
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if fi, err := e.Info(); err == nil && !fi.IsDir() {
+			total += fi.Size()
+		}
+	}
+	return total
 }
 
 func encode(b *contract.Batch) ([]byte, error) {

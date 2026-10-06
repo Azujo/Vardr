@@ -21,6 +21,9 @@ batch:
   max_events: 500       # paczka po zebraniu tylu zdarzeń…
   max_bytes: 4194304    # …albo po przekroczeniu tylu bajtów (przed kompresją)…
   flush_interval: 2s    # …albo po tym czasie
+  # Zdarzenia dłuższe niż limit są przycinane i oznaczane jako truncated
+  # (np. bardzo długie bloki skryptów PowerShell 4104). Domyślnie 512 KiB.
+  max_event_bytes: 524288
 
 # „Kaganiec” – limity zasobów agenta. Docelowo ustawiane z panelu per grupa
 # agentów (stacje / serwery / kolektory). Każdy limit można zmienić bez utraty
@@ -40,6 +43,16 @@ limits:
   # po kompresji). 0 = brak.
   max_eps: 0
   max_send_kbps: 0
+  # Liczba wątków wykonujących kod Go. Lekki agent nie potrzebuje wszystkich
+  # rdzeni; mniej wątków = mniej narzutu, gdy komputer jest obciążony.
+  max_procs: 2
+
+# Log usługi: <state_dir>\agent.log z rotacją. Ostrzeżenia i błędy trafiają
+# też do dziennika Application (źródło SiemAgent), bez powtórzeń w ciągu 10 min.
+logging:
+  level: info          # debug | info | warn | error
+  max_size_mb: 10
+  max_files: 3
 
 # Kanały i Event ID. Pusta lista event_ids = wszystkie zdarzenia kanału.
 # Wymaga włączenia zaawansowanej polityki audytu przez GPO (patrz README).

@@ -7,9 +7,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"siem/internal/agent/source"
 	"siem/internal/agent/state"
+	"siem/internal/agent/status"
 	"siem/internal/contract"
 )
 
@@ -278,5 +280,28 @@ func TestWarnsWhenLagExceedsThreshold(t *testing.T) {
 	_ = a.Run(ctx)
 	if out := logBuf.String(); !strings.Contains(out, "nie nadąża") || !strings.Contains(out, "lag_max=10m") {
 		t.Fatalf("brak ostrzeżenia o opóźnieniu w logu:\n%s", out)
+	}
+}
+
+func TestTruncatesOversizedEventsAndReportsStatus(t *testing.T) {
+	r := recs("System", 1, 2)
+	r[1].Raw = strings.Repeat("ż", 3000) // 6000 B, znaki dwubajtowe
+	src := &fakeSource{channel: "System", records: r, gotPos: make(chan source.Position, 1)}
+	snd := &fakeSender{}
+	store := &memStore{}
+	tr := status.NewTracker("t", "agt-t", "u", nil)
+
+	run(t, Options{MaxEventBytes: 4097, Status: tr}, src, snd, store, func() bool { return store.get("System").RecordID == 2 })
+
+	ev := snd.events()
+	if !ev[1].Truncated || ev[1].OriginalSize != 6000 || len(ev[1].Raw) != 4096 || !utf8.ValidString(ev[1].Raw) {
+		t.Fatalf("przycięcie: truncated=%v size=%d len=%d", ev[1].Truncated, ev[1].OriginalSize, len(ev[1].Raw))
+	}
+	if ev[0].Truncated {
+		t.Fatal("małe zdarzenie nie powinno być przycięte")
+	}
+	s := tr.Snapshot()
+	if s.Counters.Truncated != 1 || s.Counters.Read != 2 || len(s.Channels) != 1 || s.Channels[0].State != status.ChannelOK || s.Channels[0].LastRecordID != 2 {
+		t.Fatalf("status: %+v", s)
 	}
 }

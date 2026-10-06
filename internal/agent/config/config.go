@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"siem/internal/agent/limits"
+	"siem/internal/agent/logging"
 )
 
 // Config to konfiguracja agenta. Docelowo będzie pobierana z serwera
@@ -22,7 +23,15 @@ type Config struct {
 	StartAt  string          `yaml:"start_at"`
 	Batch    BatchConfig     `yaml:"batch"`
 	Limits   LimitsConfig    `yaml:"limits"`
+	Logging  LoggingConfig   `yaml:"logging"`
 	Channels []ChannelConfig `yaml:"channels"`
+}
+
+// LoggingConfig określa log agenta (plik w state_dir w trybie usługi).
+type LoggingConfig struct {
+	Level     string `yaml:"level"`       // debug | info | warn | error
+	MaxSizeMB int    `yaml:"max_size_mb"` // rozmiar pliku przed rotacją
+	MaxFiles  int    `yaml:"max_files"`   // liczba archiwalnych plików
 }
 
 // LimitsConfig to „kaganiec” agenta. Docelowo ustawiany z panelu per grupa.
@@ -33,6 +42,7 @@ type LimitsConfig struct {
 	MemoryHardMB  *int    `yaml:"memory_hard_mb"`  // brak = 400, 0 = wyłączony
 	MaxEPS        int     `yaml:"max_eps"`         // zdarzeń na sekundę, 0 = brak
 	MaxSendKBps   int     `yaml:"max_send_kbps"`   // KiB/s po kompresji, 0 = brak
+	MaxProcs      int     `yaml:"max_procs"`       // wątki wykonujące kod Go (GOMAXPROCS), domyślnie 2
 }
 
 // Resource zwraca ustawienia dla pakietu limits.
@@ -59,6 +69,8 @@ type BatchConfig struct {
 	MaxEvents     int           `yaml:"max_events"`
 	MaxBytes      int           `yaml:"max_bytes"`
 	FlushInterval time.Duration `yaml:"flush_interval"`
+	// MaxEventBytes: dłuższe zdarzenia są przycinane i oznaczane jako truncated.
+	MaxEventBytes int `yaml:"max_event_bytes"`
 }
 
 // ChannelConfig to jeden kanał Event Log i lista zbieranych Event ID
@@ -117,6 +129,21 @@ func (c *Config) applyDefaults(baseDir string) {
 	if c.Batch.FlushInterval == 0 {
 		c.Batch.FlushInterval = 2 * time.Second
 	}
+	if c.Batch.MaxEventBytes == 0 {
+		c.Batch.MaxEventBytes = 512 << 10
+	}
+	if c.Limits.MaxProcs == 0 {
+		c.Limits.MaxProcs = 2
+	}
+	if c.Logging.Level == "" {
+		c.Logging.Level = "info"
+	}
+	if c.Logging.MaxSizeMB == 0 {
+		c.Logging.MaxSizeMB = 10
+	}
+	if c.Logging.MaxFiles == 0 {
+		c.Logging.MaxFiles = 3
+	}
 	if c.Limits.Priority == "" {
 		c.Limits.Priority = limits.PriorityBelowNormal
 	}
@@ -157,6 +184,18 @@ func (c *Config) Validate() error {
 		if err := c.Limits.Resource().Validate(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if c.Batch.MaxEventBytes < 4<<10 || c.Batch.MaxEventBytes > c.Batch.MaxBytes {
+		errs = append(errs, errors.New("batch.max_event_bytes musi wynosić od 4 KiB do batch.max_bytes"))
+	}
+	if c.Limits.MaxProcs < 1 || c.Limits.MaxProcs > 64 {
+		errs = append(errs, errors.New("limits.max_procs musi być w zakresie 1–64"))
+	}
+	if _, err := logging.Level(c.Logging.Level); err != nil {
+		errs = append(errs, fmt.Errorf("logging.level: %w", err))
+	}
+	if c.Logging.MaxSizeMB < 1 || c.Logging.MaxFiles < 1 || c.Logging.MaxFiles > 20 {
+		errs = append(errs, errors.New("logging.max_size_mb ≥ 1, logging.max_files w zakresie 1–20"))
 	}
 	if c.Limits.MaxEPS < 0 || c.Limits.MaxSendKBps < 0 {
 		errs = append(errs, errors.New("limits.max_eps i limits.max_send_kbps nie mogą być ujemne"))

@@ -16,6 +16,8 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"siem/internal/agent/config"
+	"siem/internal/agent/logging"
+	"siem/internal/agent/secure"
 )
 
 const (
@@ -25,25 +27,41 @@ const (
 )
 
 type agentService struct {
-	cfgPath string
-	log     *slog.Logger
+	cfg    *config.Config
+	cfgErr error
+	log    *slog.Logger
 }
 
 func runService(cfgPath string) {
-	// Katalog logu: state_dir z konfiguracji, a jeśli konfiguracja jest
-	// błędna – katalog domyślny, żeby błąd i tak trafił do pliku.
+	// Log: rotowany plik w state_dir oraz ostrzeżenia i błędy w dzienniku
+	// Application (źródło SiemAgent). Przy błędnej konfiguracji – katalog
+	// domyślny, żeby błąd i tak został zapisany.
+	cfg, cfgErr := config.Load(cfgPath)
 	logDir := filepath.Join(os.Getenv("ProgramData"), "SiemAgent")
-	if cfg, err := config.Load(cfgPath); err == nil {
+	level, maxMB, keep := slog.LevelInfo, 10, 3
+	if cfgErr == nil {
 		logDir = cfg.StateDir
+		level, _ = logging.Level(cfg.Logging.Level)
+		maxMB, keep = cfg.Logging.MaxSizeMB, cfg.Logging.MaxFiles
 	}
-	w, err := openLogFile(logDir)
+	_ = os.MkdirAll(logDir, 0o700)
+	w, err := logging.OpenRotating(filepath.Join(logDir, "agent.log"), int64(maxMB)<<20, keep)
 	if err != nil {
 		os.Exit(1)
 	}
 	defer w.Close()
-	log := slog.New(slog.NewTextHandler(w, nil))
 
-	if err := svc.Run(serviceName, &agentService{cfgPath: cfgPath, log: log}); err != nil {
+	handlers := logging.Tee{slog.NewTextHandler(w, &slog.HandlerOptions{Level: level})}
+	if el, err := logging.OpenEventSink(serviceName); err == nil {
+		defer el.Close()
+		handlers = append(handlers, logging.NewSinkHandler(el, 10*time.Minute))
+	}
+	log := slog.New(handlers)
+	if cfgErr != nil {
+		log.Error("błędna konfiguracja agenta", "config", cfgPath, "err", cfgErr)
+	}
+
+	if err := svc.Run(serviceName, &agentService{cfg: cfg, cfgErr: cfgErr, log: log}); err != nil {
 		log.Error("usługa zakończona błędem", "err", err)
 	}
 }
@@ -51,10 +69,14 @@ func runService(cfgPath string) {
 func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	status <- svc.Status{State: svc.StartPending}
 
+	if s.cfgErr != nil {
+		return false, 1 // niezerowy kod: akcje odzyskiwania ponowią start
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- runAgent(ctx, s.cfgPath, s.log) }()
+	go func() { done <- runAgent(ctx, s.cfg, s.log) }()
 
 	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 
@@ -93,7 +115,8 @@ func installService(cfgPath string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := config.Load(absCfg); err != nil {
+	cfg, err := config.Load(absCfg)
+	if err != nil {
 		return fmt.Errorf("konfiguracja niepoprawna, usługa nie zostanie zainstalowana: %w", err)
 	}
 
@@ -126,6 +149,18 @@ func installService(cfgPath string) error {
 	}, uint32((24 * time.Hour).Seconds()))
 	if err != nil {
 		return fmt.Errorf("usługa utworzona, ale nie ustawiono akcji odzyskiwania: %w", err)
+	}
+	if err := logging.InstallEventSource(serviceName); err != nil {
+		fmt.Fprintln(os.Stderr, "uwaga: nie zarejestrowano źródła w dzienniku zdarzeń:", err)
+	}
+	// Zabezpieczenie plików już przy instalacji (agent powtarza to przy każdym starcie).
+	if err := os.MkdirAll(cfg.StateDir, 0o700); err == nil {
+		if err := secure.RestrictDir(cfg.StateDir); err != nil {
+			fmt.Fprintln(os.Stderr, "uwaga:", err)
+		}
+	}
+	if err := secure.RestrictFile(cfg.Server.KeyFile); err != nil {
+		fmt.Fprintln(os.Stderr, "uwaga:", err)
 	}
 	fmt.Printf("Usługa %s zainstalowana (konfiguracja: %s). Uruchom: siem-agent start\n", serviceName, absCfg)
 	return nil
@@ -194,6 +229,7 @@ func uninstallService() error {
 		if err := s.Delete(); err != nil {
 			return err
 		}
+		_ = logging.RemoveEventSource(serviceName)
 		fmt.Printf("Usługa %s usunięta.\n", serviceName)
 		return nil
 	})

@@ -33,6 +33,7 @@ const (
 	errorEvtQueryResultStale = windows.Errno(15011)
 	errorEvtInvalidQuery     = windows.Errno(15001)
 	errorAccessDenied        = windows.Errno(5)
+	errorInvalidOperation    = windows.Errno(4317)
 )
 
 func evtSubscribe(signal windows.Handle, channel, query string, bookmark evtHandle, flags uint32) (evtHandle, error) {

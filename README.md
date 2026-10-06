@@ -71,6 +71,33 @@ i jest restartowana po awarii (5 s / 30 s / 60 s). Log: `<state_dir>\agent.log`.
 Zweryfikowane na tym komputerze: 40 123 / 40 123 zdarzeń System + Application
 po twardym zabiciu agenta, 30% odrzuceń 503 i wyłączeniu serwera – bez braków.
 
+## Diagnostyka
+
+```powershell
+bin\siem-agent.exe -config C:\ProgramData\SiemAgent\agent.yaml status
+```
+
+Pokazuje stan usługi, połączenia z serwerem (ostatnia przyjęta paczka, ostatni
+błąd), każdego kanału (OK / BRAK KANAŁU / BRAK DOSTĘPU / BŁĄD, ostatni rekord,
+opóźnienie), liczniki, limity, dławienie i zużycie zasobów. Dane pochodzą
+z `<state_dir>\status.json`, odświeżanego co 5 s; starszy niż 30 s zapis jest
+oznaczany jako nieaktualny (agent zatrzymany lub zawieszony).
+
+W trybie usługi ostrzeżenia i błędy trafiają też do Podglądu zdarzeń
+(Dziennik aplikacji, źródło `SiemAgent`, ID 2000 = ostrzeżenie, 3000 = błąd,
+1000 = start/zatrzymanie), z tłumieniem powtórzeń przez 10 minut.
+Log pliku `<state_dir>\agent.log` jest rotowany w trakcie pracy (`logging`).
+
+## Bezpieczeństwo plików agenta
+
+Uprawnienia `0600` nie działają na Windows – pliki dziedziczą ACL folderu,
+a w `C:\ProgramData` zwykli użytkownicy mają prawo odczytu. Agent działający
+jako SYSTEM / administrator przy każdym starcie (i instalator usługi) ustawia
+na katalogu stanu i kluczu prywatnym chronioną listę dostępu: tylko SYSTEM
+i Administratorzy. `siem-agent check` pokazuje, czy klucz i katalog stanu są
+chronione. Uruchomiony bez uprawnień administratora agent nie zawęża ACL
+(odciąłby sam siebie) i zgłasza to w statusie.
+
 ## Zużycie zasobów i limity („kaganiec”)
 
 Sekcja `limits` w `agent.yaml` (przykład w `configs/agent.example.yaml`):
@@ -97,6 +124,10 @@ Pamięć: working set ~22–26 MB, private bytes ~55–59 MB. Sterta Go to tylko
 2–7 MB – resztę stanowią środowisko Go i biblioteki Windows, więc miękki limit
 pamięci jest zabezpieczeniem przed nietypowo dużymi zdarzeniami, a nie
 sposobem na obniżenie bazowego zużycia.
+
+Od wersji 0.2.0 domyślnie `max_procs: 2`: wątki 22 → 11, uchwyty ~310 → 218,
+czas CPU pod pełnym obciążeniem komputera 4,3 s → 3,3 s; odczyt zaległości
+bez obciążenia ~1,4 s zamiast ~1,1 s.
 
 ## Polityka audytu (dla profilu z załącznika B)
 
@@ -129,4 +160,5 @@ go test ./...
 - rejestracja agenta tokenem, rotacja certyfikatów, konfiguracja z serwera, heartbeat (etap 2)
 - instalator MSI (etap 2)
 - token deinstalacji i ochrona usługi (etap 8)
+- sprawdzanie polityki audytu i synchronizacji czasu (razem z heartbeatem)
 - właściwy serwer: NATS JetStream → normalizator → ClickHouse (etap 1, część serwerowa)
