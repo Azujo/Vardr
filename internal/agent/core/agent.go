@@ -16,6 +16,7 @@ import (
 
 	"siem/internal/agent/source"
 	"siem/internal/agent/state"
+	"siem/internal/agent/throttle"
 	"siem/internal/contract"
 )
 
@@ -41,6 +42,12 @@ type Options struct {
 	Filters    map[string]map[uint32]bool
 	RetryDelay func(err error) time.Duration
 	StatsEvery time.Duration
+	// MaxEPS ogranicza liczbę wysyłanych zdarzeń na sekundę (0 = brak).
+	// Nadmiar czeka w dzienniku Windows – rośnie opóźnienie, nie ginie nic.
+	MaxEPS int
+	// LagWarn: próg opóźnienia (czas odczytu − czas wystąpienia), po którym
+	// agent ostrzega, że nie nadąża (np. przez zbyt ciasny kaganiec).
+	LagWarn time.Duration
 }
 
 // Agent to rdzeń agenta.
@@ -52,6 +59,7 @@ type Agent struct {
 	log     *slog.Logger
 
 	read, filtered, sent atomic.Int64
+	eps                  *throttle.Limiter
 }
 
 // New tworzy agenta.
@@ -62,7 +70,11 @@ func New(opts Options, sources []source.Source, sender Sender, store StateStore,
 	if opts.StatsEvery == 0 {
 		opts.StatsEvery = time.Minute
 	}
-	return &Agent{opts: opts, sources: sources, sender: sender, store: store, log: log}
+	if opts.LagWarn == 0 {
+		opts.LagWarn = 5 * time.Minute
+	}
+	return &Agent{opts: opts, sources: sources, sender: sender, store: store, log: log,
+		eps: throttle.New(float64(opts.MaxEPS), float64(opts.MaxEPS))}
 }
 
 // eventOverhead to przybliżony narzut JSON na zdarzenie poza polem raw.
@@ -107,7 +119,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			a.logStats()
+			b.logStats()
 			return nil
 		case rec := <-recs:
 			if err := b.add(ctx, rec); err != nil {
@@ -118,7 +130,7 @@ func (a *Agent) Run(ctx context.Context) error {
 				return ignoreCanceled(err)
 			}
 		case <-statsTick.C:
-			a.logStats()
+			b.logStats()
 		}
 	}
 }
@@ -141,8 +153,17 @@ func (a *Agent) runSource(ctx context.Context, src source.Source, start source.P
 	}
 }
 
-func (a *Agent) logStats() {
-	a.log.Info("statystyki", "read", a.read.Load(), "filtered", a.filtered.Load(), "sent_accepted", a.sent.Load())
+// logStats loguje liczniki i maksymalne opóźnienie od poprzedniego wpisu.
+func (b *batcher) logStats() {
+	a := b.agent
+	attrs := []any{"read", a.read.Load(), "filtered", a.filtered.Load(), "sent_accepted", a.sent.Load(),
+		"lag_max", b.maxLag.Round(time.Millisecond), "eps_throttled", a.eps.Waited().Round(time.Millisecond)}
+	if b.maxLag > a.opts.LagWarn {
+		a.log.Warn("agent nie nadąża za dziennikiem – sprawdź limity", attrs...)
+	} else {
+		a.log.Info("statystyki", attrs...)
+	}
+	b.maxLag = 0
 }
 
 // batcher zbiera zdarzenia w paczkę. Działa w jednej gorutynie.
@@ -153,11 +174,17 @@ type batcher struct {
 	pending  []contract.Event
 	bytes    int
 	advance  map[string]state.ChannelState // pozycje do zapisania po potwierdzeniu
+	maxLag   time.Duration                 // maks. opóźnienie odczytu od ostatnich statystyk
 }
 
 func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	a := b.agent
 	a.read.Add(1)
+	if !rec.CreatedAt.IsZero() {
+		if lag := rec.ReadAt.Sub(rec.CreatedAt); lag > b.maxLag {
+			b.maxLag = lag
+		}
+	}
 
 	cs := b.lastSeen[rec.Channel]
 	if cs.RecordID != 0 && rec.RecordID < cs.RecordID {
@@ -175,6 +202,9 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 		return nil
 	}
 
+	if err := a.eps.Wait(ctx, 1); err != nil {
+		return err
+	}
 	size := len(rec.Raw) + eventOverhead
 	if len(b.pending) > 0 && b.bytes+size > a.opts.MaxBytes {
 		if err := b.flush(ctx); err != nil {

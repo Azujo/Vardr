@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"siem/internal/agent/limits"
 )
 
 // Config to konfiguracja agenta. Docelowo będzie pobierana z serwera
@@ -19,7 +21,28 @@ type Config struct {
 	StateDir string          `yaml:"state_dir"`
 	StartAt  string          `yaml:"start_at"`
 	Batch    BatchConfig     `yaml:"batch"`
+	Limits   LimitsConfig    `yaml:"limits"`
 	Channels []ChannelConfig `yaml:"channels"`
+}
+
+// LimitsConfig to „kaganiec” agenta. Docelowo ustawiany z panelu per grupa.
+type LimitsConfig struct {
+	Priority      string  `yaml:"priority"`        // normal | below_normal | background
+	CPUMaxPercent float64 `yaml:"cpu_max_percent"` // % całego komputera, 0 = brak
+	MemorySoftMB  *int    `yaml:"memory_soft_mb"`  // brak = 150, 0 = wyłączony
+	MemoryHardMB  *int    `yaml:"memory_hard_mb"`  // brak = 400, 0 = wyłączony
+	MaxEPS        int     `yaml:"max_eps"`         // zdarzeń na sekundę, 0 = brak
+	MaxSendKBps   int     `yaml:"max_send_kbps"`   // KiB/s po kompresji, 0 = brak
+}
+
+// Resource zwraca ustawienia dla pakietu limits.
+func (l LimitsConfig) Resource() limits.Limits {
+	return limits.Limits{
+		Priority:      l.Priority,
+		CPUMaxPercent: l.CPUMaxPercent,
+		MemorySoftMB:  *l.MemorySoftMB,
+		MemoryHardMB:  *l.MemoryHardMB,
+	}
 }
 
 // ServerConfig opisuje połączenie mTLS z serwerem.
@@ -94,6 +117,17 @@ func (c *Config) applyDefaults(baseDir string) {
 	if c.Batch.FlushInterval == 0 {
 		c.Batch.FlushInterval = 2 * time.Second
 	}
+	if c.Limits.Priority == "" {
+		c.Limits.Priority = limits.PriorityBelowNormal
+	}
+	if c.Limits.MemorySoftMB == nil {
+		v := 150
+		c.Limits.MemorySoftMB = &v
+	}
+	if c.Limits.MemoryHardMB == nil {
+		v := 400
+		c.Limits.MemoryHardMB = &v
+	}
 	for _, p := range []*string{&c.StateDir, &c.Server.CAFile, &c.Server.CertFile, &c.Server.KeyFile} {
 		if *p != "" && !filepath.IsAbs(*p) {
 			*p = filepath.Join(baseDir, *p)
@@ -118,6 +152,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Batch.MaxBytes < 64<<10 {
 		errs = append(errs, errors.New("batch.max_bytes musi wynosić co najmniej 64 KiB"))
+	}
+	if c.Limits.MemorySoftMB != nil && c.Limits.MemoryHardMB != nil {
+		if err := c.Limits.Resource().Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.Limits.MaxEPS < 0 || c.Limits.MaxSendKBps < 0 {
+		errs = append(errs, errors.New("limits.max_eps i limits.max_send_kbps nie mogą być ujemne"))
 	}
 	if len(c.Channels) == 0 {
 		errs = append(errs, errors.New("brak skonfigurowanych kanałów"))

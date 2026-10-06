@@ -22,6 +22,25 @@ batch:
   max_bytes: 4194304    # …albo po przekroczeniu tylu bajtów (przed kompresją)…
   flush_interval: 2s    # …albo po tym czasie
 
+# „Kaganiec” – limity zasobów agenta. Docelowo ustawiane z panelu per grupa
+# agentów (stacje / serwery / kolektory). Każdy limit można zmienić bez utraty
+# danych: nadmiar zdarzeń czeka w dzienniku Windows, rośnie tylko opóźnienie.
+limits:
+  # normal | below_normal (domyślnie) | background (CPU tylko, gdy komputer jest bezczynny)
+  priority: below_normal
+  # Twardy limit CPU w % CAŁEGO komputera (wszystkie rdzenie). 0 = brak.
+  cpu_max_percent: 5
+  # Miękki limit sterty Go (domyślnie 150) i twardy limit pamięci procesu
+  # (domyślnie 400) w MB. Twardy limit to bezpiecznik: jego przekroczenie
+  # kończy proces (usługa zostanie zrestartowana), dlatego musi wynosić
+  # co najmniej 1,5 × limit miękki. 0 = brak.
+  memory_soft_mb: 100
+  memory_hard_mb: 200
+  # Maksymalna liczba zdarzeń na sekundę i przepustowość wysyłki (KiB/s,
+  # po kompresji). 0 = brak.
+  max_eps: 0
+  max_send_kbps: 0
+
 # Kanały i Event ID. Pusta lista event_ids = wszystkie zdarzenia kanału.
 # Wymaga włączenia zaawansowanej polityki audytu przez GPO (patrz README).
 channels:

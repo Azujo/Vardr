@@ -20,9 +20,11 @@ import (
 
 	"siem/internal/agent/config"
 	"siem/internal/agent/core"
+	"siem/internal/agent/limits"
 	"siem/internal/agent/shipper"
 	"siem/internal/agent/source"
 	"siem/internal/agent/state"
+	"siem/internal/agent/throttle"
 	"siem/internal/agent/winevt"
 )
 
@@ -126,6 +128,14 @@ func runAgent(ctx context.Context, cfgPath string, log *slog.Logger) error {
 	}
 	log = log.With("agent_id", agentID)
 
+	// Kaganiec nakładany przed rozpoczęciem odczytu.
+	lim, err := limits.Apply(cfg.Limits.Resource())
+	if err != nil {
+		return fmt.Errorf("limity zasobów: %w", err)
+	}
+	defer lim.Close()
+	log.Info("limity zasobów aktywne", limitAttrs(cfg.Limits)...)
+
 	var sources []source.Source
 	filters := map[string]map[uint32]bool{}
 	for _, ch := range cfg.Channels {
@@ -142,6 +152,9 @@ func runAgent(ctx context.Context, cfgPath string, log *slog.Logger) error {
 	}
 
 	sender := shipper.NewHTTPSender(client, cfg.Server.URL, filepath.Join(cfg.StateDir, "quarantine"), log)
+	if kbps := cfg.Limits.MaxSendKBps; kbps > 0 {
+		sender.Bandwidth = throttle.New(float64(kbps)*1024, float64(kbps)*1024)
+	}
 	agent := core.New(core.Options{
 		AgentID:       agentID,
 		MaxEvents:     cfg.Batch.MaxEvents,
@@ -149,6 +162,7 @@ func runAgent(ctx context.Context, cfgPath string, log *slog.Logger) error {
 		FlushInterval: cfg.Batch.FlushInterval,
 		Filters:       filters,
 		RetryDelay:    retryDelay,
+		MaxEPS:        cfg.Limits.MaxEPS,
 	}, sources, sender, state.NewStore(cfg.StateDir), log)
 
 	err = agent.Run(ctx)
@@ -156,6 +170,13 @@ func runAgent(ctx context.Context, cfgPath string, log *slog.Logger) error {
 	log.Info("agent zatrzymany", "batches_accepted", s.BatchesAccepted.Load(), "events_accepted", s.EventsAccepted.Load(),
 		"retries", s.Retries.Load(), "events_quarantined", s.EventsQuarantined.Load())
 	return err
+}
+
+// limitAttrs opisuje limity w logach (0 = brak limitu).
+func limitAttrs(l config.LimitsConfig) []any {
+	return []any{"priority", l.Priority, "cpu_max_percent", l.CPUMaxPercent,
+		"memory_soft_mb", *l.MemorySoftMB, "memory_hard_mb", *l.MemoryHardMB,
+		"max_eps", l.MaxEPS, "max_send_kbps", l.MaxSendKBps}
 }
 
 // retryDelay: brakujący kanał (np. Sysmon niezainstalowany) i brak uprawnień

@@ -103,18 +103,18 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 					r.log.Warn("nie udało się wyrenderować zdarzenia", "err", err)
 					continue
 				}
-				recID, evID, hasEvID, err := parseIDs(xml)
+				meta, err := parseMeta(xml)
 				if err != nil {
 					r.log.Warn("pomijam zdarzenie bez numeru rekordu", "err", err)
 					continue
 				}
 				rec := source.Record{
-					Channel: r.channel, RecordID: recID, EventID: evID, HasEventID: hasEvID,
-					Raw: xml, ReadAt: time.Now().UTC(),
+					Channel: r.channel, RecordID: meta.RecordID, EventID: meta.EventID, HasEventID: meta.HasEventID,
+					CreatedAt: meta.CreatedAt, Raw: xml, ReadAt: time.Now().UTC(),
 				}
 				select {
 				case out <- rec:
-					pos = source.Position{RecordID: recID, Valid: true}
+					pos = source.Position{RecordID: meta.RecordID, Valid: true}
 				case <-ctx.Done():
 					for _, rest := range handles[i+1 : n] {
 						evtClose(rest)

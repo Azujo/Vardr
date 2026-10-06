@@ -40,6 +40,31 @@ channels:
 	if c.StartAt != StartAtNow || c.Batch.MaxEvents != 500 || c.Batch.FlushInterval != 2*time.Second {
 		t.Errorf("wartości domyślne: %+v", c)
 	}
+	if r := c.Limits.Resource(); r.Priority != "below_normal" || r.MemorySoftMB != 150 || r.MemoryHardMB != 400 || r.CPUMaxPercent != 0 {
+		t.Errorf("domyślne limity: %+v", r)
+	}
+}
+
+func TestLimitsExplicitZeroDisables(t *testing.T) {
+	c, err := Load(write(t, `
+server: {url: "https://x", ca_file: a, cert_file: b, key_file: c}
+limits: {priority: background, cpu_max_percent: 5, memory_soft_mb: 0, memory_hard_mb: 0, max_eps: 200}
+channels: [{name: System}]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Limits.Resource(); r.MemorySoftMB != 0 || r.MemoryHardMB != 0 || r.CPUMaxPercent != 5 || c.Limits.MaxEPS != 200 {
+		t.Errorf("limity: %+v / %+v", r, c.Limits)
+	}
+
+	if _, err := Load(write(t, `
+server: {url: "https://x", ca_file: a, cert_file: b, key_file: c}
+limits: {memory_soft_mb: 100, memory_hard_mb: 110}
+channels: [{name: System}]
+`)); err == nil || !strings.Contains(err.Error(), "bezpiecznik") {
+		t.Errorf("twardy limit zbyt blisko miękkiego powinien być odrzucony: %v", err)
+	}
 }
 
 func TestLoadRejectsUnknownFieldsAndInvalid(t *testing.T) {

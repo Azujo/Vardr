@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"siem/internal/agent/throttle"
 	"siem/internal/contract"
 )
 
@@ -40,6 +41,8 @@ type HTTPSender struct {
 	QuarantineDir string
 	Log           *slog.Logger
 	Stats         *Stats
+	// Bandwidth ogranicza przepustowość wysyłki (bajty po kompresji); nil = brak.
+	Bandwidth *throttle.Limiter
 
 	MinBackoff  time.Duration // pierwsze opóźnienie ponowienia
 	MaxBackoff  time.Duration // limit dla błędów przejściowych
@@ -67,6 +70,9 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
 			s.Stats.Retries.Add(1)
+		}
+		if err := s.Bandwidth.Wait(ctx, len(body)); err != nil {
+			return err
 		}
 		status, retryAfter, respBody, err := s.post(ctx, body)
 		if ctx.Err() != nil {

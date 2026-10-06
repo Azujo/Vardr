@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -219,5 +220,63 @@ func TestSplitsByMaxEvents(t *testing.T) {
 		if len(b.Events) > 3 {
 			t.Fatalf("paczka przekracza max_events: %d", len(b.Events))
 		}
+	}
+}
+
+func TestMaxEPSThrottlesWithoutLoss(t *testing.T) {
+	ids := make([]uint64, 60)
+	for i := range ids {
+		ids[i] = uint64(i + 1)
+	}
+	src := &fakeSource{channel: "System", records: recs("System", ids...), gotPos: make(chan source.Position, 1)}
+	snd := &fakeSender{}
+	store := &memStore{}
+
+	start := time.Now()
+	// 60 zdarzeń przy limicie 40/s i zapasie 40 => ok. 0,5 s.
+	run(t, Options{MaxEPS: 40}, src, snd, store, func() bool { return store.get("System").RecordID == 60 })
+	if el := time.Since(start); el < 400*time.Millisecond {
+		t.Fatalf("limit EPS nie zadziałał: 60 zdarzeń w %v", el)
+	}
+	if len(snd.events()) != 60 {
+		t.Fatalf("limit nie może gubić zdarzeń: %d", len(snd.events()))
+	}
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  []byte
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.b = append(s.b, p...)
+	return len(p), nil
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return string(s.b)
+}
+
+func TestWarnsWhenLagExceedsThreshold(t *testing.T) {
+	r := recs("System", 1, 2)
+	for i := range r {
+		r[i].ReadAt = time.Now()
+		r[i].CreatedAt = r[i].ReadAt.Add(-10 * time.Minute) // zdarzenie sprzed 10 min
+	}
+	src := &fakeSource{channel: "System", records: r, gotPos: make(chan source.Position, 1)}
+	var logBuf syncBuffer
+	a := New(Options{AgentID: "agt-t", MaxEvents: 10, MaxBytes: 1 << 20, FlushInterval: 5 * time.Millisecond,
+		StatsEvery: 20 * time.Millisecond, LagWarn: 5 * time.Minute},
+		[]source.Source{src}, &fakeSender{}, &memStore{}, slog.New(slog.NewTextHandler(&logBuf, nil)))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_ = a.Run(ctx)
+	if out := logBuf.String(); !strings.Contains(out, "nie nadąża") || !strings.Contains(out, "lag_max=10m") {
+		t.Fatalf("brak ostrzeżenia o opóźnieniu w logu:\n%s", out)
 	}
 }

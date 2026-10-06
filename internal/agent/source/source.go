@@ -12,6 +12,7 @@ type Record struct {
 	RecordID   uint64
 	EventID    uint32
 	HasEventID bool
+	CreatedAt  time.Time // czas wystąpienia zdarzenia wg źródła (zero, jeśli brak)
 	Raw        string
 	ReadAt     time.Time
 }

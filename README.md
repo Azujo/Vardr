@@ -71,6 +71,33 @@ i jest restartowana po awarii (5 s / 30 s / 60 s). Log: `<state_dir>\agent.log`.
 Zweryfikowane na tym komputerze: 40 123 / 40 123 zdarzeń System + Application
 po twardym zabiciu agenta, 30% odrzuceń 503 i wyłączeniu serwera – bez braków.
 
+## Zużycie zasobów i limity („kaganiec”)
+
+Sekcja `limits` w `agent.yaml` (przykład w `configs/agent.example.yaml`):
+priorytet procesu, twardy limit CPU (Windows Job Object), miękki limit sterty
+Go i twardy limit pamięci procesu, limit zdarzeń na sekundę i przepustowości.
+Limity nie gubią danych – nadmiar czeka w dzienniku Windows, a agent loguje
+ostrzeżenie „agent nie nadąża”, gdy opóźnienie odczytu przekroczy 5 minut.
+
+Pomiary (Ryzen 5 7500F, 12 wątków; odczyt ~40 tys. zdarzeń System + Application,
+śr. 1,4 KB; w każdym wariancie dotarł komplet zdarzeń):
+
+| Wariant | Czas odczytu | Uwagi |
+|---|---|---|
+| bez limitów | ~1,1 s | ~23 µs CPU na zdarzenie; spoczynek ~0% CPU |
+| domyślne (below_normal, 150/400 MB) | ~1,1 s | |
+| `cpu_max_percent: 5` | ~1,8 s | średnio ≤ 5% komputera; krótkie skoki w obrębie okna Windows |
+| `cpu_max_percent: 1` | ~8,6 s | średnio ≤ 1% komputera |
+| `max_eps: 5000` | ~6,7 s | zgodnie z oczekiwanym ~7 s |
+| `max_send_kbps: 500` | ~16 s | |
+| `priority: background`, CPU obciążone w 100% | ~13 s | agent czeka, aż komputer się zwolni |
+| `priority: normal`, CPU obciążone w 100% | ~7 s | wpływ agenta na obciążający program ~1% |
+
+Pamięć: working set ~22–26 MB, private bytes ~55–59 MB. Sterta Go to tylko
+2–7 MB – resztę stanowią środowisko Go i biblioteki Windows, więc miękki limit
+pamięci jest zabezpieczeniem przed nietypowo dużymi zdarzeniami, a nie
+sposobem na obniżenie bazowego zużycia.
+
 ## Polityka audytu (dla profilu z załącznika B)
 
 Agent zbiera tylko to, co Windows zapisuje. Minimum w GPO

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // MaxQueryTerms to maksymalna liczba warunków w zapytaniu XPath przekazywanym
@@ -45,25 +46,40 @@ func BuildQuery(ids []uint32) (query string, agentSide bool) {
 }
 
 var (
-	reRecordID = regexp.MustCompile(`<EventRecordID>(\d+)</EventRecordID>`)
-	reEventID  = regexp.MustCompile(`<EventID(?:\s[^>]*)?>(\d+)</EventID>`)
+	reRecordID    = regexp.MustCompile(`<EventRecordID>(\d+)</EventRecordID>`)
+	reEventID     = regexp.MustCompile(`<EventID(?:\s[^>]*)?>(\d+)</EventID>`)
+	reTimeCreated = regexp.MustCompile(`<TimeCreated SystemTime=['"]([^'"]+)['"]`)
 )
 
-// parseIDs wyciąga numer rekordu i Event ID z XML zdarzenia.
-func parseIDs(xml string) (recordID uint64, eventID uint32, hasEventID bool, err error) {
-	m := reRecordID.FindStringSubmatch(xml)
-	if m == nil {
-		return 0, 0, false, fmt.Errorf("brak EventRecordID w zdarzeniu")
+// eventMeta to pola potrzebne agentowi; pełne parsowanie robi serwer.
+type eventMeta struct {
+	RecordID   uint64
+	EventID    uint32
+	HasEventID bool
+	CreatedAt  time.Time // zero, jeśli brak
+}
+
+// parseMeta wyciąga numer rekordu, Event ID i czas utworzenia z XML zdarzenia.
+func parseMeta(xml string) (eventMeta, error) {
+	var m eventMeta
+	r := reRecordID.FindStringSubmatch(xml)
+	if r == nil {
+		return m, fmt.Errorf("brak EventRecordID w zdarzeniu")
 	}
-	recordID, err = strconv.ParseUint(m[1], 10, 64)
+	id, err := strconv.ParseUint(r[1], 10, 64)
 	if err != nil {
-		return 0, 0, false, err
+		return m, err
 	}
-	if m := reEventID.FindStringSubmatch(xml); m != nil {
-		v, err := strconv.ParseUint(m[1], 10, 32)
-		if err == nil {
-			return recordID, uint32(v), true, nil
+	m.RecordID = id
+	if e := reEventID.FindStringSubmatch(xml); e != nil {
+		if v, err := strconv.ParseUint(e[1], 10, 32); err == nil {
+			m.EventID, m.HasEventID = uint32(v), true
 		}
 	}
-	return recordID, 0, false, nil
+	if t := reTimeCreated.FindStringSubmatch(xml); t != nil {
+		if ts, err := time.Parse(time.RFC3339Nano, t[1]); err == nil {
+			m.CreatedAt = ts
+		}
+	}
+	return m, nil
 }
