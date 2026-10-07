@@ -222,3 +222,62 @@ export const enrollApi = {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   },
 };
+
+// ---- Mímir: zdarzenia ----
+
+export interface EventRow {
+  timestamp: string;
+  event_id: string;
+  agent_id: string;
+  host: string;
+  dataset: string;
+  code: number;
+  action: string;
+  outcome: string;
+  user: string;
+  domain: string;
+  ip: string;
+  process: string;
+  message: string;
+}
+
+export interface EventDetail extends EventRow {
+  ingested: string;
+  provider: string;
+  command_line: string;
+  fields: Record<string, string>;
+  raw: string;
+  truncated: boolean;
+  parser_version: string;
+  time_quality: string;
+}
+
+export interface SearchParams {
+  q: string;
+  from: string;
+  to: string;
+  before_ts?: string;
+  before_id?: string;
+}
+
+function qs(p: Record<string, string | undefined>): string {
+  const u = new URLSearchParams();
+  for (const [k, v] of Object.entries(p)) if (v) u.set(k, v);
+  return u.toString();
+}
+
+export const eventsApi = {
+  search: (p: SearchParams) =>
+    request<{ events: EventRow[]; next?: { before_ts: string; before_id: string }; took_ms: number }>(
+      "GET",
+      `/api/v1/events?${qs({ ...p, limit: "100" })}`,
+    ),
+  histogram: (p: SearchParams) =>
+    request<{ buckets: { t: string; count: number }[]; interval_s: number; total: number }>(
+      "GET",
+      `/api/v1/events/histogram?${qs({ q: p.q, from: p.from, to: p.to })}`,
+    ),
+  get: (id: string, ts: string) =>
+    request<{ event: EventDetail }>("GET", `/api/v1/events/${encodeURIComponent(id)}?${qs({ ts })}`),
+  fields: () => request<{ fields: { name: string; help: string }[] }>("GET", "/api/v1/events/fields"),
+};

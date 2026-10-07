@@ -33,6 +33,7 @@ import (
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/enroll"
+	"siem/panel/internal/events"
 	"siem/panel/internal/fleetsync"
 	"siem/panel/web"
 )
@@ -130,6 +131,22 @@ func serve(log *slog.Logger) error {
 		}
 	}
 	apiServer := &api.Server{Store: db, Log: log, UI: ui, Enroll: enrollment}
+
+	// Mímir: wyszukiwarka zdarzeń (ClickHouse, konto tylko do odczytu).
+	if chUser := os.Getenv("SIEM_CLICKHOUSE_USER"); chUser != "" {
+		var searcher *events.Searcher
+		if err := svc.Retry(ctx, log, "połączenie z ClickHouse (wyszukiwarka)", func() error {
+			var err error
+			searcher, err = events.Open(ctx, svc.Env("SIEM_CLICKHOUSE_ADDR", "clickhouse:9000"), chUser, os.Getenv("SIEM_CLICKHOUSE_PASSWORD"))
+			return err
+		}); err != nil {
+			return err
+		}
+		apiServer.Events = searcher
+		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
+	} else {
+		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
+	}
 	srv := &http.Server{
 		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
 		Handler: apiServer.Handler(),

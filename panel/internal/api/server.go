@@ -59,6 +59,8 @@ type Server struct {
 	UI fs.FS
 	// Enroll (opcjonalne) – rejestracja agentów tokenem.
 	Enroll *Enrollment
+	// Events (opcjonalne) – wyszukiwarka zdarzeń (Mímir).
+	Events EventSearcher
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -118,6 +120,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/agents/{id}", s.authed(roleViewer, 0, s.getAgent))
 	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
 	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(roleAdmin, 0, s.revokeAgent))
+
+	mux.Handle("GET /api/v1/events", s.authed(roleViewer, 0, s.searchEvents))
+	mux.Handle("GET /api/v1/events/histogram", s.authed(roleViewer, 0, s.eventsHistogram))
+	mux.Handle("GET /api/v1/events/fields", s.authed(roleViewer, 0, s.eventFields))
+	mux.Handle("GET /api/v1/events/{id}", s.authed(roleViewer, 0, s.getEvent))
 
 	mux.Handle("GET /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.listTokens))
 	mux.Handle("POST /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.createToken))

@@ -52,6 +52,7 @@ services:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       SIEM_WRITER_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
       SIEM_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      SIEM_PANEL_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
       SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
       SIEM_RAW_TTL_DAYS: ${SIEM_RAW_TTL_DAYS:-5}
     volumes:
@@ -140,6 +141,10 @@ services:
       SIEM_NATS_URL: nats://nats:4222
       # Bifröst: adres serwera wpisywany do paczek instalacyjnych agentów.
       SIEM_PUBLIC_SERVER: ${SIEM_PUBLIC_SERVER:-}
+      # Mímir: wyszukiwarka zdarzeń (konto ClickHouse tylko do odczytu).
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_panel
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
     volumes:
       - ./certs:/certs:ro
       - ./agent-dist:/agent-dist:ro   # siem_agent.exe do paczek instalacyjnych
@@ -148,6 +153,7 @@ services:
     depends_on:
       saga: { condition: service_healthy }
       nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
     mem_limit: 256m
     logging: *logging
 

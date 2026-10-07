@@ -367,6 +367,27 @@ Przygotowanie serwera:
 - `siem_agent.exe` do `~/siem-lab/agent-dist`;
 - w `.env`: `SIEM_PUBLIC_SERVER=192.168.88.98`.
 
+**Mímir – wyszukiwarka zdarzeń:** zapytania w prostym języku, np.:
+
+```
+code:4625 user:jkowalski
+host:pc0* -action:logged-out
+"invoke-expression" powershell
+fields.TargetUserName:admin ip:10.0.5.23
+```
+
+Prefiksy pól filtrują, `*` na końcu oznacza prefiks, `-` neguje warunek, a pozostałe słowa i frazy w cudzysłowach są wyszukiwane w treści zdarzenia (opis i surowy XML). Lista pól jest pod ikoną „?” w panelu.
+
+Na stronie są:
+
+- histogram, w którym kliknięcie słupka zawęża zakres czasu;
+- wyniki ze stronicowaniem; kliknięcie wartości w tabeli dodaje filtr;
+- szczegóły zdarzenia: wszystkie pola (z filtrem po wartości) i sformatowany surowy XML.
+
+Stan wyszukiwania jest zapisany w adresie strony, więc wynik można wysłać jako link.
+
+Panel łączy się z ClickHouse kontem `siem_panel`, które ma tylko prawo odczytu oraz limity czasu i rozmiaru wyniku po stronie bazy. Wartości z zapytania trafiają do SQL wyłącznie jako parametry. Na istniejącej instalacji konto zakłada się raz (instrukcja w `clickhouse/init/01-schema.sh`), a hasło trafia do `CLICKHOUSE_PANEL_PASSWORD` w `.env`.
+
 **Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
 
 **Bezpieczeństwo:**

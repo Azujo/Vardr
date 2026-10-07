@@ -74,7 +74,7 @@ export default function HomePage() {
 
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         {[
-          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie i szczegóły", icon: IconDatabaseSearch, soon: true },
+          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie, histogram i szczegóły z surowym XML", icon: IconDatabaseSearch, soon: false },
           { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem i paczki instalacyjne", icon: IconBolt, soon: false },
         ].map((m) => (
           <Card key={m.to} withBorder component={Link} to={m.to}>

@@ -72,4 +72,10 @@ GRANT INSERT, SELECT ON siem.* TO siem_writer;
 CREATE USER IF NOT EXISTS grafana IDENTIFIED WITH sha256_password BY '${SIEM_GRAFANA_PASSWORD}'
     SETTINGS readonly = 2;
 GRANT SELECT ON siem.* TO grafana;
+
+-- Panel Hliðskjálf (wyszukiwarka zdarzeń): tylko odczyt, z limitami czasu
+-- i rozmiaru wyniku, których zapytanie nie może podnieść ponad MAX.
+CREATE USER IF NOT EXISTS siem_panel IDENTIFIED WITH sha256_password BY '${SIEM_PANEL_PASSWORD}'
+    SETTINGS readonly = 2, max_execution_time = 15 MAX 30, max_result_rows = 100000 MAX 100000;
+GRANT SELECT ON siem.* TO siem_panel;
 SQL
