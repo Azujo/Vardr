@@ -612,15 +612,15 @@ Trudno o lepszy opis SIEM-a. System nazywa się **Heimdall**, a jego części bi
 | Komponent | Nazwa | Postać w mitologii | Nazwa techniczna (kod, katalogi) |
 |---|---|---|---|
 | Cały system | **Heimdall** | strażnik bogów, widzi i słyszy wszystko | repozytorium `heimdall` |
-| Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `siem_agent`, `internal/agent` |
-| Kanał agent → serwer (mTLS, ingest) | **Bifröst** | tęczowy most do Asgardu, którego strzeże Heimdall | `siem-ingest`, `internal/server/ingest` |
-| Kolejka (NATS JetStream) | **Ratatoskr** | wiewiórka biegająca po Yggdrasilu z wiadomościami | `nats`, `internal/server/bus` |
-| Normalizator i dekodery | **Bragi** | bóg poezji i słowa | `siem-normalizer`, `internal/server/normalize` |
-| Zapis zdarzeń do bazy | **Verðandi** | norna teraźniejszości („to, co się staje”) | `siem-writer`, `internal/server/chwriter` |
+| Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `siem_agent`, `agent/` |
+| Kanał agent → serwer (mTLS, ingest) | **Bifröst** | tęczowy most do Asgardu, którego strzeże Heimdall | `siem-ingest`, `server/internal/ingest` |
+| Kolejka (NATS JetStream) | **Ratatoskr** | wiewiórka biegająca po Yggdrasilu z wiadomościami | `nats`, `server/internal/bus` |
+| Normalizator i dekodery | **Bragi** | bóg poezji i słowa | `siem-normalizer`, `server/internal/normalize` |
+| Zapis zdarzeń do bazy | **Verðandi** | norna teraźniejszości („to, co się staje”) | `siem-writer`, `server/internal/chwriter` |
 | Baza zdarzeń (ClickHouse) | **Mímir** | studnia mądrości, za łyk z której Odyn oddał oko | `clickhouse`, baza `siem` |
 | Archiwum NIS2 (WORM) | **Urd** | norna przeszłości i jej studnia – przeszłości nie da się zmienić | etap 3 |
 | Detekcja i alerty | **Gjallarhorn** | róg Heimdalla, ogłaszający nadejście zagrożenia | etap 4 |
-| Panel | **Hliðskjálf** | tron Odyna, z którego widać wszystkie dziewięć światów | `siem-api` + frontend (załącznik C) |
+| Panel | **Hliðskjálf** | tron Odyna, z którego widać wszystkie dziewięć światów | `siem-api` + frontend, katalog `panel/` (załącznik C) |
 | Konfiguracja i stan (PostgreSQL) | **Saga** | bogini, z którą Odyn codziennie pije ze złotych pucharów (Grímnismál); imię wiąże się z opowieścią i pamięcią | `postgres` |
 | Monitorowanie potoku (Grafana) | – | narzędzie zewnętrzne, bez nazwy z mitologii | `grafana` |
 

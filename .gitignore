@@ -17,6 +17,6 @@ bin/
 /dist/
 
 # Frontend panelu: zależności i wynik budowania (poza znacznikiem katalogu)
-web/node_modules/
-web/dist/*
-!web/dist/.gitkeep
+panel/web/node_modules/
+panel/web/dist/*
+!panel/web/dist/.gitkeep

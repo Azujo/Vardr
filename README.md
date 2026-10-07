@@ -1,39 +1,59 @@
 # SIEM – własny system SIEM
 
-Projekt według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (wersja 1.3).
-Obecny stan: **etap 1 ukończony – agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana**.
+Heimdall – własny SIEM według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (nazewnictwo: załącznik D).
+
+Obecny stan:
+
+- **ukończone etapy 1 i 1.5:** agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana. Potok jest wzmocniony i zmierzony: nadąża przy 10 000 zdarzeń/s;
+- **w toku:** panel Hliðskjálf z etapem 2. Logowanie, konta i audyt już działają.
 
 ## Struktura
 
+Repozytorium to jeden moduł Go podzielony na części. Kod w `agent/internal/`, `server/internal/` i `panel/internal/` jest prywatny dla swojej części: Go nie pozwala na import z innej części. Wspólne pakiety leżą w `internal/` w katalogu głównym.
+
 ```
-cmd/
-  siem_agent/          agent Windows (instalator, usługa, konsola)
-  siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
-  siem-pki/            certyfikaty laboratoryjne (CA, serwer, agenci)
-  siem-ingest/         serwer: odbiór paczek (mTLS) → NATS
-  siem-normalizer/     serwer: XML Windows → wspólny schemat
-  siem-writer/         serwer: zapis do ClickHouse
-  siem-loadgen/        generator ruchu: symulacja wielu agentów
-internal/
-  contract/            kontrakt paczki agent → serwer (załącznik A)
-  agent/config/        konfiguracja YAML agenta
-  agent/core/          paczkowanie, wysyłka, zapis pozycji po potwierdzeniu
-  agent/shipper/       HTTPS + mTLS, gzip, ponowienia, 413/400/429/503
-  agent/state/         atomowy zapis bookmarków (state.json)
-  agent/source/        interfejs źródeł logów
-  agent/winevt/        Windows Event Log (wevtapi: subskrypcja + bookmarki)
-  server/              ingest, kolejka (bus), normalizacja, zapis, metryki
-  loadgen/             szablony zdarzeń Windows do testów obciążenia
-deploy/lab/            stos serwera (docker compose: NATS, ClickHouse, Prometheus, Grafana)
-configs/
-  agent.example.yaml   profil domyślny (załącznik B)
-  agent.lab.yaml       test bez uprawnień administratora (System, Application)
+agent/                     Huginn – agent Windows (działa na komputerach)
+  cmd/siem_agent/          program agenta: instalator, usługa, konsola, status
+  internal/                config, core (paczkowanie i wysyłka), shipper (HTTPS + mTLS),
+                           winevt (Event Log), state, status, limits, logging,
+                           logwatch (ochrona przed nadpisaniem dziennika), secure, setup
+  configs/                 agent.example.yaml (profil z załącznika B), agent.lab.yaml (test)
+
+server/                    potok zdarzeń (kontenery na serwerze)
+  cmd/siem-ingest/         Bifröst: odbiór paczek (mTLS) → NATS
+  cmd/siem-normalizer/     Bragi: XML Windows → wspólny schemat
+  cmd/siem-writer/         Verðandi: zapis do ClickHouse (Mímir)
+  cmd/siem-loadgen/        generator ruchu: symulacja tysięcy agentów
+  internal/                bus (NATS), queue, ingest, normalize, chwriter, model,
+                           metrics, loadgen (szablony zdarzeń)
+
+panel/                     Hliðskjálf – panel zarządzania
+  cmd/siem-api/            backend (HTTPS :8444) z wbudowanym frontendem
+  internal/api/            API, logowanie i sesje (auth), baza Saga (store, migracje)
+  web/                     frontend: React + TypeScript + Mantine
+
+internal/                  wspólne: contract (paczka agent → serwer, załącznik A),
+                           svc (konfiguracja, log, ponawianie), throttle
+tools/                     narzędzia laboratoryjne
+  cmd/siem-pki/            certyfikaty (CA, serwer, agenci, paczki instalacyjne)
+  cmd/siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
+
+deploy/lab/                stos serwera: docker compose (NATS, ClickHouse, Saga,
+                           Prometheus, Grafana, usługi potoku, panel)
+docs/                      roadmapa
 ```
+
+Katalogi lokalne, poza repozytorium:
+
+- `bin/`: zbudowane programy;
+- `certs/`: certyfikaty i klucze laboratorium;
+- `dist/`: paczki agentów z kluczami;
+- `data/`: dane testów.
 
 ## Szybki start (laboratorium)
 
 ```powershell
-go build -o bin/ ./cmd/...
+go build -o bin/ ./agent/cmd/... ./tools/cmd/...
 
 # certyfikaty (jednorazowo)
 bin\siem-pki.exe ca
@@ -44,8 +64,8 @@ bin\siem-pki.exe agent -id agt-lab-pc01
 bin\siem-ingest-stub.exe
 
 # terminal 2 – agent w konsoli
-bin\siem_agent.exe -config configs\agent.lab.yaml check
-bin\siem_agent.exe -config configs\agent.lab.yaml run
+bin\siem_agent.exe -config agent\configs\agent.lab.yaml check
+bin\siem_agent.exe -config agent\configs\agent.lab.yaml run
 ```
 
 Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.json`.
@@ -56,7 +76,7 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
    identyfikatorem agenta, CA, program i domyślny adres serwera):
 
    ```powershell
-   go build -o bin\siem_agent.exe .\cmd\siem_agent
+   go build -o bin\siem_agent.exe .\agent\cmd\siem_agent
    bin\siem-pki.exe package -id agt-pc01 -server 192.168.88.98
    ```
 
@@ -150,7 +170,7 @@ chronione. Uruchomiony bez uprawnień administratora agent nie zawęża ACL
 
 ## Zużycie zasobów i limity („kaganiec”)
 
-Sekcja `limits` w `agent.yaml` (przykład w `configs/agent.example.yaml`):
+Sekcja `limits` w `agent.yaml` (przykład w `agent/configs/agent.example.yaml`):
 priorytet procesu, twardy limit CPU (Windows Job Object), miękki limit sterty
 Go i twardy limit pamięci procesu, limit zdarzeń na sekundę i przepustowości.
 Limity nie gubią danych – nadmiar czeka w dzienniku Windows, a agent loguje
@@ -265,7 +285,7 @@ Wdrożenie (stacja z Windows → VM z Dockerem):
 ```powershell
 # binaria serwera dla Linuksa
 $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
-go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./cmd/siem-ingest ./cmd/siem-normalizer ./cmd/siem-writer
+go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./server/cmd/siem-ingest ./server/cmd/siem-normalizer ./server/cmd/siem-writer ./panel/cmd/siem-api
 Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
 
 # certyfikat serwera z adresem VM + kopia do stosu (katalog certs jest ignorowany przez git)
@@ -326,12 +346,12 @@ Role:
 - **analityk:** praca z danymi;
 - **tylko odczyt.**
 
-**Frontend** (React, TypeScript, Mantine) leży w `web/`, a jego build jest wbudowany w program `siem-api`. Wymaga Node.js LTS:
+**Frontend** (React, TypeScript, Mantine) leży w `panel/web/`, a jego build jest wbudowany w program `siem-api`. Wymaga Node.js LTS:
 
 ```powershell
-cd web
+cd panelweb
 npm ci
-npm run build    # web/dist → wbudowywane przy budowaniu siem-api
+npm run build    # panel/web/dist → wbudowywane przy budowaniu siem-api
 npm run dev      # podgląd na żywo: http://localhost:5173, API przekierowane do VM
 ```
 
@@ -381,7 +401,7 @@ Interfejs Prometheusa jest dostępny tylko z VM (`127.0.0.1:9090`, np. przez `ss
 Generator ruchu udaje wielu agentów. Każdy dostaje własny certyfikat, wystawiany w pamięci z `certs.key`, i realistyczną mieszankę zdarzeń Security, System i Application:
 
 ```powershell
-go build -o bin/siem-loadgen.exe ./cmd/siem-loadgen
+go build -o bin/siem-loadgen.exe ./server/cmd/siem-loadgen
 binsiem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 20 -duration 3m
 ```
 

@@ -38,15 +38,16 @@ jobs:
         run: go test -race -count=1 ./...
 
       - name: Fuzzing parsera XML zdarzeń (60 s)
-        run: go test -run '^$' -fuzz FuzzParseWinEvent -fuzztime 60s ./internal/server/normalize
+        run: go test -run '^$' -fuzz FuzzParseWinEvent -fuzztime 60s ./server/internal/normalize
 
       - name: Budowanie usług serwera
         env:
           CGO_ENABLED: "0"
         run: |
           mkdir -p out
-          for b in siem-ingest siem-normalizer siem-writer siem-loadgen siem-pki; do
-            go build -trimpath -ldflags="-s -w" -o out/$b ./cmd/$b
+          for p in server/cmd/siem-ingest server/cmd/siem-normalizer server/cmd/siem-writer \
+                   server/cmd/siem-loadgen panel/cmd/siem-api tools/cmd/siem-pki; do
+            go build -trimpath -ldflags="-s -w" -o out/ ./$p
           done
           ls -la out
 
@@ -67,7 +68,7 @@ jobs:
         run: go test -count=1 ./...
 
       - name: Budowanie agenta
-        run: go build -trimpath -o siem_agent.exe ./cmd/siem_agent
+        run: go build -trimpath -o siem_agent.exe ./agent/cmd/siem_agent
 
   web:
     name: Frontend panelu (TypeScript + build)
@@ -75,13 +76,13 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: web
+        working-directory: panel/web
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: panel/web/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run build
