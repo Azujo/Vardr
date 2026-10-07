@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -296,4 +297,30 @@ func syncDir(dir string) {
 		_ = d.Sync()
 		_ = d.Close()
 	}
+}
+
+// MarkerFile oznacza katalog archiwum. Chroni przed pracą na pustym
+// katalogu, gdy dysk archiwum nie został zamontowany (wpis nofail w fstab).
+const MarkerFile = ".urd-archive"
+
+// ErrWrongDir: spis ma manifesty, a katalog nie wygląda na archiwum.
+var ErrWrongDir = errors.New("katalog nie zawiera archiwum, choć spis w bazie ma manifesty – dysk archiwum niezamontowany?")
+
+// CheckDir sprawdza, czy katalog jest archiwum ze spisu, i zakłada znacznik
+// w nowym archiwum (albo w archiwum sprzed wprowadzenia znacznika).
+func (a *Archive) CheckDir(ctx context.Context) error {
+	marker := filepath.Join(a.Dir, MarkerFile)
+	if _, err := os.Stat(marker); err == nil {
+		return nil
+	}
+	_, hasManifests, err := a.Cat.LastManifest(ctx)
+	if err != nil {
+		return err
+	}
+	if hasManifests {
+		if _, err := os.Stat(filepath.Join(a.Dir, "manifests")); err != nil {
+			return ErrWrongDir
+		}
+	}
+	return os.WriteFile(marker, []byte("Heimdall – archiwum NIS2 (Urd). Nie usuwać.\n"), 0o440)
 }

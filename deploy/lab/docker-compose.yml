@@ -122,7 +122,12 @@ services:
     volumes:
       # Archiwum na osobnym dysku (SIEM_ARCHIVE_PATH w .env, np. /srv/heimdall/archive):
       # zapełnienie archiwum nie zatrzyma wtedy kolejki ani bazy zdarzeń.
-      - ${SIEM_ARCHIVE_PATH:-./archive}:/archive
+      # create_host_path: false – gdy dysk nie jest zamontowany, usługa nie wystartuje
+      # (Docker nie założy pustego katalogu na dysku systemowym).
+      - type: bind
+        source: ${SIEM_ARCHIVE_PATH:-./archive}
+        target: /archive
+        bind: { create_host_path: false }
     environment:
       <<: *server-env
       SIEM_ARCHIVE_DB_URL: postgres://siem_archiver:${SAGA_ARCHIVER_PASSWORD}@saga:5432/saga?sslmode=disable

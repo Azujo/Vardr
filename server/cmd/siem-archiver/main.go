@@ -160,6 +160,9 @@ func serve(log *slog.Logger) error {
 	defer release()
 
 	a := urd.New(cfg.dir, cat)
+	if err := a.CheckDir(ctx); err != nil {
+		return fmt.Errorf("%s: %w", cfg.dir, err)
+	}
 	if n, err := a.CleanTemp(); err != nil {
 		return fmt.Errorf("sprzątanie niezatwierdzonych segmentów: %w", err)
 	} else if n > 0 {

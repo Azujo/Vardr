@@ -3,6 +3,7 @@ package urd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -296,5 +297,25 @@ func TestFullVerificationCoverage(t *testing.T) {
 	v := a.Verify(context.Background(), VerifyOptions{})
 	if !v.OK || v.FullManifests != 4 || v.Unverified != 0 || v.OldestFullCheck == nil || v.Records != 18 {
 		t.Fatalf("pełne sprawdzenie: %+v", v)
+	}
+}
+
+func TestCheckDirRefusesEmptyDirWithCatalog(t *testing.T) {
+	a, cat, _ := fill(t)
+	ctx := context.Background()
+	if err := a.CheckDir(ctx); err != nil { // archiwum sprzed znacznika: znacznik zakładany
+		t.Fatal(err)
+	}
+	if err := a.CheckDir(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Ten sam spis, pusty katalog (niezamontowany dysk).
+	empty := New(t.TempDir(), cat)
+	if err := empty.CheckDir(ctx); !errors.Is(err, ErrWrongDir) {
+		t.Fatalf("pusty katalog przy niepustym spisie: %v", err)
+	}
+	// Nowe archiwum: pusty spis i pusty katalog są w porządku.
+	if err := New(t.TempDir(), NewMemCatalog()).CheckDir(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

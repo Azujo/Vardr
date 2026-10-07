@@ -468,7 +468,18 @@ W panelu stan archiwum widać w module **Urd**:
 
 Administrator może zlecić weryfikację przyciskiem „Zweryfikuj teraz”. Archiwizator rozpoczyna ją w ciągu minuty, a zlecenie trafia do audytu. Kafelek z tym stanem jest też na stronie startowej.
 
-Przygotowanie na VM, jednorazowo: `mkdir ~/siem-lab/archive && chmod 750 ~/siem-lab/archive`. Katalog musi należeć do użytkownika `siem` (uid 1000).
+**Dysk archiwum (jednorazowo, wymaga sudo):** w laboratorium to osobny dysk 150 GB (`/dev/sdb`) zamontowany w `/srv/heimdall`, z katalogami `archive` i `backup` należącymi do `siem` (uid 1000):
+
+```bash
+sudo mkfs.ext4 -L heimdall-data /dev/sdb
+sudo mkdir -p /srv/heimdall && echo 'LABEL=heimdall-data /srv/heimdall ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab && sudo mount -a
+sudo mkdir -p /srv/heimdall/archive /srv/heimdall/backup && sudo chown -R 1000:1000 /srv/heimdall && sudo chmod 750 /srv/heimdall/archive /srv/heimdall/backup
+```
+
+W `.env` ustaw `SIEM_ARCHIVE_PATH=/srv/heimdall/archive`. Dzięki `nofail` brak dysku nie blokuje startu VM, a dwie blokady chronią przed pisaniem archiwum na dysk systemowy:
+
+- Docker nie zakłada brakującego katalogu (`create_host_path: false`), więc archiwizator nie wystartuje;
+- archiwizator odmawia pracy, gdy spis w bazie ma manifesty, a katalog nie zawiera archiwum (znacznik `.urd-archive`).
 
 ```bash
 docker compose exec archiver /app verify          # weryfikacja na żądanie, w ramach budżetu (kod wyjścia 1 = niezgodności)
