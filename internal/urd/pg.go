@@ -62,8 +62,18 @@ func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
 	}
 	defer conn.Exec(context.WithoutCancel(ctx), "SELECT pg_advisory_unlock($1)", int64(migrationLock)) //nolint:errcheck
 
-	if _, err := conn.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS urd;
-		CREATE TABLE IF NOT EXISTS urd.schema_migrations (
+	// Schemat zwykle zakłada administrator (rola bez prawa CREATE w bazie);
+	// tworzymy go tylko, gdy go brak (np. baza testowa).
+	var exists bool
+	if err := conn.QueryRow(ctx, "SELECT EXISTS (SELECT FROM pg_namespace WHERE nspname = 'urd')").Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		if _, err := conn.Exec(ctx, "CREATE SCHEMA urd"); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS urd.schema_migrations (
 		version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return nil, err
 	}

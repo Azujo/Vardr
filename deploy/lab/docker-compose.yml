@@ -123,7 +123,7 @@ services:
       - ./archive:/archive
     environment:
       <<: *server-env
-      SIEM_ARCHIVE_DB_URL: postgres://siem_api:${SAGA_DB_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_ARCHIVE_DB_URL: postgres://siem_archiver:${SAGA_ARCHIVER_PASSWORD}@saga:5432/saga?sslmode=disable
       SIEM_ARCHIVE_RETENTION_DAYS: ${SIEM_ARCHIVE_RETENTION_DAYS:-30}
       GOMEMLIMIT: 300MiB
     depends_on:
@@ -137,12 +137,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: saga
-      POSTGRES_USER: siem_api
-      POSTGRES_PASSWORD: ${SAGA_DB_PASSWORD}
+      # saga_admin tylko do administracji; usługi mają osobne role bez
+      # superużytkownika (saga/init/10-roles.sh).
+      POSTGRES_USER: saga_admin
+      POSTGRES_PASSWORD: ${SAGA_ADMIN_PASSWORD}
+      SAGA_DB_PASSWORD: ${SAGA_DB_PASSWORD}
+      SAGA_ARCHIVER_PASSWORD: ${SAGA_ARCHIVER_PASSWORD}
     volumes:
+      - ./saga/init:/docker-entrypoint-initdb.d:ro
       - saga-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "siem_api", "-d", "saga"]
+      test: ["CMD", "pg_isready", "-U", "saga_admin", "-d", "saga"]
       interval: 5s
       timeout: 3s
       retries: 20

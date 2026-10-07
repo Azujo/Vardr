@@ -468,6 +468,27 @@ Zatrzymany archiwizator **nie gubi danych**: paczki czekają w kolejce, a po jej
 
 W laboratorium archiwum leży na dysku lokalnym. Ochrona polega tu na wykrywaniu zmian przez łańcuch hashy, a nie na blokadzie zapisu. Backend S3 z Object Lock w trybie compliance dojdzie później. Napastnik z pełnym dostępem do dysku **i** bazy może przepisać cały łańcuch, dlatego docelowo hash ostatniego manifestu będzie też zapisywany poza systemem.
 
+### Role bazy Saga
+
+Każda usługa łączy się z PostgreSQL własną rolą, bez uprawnień superużytkownika. Role zakłada skrypt `saga/init/10-roles.sh`:
+
+| Rola | Kto | Uprawnienia |
+|---|---|---|
+| `saga_admin` | administrator (ręcznie) | superużytkownik, właściciel bazy; żadna usługa go nie używa |
+| `siem_api` | panel | właściciel tabel panelu (schemat `public`); archiwum tylko czyta i może zlecić weryfikację |
+| `siem_archiver` | archiwizator | właściciel spisu archiwum (schemat `urd`); bez dostępu do kont i agentów |
+
+Przejęcie panelu nie daje więc możliwości zmiany ani usunięcia spisu archiwum, ani usunięcia bazy. Nowa instalacja zakłada role sama przy pierwszym starcie. Instalację sprzed rozdzielenia ról przenosi się raz:
+
+```bash
+docker compose stop api archiver
+docker compose up -d saga
+docker compose exec -T saga sh /docker-entrypoint-initdb.d/10-roles.sh
+docker compose up -d api archiver
+```
+
+Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIVER_PASSWORD`, np. `openssl rand -hex 24`. Superużytkownik, z którym baza była zakładana, zostaje przemianowany na `saga_admin`, bo PostgreSQL nie pozwala odebrać mu uprawnień. Konsola administratora: `docker compose exec saga psql -U saga_admin -d saga`.
+
 ### Skalowanie
 
 Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z jednej kolejki NATS):
