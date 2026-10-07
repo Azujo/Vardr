@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -71,18 +73,34 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), maxRows: maxRows, m: metrics.NewWriter()}
+	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), m: metrics.NewWriter()}
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	go svc.WatchQueue(ctx, log, js, bus.StreamEvents, bus.ConsumerWriter, 0.5, 0.8, metrics.NewQueue())
 	log.Info("zapis do ClickHouse uruchomiony", "max_rows", maxRows, "flush_every", flushEvery)
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
-	firstPending := time.Time{}
 
+	// Zapis do ClickHouse odbywa się w tle (etap 1.5): w czasie INSERT-u
+	// kolejna paczka jest już pobierana i dekodowana. Co najwyżej jedna
+	// paczka czeka na zapis, więc pamięć i liczba niepotwierdzonych
+	// wiadomości pozostają ograniczone.
+	insCtx, insCancel := context.WithCancel(context.Background())
+	defer insCancel()
+	toInsert := make(chan *pending, 1)
+	inserterDone := make(chan struct{})
+	go func() {
+		defer close(inserterDone)
+		for r := range toInsert {
+			p.flush(insCtx, r)
+		}
+	}()
+
+	cur, firstPending := &pending{}, time.Time{}
 	for ctx.Err() == nil {
 		select {
 		case <-statsTick.C:
-			log.Info("statystyki", "rows", p.rows, "quarantine", p.quarantined, "rejected_by_db", p.rejected, "duplicates_skipped", p.dups, "insert_errors", p.errors)
+			log.Info("statystyki", "rows", p.rows.Load(), "quarantine", p.quarantined.Load(), "rejected_by_db", p.rejected.Load(),
+				"duplicates_skipped", p.dups.Load(), "insert_errors", p.errors.Load())
 		default:
 		}
 		msgs, err := cons.Fetch(64, jetstream.FetchMaxWait(flushEvery/2))
@@ -95,36 +113,50 @@ func run(log *slog.Logger) error {
 			if firstPending.IsZero() {
 				firstPending = time.Now()
 			}
-			p.add(msg)
+			p.add(cur, msg)
 		}
-		if len(p.msgs) > 0 && (len(p.events)+len(p.quarantine) >= maxRows || time.Since(firstPending) >= flushEvery) {
-			p.flush(ctx)
-			firstPending = time.Time{}
+		if len(cur.msgs) > 0 && (len(cur.events)+len(cur.quarantine) >= maxRows || time.Since(firstPending) >= flushEvery) {
+			select {
+			case toInsert <- cur:
+				cur, firstPending = &pending{}, time.Time{}
+			case <-ctx.Done():
+			}
 		}
 	}
-	if len(p.msgs) > 0 {
-		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		p.flush(shutdown)
-		cancel()
+	// Zatrzymanie: dopisujemy to, co zebrane, i czekamy na zapis (maks. 15 s).
+	if len(cur.msgs) > 0 {
+		toInsert <- cur
+	}
+	close(toInsert)
+	select {
+	case <-inserterDone:
+	case <-time.After(15 * time.Second):
+		insCancel()
+		<-inserterDone
 	}
 	return nil
 }
 
-type pipeline struct {
-	w       *chwriter.Writer
-	log     *slog.Logger
-	seen    *chwriter.Seen
-	m       *metrics.Writer
-	maxRows int
-
+// pending to wiersze zebrane z wiadomości kolejki, zapisywane jednym INSERT-em.
+type pending struct {
 	msgs       []jetstream.Msg
 	events     []model.Event
 	quarantine []model.Quarantined
-
-	rows, quarantined, rejected, dups, errors int64
 }
 
-func (p *pipeline) add(msg jetstream.Msg) {
+type pipeline struct {
+	w   *chwriter.Writer
+	log *slog.Logger
+	m   *metrics.Writer
+
+	// add (pętla pobierania) i flush (zapis w tle) działają równolegle.
+	seenMu sync.Mutex
+	seen   *chwriter.Seen
+
+	rows, quarantined, rejected, dups, errors atomic.Int64
+}
+
+func (p *pipeline) add(cur *pending, msg jetstream.Msg) {
 	data, err := bus.Gunzip(msg.Data(), 256<<20)
 	var b model.Batch
 	if err == nil {
@@ -135,60 +167,63 @@ func (p *pipeline) add(msg jetstream.Msg) {
 		_ = msg.Term()
 		return
 	}
-	p.msgs = append(p.msgs, msg)
+	cur.msgs = append(cur.msgs, msg)
+	p.seenMu.Lock()
 	for _, e := range b.Events {
 		if p.seen.Has(e.ID) {
-			p.dups++
+			p.dups.Add(1)
 			p.m.Duplicates.Inc()
 			continue
 		}
-		p.events = append(p.events, e)
+		cur.events = append(cur.events, e)
 	}
-	p.quarantine = append(p.quarantine, b.Quarantine...)
+	p.seenMu.Unlock()
+	cur.quarantine = append(cur.quarantine, b.Quarantine...)
 }
 
 // flush zapisuje zgromadzone wiersze; po sukcesie potwierdza wiadomości,
 // po awarii prosi o ponowne dostarczenie (nic nie ginie). Wiersze, których
 // ClickHouse nie przyjmie z powodu treści, trafiają do kwarantanny.
-func (p *pipeline) flush(ctx context.Context) {
-	defer func() { p.msgs, p.events, p.quarantine = nil, nil, nil }()
+func (p *pipeline) flush(ctx context.Context, r *pending) {
 	start := time.Now()
 	defer func() { p.m.InsertDuration.Observe(time.Since(start).Seconds()) }()
 
-	rejected, err := chwriter.Bisect(ctx, p.events, p.w.InsertEvents, func(ok []model.Event) {
+	rejected, err := chwriter.Bisect(ctx, r.events, p.w.InsertEvents, func(ok []model.Event) {
 		// Zapisane od razu oznaczamy – po ponownym dostarczeniu zostaną pominięte.
+		p.seenMu.Lock()
 		for _, e := range ok {
 			p.seen.Add(e.ID)
 		}
-		p.rows += int64(len(ok))
+		p.seenMu.Unlock()
+		p.rows.Add(int64(len(ok)))
 		p.m.Rows.Add(float64(len(ok)))
 		now := time.Now()
 		for _, e := range ok {
 			p.m.Latency.Observe(now.Sub(e.Ingested).Seconds())
 		}
 	})
-	quarantine := p.quarantine
-	for _, r := range rejected {
-		p.rejected++
+	quarantine := r.quarantine
+	for _, rj := range rejected {
+		p.rejected.Add(1)
 		p.m.Rejected.Inc()
-		p.log.Error("ClickHouse odrzucił zdarzenie – przenoszę do kwarantanny", "event_id", r.Event.ID, "err", r.Err)
-		quarantine = append(quarantine, r.Quarantined())
+		p.log.Error("ClickHouse odrzucił zdarzenie – przenoszę do kwarantanny", "event_id", rj.Event.ID, "err", rj.Err)
+		quarantine = append(quarantine, rj.Quarantined())
 	}
 	if err == nil {
 		err = p.w.InsertQuarantine(ctx, quarantine)
 	}
 	if err != nil {
-		p.errors++
+		p.errors.Add(1)
 		p.m.InsertErrors.Inc()
-		p.log.Error("zapis do ClickHouse nieudany – ponowię", "rows", len(p.events), "err", err)
-		for _, m := range p.msgs {
+		p.log.Error("zapis do ClickHouse nieudany – ponowię", "rows", len(r.events), "err", err)
+		for _, m := range r.msgs {
 			_ = m.NakWithDelay(5 * time.Second)
 		}
 		return
 	}
-	for _, m := range p.msgs {
+	for _, m := range r.msgs {
 		_ = m.Ack()
 	}
-	p.quarantined += int64(len(quarantine))
+	p.quarantined.Add(int64(len(quarantine)))
 	p.m.Quarantined.Add(float64(len(quarantine)))
 }

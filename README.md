@@ -273,6 +273,7 @@ Ustawienia (w `.env`, wspólne dla usług serwera):
 | `SIEM_QUEUE_EVENTS_MAX_MB` | 8192 | pojemność kolejki znormalizowanych zdarzeń |
 | `SIEM_INGEST_MAX_INFLIGHT` | 64 | paczki obsługiwane jednocześnie przez jedną kopię ingest |
 | `SIEM_INGEST_QUEUE_HIGH_WATER` | 0.9 | zajętość kolejki, od której ingest odmawia |
+| `SIEM_NORMALIZER_WORKERS` | liczba rdzeni | paczki przetwarzane równolegle przez jedną kopię normalizatora |
 
 Zaległości widać w logach normalizatora i writera: od 50% zajętości ostrzeżenie „kolejka rośnie”. To sygnał, że trzeba dołożyć kopie.
 

@@ -1,6 +1,7 @@
 package normalize
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"time"
@@ -27,10 +28,13 @@ func Encoded(gz []byte, agentID string, receivedAt time.Time, maxDecompressed in
 		return nil, model.Batch{}, errors.Join(ErrUnreadable, err)
 	}
 	nb := Batch(b, agentID, receivedAt)
-	out, err := json.Marshal(nb)
-	if err != nil {
+	var out bytes.Buffer
+	out.Grow(len(data) + len(data)/2)
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false) // XML bez 003c – krótsza i szybsza serializacja
+	if err := enc.Encode(nb); err != nil {
 		return nil, nb, errors.Join(ErrUnreadable, err)
 	}
-	packed, err := bus.Gzip(out)
+	packed, err := bus.Gzip(out.Bytes())
 	return packed, nb, err
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -161,10 +162,26 @@ func StreamFill(ctx context.Context, js jetstream.JetStream, stream string) (Fil
 	return f, nil
 }
 
-// Gzip / Gunzip – pomocnicze kompresowanie treści wiadomości.
+// Kompresory i dekompresory są drogie w tworzeniu (setki KB stanu), więc
+// są używane ponownie.
+var (
+	gzipWriters = sync.Pool{New: func() any {
+		zw, _ := gzip.NewWriterLevel(nil, gzip.BestSpeed)
+		return zw
+	}}
+	gzipReaders sync.Pool
+)
+
+// Gzip kompresuje treść wiadomości wewnątrz serwera. Poziom BestSpeed:
+// wiadomości żyją w kolejce krótko, a CPU normalizatora jest wąskim gardłem
+// (pomiar K4) – ok. 3× szybciej niż poziom domyślny kosztem nieco
+// większych wiadomości.
 func Gzip(data []byte) ([]byte, error) {
 	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
+	buf.Grow(len(data)/4 + 64)
+	zw := gzipWriters.Get().(*gzip.Writer)
+	defer gzipWriters.Put(zw)
+	zw.Reset(&buf)
 	if _, err := zw.Write(data); err != nil {
 		return nil, err
 	}
@@ -176,11 +193,19 @@ func Gzip(data []byte) ([]byte, error) {
 
 // Gunzip rozpakowuje z limitem rozmiaru (ochrona przed „bombą” kompresyjną).
 func Gunzip(data []byte, limit int64) ([]byte, error) {
-	zr, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
+	var zr *gzip.Reader
+	if v := gzipReaders.Get(); v != nil {
+		zr = v.(*gzip.Reader)
+		if err := zr.Reset(bytes.NewReader(data)); err != nil {
+			return nil, err
+		}
+	} else {
+		var err error
+		if zr, err = gzip.NewReader(bytes.NewReader(data)); err != nil {
+			return nil, err
+		}
 	}
-	defer zr.Close()
+	defer gzipReaders.Put(zr)
 	out, err := io.ReadAll(io.LimitReader(zr, limit+1))
 	if err != nil {
 		return nil, err

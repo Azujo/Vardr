@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3.4 • 07.10.2026
+Wersja planistyczna 1.3.5 • 07.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -414,7 +414,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
-- **Etap 1.5 – postęp:** K1, K2, W3 i K4 zrobione (06–07.10.2026). K1 i K4 sprawdzone na VM, K2 i W3 testami jednostkowymi. Test obciążenia wskazał normalizator jako wąskie gardło, więc następny jest W1. Dalej: W2, K3, M1.
+- **Etap 1.5 – postęp:** K1, K2, W3, K4 i W1 zrobione (06–07.10.2026). K1, K4 i W1 sprawdzone na VM, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Dalej: W2, K3, M1, opcjonalnie wydajność writera (W7).
 
 **Kamienie milowe po drodze:**
 
@@ -702,7 +702,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 | Element | Wartość | Przy 10 000 zdarzeń/s |
 |---|---|---|
-| Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | 21 µs (System 7045), 33 µs (Security 4625) | **zaniżone** – to samo parsowanie. Cała ścieżka paczki: 56 µs na Ryzenie, na VM zmierzone ok. 4500 zdarzeń/s na kopię (K4) – **pierwsze wąskie gardło** |
+| Normalizacja (benchmark, jeden rdzeń Ryzen 5 7500F) | cała ścieżka paczki: 56 µs przed W1, **19,9 µs po W1** (parser XML 3,8 µs) | na VM do 17 000 zdarzeń/s na kopię (przed W1: 4500); przy 10 000/s ok. 0,8 rdzenia |
 | Kolejka NATS (oba strumienie) | ok. 200 B na zdarzenie | przy retencji 48 h było to ok. 340 GB; po poprawce K1 kolejka trzyma tylko zaległości: 8 GB na strumień ≈ 2 h zatoru przy 10 000/s |
 | ClickHouse | 55 B na zdarzenie (dane laboratoryjne, kompresja ok. 15×); surowy XML 52%, pola 28% miejsca | ok. 47 GB/dzień, ok. 235 GB przy 5 dniach; logi Security kompresują się gorzej |
 | Dziennik Windows jako bufor agenta | System i Application 20 MB (domyślnie); Security domyślnie też 20 MB | stacja (2 zdarzenia/s) ok. 2 h zapasu, serwer (1000/s) ok. 15 s |
@@ -723,12 +723,13 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 | # | Problem | Poprawka |
 |---|---|---|
-| W1 | Normalizator przetwarza sekwencyjnie w jednym wątku i jest kosztowny (pomiar K4: ok. 4500 zdarzeń/s na kopię, 1,1 rdzenia) | własny parser XML zamiast `encoding/xml` (53% czasu), szybsza kompresja wewnętrzna, mniej alokacji, pula wątków i publikacja asynchroniczna; dokładanie kopii pomaga dopiero przy wolnych rdzeniach |
+| W1 | Normalizator przetwarza sekwencyjnie w jednym wątku i jest kosztowny (pomiar K4: ok. 4500 zdarzeń/s na kopię, 1,1 rdzenia) | własny parser XML zamiast `encoding/xml` (53% czasu), szybsza kompresja wewnętrzna, mniej alokacji, pula wątków i publikacja asynchroniczna; dokładanie kopii pomaga dopiero przy wolnych rdzeniach. **Zrobione 07.10.2026** |
 | W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności |
 | W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest. **Zrobione 06.10.2026** |
 | W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo) |
 | W5 | Konfiguracja agenta wyłącznie lokalna | konfiguracja z serwera per grupa (etap 2) |
 | W6 | Każdy element w jednej kopii na jednej VM | laboratorium: kopia VM w Proxmoxie; HA w etapie 8 |
+| W7 | Writer po W1 jest najdroższym etapem: ok. 1,3 rdzenia przy 10 000 wierszy/s (rozpakowanie, JSON, przygotowanie kolumn) i sufit ok. 10–11 tys. wierszy/s na kopię | profil writera; lżejszy format wiadomości między normalizatorem a writerem; równoległe dekodowanie; kopie writera na osobnych rdzeniach |
 
 **Mniejsze**
 - M1: brak CI na GitHubie i testu wyścigów;
@@ -801,3 +802,25 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
   - Rozkład kosztu: parser XML 53%, JSON wyniku 16%, gzip wyniku 15%, odczyt JSON 10%.
   - Wcześniejszy benchmark (21–33 µs) mierzył tylko parsowanie.
   - Poziome skalowanie działa dopiero wtedy, gdy kopie mają własne rdzenie (osobne maszyny). Na jednej VM trzeba najpierw obniżyć koszt na zdarzenie (W1).
+
+**W1 – wydajność normalizatora (07.10.2026)**
+
+- **Własny parser XML** zdarzeń Windows zamiast `encoding/xml`: 3,8 µs zamiast 37,8 µs na zdarzenie (10×), 5 alokacji zamiast 388.
+  - Zgodność ze starym parserem sprawdzają testy porównawcze: próbki, 3000 zdarzeń z generatora, przypadki brzegowe i wszystkie ucięcia prawdziwych zdarzeń.
+  - Fuzzing: 43,7 mln losowych wejść bez różnicy w wynikach.
+  - Celowe różnice: deklaracje `<!DOCTYPE>`, instrukcje `<?…?>` (poza `<?xml …?>`) i nazwy elementów spoza ASCII są odrzucane. Nie występują w zdarzeniach Windows, a ich odrzucenie zmniejsza powierzchnię ataku.
+- **Kompresja wewnętrzna:** gzip na poziomie BestSpeed i ponowne używanie kompresorów.
+- **JSON bez zamiany `<`, `>`, `&` na `\u003c`:** po stronie agenta, generatora i normalizatora. Surowy XML w paczkach jest krótszy i szybciej dekodowany. Format pozostaje zgodny, bo serwer czyta obie postaci.
+- Cała ścieżka paczki: **56 → 19,9 µs na zdarzenie** (2,8×).
+- **Równoległość:**
+  - normalizator przetwarza paczki w puli wątków (`SIEM_NORMALIZER_WORKERS`, domyślnie liczba rdzeni);
+  - writer zapisuje do ClickHouse w tle, a w tym czasie pobiera i dekoduje kolejną paczkę;
+  - `GOGC=200` i `GOMEMLIMIT` w kontenerach zmniejszają koszt odśmiecania pamięci.
+- Wyniki na tej samej VM (4 vCPU), jedna kopia każdej usługi:
+
+| Test | Przed W1 | Po W1 |
+|---|---|---|
+| 10 000 zdarzeń/s, 3 min | normalizator 4500/s, kolejka 25 tys. paczek, opóźnienie potoku p99 ok. 200 s | normalizator nadąża (maks. 21 paczek w kolejce, 0,8 rdzenia), writer do 11 500 wierszy/s, **opóźnienie potoku p99 3–13 s**, 100% zdarzeń w bazie 10 s po końcu testu |
+| 20 000 zdarzeń/s, 2 min | – | ingest przyjmuje 100% (720 krótkich odmów 429), normalizator do 17 000/s, writer ok. 10 000/s, VM wysycona (load 11 na 4 vCPU); 2 596 929 z 2 596 929 zdarzeń w bazie po opróżnieniu kolejki |
+
+- Wniosek: przy 10 000 zdarzeń/s, czyli szacowanym szczycie dla firmy z roadmapy, cały potok mieści się na jednej VM z 4 vCPU. Następnym ograniczeniem są writer (W7) i liczba rdzeni. Dalej skaluje się dokładaniem rdzeni lub maszyn.

@@ -8,6 +8,8 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -61,7 +63,53 @@ func run(log *slog.Logger) error {
 	m := metrics.NewNormalizer()
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	go svc.WatchQueue(ctx, log, js, bus.StreamRaw, bus.ConsumerNormalizer, 0.5, 0.8, metrics.NewQueue())
-	log.Info("normalizator uruchomiony")
+	workers, err := svc.EnvInt("SIEM_NORMALIZER_WORKERS", runtime.GOMAXPROCS(0))
+	if err != nil {
+		return err
+	}
+	workers = max(1, workers)
+	log.Info("normalizator uruchomiony", "workers", workers)
+
+	// Paczki są przetwarzane równolegle (etap 1.5, W1): normalizacja zajmuje
+	// CPU, a publikacja czeka na potwierdzenie NATS – jedna paczka naraz
+	// marnowała rdzenie. Kolejność nie ma znaczenia: każda paczka jest
+	// potwierdzana osobno, a ponowienie daje duplikat odrzucany przez JetStream.
+	handle := func(msg jetstream.Msg) {
+		start := time.Now()
+		n, q, err := process(ctx, js, msg)
+		switch {
+		case errors.Is(err, normalize.ErrUnreadable):
+			log.Error("nieczytelna paczka w kolejce – pominięta", "subject", msg.Subject(), "err", err)
+			_ = msg.Term()
+			m.Batches.WithLabelValues("poison").Inc()
+		case err != nil:
+			log.Warn("publikacja wyniku nieudana – ponowię", "err", err)
+			_ = msg.NakWithDelay(5 * time.Second)
+			m.Batches.WithLabelValues("retry").Inc()
+		default:
+			_ = msg.Ack()
+			batches.Add(1)
+			events.Add(int64(n))
+			quarantined.Add(int64(q))
+			m.Batches.WithLabelValues("ok").Inc()
+			m.Events.Add(float64(n))
+			m.Quarantined.Add(float64(q))
+			m.Duration.Observe(time.Since(start).Seconds())
+		}
+	}
+	work := make(chan jetstream.Msg, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for msg := range work {
+				handle(msg)
+			}
+		})
+	}
+	defer func() {
+		close(work)
+		wg.Wait()
+	}()
 
 	for ctx.Err() == nil {
 		select {
@@ -69,34 +117,14 @@ func run(log *slog.Logger) error {
 			log.Info("statystyki", "batches", batches.Load(), "events", events.Load(), "quarantined", quarantined.Load())
 		default:
 		}
-		msgs, err := cons.Fetch(32, jetstream.FetchMaxWait(time.Second))
+		msgs, err := cons.Fetch(max(32, 4*workers), jetstream.FetchMaxWait(time.Second))
 		if err != nil {
 			log.Warn("pobranie z kolejki nieudane", "err", err)
 			time.Sleep(time.Second)
 			continue
 		}
 		for msg := range msgs.Messages() {
-			start := time.Now()
-			n, q, err := process(ctx, js, msg)
-			switch {
-			case errors.Is(err, normalize.ErrUnreadable):
-				log.Error("nieczytelna paczka w kolejce – pominięta", "subject", msg.Subject(), "err", err)
-				_ = msg.Term()
-				m.Batches.WithLabelValues("poison").Inc()
-			case err != nil:
-				log.Warn("publikacja wyniku nieudana – ponowię", "err", err)
-				_ = msg.NakWithDelay(5 * time.Second)
-				m.Batches.WithLabelValues("retry").Inc()
-			default:
-				_ = msg.Ack()
-				batches.Add(1)
-				events.Add(int64(n))
-				quarantined.Add(int64(q))
-				m.Batches.WithLabelValues("ok").Inc()
-				m.Events.Add(float64(n))
-				m.Quarantined.Add(float64(q))
-				m.Duration.Observe(time.Since(start).Seconds())
-			}
+			work <- msg
 		}
 	}
 	return nil

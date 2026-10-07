@@ -279,7 +279,11 @@ func (a *agent) send(ctx context.Context, events []contract.Event) (time.Duratio
 func encode(b contract.Batch) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	if err := json.NewEncoder(zw).Encode(b); err != nil {
+	// Bez zamiany <, >, & na 003c itd. – surowy XML zdarzeń jest wtedy
+	// kilka razy krótszy i szybciej dekodowany na serwerze.
+	enc := json.NewEncoder(zw)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(b); err != nil {
 		return nil, err
 	}
 	if err := zw.Close(); err != nil {

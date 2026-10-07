@@ -23,7 +23,9 @@ func loadBatch(b *testing.B) []byte {
 	}
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
-	if err := json.NewEncoder(zw).Encode(batch); err != nil {
+	enc := json.NewEncoder(zw)
+	enc.SetEscapeHTML(false) // jak agent
+	if err := enc.Encode(batch); err != nil {
 		b.Fatal(err)
 	}
 	zw.Close()

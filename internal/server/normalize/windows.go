@@ -3,8 +3,6 @@
 package normalize
 
 import (
-	"bytes"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"strconv"
@@ -14,37 +12,6 @@ import (
 	"siem/internal/contract"
 	"siem/internal/server/model"
 )
-
-// Struktura XML zdarzenia Windows (EvtRender, EvtRenderEventXml).
-type winEvent struct {
-	System struct {
-		Provider struct {
-			Name string `xml:"Name,attr"`
-		} `xml:"Provider"`
-		EventID     string `xml:"EventID"`
-		Level       string `xml:"Level"`
-		Task        string `xml:"Task"`
-		Keywords    string `xml:"Keywords"`
-		TimeCreated struct {
-			SystemTime string `xml:"SystemTime,attr"`
-		} `xml:"TimeCreated"`
-		EventRecordID string `xml:"EventRecordID"`
-		Channel       string `xml:"Channel"`
-		Computer      string `xml:"Computer"`
-		Security      struct {
-			UserID string `xml:"UserID,attr"`
-		} `xml:"Security"`
-	} `xml:"System"`
-	EventData struct {
-		Data []struct {
-			Name  string `xml:"Name,attr"`
-			Value string `xml:",chardata"`
-		} `xml:"Data"`
-	} `xml:"EventData"`
-	UserData struct {
-		Inner []byte `xml:",innerxml"`
-	} `xml:"UserData"`
-}
 
 // Bity słów kluczowych audytu Windows.
 const (
@@ -73,18 +40,18 @@ func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, 
 	if !strings.HasPrefix(ev.Source, "wineventlog:") {
 		return model.Event{}, fmt.Errorf("%w %q", ErrUnsupportedSource, ev.Source)
 	}
-	var w winEvent
-	if err := xml.Unmarshal([]byte(ev.Raw), &w); err != nil {
+	w, err := parseWinEvent(ev.Raw)
+	if err != nil {
 		if ev.Truncated {
 			return model.Event{}, fmt.Errorf("przycięte zdarzenie nie jest poprawnym XML: %w", err)
 		}
 		return model.Event{}, fmt.Errorf("niepoprawny XML zdarzenia: %w", err)
 	}
-	code, err := strconv.ParseUint(strings.TrimSpace(w.System.EventID), 10, 32)
+	code, err := strconv.ParseUint(strings.TrimSpace(w.EventID), 10, 32)
 	if err != nil {
-		return model.Event{}, fmt.Errorf("brak lub niepoprawny EventID %q", w.System.EventID)
+		return model.Event{}, fmt.Errorf("brak lub niepoprawny EventID %q", w.EventID)
 	}
-	channel := w.System.Channel
+	channel := w.Channel
 	if channel == "" {
 		channel = strings.TrimPrefix(ev.Source, "wineventlog:")
 	}
@@ -95,19 +62,19 @@ func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, 
 		AgentID:   agentID,
 		Dataset:   Dataset(channel),
 		Code:      uint32(code),
-		Provider:  w.System.Provider.Name,
-		HostName:  strings.ToLower(w.System.Computer),
+		Provider:  w.Provider,
+		HostName:  strings.ToLower(w.Computer),
 		Raw:       ev.Raw,
 		Truncated: ev.Truncated,
 		Parser:    model.ParserVersion,
 		Fields:    map[string]string{},
 	}
 
-	e.Timestamp, e.TimeQuality = eventTime(w.System.TimeCreated.SystemTime, e.Ingested)
+	e.Timestamp, e.TimeQuality = eventTime(w.SystemTime, e.Ingested)
 
 	// Pola źródłowe: EventData (Data Name=…) lub UserData (liście elementów).
 	var unnamed []string
-	for i, d := range w.EventData.Data {
+	for i, d := range w.Data {
 		name := d.Name
 		if name == "" {
 			name = "param" + strconv.Itoa(i+1)
@@ -115,19 +82,19 @@ func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, 
 		}
 		e.Fields[name] = d.Value
 	}
-	for k, v := range userDataLeaves(w.UserData.Inner) {
+	for k, v := range w.UserData {
 		e.Fields[k] = v
 	}
 	if len(unnamed) > 0 {
 		e.Message = strings.Join(unnamed, " | ")
 	}
 	setIfNotEmpty(e.Fields, "winlog.channel", channel)
-	setIfNotEmpty(e.Fields, "winlog.record_id", w.System.EventRecordID)
-	setIfNotEmpty(e.Fields, "winlog.level", w.System.Level)
-	setIfNotEmpty(e.Fields, "winlog.keywords", w.System.Keywords)
-	setIfNotEmpty(e.Fields, "winlog.user_id", w.System.Security.UserID)
+	setIfNotEmpty(e.Fields, "winlog.record_id", w.EventRecordID)
+	setIfNotEmpty(e.Fields, "winlog.level", w.Level)
+	setIfNotEmpty(e.Fields, "winlog.keywords", w.Keywords)
+	setIfNotEmpty(e.Fields, "winlog.user_id", w.UserID)
 
-	e.Outcome = outcomeFromKeywords(w.System.Keywords)
+	e.Outcome = outcomeFromKeywords(w.Keywords)
 	applyECS(&e)
 	return e, nil
 }
@@ -185,45 +152,6 @@ func outcomeFromKeywords(kw string) string {
 		return "success"
 	}
 	return ""
-}
-
-// userDataLeaves spłaszcza UserData do mapy nazwa-elementu → tekst.
-func userDataLeaves(inner []byte) map[string]string {
-	out := map[string]string{}
-	if len(bytes.TrimSpace(inner)) == 0 {
-		return out
-	}
-	type elem struct {
-		name     string
-		hasChild bool
-	}
-	dec := xml.NewDecoder(bytes.NewReader(inner))
-	var stack []elem
-	var text strings.Builder
-	for {
-		tok, err := dec.Token()
-		if err != nil { // io.EOF lub błąd składni – zwracamy to, co udało się odczytać
-			return out
-		}
-		switch t := tok.(type) {
-		case xml.StartElement:
-			if len(stack) > 0 {
-				stack[len(stack)-1].hasChild = true
-			}
-			stack = append(stack, elem{name: t.Name.Local})
-			text.Reset()
-		case xml.CharData:
-			text.Write(t)
-		case xml.EndElement:
-			if n := len(stack); n > 0 {
-				if top := stack[n-1]; !top.hasChild {
-					out[top.name] = strings.TrimSpace(text.String())
-				}
-				stack = stack[:n-1]
-			}
-			text.Reset()
-		}
-	}
 }
 
 func setIfNotEmpty(m map[string]string, k, v string) {

@@ -86,6 +86,11 @@ services:
     <<: *server
     build: { context: ., args: { BIN: siem-normalizer } }
     image: siem/normalizer:lab
+    environment:
+      <<: *server-env
+      # Rzadsze odśmiecanie pamięci w granicy limitu kontenera (mniej CPU na GC).
+      GOGC: "200"
+      GOMEMLIMIT: 400MiB
     mem_limit: 512m
 
   writer:
@@ -97,6 +102,8 @@ services:
       SIEM_CLICKHOUSE_ADDR: clickhouse:9000
       SIEM_CLICKHOUSE_USER: siem_writer
       SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      GOGC: "200"
+      GOMEMLIMIT: 400MiB
     depends_on:
       nats: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
