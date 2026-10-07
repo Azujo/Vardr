@@ -211,7 +211,7 @@ func serve(log *slog.Logger) error {
 		log.Info("polityka archiwum z panelu", "enabled", initial.Enabled, "retention_days", initial.RetentionDays,
 			"excluded_groups", initial.ExcludedGroups, "excluded_agents", initial.ExcludedAgents)
 	}
-	policy := archiver.NewPolicy(initial, cfg.bounds)
+	policy := archiver.NewPolicy(initial, cfg.bounds, cfg.grace)
 
 	a := urd.New(cfg.dir, cat)
 	if err := a.CheckDir(ctx); err != nil {

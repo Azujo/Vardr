@@ -329,3 +329,42 @@ func (p *PG) SourceGroups(ctx context.Context) (assign map[string]int64, default
 	}
 	return assign, defaultGroup, true, rows.Err()
 }
+
+// GroupMembership zwraca, od kiedy agenci są w obecnych grupach (agent →
+// grupa i czas wejścia), według obserwacji archiwizatora.
+func (p *PG) GroupMembership(ctx context.Context) (map[string]Membership, error) {
+	rows, err := p.pool.Query(ctx, `SELECT agent_id, group_id, since FROM urd.group_membership`)
+	if err != nil {
+		return nil, notConfigured(err)
+	}
+	defer rows.Close()
+	out := map[string]Membership{}
+	for rows.Next() {
+		var a string
+		var m Membership
+		if err := rows.Scan(&a, &m.Group, &m.Since); err != nil {
+			return nil, err
+		}
+		out[a] = m
+	}
+	return out, rows.Err()
+}
+
+// Membership to obecna grupa agenta i czas wejścia do niej.
+type Membership struct {
+	Group int64     `json:"group"`
+	Since time.Time `json:"since"`
+}
+
+// SaveGroupMembership zapisuje zmiany przynależności (archiwizator).
+func (p *PG) SaveGroupMembership(ctx context.Context, changed map[string]Membership) error {
+	if len(changed) == 0 {
+		return nil
+	}
+	b := &pgx.Batch{}
+	for a, m := range changed {
+		b.Queue(`INSERT INTO urd.group_membership (agent_id, group_id, since) VALUES ($1, $2, $3)
+			ON CONFLICT (agent_id) DO UPDATE SET group_id = $2, since = $3`, a, m.Group, m.Since)
+	}
+	return p.pool.SendBatch(ctx, b).Close()
+}

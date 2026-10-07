@@ -453,7 +453,8 @@ export interface UnarchivedSource {
   agent_id: string;
   hostname: string;
   group: string;
-  reason: "disabled" | "agent" | "group" | "prefix";
+  reason: "disabled" | "agent" | "group" | "group_pending" | "prefix";
+  effective_at?: string;
 }
 
 export interface PolicyInfo {
@@ -503,6 +504,7 @@ export const unarchivedReasonLabels: Record<UnarchivedSource["reason"], string> 
   disabled: "archiwum wyłączone",
   agent: "agent wyłączony",
   group: "grupa wyłączona",
+  group_pending: "grupa wyłączona – po karencji (do tego czasu archiwizowany)",
   prefix: "konfiguracja serwera",
 };
 

@@ -333,28 +333,71 @@ func TestReplayerPublishesToReplayPipeline(t *testing.T) {
 	}
 }
 
+type fakePolicyStore struct{ members map[string]urd.Membership }
+
+func (f *fakePolicyStore) ProcessPolicyChanges(context.Context, urd.PolicyBounds, time.Duration, time.Time) ([]urd.PolicyChange, urd.Policy, error) {
+	return nil, urd.Policy{}, nil
+}
+func (f *fakePolicyStore) ScheduledChange(context.Context) (*urd.PolicyChange, error) {
+	return nil, nil
+}
+func (f *fakePolicyStore) SourceGroups(context.Context) (map[string]int64, int64, bool, error) {
+	return nil, 0, false, nil
+}
+func (f *fakePolicyStore) GroupMembership(context.Context) (map[string]urd.Membership, error) {
+	out := map[string]urd.Membership{}
+	for k, v := range f.members {
+		out[k] = v
+	}
+	return out, nil
+}
+func (f *fakePolicyStore) SaveGroupMembership(_ context.Context, ch map[string]urd.Membership) error {
+	for k, v := range ch {
+		f.members[k] = v
+	}
+	return nil
+}
+
 func TestArchiverPolicy(t *testing.T) {
+	ctx := context.Background()
 	pol := NewPolicy(urd.Policy{Enabled: true, RetentionDays: 10, ExcludedAgents: []string{"agt-x"}, ExcludedGroups: []int64{7}},
-		urd.PolicyBounds{MinRetentionDays: 30, MaxRetentionDays: 365})
+		urd.PolicyBounds{MinRetentionDays: 30, MaxRetentionDays: 365}, time.Hour)
 	r := &Archiver{Cfg: Config{ExcludeAgents: []string{"agt-load-"}}, Policy: pol}
 	// Przypisania grup jeszcze nieznane – wykluczenie grupy nie działa (archiwum zbiera wszystko).
 	if got := r.skipReason("agt-in-7"); got != "" {
 		t.Fatalf("grupy nieznane: %q", got)
 	}
-	pol.Set(pol.Current(), map[string]int64{"agt-in-7": 7, "agt-in-2": 2}, 7, true)
+	// agt-old jest w grupie 7 od dawna, agt-in-7 właśnie do niej trafił.
+	old := time.Now().Add(-2 * time.Hour)
+	store := &fakePolicyStore{members: map[string]urd.Membership{"agt-old": {Group: 7, Since: old}}}
+	assign := map[string]int64{"agt-in-7": 7, "agt-in-2": 2, "agt-old": 7}
+	if err := pol.trackMembership(ctx, store, assign, 7, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	pol.Set(pol.Current(), assign, pol.members, 7, true)
 	for agent, want := range map[string]string{
-		"agt-load-1": skipPrefix, "agt-x": skipAgent, "agt-in-7": skipGroup, "agt-in-2": "",
-		"agt-nowy": skipGroup, // bez przypisania – grupa domyślna (7)
+		"agt-load-1": skipPrefix, "agt-x": skipAgent, "agt-old": skipGroup, "agt-in-2": "",
+		"agt-in-7": "",        // przeniesiony do wyłączonej grupy – archiwizowany do końca karencji
+		"agt-nowy": skipGroup, // bez przypisania – grupa domyślna (7), wyłączona polityką
 	} {
 		if got := r.skipReason(agent); got != want {
 			t.Errorf("%s: %q, oczekiwano %q", agent, got, want)
 		}
 	}
+	if m := store.members["agt-in-7"]; m.Group != 7 || time.Since(m.Since) > time.Minute || !store.members["agt-old"].Since.Equal(old) {
+		t.Fatalf("zapis przynależności: %+v", store.members)
+	}
+	// Po karencji przeniesiony agent też jest wykluczony.
+	pol.members["agt-in-7"] = urd.Membership{Group: 7, Since: old}
+	pol.Set(pol.Current(), assign, pol.members, 7, true)
+	if got := r.skipReason("agt-in-7"); got != skipGroup {
+		t.Fatalf("po karencji: %q", got)
+	}
 	// Retencja nigdy poniżej minimum z konfiguracji serwera.
 	if got := pol.Retention(); got != 30*24*time.Hour {
 		t.Fatalf("retencja: %v", got)
 	}
-	pol.Set(urd.Policy{Enabled: false, RetentionDays: 90}, nil, 0, false)
+	pol.Set(urd.Policy{Enabled: false, RetentionDays: 90}, nil, nil, 0, false)
 	if got := r.skipReason("agt-in-2"); got != skipDisabled || pol.Retention() != 90*24*time.Hour {
 		t.Fatalf("wyłączone archiwum: %q %v", got, pol.Retention())
 	}

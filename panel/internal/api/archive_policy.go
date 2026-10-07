@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"siem/internal/urd"
 	"siem/panel/internal/api/auth"
@@ -17,7 +18,10 @@ type unarchivedSource struct {
 	AgentID  string `json:"agent_id"`
 	Hostname string `json:"hostname"`
 	Group    string `json:"group"`
-	Reason   string `json:"reason"` // disabled | agent | group | prefix
+	Reason   string `json:"reason"` // disabled | agent | group | group_pending | prefix
+	// EffectiveAt: dla group_pending – kiedy wykluczenie obejmie agenta
+	// (karencja od wejścia do wyłączonej grupy; do tego czasu jest archiwizowany).
+	EffectiveAt *time.Time `json:"effective_at,omitempty"`
 }
 
 // policyBounds to granice z konfiguracji serwera (ze stanu archiwizatora).
@@ -78,10 +82,22 @@ func (s *Server) archivePolicy(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, err)
 			return
 		}
+		assign, err := s.Store.AgentGroupIDs(ctx)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		members, err := s.Archive.GroupMembership(ctx)
+		if err != nil && !errors.Is(err, urd.ErrNotConfigured) {
+			s.internalError(w, r, err)
+			return
+		}
+		grace := time.Duration(b.GraceS) * time.Second
 		agentsTotal = len(agents)
 		for _, a := range agents {
 			g := groupOf(a.ID)
 			reason := ""
+			var effective *time.Time
 			switch {
 			case slices.ContainsFunc(b.ExcludePrefixes, func(p string) bool { return p != "" && strings.HasPrefix(a.ID, p) }):
 				reason = "prefix"
@@ -90,10 +106,21 @@ func (s *Server) archivePolicy(w http.ResponseWriter, r *http.Request) {
 			case slices.Contains(o.Policy.ExcludedAgents, a.ID):
 				reason = "agent"
 			case slices.Contains(o.Policy.ExcludedGroups, g.ID):
+				// Jak w archiwizatorze: wykluczenie po karencji od wejścia do grupy.
 				reason = "group"
+				m, tracked := members[a.ID]
+				_, assigned := assign[a.ID]
+				switch {
+				case tracked && m.Group == g.ID && s.now().Before(m.Since.Add(grace)):
+					at := m.Since.Add(grace)
+					reason, effective = "group_pending", &at
+				case !tracked && assigned, tracked && m.Group != g.ID:
+					reason = "group_pending" // archiwizator jeszcze nie zauważył przeniesienia
+				}
 			}
 			if reason != "" {
-				unarchived = append(unarchived, unarchivedSource{AgentID: a.ID, Hostname: a.Hostname, Group: g.Name, Reason: reason})
+				unarchived = append(unarchived, unarchivedSource{AgentID: a.ID, Hostname: a.Hostname, Group: g.Name, Reason: reason,
+					EffectiveAt: effective})
 			}
 		}
 	}

@@ -292,6 +292,17 @@ func TestPostgresPolicy(t *testing.T) {
 	if hist, err := db.PolicyChanges(ctx, 10); err != nil || len(hist) != 5 || hist[0].ID != c5.ID || hist[0].Error == "" {
 		t.Fatalf("historia: %+v %v", hist, err)
 	}
+	// Przynależność do grup obserwowana przez archiwizator.
+	since := now.Add(-time.Hour)
+	if err := db.SaveGroupMembership(ctx, map[string]Membership{"agt-a": {Group: 3, Since: since}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveGroupMembership(ctx, map[string]Membership{"agt-a": {Group: 4, Since: now}}); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := db.GroupMembership(ctx); err != nil || len(m) != 1 || m["agt-a"].Group != 4 || !m["agt-a"].Since.Equal(now) {
+		t.Fatalf("przynależność: %+v %v", m, err)
+	}
 	// Grupy agentów z tabel panelu – w pustej bazie testowej ich nie ma.
 	if _, _, ok, err := db.SourceGroups(ctx); err != nil || ok {
 		t.Fatalf("grupy bez tabel panelu: %v %v", ok, err)

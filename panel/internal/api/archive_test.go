@@ -20,8 +20,12 @@ type fakeArchive struct {
 	exports     []urd.ExportJob
 	replays     []urd.ReplayJob
 	changes     []urd.PolicyChange
+	members     map[string]urd.Membership
 }
 
+func (f *fakeArchive) GroupMembership(context.Context) (map[string]urd.Membership, error) {
+	return f.members, f.err
+}
 func (f *fakeArchive) PolicyChanges(context.Context, int) ([]urd.PolicyChange, error) {
 	return f.changes, f.err
 }
@@ -297,6 +301,24 @@ func TestArchivePolicyAPI(t *testing.T) {
 	if code != 200 || len(un) != 1 || un[0].(map[string]any)["agent_id"] != "agt-b" || un[0].(map[string]any)["reason"] != "agent" {
 		t.Fatalf("źródła bez archiwum: %d %v", code, out)
 	}
+	// Agent przeniesiony do wyłączonej grupy: wykluczenie dopiero po karencji.
+	g, err := e.st.CreateGroup(context.Background(), store.AgentGroup{Name: "Testowe", Profile: "workstation"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = e.st.AssignAgent(context.Background(), "agt-a", g.ID)
+	fa.o.Policy.ExcludedAgents, fa.o.Policy.ExcludedGroups = []string{}, []int64{g.ID}
+	fa.members = map[string]urd.Membership{"agt-a": {Group: g.ID, Since: e.clock.Add(-time.Hour)}}
+	_, out, _ = admin.do("GET", "/api/v1/archive/policy", nil)
+	un = out["unarchived"].([]any)
+	if len(un) != 1 || un[0].(map[string]any)["reason"] != "group_pending" || un[0].(map[string]any)["effective_at"] == nil {
+		t.Fatalf("przeniesienie do wyłączonej grupy w karencji: %v", out)
+	}
+	fa.members["agt-a"] = urd.Membership{Group: g.ID, Since: e.clock.Add(-48 * time.Hour)}
+	if _, out, _ := admin.do("GET", "/api/v1/archive/policy", nil); out["unarchived"].([]any)[0].(map[string]any)["reason"] != "group" {
+		t.Fatalf("po karencji: %v", out)
+	}
+
 	fa.o.Policy.Enabled = false
 	if _, out, _ := admin.do("GET", "/api/v1/archive/policy", nil); len(out["unarchived"].([]any)) != 2 {
 		t.Fatalf("wyłączone archiwum – wszyscy bez archiwizacji: %v", out)

@@ -24,7 +24,12 @@ const (
 // podmienia co minutę).
 type Policy struct {
 	Bounds urd.PolicyBounds
-	cur    atomic.Pointer[policyState]
+	// Grace: wykluczenie grupy obejmuje agenta dopiero po tym czasie od jego
+	// wejścia do grupy (przeniesienie do wyłączonej grupy to też osłabienie).
+	Grace time.Duration
+	cur   atomic.Pointer[policyState]
+
+	members map[string]urd.Membership // tylko gorutyna Maintain
 }
 
 type policyState struct {
@@ -32,21 +37,25 @@ type policyState struct {
 	agents      map[string]bool
 	groups      map[int64]bool
 	assign      map[string]int64
+	members     map[string]urd.Membership
 	defGroup    int64
 	groupsKnown bool
+	grace       time.Duration
 }
 
 // NewPolicy tworzy politykę z wartością początkową.
-func NewPolicy(p urd.Policy, b urd.PolicyBounds) *Policy {
-	pol := &Policy{Bounds: b}
-	pol.Set(p, nil, 0, false)
+func NewPolicy(p urd.Policy, b urd.PolicyBounds, grace time.Duration) *Policy {
+	pol := &Policy{Bounds: b, Grace: grace}
+	pol.Set(p, nil, nil, 0, false)
 	return pol
 }
 
-// Set podmienia politykę i przypisania agentów do grup (known = false:
-// przypisania nieznane – wykluczenia grup nie działają, archiwum zbiera wszystko).
-func (p *Policy) Set(pol urd.Policy, assign map[string]int64, defGroup int64, known bool) {
-	st := &policyState{p: pol, agents: map[string]bool{}, groups: map[int64]bool{}, assign: assign, defGroup: defGroup, groupsKnown: known}
+// Set podmienia politykę, przypisania agentów do grup i czasy wejścia do
+// grup (known = false: przypisania nieznane – wykluczenia grup nie działają,
+// archiwum zbiera wszystko).
+func (p *Policy) Set(pol urd.Policy, assign map[string]int64, members map[string]urd.Membership, defGroup int64, known bool) {
+	st := &policyState{p: pol, agents: map[string]bool{}, groups: map[int64]bool{}, assign: assign, members: members,
+		defGroup: defGroup, groupsKnown: known, grace: p.Grace}
 	for _, a := range pol.ExcludedAgents {
 		st.agents[a] = true
 	}
@@ -81,15 +90,52 @@ func (p *Policy) skip(agent string) string {
 	case st.agents[agent]:
 		return skipAgent
 	case st.groupsKnown && len(st.groups) > 0:
-		g, ok := st.assign[agent]
-		if !ok {
-			g = st.defGroup
+		if m, ok := st.members[agent]; ok {
+			// Agent obserwowany: wykluczenie po karencji od wejścia do grupy.
+			if st.groups[m.Group] && !time.Now().Before(m.Since.Add(st.grace)) {
+				return skipGroup
+			}
+			return ""
 		}
-		if st.groups[g] {
+		if _, ok := st.assign[agent]; ok {
+			return "" // świeżo przypisany – jeszcze nie obserwowany, archiwizujemy
+		}
+		// Bez przypisania: grupa domyślna; jej wykluczenie przeszło karencję polityki.
+		if st.groups[st.defGroup] {
 			return skipGroup
 		}
 	}
 	return ""
+}
+
+// trackMembership aktualizuje czasy wejścia agentów do grup (zapis tylko
+// zmian). Agent, który stracił przypisanie, przechodzi do grupy domyślnej.
+func (p *Policy) trackMembership(ctx context.Context, s PolicyStore, assign map[string]int64, defGroup int64, now time.Time) error {
+	if p.members == nil {
+		m, err := s.GroupMembership(ctx)
+		if err != nil {
+			return err
+		}
+		p.members = m
+	}
+	changed := map[string]urd.Membership{}
+	for a, g := range assign {
+		if m, ok := p.members[a]; !ok || m.Group != g {
+			changed[a] = urd.Membership{Group: g, Since: now}
+		}
+	}
+	for a, m := range p.members {
+		if _, ok := assign[a]; !ok && m.Group != defGroup {
+			changed[a] = urd.Membership{Group: defGroup, Since: now}
+		}
+	}
+	if err := s.SaveGroupMembership(ctx, changed); err != nil {
+		return err
+	}
+	for a, m := range changed {
+		p.members[a] = m
+	}
+	return nil
 }
 
 func (r *Archiver) skipReason(agent string) string {
@@ -109,6 +155,8 @@ type PolicyStore interface {
 	ProcessPolicyChanges(ctx context.Context, b urd.PolicyBounds, grace time.Duration, now time.Time) ([]urd.PolicyChange, urd.Policy, error)
 	ScheduledChange(ctx context.Context) (*urd.PolicyChange, error)
 	SourceGroups(ctx context.Context) (map[string]int64, int64, bool, error)
+	GroupMembership(ctx context.Context) (map[string]urd.Membership, error)
+	SaveGroupMembership(ctx context.Context, changed map[string]urd.Membership) error
 }
 
 // refreshPolicy rozpatruje zlecenia zmian z panelu i odświeża politykę
@@ -141,7 +189,18 @@ func refreshPolicy(ctx context.Context, s PolicyStore, pol *Policy, grace time.D
 	} else if !known && len(cur.ExcludedGroups) > 0 {
 		log.Warn("brak dostępu do grup agentów (tabele panelu) – wykluczenia grup nie działają, archiwum zbiera wszystko")
 	}
-	pol.Set(cur, assign, def, known && err == nil)
+	known = known && err == nil
+	if known {
+		if err := pol.trackMembership(ctx, s, assign, def, time.Now().UTC()); err != nil {
+			log.Warn("zapis przynależności do grup nieudany – wykluczenia grup chwilowo nie działają", "err", err)
+			known = false
+		}
+	}
+	members := make(map[string]urd.Membership, len(pol.members))
+	for a, m := range pol.members {
+		members[a] = m
+	}
+	pol.Set(cur, assign, members, def, known)
 
 	sc, err := s.ScheduledChange(ctx)
 	if err == nil {

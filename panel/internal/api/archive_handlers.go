@@ -28,6 +28,7 @@ type ArchiveReader interface {
 	PolicyChanges(ctx context.Context, limit int) ([]urd.PolicyChange, error)
 	CreatePolicyChange(ctx context.Context, c urd.PolicyChange) (urd.PolicyChange, error)
 	CancelPolicyChange(ctx context.Context, id int64, by string, at time.Time) (urd.PolicyChange, error)
+	GroupMembership(ctx context.Context) (map[string]urd.Membership, error)
 }
 
 // Stan zgodności archiwum (pole compliance).

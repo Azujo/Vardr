@@ -279,7 +279,7 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
               />
               <MultiSelect
                 label="Grupy agentów wyłączone z archiwum"
-                description="nowi agenci w tych grupach też nie będą archiwizowani"
+                description="agent przeniesiony do wyłączonej grupy (także tokenem rejestracyjnym) wypada z archiwum dopiero po karencji"
                 data={groupOptions}
                 value={exGroups}
                 onChange={setExGroups}
@@ -349,7 +349,10 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                       <Table.Td>{u.agent_id}</Table.Td>
                       <Table.Td>{u.hostname}</Table.Td>
                       <Table.Td>{u.group}</Table.Td>
-                      <Table.Td>{unarchivedReasonLabels[u.reason]}</Table.Td>
+                      <Table.Td>
+                        {unarchivedReasonLabels[u.reason]}
+                        {u.effective_at && ` – od ${formatDate(u.effective_at)}`}
+                      </Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
