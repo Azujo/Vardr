@@ -286,17 +286,18 @@ agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► sie
 | Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
 | node-exporter | metryki systemu VM dla Prometheusa: miejsce na dyskach, CPU, pamięć |
 
-Wdrożenie (stacja z Windows → VM z Dockerem):
+Wdrożenie ze stacji (Git Bash) na VM: jeden skrypt kopiuje konfigurację stosu, buduje programy dla Linuksa z wersją z gita (`git describe`, widoczna w logu „start” i w panelu), kopiuje je i restartuje usługi:
+
+```bash
+deploy/lab/deploy.sh                    # konfiguracja + wszystkie usługi
+deploy/lab/deploy.sh web api            # frontend panelu i siem-api
+deploy/lab/deploy.sh archiver agent     # wybrane cele (agent = siem_agent.exe do paczek)
+```
+
+Skrypt nie dotyka `certs/`, `.env` ani danych. Certyfikat serwera z adresem VM przygotowuje się raz na stacji i kopiuje do `~/siem-lab/certs` (katalog `certs` jest ignorowany przez git):
 
 ```powershell
-# binaria serwera dla Linuksa
-$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
-go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./server/cmd/siem-ingest ./server/cmd/siem-normalizer ./server/cmd/siem-writer ./server/cmd/siem-archiver ./panel/cmd/siem-api
-Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
-
-# certyfikat serwera z adresem VM + kopia do stosu (katalog certs jest ignorowany przez git)
 bin\siem-pki.exe server -hosts 192.168.88.98,siem,localhost,127.0.0.1
-Copy-Item certs\ca.crt, certs\server.crt, certs\server.key deploy\lab\certs\
 ```
 
 Na VM (katalog `~/siem-lab`): plik `.env` z hasłami według `.env.example`,

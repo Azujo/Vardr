@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"siem/internal/svc"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
 )
@@ -121,6 +122,8 @@ func clearCookie(w http.ResponseWriter) {
 type sessionResponse struct {
 	User      store.User `json:"user"`
 	CSRFToken string     `json:"csrf_token"`
+	// ServerVersion: wersja siem-api (ustawiana przy budowaniu, deploy.sh).
+	ServerVersion string `json:"server_version"`
 }
 
 const badLogin = "nieprawidłowy login lub hasło albo konto tymczasowo zablokowane"
@@ -197,12 +200,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	setCookie(w, token, s.MaxAge)
 	s.audit(r, &user, "login", user.Username, nil)
-	writeJSON(w, http.StatusOK, sessionResponse{User: user, CSRFToken: sess.CSRF})
+	writeJSON(w, http.StatusOK, sessionResponse{User: user, CSRFToken: sess.CSRF, ServerVersion: svc.Version})
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF})
+	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +261,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "password_changed", a.user.Username, nil)
 	a.user.MustChangePassword = false
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF})
+	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version})
 }
 
 func truncate(s string, n int) string {

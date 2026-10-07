@@ -13,9 +13,12 @@ import (
 	"time"
 )
 
-// Logger zwraca log JSON na stdout (zbierany przez Dockera).
+// Logger zwraca log JSON na stdout (zbierany przez Dockera) i zapisuje
+// wersję programu – po wdrożeniu widać w logu, co faktycznie działa.
 func Logger(component string) *slog.Logger {
-	return slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("component", component)
+	l := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("component", component)
+	l.Info("start", "version", Version)
+	return l
 }
 
 // Context kończy się po SIGINT/SIGTERM (docker stop).

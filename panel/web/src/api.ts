@@ -19,6 +19,7 @@ export interface User {
 export interface SessionInfo {
   user: User;
   csrf_token: string;
+  server_version?: string;
 }
 
 export interface AuditEntry {

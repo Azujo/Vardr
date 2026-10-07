@@ -13,6 +13,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core";
+import { useEffect, useState } from "react";
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconAdjustments,
@@ -33,7 +34,7 @@ import {
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
-import { roleLabels } from "./api";
+import { api, roleLabels } from "./api";
 
 interface Item {
   to: string;
@@ -65,6 +66,13 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light");
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    api
+      .session()
+      .then((s) => setVersion(s.server_version ?? ""))
+      .catch(() => {});
+  }, []);
 
   const link = (it: Item) => (
     <NavLink
@@ -144,9 +152,12 @@ export default function Layout({ children }: { children: ReactNode }) {
             {admin.map(link)}
           </>
         )}
-        <Badge variant="light" color="gray" mt="auto" mx="sm" mb="xs">
+        <Badge variant="light" color="gray" mt="auto" mx="sm" mb={4}>
           etap 3 – w budowie
         </Badge>
+        <Text size="xs" c="dimmed" ta="center" mb="xs" title="wersja siem-api">
+          {version && `wersja ${version}`}
+        </Text>
       </AppShell.Navbar>
 
       <AppShell.Main>{children}</AppShell.Main>
