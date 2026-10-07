@@ -30,6 +30,15 @@ type Msg interface {
 type Config struct {
 	SegmentMaxBytes int64         // zamknięcie segmentu po przekroczeniu rozmiaru
 	SegmentMaxAge   time.Duration // … albo po tym czasie (opóźnienie potwierdzeń)
+	// ExcludeAgents: prefiksy identyfikatorów agentów, których paczki nie
+	// trafiają do archiwum (np. agt-load- generatora ruchu). Paczka jest
+	// potwierdzana bez zapisu.
+	ExcludeAgents []string
+	// Progi miejsca na dysku archiwum: poniżej Min… archiwizacja jest
+	// wstrzymywana (paczki czekają w kolejce), poniżej Warn… ostrzeżenie.
+	MinFreeBytes    uint64
+	MinFreePercent  float64
+	WarnFreePercent float64
 }
 
 // Archiver dopisuje paczki do bieżącego segmentu i zamyka godziny manifestami.
@@ -44,10 +53,19 @@ type Archiver struct {
 	pending   []Msg
 	sealedFor time.Time // godzina, dla której poprzednie godziny mają manifesty
 	sealRetry time.Time
+
+	Health    *Health
+	diskCheck time.Time
+	diskWarn  time.Time
+	paused    string
 }
 
 // Add dopisuje wiadomość do bieżącego segmentu (bez potwierdzenia).
 func (r *Archiver) Add(ctx context.Context, msg Msg) error {
+	if r.excluded(msg.Headers().Get(bus.HdrAgent)) {
+		r.M.Skipped.Inc()
+		return msg.Ack()
+	}
 	now := r.A.Now().UTC()
 	if r.cur != nil && !r.cur.Hour().Equal(now.Truncate(time.Hour)) {
 		if err := r.Flush(ctx); err != nil {
@@ -175,6 +193,7 @@ type MaintainConfig struct {
 	FirstVerify time.Duration // pierwsza weryfikacja po starcie
 	State       StateStore    // nil = bez stanu dla panelu
 	StateBase   urd.ArchiverState
+	Health      *Health // stan dysku z pętli archiwizatora
 }
 
 // Maintain co minutę zapisuje stan dla panelu, usuwa dane po retencji
@@ -189,6 +208,8 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 		if c.State != nil {
 			st := c.StateBase
 			st.HeartbeatAt = time.Now().UTC()
+			free, total, paused := c.Health.Get()
+			st.DiskFreeBytes, st.DiskTotalBytes, st.Paused = int64(free), int64(total), paused
 			if err := c.State.SaveState(ctx, st); err != nil && ctx.Err() == nil {
 				log.Warn("zapis stanu archiwizatora nieudany", "err", err)
 			}

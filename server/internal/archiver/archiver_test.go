@@ -137,3 +137,44 @@ type failingCatalog struct{ *urd.MemCatalog }
 func (failingCatalog) AddSegment(context.Context, urd.Segment) error {
 	return errors.New("baza niedostępna")
 }
+
+func TestArchiverExcludedAgents(t *testing.T) {
+	cat := urd.NewMemCatalog()
+	r := &Archiver{A: urd.New(t.TempDir(), cat), Log: slog.New(slog.NewTextHandler(io.Discard, nil)), M: testMetrics,
+		Cfg: Config{SegmentMaxBytes: 1 << 20, SegmentMaxAge: time.Hour, ExcludeAgents: []string{"agt-load-"}}}
+	load := newMsg(1, time.Now())
+	load.hdr.Set(bus.HdrAgent, "agt-load-00042")
+	real := newMsg(2, time.Now())
+	for _, m := range []*fakeMsg{load, real} {
+		if err := r.Add(context.Background(), m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !load.acked || real.acked || r.cur == nil || r.cur.Records() != 1 {
+		t.Fatalf("paczka testowa ma być potwierdzona bez zapisu: load=%v real=%v rekordy=%d", load.acked, real.acked, r.cur.Records())
+	}
+	r.cur.Abort()
+}
+
+func TestArchiverPausesOnLowDisk(t *testing.T) {
+	free := uint64(1 << 30) // 1 GB z 100 GB
+	diskUsageFn = func(string) (uint64, uint64, error) { return free, 100 << 30, nil }
+	defer func() { diskUsageFn = diskUsage }()
+	h := &Health{}
+	r := &Archiver{A: urd.New(t.TempDir(), urd.NewMemCatalog()), Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		M: testMetrics, Health: h, Cfg: Config{MinFreeBytes: 2 << 30, MinFreePercent: 5, WarnFreePercent: 15}}
+	if reason := r.CheckDisk(); reason == "" {
+		t.Fatal("przy 1 GB wolnego archiwizacja powinna zostać wstrzymana")
+	}
+	if f, tot, p := h.Get(); f != free || tot != 100<<30 || p == "" {
+		t.Fatalf("stan dla panelu: %d %d %q", f, tot, p)
+	}
+	free = 50 << 30
+	r.diskCheck = time.Time{}
+	if reason := r.CheckDisk(); reason != "" {
+		t.Fatalf("po zwolnieniu miejsca archiwizacja powinna ruszyć: %s", reason)
+	}
+	if _, _, p := h.Get(); p != "" {
+		t.Fatalf("panel nadal widzi wstrzymanie: %q", p)
+	}
+}

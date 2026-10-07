@@ -21,3 +21,9 @@ scrape_configs:
     static_configs:
       - targets: ["clickhouse:9363"]
         labels: { service: clickhouse }
+
+  - job_name: node
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels: { service: node }

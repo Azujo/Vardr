@@ -22,6 +22,8 @@ const (
 	complianceOK            = "ok"             // archiwizator działa, ostatnia weryfikacja zgodna i aktualna
 	complianceProblems      = "problems"       // ostatnia weryfikacja wykryła niezgodności
 	complianceDown          = "archiver_down"  // brak sygnału archiwizatora
+	complianceDiskFull      = "disk_full"      // archiwizacja wstrzymana z braku miejsca
+	complianceDiskLow       = "disk_low"       // mniej niż 15% wolnego miejsca
 	complianceStale         = "stale"          // weryfikacja dawno nie przeszła
 	complianceNeverVerified = "never_verified" // archiwizator działa, weryfikacji jeszcze nie było
 	complianceNotConfigured = "not_configured" // archiwizator nigdy nie działał
@@ -38,6 +40,10 @@ func compliance(o urd.Overview, now time.Time) string {
 		return complianceProblems
 	case now.Sub(o.State.HeartbeatAt) > archiverDownAfter:
 		return complianceDown
+	case o.State.Paused != "":
+		return complianceDiskFull
+	case o.State.DiskTotalBytes > 0 && float64(o.State.DiskFreeBytes) < 0.15*float64(o.State.DiskTotalBytes):
+		return complianceDiskLow
 	case o.LastVerification == nil:
 		return complianceNeverVerified
 	case now.Sub(o.LastVerification.FinishedAt) > 2*time.Duration(o.State.VerifyEveryS)*time.Second+time.Hour:

@@ -162,6 +162,10 @@ type Archiver struct {
 	VerifyOK      prometheus.Gauge
 	VerifyProblem prometheus.Gauge
 	LastVerify    prometheus.Gauge
+	Skipped       prometheus.Counter
+	DiskFree      prometheus.Gauge
+	DiskTotal     prometheus.Gauge
+	Paused        prometheus.Gauge
 }
 
 func NewArchiver() *Archiver {
@@ -182,5 +186,9 @@ func NewArchiver() *Archiver {
 		VerifyOK:      g("verify_ok", "Wynik ostatniej weryfikacji integralności (1 = zgodne, 0 = problemy)."),
 		VerifyProblem: g("verify_problems", "Liczba problemów w ostatniej weryfikacji."),
 		LastVerify:    g("last_verify_timestamp_seconds", "Czas zakończenia ostatniej weryfikacji."),
+		Skipped:       c("skipped_total", "Paczki agentów wyłączonych z archiwum (SIEM_ARCHIVE_EXCLUDE_AGENTS)."),
+		DiskFree:      g("disk_free_bytes", "Wolne miejsce na dysku archiwum."),
+		DiskTotal:     g("disk_total_bytes", "Rozmiar dysku archiwum."),
+		Paused:        g("paused", "1 = archiwizacja wstrzymana z braku miejsca (paczki czekają w kolejce)."),
 	}
 }

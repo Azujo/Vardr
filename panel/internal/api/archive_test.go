@@ -46,6 +46,8 @@ func TestCompliance(t *testing.T) {
 		{"niezgodności", urd.Overview{State: st, LastVerification: &urd.Verification{OK: false, FinishedAt: now}}, complianceProblems},
 		{"bez weryfikacji", urd.Overview{State: st}, complianceNeverVerified},
 		{"stara weryfikacja", urd.Overview{State: st, LastVerification: &urd.Verification{OK: true, FinishedAt: now.Add(-14 * time.Hour)}}, complianceStale},
+		{"brak miejsca", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now, VerifyEveryS: 3600, Paused: "mało miejsca", DiskFreeBytes: 1, DiskTotalBytes: 100}, LastVerification: ok}, complianceDiskFull},
+		{"mało miejsca", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now, VerifyEveryS: 3600, DiskFreeBytes: 10, DiskTotalBytes: 100}, LastVerification: ok}, complianceDiskLow},
 		{"archiwizator milczy", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now.Add(-5 * time.Minute), VerifyEveryS: 3600}, LastVerification: ok}, complianceDown},
 	} {
 		if got := compliance(c.o, now); got != c.want {

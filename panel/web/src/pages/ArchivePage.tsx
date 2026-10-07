@@ -259,6 +259,11 @@ export default function ArchivePage() {
           icon={data?.compliance === "ok" ? <IconCheck /> : undefined}
         >
           <Text size="sm">{c.hint}</Text>
+          {st?.paused && (
+            <Text size="sm" fw={600} mt={4}>
+              {st.paused}
+            </Text>
+          )}
           {data?.compliance === "problems" && lv && (
             <List size="sm" mt="xs" spacing={2}>
               {lv.problems.slice(0, 20).map((p, i) => (
@@ -270,7 +275,7 @@ export default function ArchivePage() {
       )}
 
       {st && sum && (
-        <SimpleGrid cols={{ base: 2, md: 5 }}>
+        <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
           <Stat
             label="Archiwizator"
             value={
@@ -287,6 +292,23 @@ export default function ArchivePage() {
             sub={sum.oldest_hour ? `od ${formatDate(sum.oldest_hour)}` : "pierwszy manifest po pełnej godzinie"}
           />
           <Stat label="Retencja" value={`${st.retention_days} dni`} sub={`łańcuch: ${sum.manifests_total} manifestów od początku`} />
+          <Stat
+            label="Dysk archiwum"
+            value={
+              st.disk_total_bytes ? (
+                <Text fz={22} fw={700} c={st.paused ? "red" : st.disk_free_bytes < 0.15 * st.disk_total_bytes ? "orange" : undefined}>
+                  {formatBytes(st.disk_free_bytes)} wolne
+                </Text>
+              ) : (
+                "—"
+              )
+            }
+            sub={
+              st.disk_total_bytes
+                ? `z ${formatBytes(st.disk_total_bytes)} (${Math.round((100 * st.disk_free_bytes) / st.disk_total_bytes)}%)`
+                : "brak pomiaru"
+            }
+          />
           <Stat
             label="Ostatnia weryfikacja"
             value={

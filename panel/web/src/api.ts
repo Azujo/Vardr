@@ -330,7 +330,15 @@ export const configStateLabels: Record<string, { label: string; color: string; h
 
 // ---- Urd: archiwum NIS2 ----
 
-export type Compliance = "ok" | "problems" | "archiver_down" | "stale" | "never_verified" | "not_configured";
+export type Compliance =
+  | "ok"
+  | "problems"
+  | "archiver_down"
+  | "disk_full"
+  | "disk_low"
+  | "stale"
+  | "never_verified"
+  | "not_configured";
 
 export interface ArchiverState {
   version: string;
@@ -342,6 +350,9 @@ export interface ArchiverState {
   heartbeat_at: string;
   verify_requested_at?: string;
   verify_requested_by?: string;
+  disk_free_bytes: number;
+  disk_total_bytes: number;
+  paused?: string;
 }
 
 export interface ArchiveSummary {
@@ -408,6 +419,12 @@ export const complianceLabels: Record<Compliance, { label: string; color: string
     color: "red",
     hint: "Brak sygnału od archiwizatora od ponad 3 minut. Paczki czekają w kolejce, a po jej zapełnieniu serwer wstrzyma przyjmowanie.",
   },
+  disk_full: {
+    label: "archiwizacja wstrzymana – brak miejsca",
+    color: "red",
+    hint: "Na dysku archiwum zostało za mało miejsca. Nowe paczki czekają w kolejce; po jej zapełnieniu serwer wstrzyma przyjmowanie zdarzeń. Zwolnij lub powiększ dysk archiwum.",
+  },
+  disk_low: { label: "mało miejsca na dysku", color: "orange", hint: "Na dysku archiwum zostało mniej niż 15% miejsca." },
   stale: { label: "weryfikacja nieaktualna", color: "orange", hint: "Weryfikacja nie przeszła w zaplanowanym czasie." },
   never_verified: { label: "czeka na weryfikację", color: "blue", hint: "Archiwizator działa; pierwsza weryfikacja ok. 2 min po starcie." },
   not_configured: { label: "nie skonfigurowane", color: "gray", hint: "Archiwizator (siem-archiver) jeszcze nie działał." },

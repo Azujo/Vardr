@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -63,6 +64,10 @@ type settings struct {
 	segBytes    int64
 	segAge      time.Duration
 	verifyEvery time.Duration
+	exclude     []string
+	minFreeGB   int
+	minFreePct  float64
+	warnFreePct float64
 }
 
 func load(log *slog.Logger) (settings, error) {
@@ -84,6 +89,20 @@ func load(log *slog.Logger) (settings, error) {
 		return s, err
 	}
 	if s.verifyEvery, err = svc.EnvDuration("SIEM_ARCHIVE_VERIFY_EVERY", 6*time.Hour); err != nil {
+		return s, err
+	}
+	for _, p := range strings.Split(os.Getenv("SIEM_ARCHIVE_EXCLUDE_AGENTS"), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			s.exclude = append(s.exclude, p)
+		}
+	}
+	if s.minFreeGB, err = svc.EnvInt("SIEM_ARCHIVE_MIN_FREE_GB", 2); err != nil {
+		return s, err
+	}
+	if s.minFreePct, err = svc.EnvFloat("SIEM_ARCHIVE_MIN_FREE_PERCENT", 5); err != nil {
+		return s, err
+	}
+	if s.warnFreePct, err = svc.EnvFloat("SIEM_ARCHIVE_WARN_FREE_PERCENT", 15); err != nil {
 		return s, err
 	}
 	if st, err := os.Stat(s.dir); err != nil || !st.IsDir() {
@@ -163,19 +182,26 @@ func serve(log *slog.Logger) error {
 	m := metrics.NewArchiver()
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	go queue.Watch(ctx, log, js, bus.StreamRaw, bus.ConsumerArchiver, 0.5, 0.8, metrics.NewQueue())
+	health := &archiver.Health{}
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute,
-		State: cat, StateBase: urd.ArchiverState{
+		State: cat, Health: health, StateBase: urd.ArchiverState{
 			Version: svc.Version, RetentionDays: int(cfg.retention / (24 * time.Hour)),
 			SegmentMaxMB: int(cfg.segBytes >> 20), SegmentMaxAgeS: int(cfg.segAge / time.Second),
 			VerifyEveryS: int(cfg.verifyEvery / time.Second), StartedAt: time.Now().UTC(),
 		}})
 
-	r := &archiver.Archiver{A: a, Log: log, M: m,
-		Cfg: archiver.Config{SegmentMaxBytes: cfg.segBytes, SegmentMaxAge: cfg.segAge}}
+	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health,
+		Cfg: archiver.Config{SegmentMaxBytes: cfg.segBytes, SegmentMaxAge: cfg.segAge, ExcludeAgents: cfg.exclude,
+			MinFreeBytes: uint64(cfg.minFreeGB) << 30, MinFreePercent: cfg.minFreePct, WarnFreePercent: cfg.warnFreePct}}
 	log.Info("archiwizator uruchomiony", "dir", cfg.dir, "retention", cfg.retention.String(),
-		"segment_mb", cfg.segBytes>>20, "segment_age", cfg.segAge.String(), "verify_every", cfg.verifyEvery.String())
+		"segment_mb", cfg.segBytes>>20, "segment_age", cfg.segAge.String(), "verify_every", cfg.verifyEvery.String(),
+		"exclude_agents", cfg.exclude, "min_free_gb", cfg.minFreeGB, "min_free_percent", cfg.minFreePct)
 	for ctx.Err() == nil {
+		if r.CheckDisk() != "" {
+			r.Pause(ctx, 10*time.Second)
+			continue
+		}
 		msgs, err := cons.Fetch(512, jetstream.FetchMaxWait(time.Second))
 		if err != nil {
 			log.Warn("pobranie z kolejki nieudane", "err", err)

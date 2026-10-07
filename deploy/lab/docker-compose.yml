@@ -120,11 +120,15 @@ services:
     build: { context: ., args: { BIN: siem-archiver } }
     image: siem/archiver:lab
     volumes:
-      - ./archive:/archive
+      # Archiwum na osobnym dysku (SIEM_ARCHIVE_PATH w .env, np. /srv/heimdall/archive):
+      # zapełnienie archiwum nie zatrzyma wtedy kolejki ani bazy zdarzeń.
+      - ${SIEM_ARCHIVE_PATH:-./archive}:/archive
     environment:
       <<: *server-env
       SIEM_ARCHIVE_DB_URL: postgres://siem_archiver:${SAGA_ARCHIVER_PASSWORD}@saga:5432/saga?sslmode=disable
       SIEM_ARCHIVE_RETENTION_DAYS: ${SIEM_ARCHIVE_RETENTION_DAYS:-30}
+      # Agenci wyłączeni z archiwum (prefiksy): generator ruchu nie zapełnia dysku.
+      SIEM_ARCHIVE_EXCLUDE_AGENTS: ${SIEM_ARCHIVE_EXCLUDE_AGENTS-agt-load-}
       GOMEMLIMIT: 300MiB
     depends_on:
       nats: { condition: service_healthy }
@@ -179,6 +183,17 @@ services:
       nats: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
     mem_limit: 256m
+    logging: *logging
+
+  # Metryki systemu VM (miejsce na dyskach, CPU, pamięć) dla Prometheusa.
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command: ["--path.rootfs=/host", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|snap|var/lib/docker/.+)($$|/)"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    mem_limit: 64m
     logging: *logging
 
   prometheus:

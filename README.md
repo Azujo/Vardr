@@ -284,6 +284,7 @@ agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► sie
 | NATS JetStream | trwała kolejka zaległości (wiadomość znika po przetworzeniu); po zapełnieniu ingest odmawia przyjęcia, nic nie jest usuwane po cichu |
 | ClickHouse | `siem.events` (retencja 5 dni od przyjęcia), `siem.quarantine`; konta `siem_writer` (zapis) i `grafana` (odczyt) |
 | Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
+| node-exporter | metryki systemu VM dla Prometheusa: miejsce na dyskach, CPU, pamięć |
 
 Wdrożenie (stacja z Windows → VM z Dockerem):
 
@@ -447,6 +448,11 @@ Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skomp
 
   Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
 - **Retencja:** `SIEM_ARCHIVE_RETENTION_DAYS` w `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
+- **Miejsce na dysku:** archiwum zajmuje ok. 100 B na zdarzenie, czyli ~85 GB na dobę przy 10 000 zdarzeń/s. Powinno więc leżeć na osobnym dysku: `SIEM_ARCHIVE_PATH` w `.env`, np. `/srv/heimdall/archive`.
+  - Poniżej 15% wolnego miejsca archiwizator ostrzega.
+  - Poniżej 5% albo 2 GB wstrzymuje archiwizację (`SIEM_ARCHIVE_MIN_FREE_PERCENT`, `SIEM_ARCHIVE_MIN_FREE_GB`). Paczki czekają wtedy w kolejce, zamiast zapełnić dysk.
+  - Stan dysku jest widoczny w panelu i w metrykach `siem_archive_disk_free_bytes` i `siem_archive_paused`.
+- **Wyłączeni agenci:** paczki agentów o prefiksach z `SIEM_ARCHIVE_EXCLUDE_AGENTS` nie trafiają do archiwum. Domyślnie dotyczy to `agt-load-`, czyli generatora ruchu. Pusta wartość archiwizuje wszystko, np. do testu wydajności archiwum.
 
 W panelu stan archiwum widać w module **Urd**:
 

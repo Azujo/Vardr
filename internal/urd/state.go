@@ -23,6 +23,10 @@ type ArchiverState struct {
 	HeartbeatAt       time.Time  `json:"heartbeat_at"`
 	VerifyRequestedAt *time.Time `json:"verify_requested_at,omitempty"`
 	VerifyRequestedBy string     `json:"verify_requested_by,omitempty"`
+	// Miejsce na dysku archiwum (0 = nieznane) i powód wstrzymania archiwizacji.
+	DiskFreeBytes  int64  `json:"disk_free_bytes"`
+	DiskTotalBytes int64  `json:"disk_total_bytes"`
+	Paused         string `json:"paused,omitempty"`
 }
 
 // Summary podsumowuje zawartość archiwum.
@@ -58,11 +62,14 @@ func notConfigured(err error) error {
 // Nie nadpisuje zlecenia weryfikacji z panelu.
 func (p *PG) SaveState(ctx context.Context, s ArchiverState) error {
 	_, err := p.pool.Exec(ctx, `INSERT INTO urd.archiver_state
-		(id, version, retention_days, segment_max_mb, segment_max_age_s, verify_every_s, started_at, heartbeat_at)
-		VALUES (1, $1, $2, $3, $4, $5, $6, $7)
+		(id, version, retention_days, segment_max_mb, segment_max_age_s, verify_every_s, started_at, heartbeat_at,
+		 disk_free_bytes, disk_total_bytes, paused_reason)
+		VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET version = $1, retention_days = $2, segment_max_mb = $3,
-			segment_max_age_s = $4, verify_every_s = $5, started_at = $6, heartbeat_at = $7`,
-		s.Version, s.RetentionDays, s.SegmentMaxMB, s.SegmentMaxAgeS, s.VerifyEveryS, s.StartedAt, s.HeartbeatAt)
+			segment_max_age_s = $4, verify_every_s = $5, started_at = $6, heartbeat_at = $7,
+			disk_free_bytes = $8, disk_total_bytes = $9, paused_reason = $10`,
+		s.Version, s.RetentionDays, s.SegmentMaxMB, s.SegmentMaxAgeS, s.VerifyEveryS, s.StartedAt, s.HeartbeatAt,
+		s.DiskFreeBytes, s.DiskTotalBytes, s.Paused)
 	return err
 }
 
@@ -105,9 +112,11 @@ func (p *PG) Overview(ctx context.Context) (Overview, error) {
 	var o Overview
 	var st ArchiverState
 	err := p.pool.QueryRow(ctx, `SELECT version, retention_days, segment_max_mb, segment_max_age_s, verify_every_s,
-		started_at, heartbeat_at, verify_requested_at, coalesce(verify_requested_by, '') FROM urd.archiver_state WHERE id = 1`).
+		started_at, heartbeat_at, verify_requested_at, coalesce(verify_requested_by, ''),
+		disk_free_bytes, disk_total_bytes, paused_reason FROM urd.archiver_state WHERE id = 1`).
 		Scan(&st.Version, &st.RetentionDays, &st.SegmentMaxMB, &st.SegmentMaxAgeS, &st.VerifyEveryS,
-			&st.StartedAt, &st.HeartbeatAt, &st.VerifyRequestedAt, &st.VerifyRequestedBy)
+			&st.StartedAt, &st.HeartbeatAt, &st.VerifyRequestedAt, &st.VerifyRequestedBy,
+			&st.DiskFreeBytes, &st.DiskTotalBytes, &st.Paused)
 	switch {
 	case err == nil:
 		o.State = &st
