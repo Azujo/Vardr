@@ -94,7 +94,7 @@ func TestArchiverAcksAfterCommitAndSeals(t *testing.T) {
 	if !ok || !last.Hour.Equal(time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)) || last.Segments != 2 || last.Records != 6 {
 		t.Fatalf("manifest: %+v", last)
 	}
-	if v := a.Verify(ctx); !v.OK || v.Records != 6 || v.FinishedAt.IsZero() {
+	if v := a.Verify(ctx, urd.VerifyOptions{}); !v.OK || v.Records != 6 || v.FinishedAt.IsZero() {
 		t.Fatalf("weryfikacja: %+v", v)
 	}
 	if err := r.Close(ctx); err != nil {

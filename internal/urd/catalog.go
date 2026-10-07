@@ -18,7 +18,13 @@ type Verification struct {
 	Segments   int       `json:"segments"`
 	Records    int64     `json:"records"`
 	Bytes      int64     `json:"bytes"`
-	Problems   []string  `json:"problems"`
+	// Pełne sprawdzenie treści (w ramach budżetu): liczba manifestów w tym
+	// przebiegu, manifesty jeszcze nigdy niesprawdzone w całości i najdawniejsze
+	// pełne sprawdzenie danych w retencji (nil, gdy Unverified > 0).
+	FullManifests   int        `json:"full_manifests"`
+	Unverified      int        `json:"unverified"`
+	OldestFullCheck *time.Time `json:"oldest_full_check,omitempty"`
+	Problems        []string   `json:"problems"`
 }
 
 // Catalog to spis archiwum: segmenty, manifesty (łańcuch) i wyniki
@@ -35,6 +41,8 @@ type Catalog interface {
 	// Manifests zwraca cały łańcuch rosnąco po numerze; treść (Body) tylko
 	// dla manifestów, których dane nie wygasły.
 	Manifests(ctx context.Context) ([]ManifestRecord, error)
+	// MarkVerified zapisuje czas pełnego, zgodnego sprawdzenia manifestów.
+	MarkVerified(ctx context.Context, seqs []int64, at time.Time) error
 	// ExpireManifest oznacza manifest jako wygasły (dane usunięte po retencji).
 	// Wpis w łańcuchu zostaje – ciągłość nadal da się sprawdzić.
 	ExpireManifest(ctx context.Context, seq int64, at time.Time) error
@@ -148,4 +156,16 @@ func (c *MemCatalog) DeleteManifestRow(seq int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.manifests = slices.DeleteFunc(c.manifests, func(m ManifestRecord) bool { return m.Seq == seq })
+}
+
+func (c *MemCatalog) MarkVerified(_ context.Context, seqs []int64, at time.Time) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.manifests {
+		if slices.Contains(seqs, c.manifests[i].Seq) {
+			t := at
+			c.manifests[i].VerifiedAt = &t
+		}
+	}
+	return nil
 }

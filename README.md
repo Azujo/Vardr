@@ -439,14 +439,18 @@ Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skomp
 
 - **Segmenty:** paczki są dopisywane do pliku segmentu, zamykanego po 30 s albo 64 MB. Plik dostaje `fsync`, prawa tylko do odczytu i wpis w spisie (baza Saga, schemat `urd`). Dopiero wtedy paczki są potwierdzane w kolejce. Po awarii niezatwierdzony segment jest usuwany, a jego paczki przychodzą ponownie.
 - **Manifesty i łańcuch hashy:** po każdej pełnej godzinie powstaje manifest z listą segmentów i ich sumami SHA-256 oraz hashem poprzedniego manifestu. Manifest trafia na dysk i do bazy. Manifest dostaje też godzina bez danych, więc brakującą godzinę da się wykryć.
-- **Weryfikacja** (co 6 h i 2 min po starcie) sprawdza:
+- **Weryfikacja** (co 6 h i 2 min po starcie) w każdym przebiegu sprawdza całe archiwum tanimi metodami:
   - ciągłość łańcucha;
   - zgodność manifestów w bazie i na dysku;
-  - SHA-256, rozmiar i liczbę paczek każdego segmentu oraz sumę każdej paczki;
+  - obecność i rozmiar każdego segmentu, więc usunięcie lub ucięcie wychodzi od razu;
   - pliki dodane poza archiwizatorem;
   - przerwę w tworzeniu manifestów.
 
-  Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
+  Pełne sprawdzenie treści (SHA-256 segmentu i każdej paczki) obejmuje w jednym przebiegu najwyżej `SIEM_ARCHIVE_VERIFY_BUDGET_GB`, domyślnie 50 GB:
+  - najpierw manifesty jeszcze niesprawdzone, czyli nowe oraz te z wykrytym problemem;
+  - potem sprawdzone najdawniej.
+
+  Kolejne przebiegi obejmują więc całe archiwum po kolei. Manifest z problemem nie dostaje znacznika sprawdzenia, więc niezgodność nie znika z widoku. Panel pokazuje, od kiedy całość jest sprawdzona w całości. `verify --full` czyta całe archiwum, np. przed audytem. Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
 - **Retencja:** `SIEM_ARCHIVE_RETENTION_DAYS` w `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
 - **Miejsce na dysku:** archiwum zajmuje ok. 100 B na zdarzenie, czyli ~85 GB na dobę przy 10 000 zdarzeń/s. Powinno więc leżeć na osobnym dysku: `SIEM_ARCHIVE_PATH` w `.env`, np. `/srv/heimdall/archive`.
   - Poniżej 15% wolnego miejsca archiwizator ostrzega.
@@ -466,7 +470,8 @@ Administrator może zlecić weryfikację przyciskiem „Zweryfikuj teraz”. Arc
 Przygotowanie na VM, jednorazowo: `mkdir ~/siem-lab/archive && chmod 750 ~/siem-lab/archive`. Katalog musi należeć do użytkownika `siem` (uid 1000).
 
 ```bash
-docker compose exec archiver /app verify    # weryfikacja na żądanie (kod wyjścia 1 = niezgodności)
+docker compose exec archiver /app verify          # weryfikacja na żądanie, w ramach budżetu (kod wyjścia 1 = niezgodności)
+docker compose exec archiver /app verify --full   # całe archiwum odczytane w całości
 docker compose exec archiver /app disable   # wyłączenie archiwizacji nowych paczek, potem: docker compose stop archiver
 ```
 

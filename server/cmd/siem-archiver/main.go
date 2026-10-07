@@ -5,7 +5,8 @@
 // Polecenia:
 //
 //	siem-archiver            praca ciągła (usługa)
-//	siem-archiver verify     jednorazowa weryfikacja (kod wyjścia 1 = niezgodności)
+//	siem-archiver verify     jednorazowa weryfikacja w ramach budżetu (kod wyjścia 1 = niezgodności)
+//	siem-archiver verify --full   jak wyżej, ale całe archiwum czytane w całości
 //	siem-archiver disable    wyłącza archiwizację nowych paczek (usuwa konsumenta
 //	                         kolejki; dane w archiwum zostają do końca retencji)
 package main
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -58,16 +60,17 @@ func main() {
 }
 
 type settings struct {
-	dir         string
-	dbURL       string
-	retention   time.Duration
-	segBytes    int64
-	segAge      time.Duration
-	verifyEvery time.Duration
-	exclude     []string
-	minFreeGB   int
-	minFreePct  float64
-	warnFreePct float64
+	dir          string
+	dbURL        string
+	retention    time.Duration
+	segBytes     int64
+	segAge       time.Duration
+	verifyEvery  time.Duration
+	exclude      []string
+	minFreeGB    int
+	minFreePct   float64
+	warnFreePct  float64
+	verifyBudget int64
 }
 
 func load(log *slog.Logger) (settings, error) {
@@ -96,6 +99,11 @@ func load(log *slog.Logger) (settings, error) {
 			s.exclude = append(s.exclude, p)
 		}
 	}
+	budgetGB, err := svc.EnvInt("SIEM_ARCHIVE_VERIFY_BUDGET_GB", 50)
+	if err != nil {
+		return s, err
+	}
+	s.verifyBudget = int64(max(0, budgetGB)) << 30
 	if s.minFreeGB, err = svc.EnvInt("SIEM_ARCHIVE_MIN_FREE_GB", 2); err != nil {
 		return s, err
 	}
@@ -184,7 +192,7 @@ func serve(log *slog.Logger) error {
 	go queue.Watch(ctx, log, js, bus.StreamRaw, bus.ConsumerArchiver, 0.5, 0.8, metrics.NewQueue())
 	health := &archiver.Health{}
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
-		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute,
+		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,
 		State: cat, Health: health, StateBase: urd.ArchiverState{
 			Version: svc.Version, RetentionDays: int(cfg.retention / (24 * time.Hour)),
 			SegmentMaxMB: int(cfg.segBytes >> 20), SegmentMaxAgeS: int(cfg.segAge / time.Second),
@@ -235,7 +243,12 @@ func verify(log *slog.Logger) (bool, error) {
 		return false, err
 	}
 	defer cat.Close()
-	v := urd.New(cfg.dir, cat).Verify(ctx)
+	// --full: całe archiwum (np. przed audytem); bez niego – budżet jak w usłudze.
+	opt := urd.VerifyOptions{BudgetBytes: cfg.verifyBudget}
+	if slices.Contains(os.Args[2:], "--full") {
+		opt.BudgetBytes = 0
+	}
+	v := urd.New(cfg.dir, cat).Verify(ctx, opt)
 	if _, err := cat.SaveVerification(ctx, v); err != nil {
 		log.Warn("zapis wyniku nieudany", "err", err)
 	}

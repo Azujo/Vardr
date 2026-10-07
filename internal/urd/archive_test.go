@@ -54,7 +54,7 @@ func fill(t *testing.T) (*Archive, *MemCatalog, *clock) {
 
 func mustOK(t *testing.T, a *Archive) Verification {
 	t.Helper()
-	v := a.Verify(context.Background())
+	v := a.Verify(context.Background(), VerifyOptions{})
 	if !v.OK {
 		t.Fatalf("weryfikacja powinna przejść: %v", v.Problems)
 	}
@@ -63,7 +63,7 @@ func mustOK(t *testing.T, a *Archive) Verification {
 
 func mustFail(t *testing.T, a *Archive, want string) {
 	t.Helper()
-	v := a.Verify(context.Background())
+	v := a.Verify(context.Background(), VerifyOptions{})
 	if v.OK {
 		t.Fatalf("weryfikacja powinna wykryć: %s", want)
 	}
@@ -259,4 +259,42 @@ func TestOpenSegmentAndCleanTemp(t *testing.T) {
 		t.Fatalf("segment powinien być w manifeście: %+v", open)
 	}
 	mustOK(t, a)
+}
+
+func TestRollingVerificationBudget(t *testing.T) {
+	a, _, _ := fill(t) // manifesty 1–3 z danymi, 4 pusty
+	ctx := context.Background()
+	small := VerifyOptions{BudgetBytes: 1} // jeden manifest z danymi na przebieg
+
+	v := a.Verify(ctx, small)
+	if !v.OK || v.FullManifests != 1 || v.Unverified != 3 || v.OldestFullCheck != nil || v.Segments != 6 {
+		t.Fatalf("przebieg 1: %+v", v)
+	}
+	// Zmiana treści bez zmiany rozmiaru w segmencie godziny 12:00 (manifest 3).
+	segs := segFiles(t, a)
+	rewrite(t, segs[len(segs)-1], func(b []byte) []byte { b[len(b)-3] ^= 1; return b })
+
+	if v := a.Verify(ctx, small); !v.OK || v.FullManifests != 1 {
+		t.Fatalf("przebieg 2 (manifest 2) nie czyta jeszcze zmienionego segmentu: %+v", v)
+	}
+	if v := a.Verify(ctx, small); v.OK {
+		t.Fatal("przebieg 3 powinien wykryć zmianę w manifeście 3")
+	}
+	// Manifest z problemem nie dostaje znacznika – wraca w kolejnym przebiegu.
+	if v := a.Verify(ctx, small); v.OK {
+		t.Fatal("niezgodność nie może zniknąć z widoku w następnym przebiegu")
+	}
+	// Usunięcie pliku wykrywa każdy przebieg (sprawdzenie obecności i rozmiaru).
+	removeFile(segs[0])
+	if v := a.Verify(ctx, small); v.OK {
+		t.Fatal("usunięty segment powinien zostać wykryty od razu")
+	}
+}
+
+func TestFullVerificationCoverage(t *testing.T) {
+	a, _, _ := fill(t)
+	v := a.Verify(context.Background(), VerifyOptions{})
+	if !v.OK || v.FullManifests != 4 || v.Unverified != 0 || v.OldestFullCheck == nil || v.Records != 18 {
+		t.Fatalf("pełne sprawdzenie: %+v", v)
+	}
 }

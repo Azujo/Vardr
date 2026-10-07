@@ -77,5 +77,6 @@ type ManifestRecord struct {
 	Bytes      int64      `json:"bytes"`
 	CreatedAt  time.Time  `json:"created_at"`
 	ExpiredAt  *time.Time `json:"expired_at,omitempty"`
+	VerifiedAt *time.Time `json:"verified_at,omitempty"`
 	Body       []byte     `json:"-"`
 }

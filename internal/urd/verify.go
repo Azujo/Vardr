@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -32,6 +33,8 @@ func (p *problems) add(format string, args ...any) {
 	p.extra++
 }
 
+func (p *problems) count() int { return len(p.list) + p.extra }
+
 func (p *problems) result() []string {
 	out := p.list
 	if p.extra > 0 {
@@ -43,18 +46,38 @@ func (p *problems) result() []string {
 	return out
 }
 
+// VerifyOptions steruje zakresem weryfikacji.
+type VerifyOptions struct {
+	// BudgetBytes ogranicza ilość danych czytanych w całości (hash treści)
+	// w jednym przebiegu; 0 = całe archiwum. Pierwszeństwo mają manifesty
+	// jeszcze niesprawdzone w całości (nowe i te z wykrytymi problemami),
+	// potem sprawdzone najdawniej – kolejne przebiegi obejmują całość
+	// po kolei. Tanie sprawdzenia (łańcuch, manifesty, obecność i rozmiar
+	// każdego segmentu) obejmują zawsze całe archiwum.
+	BudgetBytes int64
+}
+
+type manifestCheck struct {
+	rec  ManifestRecord
+	segs []Segment
+	full bool
+}
+
 // Verify sprawdza integralność archiwum:
 //
 //   - ciągłość łańcucha manifestów (numery, godziny, hash poprzednika),
 //   - zgodność treści manifestu w bazie z jego hashem i z plikiem na dysku,
-//   - każdy segment: obecność, rozmiar, SHA-256 pliku, liczba rekordów
-//     i SHA-256 każdej paczki,
+//   - każdy segment: obecność i rozmiar, a w ramach budżetu także SHA-256
+//     pliku, liczbę rekordów i SHA-256 każdej paczki,
 //   - pliki na dysku nieznane spisowi (dodane poza archiwizatorem),
 //   - przerwę w tworzeniu manifestów (usunięcie końca łańcucha).
 //
+// Manifest sprawdzony w całości bez problemów dostaje znacznik czasu
+// (verified_at); z problemami – nie, więc wraca w kolejnym przebiegu.
+//
 // Nie wolno jej uruchamiać równolegle z Expire (usunięte pliki wyglądałyby
 // na brakujące); równoległe Commit i Seal są bezpieczne.
-func (a *Archive) Verify(ctx context.Context) Verification {
+func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	v := Verification{StartedAt: a.now()}
 	var p problems
 
@@ -70,13 +93,11 @@ func (a *Archive) Verify(ctx context.Context) Verification {
 	}
 	known := map[string]bool{}
 
+	// 1. Łańcuch i manifesty (tanie, zawsze całość).
+	var checks []*manifestCheck
 	prevSHA, prevSeq := GenesisPrev, int64(0)
 	var prevHour time.Time
 	for i, m := range ms {
-		if ctx.Err() != nil {
-			p.add("weryfikacja przerwana: %v", ctx.Err())
-			break
-		}
 		label := fmt.Sprintf("manifest %d (%s)", m.Seq, m.Hour.UTC().Format("2006-01-02 15:00"))
 		if m.Seq != prevSeq+1 {
 			p.add("luka w łańcuchu: po manifeście %d następuje %d – manifesty usunięte z bazy", prevSeq, m.Seq)
@@ -112,12 +133,58 @@ func (a *Archive) Verify(ctx context.Context) Verification {
 		}
 		for _, s := range body.Segments {
 			known[s.Path] = true
-			a.verifySegment(s, &v, &p)
 		}
+		checks = append(checks, &manifestCheck{rec: m, segs: body.Segments})
 	}
 	if n := len(ms); n > 0 && ms[n-1].Hour.Before(a.now().Truncate(time.Hour).Add(-2*time.Hour)) {
 		p.add("ostatni manifest dotyczy godziny %s – archiwizator nie działa albo koniec łańcucha usunięto",
 			ms[n-1].Hour.UTC().Format("2006-01-02 15:00"))
+	}
+
+	// 2. Wybór manifestów do pełnego sprawdzenia: najpierw niesprawdzone,
+	// potem sprawdzone najdawniej, do wyczerpania budżetu (co najmniej jeden).
+	order := slices.Clone(checks)
+	slices.SortStableFunc(order, func(x, y *manifestCheck) int {
+		switch xv, yv := x.rec.VerifiedAt, y.rec.VerifiedAt; {
+		case xv == nil && yv == nil:
+			return 0
+		case xv == nil:
+			return -1
+		case yv == nil:
+			return 1
+		}
+		return x.rec.VerifiedAt.Compare(*y.rec.VerifiedAt)
+	})
+	var used int64
+	for _, c := range order {
+		if opt.BudgetBytes > 0 && used > 0 && used+c.rec.Bytes > opt.BudgetBytes {
+			break
+		}
+		c.full = true
+		used += c.rec.Bytes
+	}
+
+	// 3. Segmenty: pełne sprawdzenie albo obecność i rozmiar.
+	var passed []int64
+	for _, c := range checks {
+		if ctx.Err() != nil {
+			p.add("weryfikacja przerwana: %v", ctx.Err())
+			break
+		}
+		before := p.count()
+		for _, s := range c.segs {
+			if c.full {
+				a.verifySegment(s, &v, &p)
+			} else {
+				a.statSegment(s, &v, &p)
+			}
+		}
+		if c.full {
+			v.FullManifests++
+			if p.count() == before {
+				passed = append(passed, c.rec.Seq)
+			}
+		}
 	}
 
 	open, err := a.Cat.OpenSegments(ctx)
@@ -153,10 +220,57 @@ func (a *Archive) Verify(ctx context.Context) Verification {
 		}
 	}
 
+	now := a.now()
+	if len(passed) > 0 {
+		if err := a.Cat.MarkVerified(ctx, passed, now); err != nil {
+			p.add("zapis znaczników pełnego sprawdzenia: %v", err)
+		}
+	}
+	// Pokrycie: najdawniejsze pełne sprawdzenie danych w retencji (brak,
+	// gdy część danych nie była jeszcze sprawdzona w całości).
+	passedSet := map[int64]bool{}
+	for _, s := range passed {
+		passedSet[s] = true
+	}
+	covered := true
+	var oldest *time.Time
+	for _, c := range checks {
+		at := c.rec.VerifiedAt
+		if passedSet[c.rec.Seq] {
+			at = &now
+		}
+		if at == nil {
+			covered = false
+			v.Unverified++
+			continue
+		}
+		if oldest == nil || at.Before(*oldest) {
+			t := *at
+			oldest = &t
+		}
+	}
+	if covered {
+		v.OldestFullCheck = oldest
+	}
+
 	v.Problems = p.result()
 	v.OK = len(v.Problems) == 0
 	v.FinishedAt = a.now()
 	return v
+}
+
+// statSegment sprawdza obecność i rozmiar segmentu (bez czytania treści).
+func (a *Archive) statSegment(s Segment, v *Verification, p *problems) {
+	v.Segments++
+	st, err := os.Stat(a.abs(s.Path))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		p.add("segment %s: brak pliku – usunięty", s.Path)
+	case err != nil:
+		p.add("segment %s: %v", s.Path, err)
+	case st.Size() != s.Bytes:
+		p.add("segment %s: rozmiar %d B, w spisie %d B", s.Path, st.Size(), s.Bytes)
+	}
 }
 
 // verifySegment czyta segment w całości i porównuje ze spisem.

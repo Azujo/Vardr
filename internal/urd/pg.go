@@ -166,11 +166,12 @@ func (p *PG) OpenSegments(ctx context.Context) ([]Segment, error) {
 	})
 }
 
-const manifestCols = `seq, hour, sha256, prev_sha256, segments, records, bytes, created_at, expired_at`
+const manifestCols = `seq, hour, sha256, prev_sha256, segments, records, bytes, created_at, expired_at, verified_at`
 
 func scanManifest(r pgx.Row, withBody bool) (ManifestRecord, error) {
 	var m ManifestRecord
-	dst := []any{&m.Seq, &m.Hour, &m.SHA256, &m.PrevSHA256, &m.Segments, &m.Records, &m.Bytes, &m.CreatedAt, &m.ExpiredAt}
+	dst := []any{&m.Seq, &m.Hour, &m.SHA256, &m.PrevSHA256, &m.Segments, &m.Records, &m.Bytes, &m.CreatedAt, &m.ExpiredAt,
+		&m.VerifiedAt}
 	if withBody {
 		dst = append(dst, &m.Body)
 	}
@@ -241,18 +242,19 @@ func (p *PG) SaveVerification(ctx context.Context, v Verification) (int64, error
 	}
 	var id int64
 	err = p.pool.QueryRow(ctx, `INSERT INTO urd.verifications
-		(started_at, finished_at, ok, manifests, segments, records, bytes, problems)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-		v.StartedAt, v.FinishedAt, v.OK, v.Manifests, v.Segments, v.Records, v.Bytes, problems).Scan(&id)
+		(started_at, finished_at, ok, manifests, segments, records, bytes, problems, full_manifests, unverified, oldest_full_check)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		v.StartedAt, v.FinishedAt, v.OK, v.Manifests, v.Segments, v.Records, v.Bytes, problems,
+		v.FullManifests, v.Unverified, v.OldestFullCheck).Scan(&id)
 	return id, err
 }
 
 func (p *PG) LastVerification(ctx context.Context) (Verification, bool, error) {
 	var v Verification
 	var problems []byte
-	err := p.pool.QueryRow(ctx, `SELECT id, started_at, finished_at, ok, manifests, segments, records, bytes, problems
+	err := p.pool.QueryRow(ctx, `SELECT `+verifCols+`
 		FROM urd.verifications ORDER BY id DESC LIMIT 1`).
-		Scan(&v.ID, &v.StartedAt, &v.FinishedAt, &v.OK, &v.Manifests, &v.Segments, &v.Records, &v.Bytes, &problems)
+		Scan(verifDst(&v, &problems)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, false, nil
 	}
@@ -260,4 +262,18 @@ func (p *PG) LastVerification(ctx context.Context) (Verification, bool, error) {
 		return v, false, err
 	}
 	return v, true, json.Unmarshal(problems, &v.Problems)
+}
+
+// MarkVerified zapisuje czas pełnego, zgodnego sprawdzenia manifestów.
+func (p *PG) MarkVerified(ctx context.Context, seqs []int64, at time.Time) error {
+	_, err := p.pool.Exec(ctx, `UPDATE urd.manifests SET verified_at = $2 WHERE seq = ANY($1)`, seqs, at)
+	return err
+}
+
+const verifCols = `id, started_at, finished_at, ok, manifests, segments, records, bytes, problems,
+	full_manifests, unverified, oldest_full_check`
+
+func verifDst(v *Verification, problems any) []any {
+	return []any{&v.ID, &v.StartedAt, &v.FinishedAt, &v.OK, &v.Manifests, &v.Segments, &v.Records, &v.Bytes, problems,
+		&v.FullManifests, &v.Unverified, &v.OldestFullCheck}
 }

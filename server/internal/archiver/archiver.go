@@ -188,12 +188,13 @@ type StateStore interface {
 
 // MaintainConfig to parametry pracy okresowej.
 type MaintainConfig struct {
-	Retention   time.Duration
-	VerifyEvery time.Duration
-	FirstVerify time.Duration // pierwsza weryfikacja po starcie
-	State       StateStore    // nil = bez stanu dla panelu
-	StateBase   urd.ArchiverState
-	Health      *Health // stan dysku z pętli archiwizatora
+	Retention    time.Duration
+	VerifyEvery  time.Duration
+	FirstVerify  time.Duration // pierwsza weryfikacja po starcie
+	VerifyBudget int64         // bajty czytane w całości w jednym przebiegu (0 = wszystko)
+	State        StateStore    // nil = bez stanu dla panelu
+	StateBase    urd.ArchiverState
+	Health       *Health // stan dysku z pętli archiwizatora
 }
 
 // Maintain co minutę zapisuje stan dla panelu, usuwa dane po retencji
@@ -231,7 +232,7 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 		}
 		if !time.Now().Before(verifyAt) {
 			verifyAt = time.Now().Add(c.VerifyEvery)
-			RunVerify(ctx, a, log, m)
+			RunVerify(ctx, a, log, m, urd.VerifyOptions{BudgetBytes: c.VerifyBudget})
 		}
 		select {
 		case <-ctx.Done():
@@ -242,8 +243,8 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 }
 
 // RunVerify weryfikuje archiwum i zapisuje wynik w spisie.
-func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver) urd.Verification {
-	v := a.Verify(ctx)
+func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver, opt urd.VerifyOptions) urd.Verification {
+	v := a.Verify(ctx, opt)
 	if _, err := a.Cat.SaveVerification(context.WithoutCancel(ctx), v); err != nil {
 		log.Error("zapis wyniku weryfikacji nieudany", "err", err)
 	}
@@ -254,7 +255,8 @@ func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics
 	m.VerifyOK.Set(ok)
 	m.VerifyProblem.Set(float64(len(v.Problems)))
 	m.LastVerify.Set(float64(time.Now().Unix()))
-	args := []any{"manifests", v.Manifests, "segments", v.Segments, "batches", v.Records, "bytes", v.Bytes,
+	args := []any{"manifests", v.Manifests, "segments", v.Segments, "full_manifests", v.FullManifests,
+		"unverified", v.Unverified, "hashed_batches", v.Records, "hashed_bytes", v.Bytes,
 		"took", v.FinishedAt.Sub(v.StartedAt).Round(time.Millisecond).String()}
 	if v.OK {
 		log.Info("weryfikacja archiwum: zgodne", args...)

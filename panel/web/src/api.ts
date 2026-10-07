@@ -378,6 +378,9 @@ export interface ArchiveVerification {
   records: number;
   bytes: number;
   problems: string[];
+  full_manifests: number;
+  unverified: number;
+  oldest_full_check?: string;
 }
 
 export interface ArchiveManifest {
@@ -390,6 +393,7 @@ export interface ArchiveManifest {
   bytes: number;
   created_at: string;
   expired_at?: string;
+  verified_at?: string;
 }
 
 export interface ArchiveOverview {

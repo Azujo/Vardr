@@ -147,14 +147,14 @@ func (p *PG) Overview(ctx context.Context) (Overview, error) {
 
 // Verifications zwraca ostatnie weryfikacje (najnowsze pierwsze).
 func (p *PG) Verifications(ctx context.Context, limit int) ([]Verification, error) {
-	rows, err := p.pool.Query(ctx, `SELECT id, started_at, finished_at, ok, manifests, segments, records, bytes, problems
+	rows, err := p.pool.Query(ctx, `SELECT `+verifCols+`
 		FROM urd.verifications ORDER BY id DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, notConfigured(err)
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Verification, error) {
 		var v Verification
-		err := r.Scan(&v.ID, &v.StartedAt, &v.FinishedAt, &v.OK, &v.Manifests, &v.Segments, &v.Records, &v.Bytes, &v.Problems)
+		err := r.Scan(verifDst(&v, &v.Problems)...)
 		return v, err
 	})
 }

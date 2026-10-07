@@ -123,10 +123,18 @@ function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
                         wygasłe
                       </Badge>
                     </Tooltip>
+                  ) : m.verified_at ? (
+                    <Tooltip label={`Treść sprawdzona w całości (SHA-256 każdej paczki) ${formatDate(m.verified_at)}`}>
+                      <Badge size="sm" color="green" variant="light">
+                        sprawdzone
+                      </Badge>
+                    </Tooltip>
                   ) : (
-                    <Badge size="sm" color="green" variant="light">
-                      w archiwum
-                    </Badge>
+                    <Tooltip label="W archiwum; pełne sprawdzenie treści w kolejnych przebiegach weryfikacji (obecność i rozmiar plików są sprawdzane zawsze)">
+                      <Badge size="sm" color="blue" variant="light">
+                        w archiwum
+                      </Badge>
+                    </Tooltip>
                   )}
                 </Table.Td>
               </Table.Tr>
@@ -148,8 +156,9 @@ function VerificationTable({ items }: { items: ArchiveVerification[] }) {
             <Table.Th>Wynik</Table.Th>
             <Table.Th>Manifesty</Table.Th>
             <Table.Th>Segmenty</Table.Th>
+            <Table.Th>W całości</Table.Th>
             <Table.Th>Paczki</Table.Th>
-            <Table.Th>Sprawdzono</Table.Th>
+            <Table.Th>Odczytano</Table.Th>
             <Table.Th>Czas</Table.Th>
             <Table.Th>Problemy</Table.Th>
           </Table.Tr>
@@ -165,6 +174,11 @@ function VerificationTable({ items }: { items: ArchiveVerification[] }) {
               </Table.Td>
               <Table.Td>{v.manifests}</Table.Td>
               <Table.Td>{v.segments}</Table.Td>
+              <Table.Td>
+                <Tooltip label="Manifesty, których treść odczytano i sprawdzono w całości w tym przebiegu">
+                  <Text size="sm">{v.full_manifests}</Text>
+                </Tooltip>
+              </Table.Td>
               <Table.Td>{formatNumber(v.records)}</Table.Td>
               <Table.Td>{formatBytes(v.bytes)}</Table.Td>
               <Table.Td>{duration(v)}</Table.Td>
@@ -320,7 +334,14 @@ export default function ArchivePage() {
                 "—"
               )
             }
-            sub={lv ? `${ago(lv.finished_at)}, co ${Math.round(st.verify_every_s / 3600)} h` : `co ${Math.round(st.verify_every_s / 3600)} h`}
+            sub={
+              lv
+                ? `${ago(lv.finished_at)}, co ${Math.round(st.verify_every_s / 3600)} h; ` +
+                  (lv.oldest_full_check
+                    ? `całość sprawdzona od ${formatDate(lv.oldest_full_check)}`
+                    : `${lv.unverified} h czeka na pełne sprawdzenie`)
+                : `co ${Math.round(st.verify_every_s / 3600)} h`
+            }
           />
         </SimpleGrid>
       )}

@@ -62,7 +62,7 @@ func TestPostgresCatalog(t *testing.T) {
 	if open, _ := db.OpenSegments(ctx); len(open) != 0 {
 		t.Fatalf("segmenty powinny mieć manifest: %d", len(open))
 	}
-	v := a.Verify(ctx)
+	v := a.Verify(ctx, VerifyOptions{})
 	if !v.OK || v.Manifests != 3 || v.Records != 12 {
 		t.Fatalf("weryfikacja: %+v", v)
 	}
@@ -78,7 +78,7 @@ func TestPostgresCatalog(t *testing.T) {
 	if n, err := a.Expire(ctx, time.Hour); err != nil || n != 1 {
 		t.Fatalf("expire: %d %v", n, err)
 	}
-	if v := a.Verify(ctx); !v.OK || v.Manifests != 2 {
+	if v := a.Verify(ctx, VerifyOptions{}); !v.OK || v.Manifests != 2 {
 		t.Fatalf("po retencji: %+v", v)
 	}
 	recent, err := db.RecentManifests(ctx, 10)
@@ -90,7 +90,7 @@ func TestPostgresCatalog(t *testing.T) {
 	if _, err := db.pool.Exec(ctx, "DELETE FROM urd.manifests WHERE seq = 2"); err != nil {
 		t.Fatal(err)
 	}
-	if v := a.Verify(ctx); v.OK {
+	if v := a.Verify(ctx, VerifyOptions{}); v.OK {
 		t.Fatal("usunięcie manifestu z bazy powinno zostać wykryte")
 	}
 	// Spójność segmentów z manifestem jest pilnowana transakcją.
