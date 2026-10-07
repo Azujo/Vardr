@@ -328,6 +328,17 @@ Panel działa pod adresem **https://192.168.88.98:8444**. Korzysta z certyfikatu
 
    Windows zapyta o potwierdzenie. Usunięcie: `certutil -user -delstore Root "SIEM Lab CA"`.
 
+**Huginn – agenci:** agent (od wersji 0.4.0) co minutę wysyła heartbeat ze swoim stanem, czyli tym samym, co pokazuje `siem_agent status`. Trasa: `POST /v1/heartbeat` na siem-ingest (mTLS) → strumień NATS `SIEM_HEARTBEATS` (ostatni heartbeat na agenta) → siem-api → tabela `agents` w Sadze.
+
+Panel pokazuje dla każdego agenta:
+
+- stan online lub offline (offline po 3 minutach bez heartbeatu);
+- wersję, system, adres IP i ważność certyfikatu;
+- kanały, liczniki zdarzeń, zużycie zasobów i ostrzeżenia;
+- czytelną listę problemów, np. „kanał Security: brak dostępu”, „certyfikat wygasa za 5 dni”, „wysyłka zdarzeń nieudana”.
+
+Agenci ze starszych wersji wysyłają zdarzenia, ale nie pojawiają się na liście, dopóki nie zostaną zaktualizowani. Generator ruchu też wysyła heartbeaty (`-heartbeat`, domyślnie włączone), więc listę da się sprawdzić na tysiącach agentów.
+
 **Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
 
 **Bezpieczeństwo:**

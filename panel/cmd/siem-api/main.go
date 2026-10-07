@@ -23,10 +23,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+
+	"siem/internal/fleet"
 	"siem/internal/svc"
 	"siem/panel/internal/api"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
+	"siem/panel/internal/fleetsync"
 	"siem/panel/web"
 )
 
@@ -105,6 +110,33 @@ func serve(log *slog.Logger) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+	}
+
+	// Huginn: heartbeaty agentów z NATS (publikuje je siem-ingest).
+	if natsURL := os.Getenv("SIEM_NATS_URL"); natsURL != "" {
+		nc, err := nats.Connect(natsURL, nats.Name("siem-api"), nats.MaxReconnects(-1), nats.ReconnectWait(2*time.Second))
+		if err != nil {
+			return fmt.Errorf("NATS: %w", err)
+		}
+		defer nc.Close()
+		js, err := jetstream.New(nc)
+		if err != nil {
+			return err
+		}
+		go func() {
+			var cons jetstream.Consumer
+			if err := svc.Retry(ctx, log, "strumień heartbeatów", func() error {
+				var err error
+				cons, err = fleet.Ensure(ctx, js)
+				return err
+			}); err != nil {
+				return
+			}
+			log.Info("odbiór heartbeatów agentów uruchomiony")
+			fleetsync.Run(ctx, log, cons, db)
+		}()
+	} else {
+		log.Warn("brak SIEM_NATS_URL – lista agentów nie będzie aktualizowana")
 	}
 
 	// Sprzątanie wygasłych sesji.

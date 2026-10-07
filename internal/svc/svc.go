@@ -100,3 +100,7 @@ func EnvFloat(key string, def float64) (float64, error) {
 	}
 	return f, nil
 }
+
+// Version to wersja usług serwera i panelu (nadpisywana przy budowaniu:
+// -ldflags "-X siem/internal/svc.Version=…").
+var Version = "0.4.0-dev"

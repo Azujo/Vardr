@@ -37,6 +37,9 @@ type Store interface {
 	DeleteUserSessions(ctx context.Context, userID int64, exceptID string) error
 	Audit(ctx context.Context, e store.AuditEntry) error
 	ListAudit(ctx context.Context, limit int, beforeID int64) ([]store.AuditEntry, error)
+	ListAgents(ctx context.Context) ([]store.Agent, error)
+	AgentByID(ctx context.Context, id string) (store.Agent, error)
+	DeleteAgent(ctx context.Context, id string) error
 }
 
 // Server to handler HTTP panelu.
@@ -99,6 +102,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/v1/users/{id}", s.authed(roleAdmin, 0, s.updateUser))
 	mux.Handle("POST /api/v1/users/{id}/reset-password", s.authed(roleAdmin, 0, s.resetPassword))
 	mux.Handle("GET /api/v1/audit", s.authed(roleAdmin, 0, s.listAudit))
+
+	mux.Handle("GET /api/v1/agents", s.authed(roleViewer, 0, s.listAgents))
+	mux.Handle("GET /api/v1/agents/{id}", s.authed(roleViewer, 0, s.getAgent))
+	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu API")

@@ -106,3 +106,72 @@ export function formatDate(iso?: string): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "medium" });
 }
+
+// ---- Huginn: agenci ----
+
+export interface AgentView {
+  id: string;
+  hostname: string;
+  os: string;
+  version: string;
+  remote_ip: string;
+  first_seen: string;
+  last_seen: string;
+  started_at?: string;
+  cert_not_after?: string;
+  cert_days_left?: number;
+  state: "online" | "offline";
+  server_healthy: boolean;
+  last_accepted_at?: string;
+  events_accepted: number;
+  events_read: number;
+  events_quarantined: number;
+  warnings: number;
+  last_warning?: string;
+  channels_ok: number;
+  channels_total: number;
+  problems: string[];
+}
+
+export interface AgentsSummary {
+  total: number;
+  online: number;
+  offline: number;
+  with_problems: number;
+}
+
+// Status agenta – ten sam dokument co `siem_agent status` (status.json).
+export interface AgentStatusDoc {
+  updated_at?: string;
+  version?: string;
+  pid?: number;
+  started_at?: string;
+  server?: { url?: string; last_accepted_at?: string; last_error?: string; last_error_at?: string; healthy?: boolean };
+  channels?: { name: string; state: string; error?: string; last_record_id?: number; last_read_at?: string; last_lag_ns?: number }[];
+  counters?: { read?: number; filtered?: number; accepted?: number; truncated?: number; quarantined?: number; retries?: number };
+  limits?: Record<string, unknown>;
+  throttle?: { eps_ns?: number; bandwidth_ns?: number };
+  process?: { cpu_time_ns?: number; heap_mb?: number; sys_mb?: number; goroutines?: number; max_procs?: number };
+  warnings?: string[];
+}
+
+export const agentsApi = {
+  list: () => request<{ agents: AgentView[]; summary: AgentsSummary; offline_after_s: number }>("GET", "/api/v1/agents"),
+  get: (id: string) =>
+    request<{ agent: AgentView; status: AgentStatusDoc }>("GET", `/api/v1/agents/${encodeURIComponent(id)}`),
+  remove: (id: string) => request<void>("DELETE", `/api/v1/agents/${encodeURIComponent(id)}`),
+};
+
+// Czas względny po polsku: „30 s temu”, „5 min temu”, „2 h temu”.
+export function ago(iso?: string, now = Date.now()): string {
+  if (!iso) return "—";
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s} s temu`;
+  if (s < 3600) return `${Math.floor(s / 60)} min temu`;
+  if (s < 172800) return `${Math.floor(s / 3600)} h temu`;
+  return `${Math.floor(s / 86400)} dni temu`;
+}
+
+export function formatNumber(n?: number): string {
+  return n === undefined ? "—" : n.toLocaleString("pl-PL");
+}

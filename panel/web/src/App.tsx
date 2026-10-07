@@ -8,6 +8,8 @@ import HomePage from "./pages/HomePage";
 import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
 import ComingSoon from "./pages/ComingSoon";
+import AgentsPage from "./pages/AgentsPage";
+import AgentDetailPage from "./pages/AgentDetailPage";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -27,10 +29,8 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route
-          path="/agents"
-          element={<ComingSoon name="Huginn – agenci" what="Lista agentów z heartbeatem, wersje, stan kanałów i grupy." />}
-        />
+        <Route path="/agents" element={<AgentsPage />} />
+        <Route path="/agents/:id" element={<AgentDetailPage />} />
         <Route
           path="/events"
           element={<ComingSoon name="Mímir – zdarzenia" what="Wyszukiwarka zdarzeń z filtrami i podglądem surowego XML." />}

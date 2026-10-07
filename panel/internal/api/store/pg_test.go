@@ -21,7 +21,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"audit_log", "sessions", "users", "schema_migrations"} {
+	for _, tbl := range []string{"agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
 		}
@@ -117,5 +117,44 @@ func TestPostgresStore(t *testing.T) {
 	older, _ := db.ListAudit(ctx, 2, page[1].ID)
 	if len(older) != 1 || older[0].Action != "login" {
 		t.Fatalf("starsza strona audytu: %+v", older)
+	}
+
+	testAgents(t, db)
+}
+
+func testAgents(t *testing.T, db *PG) {
+	ctx := context.Background()
+	t0 := time.Now().UTC().Truncate(time.Millisecond)
+	exp := t0.Add(90 * 24 * time.Hour)
+	a := Agent{ID: "agt-1", Hostname: "PC01", OS: "Windows 11", Version: "0.4.0", RemoteIP: "10.0.0.1",
+		LastSeen: t0, CertNotAfter: &exp, CertSerial: "ab", Status: []byte(`{"counters":{"accepted":1}}`)}
+	if err := db.UpsertAgents(ctx, []Agent{a, {ID: "agt-2", LastSeen: t0}}); err != nil {
+		t.Fatal(err)
+	}
+	// Nowszy heartbeat aktualizuje, starszy (spóźniony) jest ignorowany.
+	newer := a
+	newer.LastSeen, newer.Version, newer.Status = t0.Add(time.Minute), "0.4.1", []byte(`{"counters":{"accepted":2}}`)
+	older := a
+	older.LastSeen, older.Version = t0.Add(-time.Minute), "0.3.0"
+	if err := db.UpsertAgents(ctx, []Agent{newer}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertAgents(ctx, []Agent{older}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.AgentByID(ctx, "agt-1")
+	if err != nil || got.Version != "0.4.1" || !got.FirstSeen.Before(got.LastSeen.Add(time.Second)) ||
+		got.CertNotAfter == nil || string(got.Status) != `{"counters": {"accepted": 2}}` {
+		t.Fatalf("agent: %+v (%s) %v", got, got.Status, err)
+	}
+	list, err := db.ListAgents(ctx)
+	if err != nil || len(list) != 2 || list[1].ID != "agt-2" || string(list[1].Status) != "{}" {
+		t.Fatalf("lista: %+v %v", list, err)
+	}
+	if err := db.DeleteAgent(ctx, "agt-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteAgent(ctx, "agt-2"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ponowne usunięcie: %v", err)
 	}
 }

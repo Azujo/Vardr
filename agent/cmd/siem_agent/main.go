@@ -23,6 +23,7 @@ import (
 
 	"siem/agent/internal/config"
 	"siem/agent/internal/core"
+	"siem/agent/internal/heartbeat"
 	"siem/agent/internal/limits"
 	"siem/agent/internal/logging"
 	"siem/agent/internal/logwatch"
@@ -35,7 +36,7 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -342,6 +343,13 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
 	go watcher.Run(watchCtx)
+
+	// Heartbeat dla panelu (Huginn): stan agenta co minutę.
+	if hbURL, err := heartbeat.URLFromIngest(cfg.Server.URL); err == nil {
+		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
+			Status: func() any { return tracker.Snapshot() }, Log: log}
+		go hb.Run(watchCtx)
+	}
 
 	log.Info("agent uruchomiony", "version", version, "eventlog", true)
 	err = agent.Run(ctx)

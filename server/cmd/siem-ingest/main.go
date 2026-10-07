@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/fleet"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
 	"siem/server/internal/ingest"
@@ -50,7 +51,11 @@ func run(log *slog.Logger) error {
 	}
 	defer nc.Close()
 	if err := svc.Retry(ctx, log, "konfiguracja strumieni NATS", func() error {
-		return bus.EnsurePipeline(ctx, js, limits)
+		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
+			return err
+		}
+		_, err := js.CreateOrUpdateStream(ctx, fleet.StreamConfig())
+		return err
 	}); err != nil {
 		return err
 	}
@@ -72,6 +77,8 @@ func run(log *slog.Logger) error {
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	mux := http.NewServeMux()
 	mux.Handle("POST "+contract.IngestPath, h)
+	hb := &ingest.HeartbeatHandler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, Version: svc.Version}
+	mux.Handle("POST "+contract.HeartbeatPath, hb)
 	srv := &http.Server{
 		Addr:              svc.Env("SIEM_LISTEN", ":8443"),
 		Handler:           mux,
@@ -90,7 +97,8 @@ func run(log *slog.Logger) error {
 			case <-t.C:
 				log.Info("statystyki", "batches", h.Batches.Load(), "events", h.Events.Load(),
 					"duplicates", h.Duplicates.Load(), "rejected", h.Rejected.Load(),
-					"throttled", h.Throttled.Load(), "in_flight", adm.InFlight(), "queue_fill", adm.Fill())
+					"throttled", h.Throttled.Load(), "in_flight", adm.InFlight(), "queue_fill", adm.Fill(),
+					"heartbeats", hb.Accepted.Load(), "heartbeats_rejected", hb.Rejected.Load())
 			case <-ctx.Done():
 				return
 			}

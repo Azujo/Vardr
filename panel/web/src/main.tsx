@@ -16,7 +16,8 @@ const theme = createTheme({
   headings: { fontWeight: "650" },
   components: {
     // Etykiety stanu bez wersalików – czytelniejsze i nie ucinają się w tabelach.
-    Badge: Badge.extend({ styles: { root: { textTransform: "none" } } }),
+    // Etykieta nie skraca się do „onli…” – kolumna tabeli dopasowuje się do niej.
+    Badge: Badge.extend({ styles: { root: { textTransform: "none", flexShrink: 0 }, label: { overflow: "visible" } } }),
   },
 });
 

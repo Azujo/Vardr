@@ -2,24 +2,23 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { IconBolt, IconDatabaseSearch, IconDeviceDesktop, IconServer } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { agentsApi, api, type AgentsSummary } from "../api";
 import { useAuth } from "../auth";
-
-const modules = [
-  { to: "/agents", name: "Huginn", what: "agenci na komputerach – lista, stan, heartbeat", icon: IconDeviceDesktop },
-  { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie i szczegóły", icon: IconDatabaseSearch },
-  { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem", icon: IconBolt },
-];
 
 export default function HomePage() {
   const { user } = useAuth();
   const [db, setDb] = useState<string>("…");
+  const [fleet, setFleet] = useState<AgentsSummary | null>(null);
 
   useEffect(() => {
     api
       .health()
       .then((h) => setDb(h.database))
       .catch(() => setDb("niedostępna"));
+    agentsApi
+      .list()
+      .then((r) => setFleet(r.summary))
+      .catch(() => setFleet(null));
   }, []);
 
   return (
@@ -29,27 +28,55 @@ export default function HomePage() {
         <Text c="dimmed">Heimdall strzeże mostu – tu widać, co dzieje się w sieci.</Text>
       </div>
 
-      <Card withBorder>
-        <Group>
-          <ThemeIcon variant="light" size="lg">
-            <IconServer size={20} />
-          </ThemeIcon>
-          <div>
-            <Text fw={500}>Stan panelu</Text>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <Card withBorder component={Link} to="/agents">
+          <Group mb="xs">
+            <ThemeIcon variant="light" size="lg">
+              <IconDeviceDesktop size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Huginn – agenci</Text>
+          </Group>
+          {fleet ? (
             <Group gap="xs">
-              <Text size="sm" c="dimmed">
-                Baza Saga:
-              </Text>
-              <Badge color={db === "ok" ? "green" : "red"} variant="light">
-                {db}
+              <Badge color="green" variant="light">
+                online: {fleet.online}
+              </Badge>
+              <Badge color="gray" variant="light">
+                offline: {fleet.offline}
+              </Badge>
+              <Badge color={fleet.with_problems ? "orange" : "gray"} variant="light">
+                z problemami: {fleet.with_problems}
               </Badge>
             </Group>
-          </div>
-        </Group>
-      </Card>
+          ) : (
+            <Text size="sm" c="dimmed">
+              brak danych
+            </Text>
+          )}
+        </Card>
+        <Card withBorder>
+          <Group mb="xs">
+            <ThemeIcon variant="light" size="lg">
+              <IconServer size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Stan panelu</Text>
+          </Group>
+          <Group gap="xs">
+            <Text size="sm" c="dimmed">
+              Baza Saga:
+            </Text>
+            <Badge color={db === "ok" ? "green" : "red"} variant="light">
+              {db}
+            </Badge>
+          </Group>
+        </Card>
+      </SimpleGrid>
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }}>
-        {modules.map((m) => (
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        {[
+          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie i szczegóły", icon: IconDatabaseSearch },
+          { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem", icon: IconBolt },
+        ].map((m) => (
           <Card key={m.to} withBorder component={Link} to={m.to}>
             <Group mb="xs">
               <ThemeIcon variant="light" size="lg">

@@ -37,6 +37,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,6 +58,7 @@ type options struct {
 	flush      time.Duration
 	maxBacklog int
 	timeout    time.Duration
+	heartbeat  bool
 }
 
 func main() {
@@ -72,6 +74,7 @@ func main() {
 	flag.DurationVar(&o.flush, "flush", 2*time.Second, "maks. czas zbierania paczki (jak agent)")
 	flag.IntVar(&o.maxBacklog, "backlog", 50000, "pojemność bufora agenta (symulacja dziennika Windows)")
 	flag.DurationVar(&o.timeout, "timeout", 30*time.Second, "limit czasu żądania")
+	flag.BoolVar(&o.heartbeat, "heartbeat", true, "wysyłaj heartbeaty (co minutę, jak agent) – agenci widoczni w panelu")
 	flag.Parse()
 
 	if err := run(o); err != nil {
@@ -122,6 +125,9 @@ func run(o options) error {
 			defer wg.Done()
 			a.run(ctx, start.Add(delay), genEnd)
 		}()
+		if o.heartbeat {
+			go a.heartbeats(ctx, i, start)
+		}
 	}
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
@@ -156,10 +162,11 @@ type agent struct {
 	o        *options
 	client   *http.Client
 
-	backlog []contract.Event
-	record  uint64
-	owed    float64 // ułamek zdarzenia „należny” z poprzedniego kroku
-	pending atomic.Int64
+	backlog  []contract.Event
+	record   uint64
+	owed     float64 // ułamek zdarzenia „należny” z poprzedniego kroku
+	pending  atomic.Int64
+	accepted atomic.Int64
 }
 
 func (a *agent) run(ctx context.Context, startAt, genEnd time.Time) {
@@ -257,6 +264,7 @@ func (a *agent) send(ctx context.Context, events []contract.Event) (time.Duratio
 		stats.latency.observe(lat)
 		stats.batches.Add(1)
 		stats.accepted.Add(int64(len(events)))
+		a.accepted.Add(int64(len(events)))
 		return 0, true
 	case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 		if resp.StatusCode == http.StatusTooManyRequests {
@@ -371,6 +379,7 @@ func issue(ca *x509.Certificate, caKey *ecdsa.PrivateKey, agentID string) (tls.C
 type counters struct {
 	generated, accepted, batches, bytes, lost    atomic.Int64
 	status429, status503, netErrors, otherErrors atomic.Int64
+	heartbeats                                   atomic.Int64
 	latency                                      histogram
 	mu                                           sync.Mutex
 	lastError                                    string
@@ -419,6 +428,7 @@ func summary(elapsed time.Duration, sims []*agent) {
 	fmt.Printf("średnio przyjęte: %.0f zdarzeń/s, %d paczek, %.1f MB skompresowanych\n",
 		float64(c.accepted)/elapsed.Seconds(), c.batches, float64(c.bytes)/1e6)
 	fmt.Printf("odmowy: 429 = %d, 503 = %d; błędy sieci %d, inne %d\n", c.s429, c.s503, c.net, c.other)
+	fmt.Printf("heartbeaty przyjęte: %d\n", stats.heartbeats.Load())
 	fmt.Printf("opóźnienie odpowiedzi: p50 %v, p90 %v, p99 %v, max %v\n",
 		stats.latency.quantile(0.5), stats.latency.quantile(0.9), stats.latency.quantile(0.99), stats.latency.max())
 	stats.mu.Lock()
@@ -475,3 +485,48 @@ func (h *histogram) quantile(q float64) time.Duration {
 }
 
 func (h *histogram) max() time.Duration { return time.Duration(h.maxNs.Load()).Round(time.Millisecond) }
+
+// ---- heartbeat (Huginn) ----
+
+// heartbeats wysyła heartbeat co minutę ze stanem podobnym do prawdziwego
+// agenta. Co 20. agent zgłasza ostrzeżenie, co 50. brak dostępu do kanału
+// Security – żeby lista w panelu miała też agentów z problemami.
+func (a *agent) heartbeats(ctx context.Context, i int, started time.Time) {
+	url := strings.TrimSuffix(a.o.url, contract.IngestPath) + contract.HeartbeatPath
+	if !sleep(ctx, time.Duration(mrand.Int64N(int64(10*time.Second)))) {
+		return
+	}
+	for {
+		security := map[string]any{"name": "Security", "state": "ok", "last_record_id": a.record}
+		if i%50 == 7 {
+			security = map[string]any{"name": "Security", "state": "access_denied", "error": "brak dostępu do kanału: Security"}
+		}
+		status := map[string]any{
+			"version": "loadgen", "agent_id": a.id, "started_at": started,
+			"server":   map[string]any{"url": a.o.url, "healthy": true, "last_accepted_at": time.Now().UTC()},
+			"counters": map[string]any{"read": a.accepted.Load() + a.pending.Load(), "accepted": a.accepted.Load()},
+			"channels": []any{security,
+				map[string]any{"name": "System", "state": "ok"}, map[string]any{"name": "Application", "state": "ok"}},
+			"process": map[string]any{"heap_mb": 18 + mrand.Float64()*6, "sys_mb": 30.0, "goroutines": 14, "max_procs": 2},
+		}
+		if i%20 == 3 {
+			status["warnings"] = []string{time.Now().Format("2006-01-02 15:04:05") + " kanał Security: niewysłane zdarzenia zajmują 55% dziennika Windows"}
+		}
+		st, _ := json.Marshal(status)
+		hb := contract.Heartbeat{Schema: contract.SchemaHeartbeatV1, AgentID: a.id, SentAt: time.Now().UTC(),
+			Version: "0.4.0-loadgen", Hostname: a.host, OS: "Windows 11 Pro 24H2 (26100.4061)", StartedAt: started.UTC(), Status: st}
+		body, _ := json.Marshal(hb)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err := a.client.Do(req); err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				stats.heartbeats.Add(1)
+			}
+		}
+		if !sleep(ctx, contract.HeartbeatInterval) {
+			return
+		}
+	}
+}

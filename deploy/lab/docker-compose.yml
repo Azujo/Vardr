@@ -137,12 +137,14 @@ services:
     image: siem/api:lab
     environment:
       SIEM_API_DB_URL: postgres://siem_api:${SAGA_DB_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_NATS_URL: nats://nats:4222
     volumes:
       - ./certs:/certs:ro
     ports:
       - "8444:8444"
     depends_on:
       saga: { condition: service_healthy }
+      nats: { condition: service_healthy }
     mem_limit: 256m
     logging: *logging
 

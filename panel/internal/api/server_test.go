@@ -23,6 +23,7 @@ type memStore struct {
 	mu       sync.Mutex
 	users    map[int64]store.User
 	sessions map[string]store.Session
+	agents   map[string]store.Agent
 	audit    []store.AuditEntry
 	nextID   int64
 	now      func() time.Time
