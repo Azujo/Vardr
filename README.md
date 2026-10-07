@@ -500,6 +500,43 @@ docker compose up -d api archiver
 
 Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIVER_PASSWORD`, np. `openssl rand -hex 24`. Superużytkownik, z którym baza była zakładana, zostaje przemianowany na `saga_admin`, bo PostgreSQL nie pozwala odebrać mu uprawnień. Konsola administratora: `docker compose exec saga psql -U saga_admin -d saga`.
 
+### Kopie zapasowe
+
+Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) zapisuje:
+
+- zrzut bazy Saga (`pg_dump`): konta, agentów, certyfikaty, grupy i spis archiwum. Kopia jest sprawdzana przez `pg_restore --list`;
+- `certs/` (w tym klucz CA agentów) i `.env`.
+
+Kopie trafiają do `/srv/heimdall/backup` (osobny dysk, gdy jest zamontowany) albo do `~/backup`. Mają prawa tylko dla właściciela i są trzymane przez 14 dni (`SIEM_BACKUP_KEEP_DAYS`). Samo archiwum NIS2 nie jest kopiowane, bo to setki GB.
+
+```bash
+crontab -e   # wpis: 15 2 * * * /home/siem/siem-lab/backup.sh >> /home/siem/siem-lab/backup.log 2>&1
+./backup.sh  # kopia na żądanie
+```
+
+Odtworzenie bazy, jako `saga_admin`, na pustej bazie z założonymi rolami:
+
+```bash
+docker compose exec -T saga pg_restore -U saga_admin -d saga --clean --if-exists < /srv/heimdall/backup/saga-RRRRMMDD-GGMM.dump
+```
+
+Czas ostatniej udanej kopii trafia do metryki `heimdall_backup_last_success_timestamp_seconds` przez node-exporter. Kopie leżą na tej samej VM, więc chronią przed uszkodzeniem bazy, ale nie przed utratą maszyny. Warto je okresowo kopiować na inny komputer, np. `scp` ze stacji.
+
+### Alerty (Grafana)
+
+Do czasu modułu alertów (Gjallarhorn, etap 4) awarie zgłasza Grafana. Reguły są w `grafana/provisioning/alerting/heimdall.yaml`, folder SIEM, grupa „Heimdall – zdrowie”:
+
+- weryfikacja archiwum wykryła niezgodności;
+- archiwizator nie działa;
+- archiwizacja wstrzymana z braku miejsca;
+- mało miejsca na dysku archiwum albo na dysku systemowym (< 15%);
+- weryfikacja nieaktualna;
+- brak kopii zapasowej od ponad 26 h;
+- kolejka zapełniona ponad 80%;
+- ingest odmawia przyjęcia zdarzeń (503).
+
+Stan alertów widać w Grafanie (*Alerting → Alert rules*). Powiadomienia wymagają punktu kontaktowego, np. webhooka Discorda, w *Alerting → Contact points*.
+
 ### Skalowanie
 
 Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z jednej kolejki NATS):

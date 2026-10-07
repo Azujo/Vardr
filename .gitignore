@@ -23,3 +23,6 @@ panel/web/dist/*
 
 # Archiwum NIS2 (Urd) na VM laboratoryjnej
 deploy/lab/archive/
+
+# Metryki skryptów laboratorium (node-exporter, textfile)
+deploy/lab/metrics/

@@ -1,0 +1,218 @@
+# Reguły alertów Heimdalla (Grafana, alerting zunifikowany) – zdrowie potoku,
+# archiwum NIS2 i kopii zapasowych. Do czasu modułu alertów (Gjallarhorn,
+# etap 4) to jedyne powiadomienia o awariach. Punkt kontaktowy (np. Discord)
+# ustawia się w Grafanie: Alerting → Contact points.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Heimdall – zdrowie
+    folder: SIEM
+    interval: 1m
+    rules:
+      - uid: heimdall-archive-verify
+        title: "Archiwum NIS2: weryfikacja wykryła niezgodności"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Archiwum NIS2: weryfikacja wykryła niezgodności"
+          description: "Dane w archiwum Urd zostały zmienione, usunięte lub dodane poza archiwizatorem. Szczegóły: panel → Urd."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: '1 - min(siem_archive_verify_ok)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-archiver-down
+        title: "Archiwizator nie działa"
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Archiwizator nie działa"
+          description: "Prometheus nie widzi archiwizatora. Paczki czekają w kolejce; po jej zapełnieniu serwer przestanie przyjmować zdarzenia."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: '(1 - max(up{service="archiver"})) or vector(1)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-archive-paused
+        title: "Archiwizacja wstrzymana – brak miejsca na dysku archiwum"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Archiwizacja wstrzymana – brak miejsca na dysku archiwum"
+          description: "Na dysku archiwum zostało poniżej progu miejsca. Paczki czekają w kolejce. Zwolnij lub powiększ dysk."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'max(siem_archive_paused)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-archive-disk-low
+        title: "Mało miejsca na dysku archiwum (< 15%)"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Mało miejsca na dysku archiwum (< 15%)"
+          description: "Archiwum wkrótce się zatrzyma. Sprawdź retencję (SIEM_ARCHIVE_RETENTION_DAYS) albo powiększ dysk."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'min(siem_archive_disk_free_bytes / siem_archive_disk_total_bytes) * 100' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [15] }
+      - uid: heimdall-archive-verify-stale
+        title: "Weryfikacja archiwum nie przeszła od ponad 13 h"
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Weryfikacja archiwum nie przeszła od ponad 13 h"
+          description: "Okresowa weryfikacja integralności archiwum nie działa."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'time() - max(siem_archive_last_verify_timestamp_seconds)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [46800] }
+      - uid: heimdall-root-disk-low
+        title: "Mało miejsca na dysku systemowym VM (< 15%)"
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Mało miejsca na dysku systemowym VM (< 15%)"
+          description: "Na dysku systemowym są kolejka NATS i ClickHouse. Jego zapełnienie zatrzyma cały SIEM."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'min(node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [15] }
+      - uid: heimdall-backup-stale
+        title: "Brak udanej kopii zapasowej od ponad 26 h"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Brak udanej kopii zapasowej od ponad 26 h"
+          description: "Nocna kopia bazy Saga i kluczy (backup.sh, cron 02:15) nie powiodła się. Log: ~/siem-lab/backup.log."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: '(time() - max(heimdall_backup_last_success_timestamp_seconds)) or vector(1e9)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [93600] }
+      - uid: heimdall-queue-fill
+        title: "Kolejka NATS zapełniona ponad 80%"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Kolejka NATS zapełniona ponad 80%"
+          description: "Któryś etap nie nadąża. Powyżej 90% ingest odmawia przyjęcia (503)."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'max(siem_queue_fill_ratio)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.8] }
+      - uid: heimdall-ingest-refusing
+        title: "Ingest odmawia przyjęcia zdarzeń (kolejka pełna)"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Ingest odmawia przyjęcia zdarzeń (kolejka pełna)"
+          description: "Serwer odsyła agentom 503; zdarzenia czekają u agentów."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'sum(rate(siem_ingest_batches_total{result="throttled_queue_full"}[5m]))' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }

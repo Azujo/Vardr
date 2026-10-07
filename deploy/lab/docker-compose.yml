@@ -189,10 +189,11 @@ services:
   node-exporter:
     image: prom/node-exporter:v1.9.1
     restart: unless-stopped
-    command: ["--path.rootfs=/host", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|snap|var/lib/docker/.+)($$|/)"]
+    command: ["--path.rootfs=/host", "--collector.textfile.directory=/textfile", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|snap|var/lib/docker/.+)($$|/)"]
     pid: host
     volumes:
       - /:/host:ro,rslave
+      - ./metrics:/textfile:ro   # metryki skryptów (np. backup.sh)
     mem_limit: 64m
     logging: *logging
 
