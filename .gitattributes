@@ -10,3 +10,5 @@ deploy/** text eol=lf
 *.exe binary
 *.key binary
 *.crt binary
+# Korpus fuzzingu Go – format wrażliwy na końce linii.
+**/testdata/** text eol=lf
