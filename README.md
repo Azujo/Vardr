@@ -288,6 +288,55 @@ Zweryfikowane: 40 290 zdarzeń z agenta w ClickHouse bez braków i duplikatów,
 kompresja ~15× (31,6 MB → 2,1 MB), czas od zdarzenia do zapisu w bazie ~0,8 s,
 zatrzymanie ClickHouse – zdarzenia czekają w NATS i są zapisywane po powrocie.
 
+### Panel Hliðskjálf (siem-api)
+
+Panel działa pod adresem **https://192.168.88.98:8444**. Korzysta z certyfikatu serwera z laboratoryjnego CA i bazy Saga (PostgreSQL, usługa `saga`).
+
+**Pierwsze uruchomienie:**
+
+1. Na VM, w `~/siem-lab`, załóż pierwsze konto administratora. Hasło startowe pojawi się tylko na ekranie i trzeba je zmienić przy pierwszym logowaniu:
+
+   ```bash
+   docker compose run --rm api bootstrap-admin -username admin
+   ```
+
+2. Na stacji, żeby przeglądarka ufała certyfikatowi panelu, dodaj laboratoryjne CA do zaufanych głównych urzędów **swojego konta** (bez uprawnień administratora):
+
+   ```powershell
+   certutil -user -addstore Root certs.crt
+   ```
+
+   Windows zapyta o potwierdzenie. Usunięcie: `certutil -user -delstore Root "SIEM Lab CA"`.
+
+**Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
+
+**Bezpieczeństwo:**
+
+- hasła hashowane algorytmem argon2id, minimum 12 znaków;
+- blokada konta na 15 min po 10 nieudanych logowaniach, do tego limit prób z jednego adresu;
+- sesja w ciasteczku `__Host-` (`HttpOnly`, `Secure`, `SameSite=Strict`) i token CSRF;
+- sesja wygasa po 1 h bezczynności, najpóźniej po 8 h;
+- zmiana hasła lub roli kończy pozostałe sesje konta;
+- nagłówki CSP, HSTS i `X-Frame-Options`;
+- każde logowanie i zmiana trafia do dziennika audytu.
+
+Role:
+
+- **administrator:** wszystko, w tym konta;
+- **analityk:** praca z danymi;
+- **tylko odczyt.**
+
+**Frontend** (React, TypeScript, Mantine) leży w `web/`, a jego build jest wbudowany w program `siem-api`. Wymaga Node.js LTS:
+
+```powershell
+cd web
+npm ci
+npm run build    # web/dist → wbudowywane przy budowaniu siem-api
+npm run dev      # podgląd na żywo: http://localhost:5173, API przekierowane do VM
+```
+
+Bez zbudowanego frontendu `siem-api` działa dalej, tylko zamiast panelu pokazuje stronę z instrukcją.
+
 ### Skalowanie
 
 Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z jednej kolejki NATS):

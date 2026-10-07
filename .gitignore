@@ -14,4 +14,9 @@ bin/
 .env
 
 # Paczki instalacyjne agentów (zawierają klucze prywatne)
-dist/
+/dist/
+
+# Frontend panelu: zależności i wynik budowania (poza znacznikiem katalogu)
+web/node_modules/
+web/dist/*
+!web/dist/.gitkeep

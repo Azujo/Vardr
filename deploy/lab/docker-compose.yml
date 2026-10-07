@@ -2,6 +2,7 @@
 #   agent → siem-ingest (mTLS :8443) → NATS SIEM_RAW → siem-normalizer
 #         → NATS SIEM_EVENTS → siem-writer → ClickHouse → Grafana (:3000)
 #   metryki: usługi :9100 (sieć Dockera) → Prometheus → Grafana „Zdrowie potoku”
+#   panel: przeglądarka → siem-api (HTTPS :8444) → Saga (PostgreSQL)
 #
 # Hasła w pliku .env (wzór: .env.example). Binaria serwera w ./bin
 # (budowane na stacji: GOOS=linux, patrz README).
@@ -110,6 +111,41 @@ services:
       clickhouse: { condition: service_healthy }
     mem_limit: 512m
 
+  # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).
+  saga:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saga
+      POSTGRES_USER: siem_api
+      POSTGRES_PASSWORD: ${SAGA_DB_PASSWORD}
+    volumes:
+      - saga-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "siem_api", "-d", "saga"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    logging: *logging
+
+  # Hliðskjálf – panel (siem-api + aplikacja React) pod HTTPS :8444.
+  api:
+    restart: unless-stopped
+    user: "1000:1000"
+    build: { context: ., args: { BIN: siem-api } }
+    image: siem/api:lab
+    environment:
+      SIEM_API_DB_URL: postgres://siem_api:${SAGA_DB_PASSWORD}@saga:5432/saga?sslmode=disable
+    volumes:
+      - ./certs:/certs:ro
+    ports:
+      - "8444:8444"
+    depends_on:
+      saga: { condition: service_healthy }
+    mem_limit: 256m
+    logging: *logging
+
   prometheus:
     image: prom/prometheus:v3.5.0
     restart: unless-stopped
@@ -152,5 +188,6 @@ services:
 volumes:
   nats-data:
   prometheus-data:
+  saga-data:
   clickhouse-data:
   grafana-data:

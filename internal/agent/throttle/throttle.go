@@ -69,6 +69,29 @@ func (l *Limiter) Wait(ctx context.Context, n int) error {
 	}
 }
 
+// Allow pobiera n jednostek bez czekania; false, gdy jest ich za mało
+// (wtedy nic nie jest pobierane). nil = brak limitu.
+func (l *Limiter) Allow(n int) bool {
+	if l == nil || n <= 0 {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if !l.last.IsZero() {
+		l.tokens += now.Sub(l.last).Seconds() * l.rate
+		if l.tokens > l.burst {
+			l.tokens = l.burst
+		}
+	}
+	l.last = now
+	if l.tokens < float64(n) {
+		return false
+	}
+	l.tokens -= float64(n)
+	return true
+}
+
 // Waited zwraca łączny czas spędzony na dławieniu.
 func (l *Limiter) Waited() time.Duration {
 	if l == nil {

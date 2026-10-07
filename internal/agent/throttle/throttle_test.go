@@ -49,3 +49,25 @@ func TestWaitHonorsCancellation(t *testing.T) {
 		t.Fatal("oczekiwano anulowania")
 	}
 }
+
+func TestAllowDoesNotWait(t *testing.T) {
+	now := time.Unix(1000, 0)
+	l := New(1, 3) // 1/s, zapas 3
+	l.now = func() time.Time { return now }
+	for i := range 3 {
+		if !l.Allow(1) {
+			t.Fatalf("próba %d powinna przejść", i+1)
+		}
+	}
+	if l.Allow(1) {
+		t.Fatal("czwarta próba bez czekania powinna zostać odrzucona")
+	}
+	now = now.Add(time.Second)
+	if !l.Allow(1) || l.Allow(1) {
+		t.Fatal("po sekundzie dokładnie jedna próba")
+	}
+	var nilLimiter *Limiter
+	if !nilLimiter.Allow(100) {
+		t.Fatal("brak limitu = zawsze wolno")
+	}
+}

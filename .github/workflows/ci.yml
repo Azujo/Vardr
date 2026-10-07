@@ -68,3 +68,20 @@ jobs:
 
       - name: Budowanie agenta
         run: go build -trimpath -o siem_agent.exe ./cmd/siem_agent
+
+  web:
+    name: Frontend panelu (TypeScript + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
