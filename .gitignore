@@ -20,3 +20,6 @@ bin/
 panel/web/node_modules/
 panel/web/dist/*
 !panel/web/dist/.gitkeep
+
+# Archiwum NIS2 (Urd) na VM laboratoryjnej
+deploy/lab/archive/

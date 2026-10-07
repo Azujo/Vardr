@@ -327,3 +327,100 @@ export const configStateLabels: Record<string, { label: string; color: string; h
   pending: { label: "oczekuje", color: "yellow", hint: "agent pobierze nową konfigurację w ciągu ok. 5 minut" },
   unknown: { label: "nieznana", color: "gray", hint: "agent starszy niż 0.5.0 albo jeszcze nie pobrał konfiguracji" },
 };
+
+// ---- Urd: archiwum NIS2 ----
+
+export type Compliance = "ok" | "problems" | "archiver_down" | "stale" | "never_verified" | "not_configured";
+
+export interface ArchiverState {
+  version: string;
+  retention_days: number;
+  segment_max_mb: number;
+  segment_max_age_s: number;
+  verify_every_s: number;
+  started_at: string;
+  heartbeat_at: string;
+  verify_requested_at?: string;
+  verify_requested_by?: string;
+}
+
+export interface ArchiveSummary {
+  manifests: number;
+  manifests_total: number;
+  bytes: number;
+  batches: number;
+  oldest_hour?: string;
+  newest_hour?: string;
+  open_segments: number;
+  open_bytes: number;
+  open_batches: number;
+  last_segment_at?: string;
+}
+
+export interface ArchiveVerification {
+  id: number;
+  started_at: string;
+  finished_at: string;
+  ok: boolean;
+  manifests: number;
+  segments: number;
+  records: number;
+  bytes: number;
+  problems: string[];
+}
+
+export interface ArchiveManifest {
+  seq: number;
+  hour: string;
+  sha256: string;
+  prev_sha256: string;
+  segments: number;
+  records: number;
+  bytes: number;
+  created_at: string;
+  expired_at?: string;
+}
+
+export interface ArchiveOverview {
+  compliance: Compliance;
+  archiver?: ArchiverState | null;
+  archiver_running?: boolean;
+  summary?: ArchiveSummary;
+  last_verification?: ArchiveVerification | null;
+  manifests?: ArchiveManifest[];
+  verifications?: ArchiveVerification[];
+}
+
+export const archiveApi = {
+  overview: () => request<ArchiveOverview>("GET", "/api/v1/archive"),
+  verify: () => request<{ message: string }>("POST", "/api/v1/archive/verify"),
+};
+
+export const complianceLabels: Record<Compliance, { label: string; color: string; hint: string }> = {
+  ok: { label: "zgodne", color: "green", hint: "Archiwizator działa, ostatnia weryfikacja integralności nie wykryła zmian." },
+  problems: {
+    label: "NIEZGODNOŚCI",
+    color: "red",
+    hint: "Ostatnia weryfikacja wykryła zmienione, brakujące lub obce dane w archiwum – sprawdź listę problemów.",
+  },
+  archiver_down: {
+    label: "archiwizator nie działa",
+    color: "red",
+    hint: "Brak sygnału od archiwizatora od ponad 3 minut. Paczki czekają w kolejce, a po jej zapełnieniu serwer wstrzyma przyjmowanie.",
+  },
+  stale: { label: "weryfikacja nieaktualna", color: "orange", hint: "Weryfikacja nie przeszła w zaplanowanym czasie." },
+  never_verified: { label: "czeka na weryfikację", color: "blue", hint: "Archiwizator działa; pierwsza weryfikacja ok. 2 min po starcie." },
+  not_configured: { label: "nie skonfigurowane", color: "gray", hint: "Archiwizator (siem-archiver) jeszcze nie działał." },
+};
+
+export function formatBytes(n?: number): string {
+  if (n === undefined) return "—";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toLocaleString("pl-PL", { maximumFractionDigits: i ? 1 : 0 })} ${units[i]}`;
+}

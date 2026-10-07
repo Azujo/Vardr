@@ -12,6 +12,7 @@ import AgentDetailPage from "./pages/AgentDetailPage";
 import DeployPage from "./pages/DeployPage";
 import EventsPage from "./pages/EventsPage";
 import GroupsPage from "./pages/GroupsPage";
+import ArchivePage from "./pages/ArchivePage";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/deploy" element={<DeployPage />} />
+        <Route path="/archive" element={<ArchivePage />} />
         <Route path="/account/password" element={<ChangePasswordPage />} />
         {admin && <Route path="/admin/users" element={<UsersPage />} />}
         {admin && <Route path="/admin/audit" element={<AuditPage />} />}

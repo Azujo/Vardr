@@ -17,6 +17,7 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconAdjustments,
   IconAlertTriangle,
+  IconArchive,
   IconBolt,
   IconChevronDown,
   IconDatabaseSearch,
@@ -50,6 +51,7 @@ const main: Item[] = [
   { to: "/events", label: "Mímir", hint: "zdarzenia", icon: <IconDatabaseSearch size={18} /> },
   { to: "/alerts", label: "Gjallarhorn", hint: "alerty – etap 4", icon: <IconAlertTriangle size={18} />, disabled: true },
   { to: "/deploy", label: "Bifröst", hint: "wdrażanie agentów", icon: <IconBolt size={18} /> },
+  { to: "/archive", label: "Urd", hint: "archiwum NIS2", icon: <IconArchive size={18} /> },
 ];
 
 const admin: Item[] = [
@@ -143,7 +145,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </>
         )}
         <Badge variant="light" color="gray" mt="auto" mx="sm" mb="xs">
-          etap 2 – w budowie
+          etap 3 – w budowie
         </Badge>
       </AppShell.Navbar>
 

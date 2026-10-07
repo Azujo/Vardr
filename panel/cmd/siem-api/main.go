@@ -29,6 +29,7 @@ import (
 
 	"siem/internal/fleet"
 	"siem/internal/svc"
+	"siem/internal/urd"
 	"siem/panel/internal/api"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
@@ -147,6 +148,15 @@ func serve(log *slog.Logger) error {
 	} else {
 		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
 	}
+
+	// Urd: stan archiwum NIS2 (schemat urd w Sadze zakłada archiwizator;
+	// panel tylko czyta i zleca weryfikację).
+	archive, err := urd.OpenPG(ctx, os.Getenv("SIEM_API_DB_URL"))
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+	apiServer.Archive = archive
 	srv := &http.Server{
 		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
 		Handler: apiServer.Handler(),

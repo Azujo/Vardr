@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
 import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { IconBolt, IconDatabaseSearch, IconDeviceDesktop, IconServer } from "@tabler/icons-react";
+import { IconArchive, IconBolt, IconDatabaseSearch, IconDeviceDesktop, IconServer } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { agentsApi, api, type AgentsSummary } from "../api";
+import { agentsApi, api, archiveApi, complianceLabels, type AgentsSummary, type ArchiveOverview } from "../api";
 import { useAuth } from "../auth";
 
 export default function HomePage() {
   const { user } = useAuth();
   const [db, setDb] = useState<string>("…");
   const [fleet, setFleet] = useState<AgentsSummary | null>(null);
+  const [archive, setArchive] = useState<ArchiveOverview | null>(null);
 
   useEffect(() => {
     api
@@ -19,6 +20,10 @@ export default function HomePage() {
       .list()
       .then((r) => setFleet(r.summary))
       .catch(() => setFleet(null));
+    archiveApi
+      .overview()
+      .then(setArchive)
+      .catch(() => setArchive(null));
   }, []);
 
   return (
@@ -28,7 +33,7 @@ export default function HomePage() {
         <Text c="dimmed">Heimdall strzeże mostu – tu widać, co dzieje się w sieci.</Text>
       </div>
 
-      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+      <SimpleGrid cols={{ base: 1, sm: 3 }}>
         <Card withBorder component={Link} to="/agents">
           <Group mb="xs">
             <ThemeIcon variant="light" size="lg">
@@ -48,6 +53,23 @@ export default function HomePage() {
                 z problemami: {fleet.with_problems}
               </Badge>
             </Group>
+          ) : (
+            <Text size="sm" c="dimmed">
+              brak danych
+            </Text>
+          )}
+        </Card>
+        <Card withBorder component={Link} to="/archive">
+          <Group mb="xs">
+            <ThemeIcon variant="light" size="lg">
+              <IconArchive size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Urd – archiwum NIS2</Text>
+          </Group>
+          {archive ? (
+            <Badge color={complianceLabels[archive.compliance].color} variant="light">
+              {complianceLabels[archive.compliance].label}
+            </Badge>
           ) : (
             <Text size="sm" c="dimmed">
               brak danych

@@ -150,3 +150,37 @@ func (q *Queue) Set(stream, consumer string, fill float64, bytes, pending uint64
 	q.bytes.WithLabelValues(stream, consumer).Set(float64(bytes))
 	q.pending.WithLabelValues(stream, consumer).Set(float64(pending))
 }
+
+// Archiver: archiwum NIS2 (Urd).
+type Archiver struct {
+	Batches       prometheus.Counter
+	Bytes         prometheus.Counter
+	Segments      prometheus.Counter
+	Manifests     prometheus.Counter
+	Errors        *prometheus.CounterVec
+	LastSegment   prometheus.Gauge
+	VerifyOK      prometheus.Gauge
+	VerifyProblem prometheus.Gauge
+	LastVerify    prometheus.Gauge
+}
+
+func NewArchiver() *Archiver {
+	c := func(name, help string) prometheus.Counter {
+		return promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive", Name: name, Help: help})
+	}
+	g := func(name, help string) prometheus.Gauge {
+		return promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "archive", Name: name, Help: help})
+	}
+	return &Archiver{
+		Batches:   c("batches_total", "Paczki zapisane w archiwum."),
+		Bytes:     c("bytes_total", "Bajty zapisane w segmentach archiwum."),
+		Segments:  c("segments_total", "Zatwierdzone segmenty archiwum."),
+		Manifests: c("manifests_total", "Utworzone manifesty godzinowe."),
+		Errors: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive", Name: "errors_total",
+			Help: "Błędy archiwizatora według etapu."}, []string{"stage"}),
+		LastSegment:   g("last_segment_timestamp_seconds", "Czas zatwierdzenia ostatniego segmentu."),
+		VerifyOK:      g("verify_ok", "Wynik ostatniej weryfikacji integralności (1 = zgodne, 0 = problemy)."),
+		VerifyProblem: g("verify_problems", "Liczba problemów w ostatniej weryfikacji."),
+		LastVerify:    g("last_verify_timestamp_seconds", "Czas zakończenia ostatniej weryfikacji."),
+	}
+}

@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.5.0 • 07.10.2026
+Wersja planistyczna 1.6.0 • 07.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -130,7 +130,7 @@ Zakładka zaawansowana pozwala łączyć osie dowolnie, np. `stream` + `indexed_
 
 ### Gdzie ustawiany jest przełącznik NIS2
 
-- **Config serwera / instalator** określa, czy archiwum *może* działać: backend (MinIO, S3-kompatybilny, dysk lokalny), poświadczenia, tryb blokady (WORM), maksymalna i minimalna retencja.
+- **Config serwera / instalator** określa, czy archiwum *może* działać: backend (dysk lokalny, później magazyn S3 z Object Lock), poświadczenia, tryb blokady (WORM), maksymalna i minimalna retencja.
 - **Panel** określa politykę: włączenie, retencję, wybór źródeł objętych archiwum.
 - Zasady:
   - włączenie jest proste, a **wyłączenie lub skrócenie retencji wymaga ponownego uwierzytelnienia** (docelowo z MFA), trafia do audytu i generuje alert systemowy;
@@ -150,6 +150,26 @@ Zakładka zaawansowana pozwala łączyć osie dowolnie, np. `stream` + `indexed_
 - **Eksport dla audytora**: wybrany zakres czasu i źródeł z manifestem i sumami kontrolnymi.
 - **Re-indeksacja / replay** z archiwum do osobnego strumienia, domyślnie bez powiadomień produkcyjnych.
 - **Synchronizacja czasu**: agent raportuje stan synchronizacji zegara, a zdarzenia mają `siem.time_quality`.
+
+**Ustalenia wdrożeniowe (1.6, 07.10.2026):**
+
+- **Magazyn:** w laboratorium dysk lokalny, a ochrona polega na wykrywaniu zmian łańcuchem hashy. MinIO od 2025 r. nie publikuje obrazów, więc blokada WORM dojdzie z backendem S3 (AWS, Wasabi, Backblaze, firmowy S3) w trybie **compliance**.
+- **Archiwizator** (`siem-archiver`) to osobny trwały odbiorca `SIEM_RAW`:
+  - paczka jest potwierdzana dopiero po zapisie segmentu (`fsync`, plik tylko do odczytu, wpis w spisie);
+  - zatrzymany archiwizator powoduje zator i odmowę 503, a nie lukę w archiwum;
+  - działa tylko jedna kopia, pilnowana blokadą doradczą w PostgreSQL.
+- **Format:** segmenty paczek z jednej godziny archiwizacji. Każda paczka ma metadane i SHA-256.
+- **Manifest godzinowy:** lista segmentów z SHA-256, liczbą paczek i rozmiarem oraz hash poprzedniego manifestu. Manifest leży na dysku i w Sadze (schemat `urd`).
+  - Pusta godzina też dostaje manifest.
+  - Wpisy manifestów nie znikają po retencji (tylko znacznik wygaśnięcia), więc łańcuch da się sprawdzić od początku.
+- **Weryfikacja** (co 6 h) wykrywa:
+  - zmianę bajtu i ucięcie lub usunięcie segmentu;
+  - dodanie pliku;
+  - podmianę manifestu na dysku lub w bazie;
+  - usunięcie manifestu ze środka łańcucha;
+  - usunięcie końca łańcucha (brak nowych manifestów przez ponad 2 h).
+- **Granica ochrony:** napastnik z pełnym dostępem do dysku i bazy może przeliczyć cały łańcuch. Odpowiedź na to to zapisywanie hasha ostatniego manifestu poza systemem (np. w alertach lub u audytora) i backend z Object Lock.
+- **Duplikaty:** archiwum działa w trybie „co najmniej raz”. Ponowione dostarczenie po awarii daje drugą kopię paczki z tym samym `batch_id`, którą odfiltrowuje replay i eksport.
 
 **Uwagi prawne (do potwierdzenia):** NIS2 i rozporządzenie wykonawcze 2024/2690 opisują logowanie ogólnie: kategorie zdarzeń, ochrona przed zmianą, ustalona retencja, synchronizacja czasu. Konkretne okresy zależą od krajowej implementacji (nowelizacja ustawy o KSC) i od sektora. Domyślną retencję w produkcie należy uzgodnić z audytorem. W laboratorium przyjmujemy 30 dni dla archiwum (indeks: 5 dni, kolejka: 1–2 dni).
 
@@ -356,7 +376,7 @@ Wszystkie punkty z wersji 1.1 (sekcja 10) pozostają. Dodatkowo:
 | Trwały strumień | NATS JetStream | Retencja według najwolniejszego odbiorcy |
 | Magazyn zdarzeń | **ClickHouse** (decyzja podjęta) | Kolumnowy, wysoka kompresja, szybkie agregacje, SQL, TTL; słabsze wyszukiwanie pełnotekstowe i brak gotowego UI |
 | Konfiguracja, alerty, stan reguł, manifesty | PostgreSQL | Outbox, wersje |
-| Archiwum | MinIO (S3 + Object Lock) | W produkcji dowolny magazyn S3 z blokadą |
+| Archiwum | Laboratorium: dysk lokalny + łańcuch hashy (zmiana 1.6: MinIO nie publikuje już obrazów); później S3 z Object Lock w trybie compliance | W produkcji dowolny magazyn S3 z blokadą (AWS, Wasabi, Backblaze, firmowy) |
 | Panel | React + TypeScript | Do czasu etapu 5 przeglądanie zdarzeń przez Grafanę z wtyczką ClickHouse |
 | Monitoring | Prometheus + Grafana | Poza samym SIEM |
 
@@ -400,7 +420,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 | **0. Fundamenty** | 30–50 | Laboratorium AD, repozytorium, CI, kontrakt paczki i ID (załącznik A), schemat zdarzenia v1, polityka audytu wg załącznika B | Zdarzenie 4624 z DC ma opisaną drogę i docelowy kształt ECS |
 | **1. Szkielet end-to-end** | 80–120 | Prosty agent Windows (Event Log + bookmark) → mTLS → JetStream → normalizator → ClickHouse, przeglądanie w Grafanie | Zdarzenie z DC widoczne w wyszukiwarce i śledzone po stałym ID |
 | **2. Niezawodny agent** | 100–150 | Bufor offline, rejestracja tokenem, certyfikaty, heartbeat, konfiguracja z serwera, usługa, MSI | Restart, brak sieci przez 30 min i rotacja nie powodują luk; instalacja MSI w trybie cichym działa |
-| **3. Archiwum NIS2** | 50–80 | Archiwizator, MinIO z Object Lock, łańcuch hashy, weryfikacja, konfiguracja `raw_archive` | Usunięcie lub podmiana paczki wykrywana przez weryfikację; replay z archiwum działa |
+| **3. Archiwum NIS2** | 50–80 | Archiwizator, dysk lokalny (później S3 z Object Lock), łańcuch hashy, weryfikacja, konfiguracja `raw_archive` | Usunięcie lub podmiana paczki wykrywana przez weryfikację; replay z archiwum działa |
 | **4. Detekcja – podstawy** | 100–150 | Kompilator Sigma, pojedyncze zdarzenia i progi w **obu** silnikach, testy zgodności, alerty w PostgreSQL, outbox, Discord/webhook | Scenariusze z sekcji 11 (Windows) wykryte w obu profilach; restart i replay nie dublują alertów |
 | **5. Panel MVP** | 150–250 | Alerty (triage), reguły (wersje, test), agenci (status, grupy, tokeny deinstalacji), przełącznik archiwum, profile, RBAC, audyt | Pełny scenariusz: atak w labie → alert → powiadomienie → analiza → zamknięcie |
 | **6. Kolektor syslog + dekodery** | 100–150 | Tryb kolektora w agencie, dekoder FortiGate, edytor dekoderów (JSON, kv, CSV/W3C), kwarantanna z ponownym przetwarzaniem | Logi FortiGate i IIS znormalizowane; nowy dekoder utworzony w panelu przechodzi test na próbce |
@@ -416,6 +436,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
 - **Etap 1.5 – postęp:** **etap 1.5 zakończony** (06–07.10.2026): K1, K2, K3, K4, W1, W2 (mechanizm), W3 i M1. K1, K3, K4, W1 i W2 sprawdzone na żywo, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Opcjonalnie później: wydajność writera (W7).
 - **Etap 2 + panel – postęp:** moduł 1 (logowanie i role) gotowy 07.10.2026: siem-api, baza Saga (PostgreSQL) z migracjami, konta, sesje, audyt, aplikacja React z Mantine pod HTTPS :8444. Moduł 2 (Huginn: heartbeat agentów, lista i szczegóły agenta) gotowy 07.10.2026, sprawdzony na 1000 symulowanych agentach. Moduł 3 (Bifröst: tokeny rejestracyjne, paczka bez klucza prywatnego, CA agentów, automatyczne odnawianie i unieważnianie certyfikatów, `siem_agent upgrade`) gotowy 07.10.2026. Moduł 4 (Mímir: wyszukiwarka zdarzeń z językiem zapytań, histogramem, szczegółami i surowym XML; konto ClickHouse tylko do odczytu) gotowy 07.10.2026. Konfiguracja agentów z serwera (grupy z profilem i limitami, agent 0.5.0 pobiera ją co 5 min i stosuje bez restartu) gotowa 07.10.2026 – **etap 2 i moduły 1–4 panelu zakończone**. Dalej: etap 3 (archiwum NIS2, Urd) i etap 4 (detekcja, Gjallarhorn).
+- **Etap 3 – postęp:** część 1 (archiwizator Urd) gotowa 07.10.2026: segmenty na dysku, godzinowe manifesty z łańcuchem hashy w Sadze, weryfikacja integralności co 6 h, retencja 30 dni, metryki, polecenia `verify` i `disable`. Sprawdzone na VM (2427/2427 paczek testu obciążenia w archiwum). Część 2 (moduł Urd w panelu: stan zgodności, łańcuch manifestów, historia weryfikacji, weryfikacja na żądanie z audytem) gotowa 07.10.2026; alert przy niezgodności dojdzie z modułem alertów (etap 4). Dalej: część 3 – eksport dla audytora i replay z archiwum, część 4 – polityka w panelu (włączenie, retencja, źródła; wyłączenie z ponownym uwierzytelnieniem).
 
 **Kamienie milowe po drodze:**
 
@@ -437,7 +458,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 2. Wyeksportować próbkę zdarzeń (4624, 4625, 4688, 4720, 4728, 1102, Sysmon 1/3) i opisać ich mapowanie na ECS.
 3. Kontrakt paczki: ustalony w załączniku A; w etapie 0 zamienić go na schemat JSON i testy kontraktowe.
 4. Utworzyć repozytorium (monorepo Go: `agent/`, `server/ingest`, `server/normalizer`, `server/detection`, `server/archiver`, `pkg/schema`, `deploy/compose`), CI z testami i lintem.
-5. `docker compose`: NATS JetStream, ClickHouse, Grafana (wtyczka ClickHouse), PostgreSQL, MinIO.
+5. `docker compose`: NATS JetStream, ClickHouse, Grafana (wtyczka ClickHouse), PostgreSQL.
 6. Prosty skrypt PKI: CA laboratoryjne, certyfikat serwera, certyfikat testowego agenta.
 7. Zapisać podjęte decyzje (ClickHouse, kontrakt paczki, retencje) jako ADR w repozytorium.
 8. Licznik zdarzeń wysłanych, przyjętych i zapisanych od pierwszego dnia.

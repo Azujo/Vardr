@@ -26,6 +26,9 @@ const (
 	// Trwali konsumenci (jeden na etap; repliki etapu dzielą się wiadomościami).
 	ConsumerNormalizer = "normalizer"
 	ConsumerWriter     = "clickhouse-writer"
+	// ConsumerArchiver: archiwum NIS2 (Urd). Zakładany tylko przez
+	// archiwizator – istnieje, gdy archiwum jest włączone.
+	ConsumerArchiver = "archiver"
 
 	// Nagłówki wiadomości.
 	HdrAgent      = "Siem-Agent"
@@ -129,6 +132,35 @@ func EnsurePipeline(ctx context.Context, js jetstream.JetStream, l Limits) error
 		}
 	}
 	return nil
+}
+
+// ArchiverConsumerConfig: potwierdzenie dopiero po zapisie segmentu na dysk,
+// więc AckWait musi przekraczać maksymalny wiek segmentu z zapasem.
+func ArchiverConsumerConfig(segmentAge time.Duration) jetstream.ConsumerConfig {
+	return jetstream.ConsumerConfig{
+		Durable:       ConsumerArchiver,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       max(2*time.Minute, 3*segmentAge),
+		MaxAckPending: 20000,
+	}
+}
+
+// EnsureArchiver zakłada konsumenta archiwum. Przy retencji Interest od tej
+// chwili każda surowa paczka czeka w SIEM_RAW także na archiwizator:
+// jego awaria kończy się zatorem i odmową przyjęcia (503), nie utratą
+// danych w archiwum.
+func EnsureArchiver(ctx context.Context, js jetstream.JetStream, segmentAge time.Duration) (jetstream.Consumer, error) {
+	return js.CreateOrUpdateConsumer(ctx, StreamRaw, ArchiverConsumerConfig(segmentAge))
+}
+
+// DisableArchiver usuwa konsumenta archiwum (wyłączenie archiwizacji
+// nowych paczek – bez tego zatrzymany archiwizator blokowałby kolejkę).
+func DisableArchiver(ctx context.Context, js jetstream.JetStream) error {
+	err := js.DeleteConsumer(ctx, StreamRaw, ConsumerArchiver)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return nil
+	}
+	return err
 }
 
 // IsQueueFull rozpoznaje odmowę zapisu z powodu zapełnionego strumienia.

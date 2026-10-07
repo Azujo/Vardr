@@ -5,7 +5,8 @@ Heimdall – własny SIEM według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (n
 Obecny stan:
 
 - **ukończone etapy 1 i 1.5:** agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana. Potok jest wzmocniony i zmierzony: nadąża przy 10 000 zdarzeń/s;
-- **w toku:** panel Hliðskjálf z etapem 2. Logowanie, konta i audyt już działają.
+- **ukończony etap 2 z modułami 1–4 panelu Hliðskjálf:** logowanie i role, agenci (heartbeat, grupy z konfiguracją z serwera), wdrażanie tokenem z własnym CA agentów, wyszukiwarka zdarzeń;
+- **w toku:** etap 3 – archiwum NIS2 Urd. Archiwizator z łańcuchem hashy i weryfikacją integralności już działa.
 
 ## Struktura
 
@@ -23,9 +24,10 @@ server/                    potok zdarzeń (kontenery na serwerze)
   cmd/siem-ingest/         Bifröst: odbiór paczek (mTLS) → NATS
   cmd/siem-normalizer/     Bragi: XML Windows → wspólny schemat
   cmd/siem-writer/         Verðandi: zapis do ClickHouse (Mímir)
+  cmd/siem-archiver/       Urd: archiwum NIS2 (oryginalne paczki, łańcuch hashy)
   cmd/siem-loadgen/        generator ruchu: symulacja tysięcy agentów
   internal/                bus (NATS), queue, ingest, normalize, chwriter, model,
-                           metrics, loadgen (szablony zdarzeń)
+                           metrics, archiver, loadgen (szablony zdarzeń)
 
 panel/                     Hliðskjálf – panel zarządzania
   cmd/siem-api/            backend (HTTPS :8444) z wbudowanym frontendem
@@ -33,7 +35,8 @@ panel/                     Hliðskjálf – panel zarządzania
   web/                     frontend: React + TypeScript + Mantine
 
 internal/                  wspólne: contract (paczka agent → serwer, załącznik A),
-                           svc (konfiguracja, log, ponawianie), throttle
+                           svc (konfiguracja, log, ponawianie), throttle, fleet,
+                           urd (format archiwum, manifesty, weryfikacja)
 tools/                     narzędzia laboratoryjne
   cmd/siem-pki/            certyfikaty (CA, serwer, agenci, paczki instalacyjne)
   cmd/siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
@@ -259,16 +262,17 @@ Wynik widać w zakładce *Actions* repozytorium.
 ## Czego jeszcze nie ma (kolejne etapy)
 
 - bufor dyskowy na wypadek nadpisania dziennika podczas długiej przerwy (etap 2)
-- rejestracja agenta tokenem, rotacja certyfikatów, konfiguracja z serwera, heartbeat (etap 2)
 - instalator MSI (etap 2)
 - token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu i synchronizacji czasu (razem z heartbeatem)
-- archiwum NIS2 (etap 3), detekcja (etap 4), własny panel (etap 5)
+- archiwum NIS2 (etap 3): stan w panelu, polityka per źródło, eksport dla audytora, replay
+- detekcja (etap 4), alerty i reguły w panelu (etap 5)
 
 ## Serwer laboratoryjny (`deploy/lab`)
 
 ```
 agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► siem-normalizer ──► NATS SIEM_EVENTS ──► siem-writer ──► ClickHouse ──► Grafana :3000
+                                                   └──► siem-archiver ──► ./archive (segmenty + manifesty), spis w Sadze
 ```
 
 | Usługa | Rola |
@@ -276,6 +280,7 @@ agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► sie
 | `siem-ingest` | endpoint `/v1/ingest` (mTLS); potwierdza paczkę po zapisie w JetStream (deduplikacja po `batch_id`, okno 10 min) |
 | `siem-normalizer` | XML Windows → wspólny schemat (`event.dataset`, `event.action`, użytkownik, IP, proces, pola `fields`); błędne zdarzenia → kwarantanna |
 | `siem-writer` | zapis do ClickHouse paczkami (do 20 000 wierszy / 1 s), potwierdzenie z kolejki dopiero po udanym INSERT; wiersz odrzucony przez bazę → kwarantanna, reszta zapisana |
+| `siem-archiver` | Urd – archiwum NIS2: oryginalne paczki w segmentach na dysku, godzinowe manifesty z łańcuchem hashy, weryfikacja integralności co 6 h |
 | NATS JetStream | trwała kolejka zaległości (wiadomość znika po przetworzeniu); po zapełnieniu ingest odmawia przyjęcia, nic nie jest usuwane po cichu |
 | ClickHouse | `siem.events` (retencja 5 dni od przyjęcia), `siem.quarantine`; konta `siem_writer` (zapis) i `grafana` (odczyt) |
 | Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
@@ -285,7 +290,7 @@ Wdrożenie (stacja z Windows → VM z Dockerem):
 ```powershell
 # binaria serwera dla Linuksa
 $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
-go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./server/cmd/siem-ingest ./server/cmd/siem-normalizer ./server/cmd/siem-writer ./panel/cmd/siem-api
+go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/ ./server/cmd/siem-ingest ./server/cmd/siem-normalizer ./server/cmd/siem-writer ./server/cmd/siem-archiver ./panel/cmd/siem-api
 Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
 
 # certyfikat serwera z adresem VM + kopia do stosu (katalog certs jest ignorowany przez git)
@@ -323,7 +328,7 @@ Panel działa pod adresem **https://192.168.88.98:8444**. Korzysta z certyfikatu
 2. Na stacji, żeby przeglądarka ufała certyfikatowi panelu, dodaj laboratoryjne CA do zaufanych głównych urzędów **swojego konta** (bez uprawnień administratora):
 
    ```powershell
-   certutil -user -addstore Root certs.crt
+   certutil -user -addstore Root certs\ca.crt
    ```
 
    Windows zapyta o potwierdzenie. Usunięcie: `certutil -user -delstore Root "SIEM Lab CA"`.
@@ -427,6 +432,42 @@ npm run dev      # podgląd na żywo: http://localhost:5173, API przekierowane d
 
 Bez zbudowanego frontendu `siem-api` działa dalej, tylko zamiast panelu pokazuje stronę z instrukcją.
 
+### Archiwum NIS2 – Urd (siem-archiver)
+
+Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skompresowane tak, jak przyszły) w katalogu `~/siem-lab/archive`. Jest osobnym odbiorcą kolejki `SIEM_RAW`, więc paczka znika z kolejki dopiero wtedy, gdy zapiszą ją oba etapy: normalizator i archiwum.
+
+- **Segmenty:** paczki są dopisywane do pliku segmentu, zamykanego po 30 s albo 64 MB. Plik dostaje `fsync`, prawa tylko do odczytu i wpis w spisie (baza Saga, schemat `urd`). Dopiero wtedy paczki są potwierdzane w kolejce. Po awarii niezatwierdzony segment jest usuwany, a jego paczki przychodzą ponownie.
+- **Manifesty i łańcuch hashy:** po każdej pełnej godzinie powstaje manifest z listą segmentów i ich sumami SHA-256 oraz hashem poprzedniego manifestu. Manifest trafia na dysk i do bazy. Manifest dostaje też godzina bez danych, więc brakującą godzinę da się wykryć.
+- **Weryfikacja** (co 6 h i 2 min po starcie) sprawdza:
+  - ciągłość łańcucha;
+  - zgodność manifestów w bazie i na dysku;
+  - SHA-256, rozmiar i liczbę paczek każdego segmentu oraz sumę każdej paczki;
+  - pliki dodane poza archiwizatorem;
+  - przerwę w tworzeniu manifestów.
+
+  Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
+- **Retencja:** `SIEM_ARCHIVE_RETENTION_DAYS` w `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
+
+W panelu stan archiwum widać w module **Urd**:
+
+- stan zgodności: zgodne, niezgodności z listą problemów, archiwizator nie działa, weryfikacja nieaktualna;
+- rozmiar i zakres danych oraz retencję;
+- łańcuch manifestów z hashami i oznaczeniem zerwanego ogniwa;
+- historię weryfikacji.
+
+Administrator może zlecić weryfikację przyciskiem „Zweryfikuj teraz”. Archiwizator rozpoczyna ją w ciągu minuty, a zlecenie trafia do audytu. Kafelek z tym stanem jest też na stronie startowej.
+
+Przygotowanie na VM, jednorazowo: `mkdir ~/siem-lab/archive && chmod 750 ~/siem-lab/archive`. Katalog musi należeć do użytkownika `siem` (uid 1000).
+
+```bash
+docker compose exec archiver /app verify    # weryfikacja na żądanie (kod wyjścia 1 = niezgodności)
+docker compose exec archiver /app disable   # wyłączenie archiwizacji nowych paczek, potem: docker compose stop archiver
+```
+
+Zatrzymany archiwizator **nie gubi danych**: paczki czekają w kolejce, a po jej zapełnieniu ingest odmawia przyjęcia (503) i dane czekają u agentów. Żeby wyłączyć archiwum na dłużej, użyj `disable`, a nie samego zatrzymania usługi.
+
+W laboratorium archiwum leży na dysku lokalnym. Ochrona polega tu na wykrywaniu zmian przez łańcuch hashy, a nie na blokadzie zapisu. Backend S3 z Object Lock w trybie compliance dojdzie później. Napastnik z pełnym dostępem do dysku **i** bazy może przepisać cały łańcuch, dlatego docelowo hash ostatniego manifestu będzie też zapisywany poza systemem.
+
 ### Skalowanie
 
 Normalizator i writer skaluje się poziomo, dokładając kopie (dzielą pracę z jednej kolejki NATS):
@@ -468,11 +509,11 @@ Usługi serwera wystawiają metryki Prometheus na porcie 9100 (tylko w sieci Doc
 
 Interfejs Prometheusa jest dostępny tylko z VM (`127.0.0.1:9090`, np. przez `ssh -L 9090:127.0.0.1:9090`).
 
-Generator ruchu udaje wielu agentów. Każdy dostaje własny certyfikat, wystawiany w pamięci z `certs.key`, i realistyczną mieszankę zdarzeń Security, System i Application:
+Generator ruchu udaje wielu agentów. Każdy dostaje własny certyfikat, wystawiany w pamięci z `certs\ca.key`, i realistyczną mieszankę zdarzeń Security, System i Application:
 
 ```powershell
 go build -o bin/siem-loadgen.exe ./server/cmd/siem-loadgen
-binsiem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 20 -duration 3m
+bin\siem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 20 -duration 3m
 ```
 
 Co 10 s generator pokazuje zdarzenia wygenerowane i przyjęte, odmowy, opóźnienie odpowiedzi i bufor agentów. Gdy bufor agenta się przepełni (`-backlog`, domyślnie 50 000), zdarzenia przepadają jak w nadpisanym dzienniku Windows i generator je liczy. Zdarzenia testowe mają `agent_id` z prefiksem `agt-load-` i znikają z bazy razem z retencją (5 dni).

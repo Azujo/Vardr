@@ -70,6 +70,8 @@ type Server struct {
 	Enroll *Enrollment
 	// Events (opcjonalne) – wyszukiwarka zdarzeń (Mímir).
 	Events EventSearcher
+	// Archive (opcjonalne) – stan archiwum NIS2 (Urd).
+	Archive ArchiveReader
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -140,6 +142,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/events/histogram", s.authed(roleViewer, 0, s.eventsHistogram))
 	mux.Handle("GET /api/v1/events/fields", s.authed(roleViewer, 0, s.eventFields))
 	mux.Handle("GET /api/v1/events/{id}", s.authed(roleViewer, 0, s.getEvent))
+
+	mux.Handle("GET /api/v1/archive", s.authed(roleViewer, 0, s.archiveOverview))
+	mux.Handle("POST /api/v1/archive/verify", s.authed(roleAdmin, 0, s.archiveVerify))
 
 	mux.Handle("GET /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.listTokens))
 	mux.Handle("POST /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.createToken))

@@ -28,7 +28,7 @@ jobs:
 
       - name: Formatowanie (gofmt)
         run: |
-          out=$(gofmt -l cmd internal)
+          out=$(gofmt -l agent server panel tools internal)
           if [ -n "$out" ]; then echo "Pliki wymagają gofmt:"; echo "$out"; exit 1; fi
 
       - name: go vet
@@ -46,7 +46,7 @@ jobs:
         run: |
           mkdir -p out
           for p in server/cmd/siem-ingest server/cmd/siem-normalizer server/cmd/siem-writer \
-                   server/cmd/siem-loadgen panel/cmd/siem-api tools/cmd/siem-pki; do
+                   server/cmd/siem-loadgen server/cmd/siem-archiver panel/cmd/siem-api tools/cmd/siem-pki; do
             go build -trimpath -ldflags="-s -w" -o out/ ./$p
           done
           ls -la out
