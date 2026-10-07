@@ -11,6 +11,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
+// dupSlack: zapas wierszy na duplikaty usuwane po stronie panelu.
+const dupSlack = 20
+
 // ErrNotFound: brak zdarzenia (np. usunięte przez retencję).
 var ErrNotFound = errors.New("nie znaleziono zdarzenia")
 
@@ -105,11 +108,13 @@ func (s *Searcher) Search(ctx context.Context, p Parsed, from, to time.Time, bef
 		w += " AND (timestamp, event_id) < (?, ?)"
 		args = append(args, before.Timestamp, before.ID)
 	}
-	// LIMIT 1 BY event_id: ReplacingMergeTree usuwa duplikaty dopiero przy
-	// scalaniu – tu pokazujemy każde zdarzenie raz.
+	// Zwykłe ORDER BY … LIMIT: baza trzyma w pamięci tylko najlepsze wiersze.
+	// Duplikaty (ReplacingMergeTree usuwa je dopiero przy scalaniu) usuwamy
+	// niżej – „LIMIT 1 BY event_id” zapamiętywał identyfikatory WSZYSTKICH
+	// zdarzeń z zakresu i przy 7 dniach przekraczał pamięć serwera.
 	sql := `SELECT ` + listCols + ` FROM siem.events WHERE ` + w +
-		` ORDER BY timestamp DESC, event_id DESC LIMIT 1 BY event_id LIMIT ?`
-	args = append(args, limit)
+		` ORDER BY timestamp DESC, event_id DESC LIMIT ?`
+	args = append(args, limit+dupSlack)
 	rows, err := s.Conn.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
@@ -122,7 +127,12 @@ func (s *Searcher) Search(ctx context.Context, p Parsed, from, to time.Time, bef
 			&e.User, &e.Domain, &e.IP, &e.Process, &e.Message); err != nil {
 			return nil, err
 		}
-		out = append(out, e)
+		if len(out) > 0 && out[len(out)-1].ID == e.ID {
+			continue // duplikat – ten sam identyfikator i czas sąsiadują po sortowaniu
+		}
+		if len(out) < limit {
+			out = append(out, e)
+		}
 	}
 	return out, rows.Err()
 }

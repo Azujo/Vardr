@@ -74,8 +74,10 @@ CREATE USER IF NOT EXISTS grafana IDENTIFIED WITH sha256_password BY '${SIEM_GRA
 GRANT SELECT ON siem.* TO grafana;
 
 -- Panel Hliðskjálf (wyszukiwarka zdarzeń): tylko odczyt, z limitami czasu
--- i rozmiaru wyniku, których zapytanie nie może podnieść ponad MAX.
+-- (30 s), rozmiaru wyniku i pamięci (1 GB, maks. 2 GB) – zapytanie z panelu nie
+-- może podnieść ich ponad MAX ani zagłodzić zapisu zdarzeń.
 CREATE USER IF NOT EXISTS siem_panel IDENTIFIED WITH sha256_password BY '${SIEM_PANEL_PASSWORD}'
-    SETTINGS readonly = 2, max_execution_time = 15 MAX 30, max_result_rows = 100000 MAX 100000;
+    SETTINGS readonly = 2, max_execution_time = 15 MAX 30, max_result_rows = 100000 MAX 100000,
+             max_memory_usage = 1000000000 MAX 2000000000;
 GRANT SELECT ON siem.* TO siem_panel;
 SQL
