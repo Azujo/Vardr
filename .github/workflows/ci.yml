@@ -1,0 +1,70 @@
+# Testy przy każdym pushu i pull requeście (etap 1.5, ustalenie M1).
+# Linux: serwer i części wspólne (z wykrywaniem wyścigów), Windows: agent.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux – serwer i testy wyścigów
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Formatowanie (gofmt)
+        run: |
+          out=$(gofmt -l cmd internal)
+          if [ -n "$out" ]; then echo "Pliki wymagają gofmt:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Testy z wykrywaniem wyścigów
+        run: go test -race -count=1 ./...
+
+      - name: Fuzzing parsera XML zdarzeń (60 s)
+        run: go test -run '^$' -fuzz FuzzParseWinEvent -fuzztime 60s ./internal/server/normalize
+
+      - name: Budowanie usług serwera
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p out
+          for b in siem-ingest siem-normalizer siem-writer siem-loadgen siem-pki; do
+            go build -trimpath -ldflags="-s -w" -o out/$b ./cmd/$b
+          done
+          ls -la out
+
+  windows:
+    name: Windows – agent
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Testy
+        run: go test -count=1 ./...
+
+      - name: Budowanie agenta
+        run: go build -trimpath -o siem_agent.exe ./cmd/siem_agent

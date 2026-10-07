@@ -204,6 +204,13 @@ go vet ./...
 go test ./...
 ```
 
+Na GitHubie testy uruchamiają się automatycznie przy każdym pushu ([.github/workflows/ci.yml](.github/workflows/ci.yml)):
+
+- **Linux:** `gofmt`, `go vet`, testy z wykrywaniem wyścigów (`-race`), 60 s fuzzingu parsera XML i budowanie usług serwera;
+- **Windows:** `go vet`, testy agenta i budowanie `siem_agent.exe`.
+
+Wynik widać w zakładce *Actions* repozytorium.
+
 ## Czego jeszcze nie ma (kolejne etapy)
 
 - bufor dyskowy na wypadek nadpisania dziennika podczas długiej przerwy (etap 2)
