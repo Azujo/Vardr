@@ -26,3 +26,6 @@ deploy/lab/archive/
 
 # Metryki skryptów laboratorium (node-exporter, textfile)
 deploy/lab/metrics/
+
+# Programy dołączane do eksportów archiwum (budowane przez deploy.sh tools)
+deploy/lab/export-tools/

@@ -222,7 +222,8 @@ func serve(log *slog.Logger) error {
 	health := &archiver.Health{}
 	dataLock := &sync.Mutex{}
 	go (&archiver.Exporter{A: a, Store: cat, Dir: cfg.exportDir, Keep: cfg.exportKeep, MinFreeBytes: uint64(cfg.minFreeGB) << 30,
-		Version: svc.Version, Log: log, Lock: dataLock}).Run(ctx)
+		ToolsDir: svc.Env("SIEM_ARCHIVE_EXPORT_TOOLS", "/export-tools"),
+		Version:  svc.Version, Log: log, Lock: dataLock}).Run(ctx)
 	go (&archiver.Replayer{A: a, Store: cat, Pub: js, Log: log, Lock: dataLock}).Run(ctx)
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,

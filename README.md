@@ -521,6 +521,11 @@ Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, 
   - `RRRR-MM-DD_GG.ndjson.gz`: jedno zdarzenie w linii, pola według Elastic Common Schema (`@timestamp`, `host.name`, `event.code`, `user.name`, `source.ip`…). Pełny oryginalny XML Windows jest w `event.original`. Plik da się wczytać do Elastic, Splunk czy Sentinel albo przeglądać przez `zcat` i `jq`.
   - `zdarzenia.csv`: najważniejsze kolumny dla Excela (UTF-8, separator średnik, do miliona wierszy).
 - **Dowód** (`segments/`, `chain/`): oryginalne segmenty, bajt w bajt to, co przyszło od agentów, oraz manifesty od pierwszej godziny zakresu do najnowszego (łańcuch z kotwicą).
+- **Czytnik** `odczytaj.exe` w katalogu głównym paczki, dla odbiorcy na Windows bez wiedzy technicznej. Wystarczy dwuklik w rozpakowanym folderze albo przeciągnięcie na niego pliku `.tar`. Program sprawdza integralność tak samo jak skrypt i zapisuje w podfolderze `ODCZYT/`:
+  - `RAPORT.txt`: wynik sprawdzenia z kotwicą, kto, kiedy i po co zlecił eksport, zdarzenia wymagające uwagi (czyszczenie dziennika, konta i grupy, nowe usługi i zadania z nazwą i ścieżką, nieudane logowania według konta i adresu), statystyki;
+  - `zdarzenia/RRRR-MM-DD.txt`: wszystkie zdarzenia dnia w kolejności czasu (czas polski i UTC), z polskim opisem kodu (np. „4625 – Nieudane logowanie”) i danymi zdarzenia jako `Nazwa = wartość` z objaśnieniami (np. `LogonType = 10 (zdalny pulpit (RDP))`). Pliki mają po 50 tys. zdarzeń, czyli ok. 50 MB.
+
+  Po zakończeniu raport otwiera się w Notatniku. `ODCZYT/` nie jest częścią paczki i nie wpływa na wynik sprawdzenia. Program nie jest podpisany cyfrowo, więc Windows może pokazać ostrzeżenie SmartScreen („Więcej informacji → Uruchom mimo to”). Odbiorca, który nie uruchamia cudzych programów, ma skrypt w Pythonie i ręczne sprawdzenie sum. Program buduje i dołącza `deploy/lab/deploy.sh tools`, który zapisuje go w `~/siem-lab/export-tools`.
 - **Sprawdzenie** (`narzedzia/odczytaj_segmenty.py`): skrypt na samą bibliotekę standardową Pythona 3. Sprawdza:
   - sumy plików;
   - łańcuch;

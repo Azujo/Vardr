@@ -14,6 +14,7 @@
 #               program dla Linuksa z wersją z gita (svc.Version), obraz
 #               i restart usługi
 #   agent       siem_agent.exe do paczek instalacyjnych panelu (agent-dist/)
+#   tools       odczytaj.exe – czytnik eksportu archiwum dołączany do paczek (export-tools/)
 #
 # Zmienne: SIEM_LAB_HOST (siem@192.168.88.98), SIEM_LAB_KEY (~/.ssh/siem_lab),
 # SIEM_LAB_DIR (~/siem-lab na VM).
@@ -42,7 +43,7 @@ for t in "${targets[@]}"; do
   config)
     echo "== konfiguracja stosu"
     tar -C deploy/lab --exclude=./bin --exclude=./certs --exclude=./archive --exclude=./metrics \
-      --exclude=./agent-dist --exclude=./.env --exclude='*.log' --exclude=./deploy.sh -cf - . |
+      --exclude=./agent-dist --exclude=./export-tools --exclude=./.env --exclude='*.log' --exclude=./deploy.sh -cf - . |
       ssh -i "$key" -o BatchMode=yes "$host" "mkdir -p $dir && tar -xf - -C $dir"
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
     ;;
@@ -52,6 +53,14 @@ for t in "${targets[@]}"; do
       ssh -i "$key" -o BatchMode=yes "$host" 'rm -rf ~/webbuild/src ~/webbuild/public && mkdir -p ~/webbuild && tar -xf - -C ~/webbuild'
     ssh -i "$key" -o BatchMode=yes "$host" 'cd ~/webbuild && docker run --rm -u 1000:1000 -e HOME=/tmp -v $PWD:/app -w /app node:24-alpine sh -c "npm ci --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund >/dev/null; npm run build" >&2 && tar -cf - dist' |
       (rm -rf panel/web/dist/assets && tar -xf - -C panel/web)
+    ;;
+  tools)
+    echo "== czytnik eksportu (odczytaj.exe) -> export-tools/ ($version)"
+    mkdir -p deploy/lab/export-tools
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" \
+      -o deploy/lab/export-tools/odczytaj.exe ./tools/cmd/odczytaj
+    remote "mkdir -p export-tools"
+    copy deploy/lab/export-tools/odczytaj.exe "$host:$dir/export-tools/odczytaj.exe"
     ;;
   agent)
     echo "== agent Windows -> agent-dist/"

@@ -67,8 +67,10 @@ jobs:
       - name: Testy
         run: go test -count=1 ./...
 
-      - name: Budowanie agenta
-        run: go build -trimpath -o siem_agent.exe ./agent/cmd/siem_agent
+      - name: Budowanie agenta i czytnika eksportu archiwum
+        run: |
+          go build -trimpath -o siem_agent.exe ./agent/cmd/siem_agent
+          go build -trimpath -o odczytaj.exe ./tools/cmd/odczytaj
 
   web:
     name: Frontend panelu (TypeScript + build)

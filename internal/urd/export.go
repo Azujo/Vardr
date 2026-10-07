@@ -11,9 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"maps"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -125,6 +129,7 @@ type exportInfo struct {
 	Latest        exportRef       `json:"latest_manifest"`
 	Totals        exportTotals    `json:"totals"`
 	Readable      exportReadable  `json:"readable"`
+	Tools         []string        `json:"tools,omitempty"`
 	Note          string          `json:"note"`
 	Chain         exportChainSpan `json:"chain"`
 }
@@ -164,6 +169,9 @@ type ExportOptions struct {
 	// najpierw do pliku – nagłówek tar wymaga rozmiaru z góry).
 	TempDir string
 	Enrich  Enricher
+	// Tools: programy dołączane w katalogu głównym paczki (nazwa → plik),
+	// np. odczytaj.exe – czytnik eksportu dla odbiorcy.
+	Tools map[string]string
 }
 
 // WriteExport zapisuje paczkę eksportu (tar) do w:
@@ -247,6 +255,19 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 
 	// 3. Narzędzie, opis i spis sum.
+	names := slices.Sorted(maps.Keys(opt.Tools))
+	for _, name := range names {
+		f, err := os.Open(opt.Tools[name])
+		if err != nil {
+			return j, fmt.Errorf("narzędzie %s: %w", name, err)
+		}
+		err = addFile(tw, &sums, name, f, now)
+		f.Close()
+		if err != nil {
+			return j, err
+		}
+	}
+	info.Tools = names
 	if err := add("narzedzia/odczytaj_segmenty.py", readerScript); err != nil {
 		return j, err
 	}
@@ -412,6 +433,78 @@ type ExportCheck struct {
 // Kotwicę (hash najnowszego manifestu) warto porównać z wartością
 // zapisaną niezależnie, np. w protokole przekazania.
 func CheckExport(r io.Reader) ExportCheck {
+	tr := tar.NewReader(r)
+	return checkEntries(func() (string, io.Reader, error) {
+		for {
+			hdr, err := tr.Next()
+			if err != nil {
+				return "", nil, err
+			}
+			switch hdr.Typeflag {
+			case tar.TypeDir:
+				continue
+			case tar.TypeReg:
+				return hdr.Name, tr, nil
+			}
+			return hdr.Name, nil, nil
+		}
+	})
+}
+
+// ReadOutputDir to podfolder, w którym czytnik eksportu (odczytaj.exe)
+// zapisuje swoje wyniki – nie jest częścią paczki i nie podlega sprawdzeniu.
+const ReadOutputDir = "ODCZYT"
+
+// CheckExportDir sprawdza rozpakowaną paczkę (folder) tak samo jak CheckExport.
+// Podfolder ODCZYT (wyniki czytnika) jest pomijany.
+func CheckExportDir(dir string) ExportCheck {
+	var files []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if rel == ReadOutputDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		files = append(files, rel)
+		return nil
+	})
+	if err != nil {
+		return ExportCheck{Problems: []string{"odczyt folderu: " + err.Error()}}
+	}
+	sort.Strings(files)
+	var cur *os.File
+	i := 0
+	c := checkEntries(func() (string, io.Reader, error) {
+		if cur != nil {
+			cur.Close()
+			cur = nil
+		}
+		if i >= len(files) {
+			return "", nil, io.EOF
+		}
+		name := files[i]
+		i++
+		f, err := os.Open(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			return "", nil, err
+		}
+		cur = f
+		return name, f, nil
+	})
+	if cur != nil {
+		cur.Close()
+	}
+	return c
+}
+
+// checkEntries sprawdza kolejne pliki paczki (z tar albo z folderu).
+func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	var c ExportCheck
 	var p problems
 	type segInfo struct {
@@ -427,9 +520,8 @@ func CheckExport(r io.Reader) ExportCheck {
 	var sumsFile []byte
 	var origDigest, readDigest eventDigest
 
-	tr := tar.NewReader(r)
 	for {
-		hdr, err := tr.Next()
+		name, rd, err := next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -437,13 +529,12 @@ func CheckExport(r io.Reader) ExportCheck {
 			p.add("paczka nieczytelna: %v", err)
 			break
 		}
-		if hdr.Typeflag != tar.TypeReg {
-			p.add("nieoczekiwany wpis %s", hdr.Name)
+		if rd == nil {
+			p.add("nieoczekiwany wpis %s", name)
 			continue
 		}
-		name := hdr.Name
 		h := sha256.New()
-		body := io.TeeReader(tr, h)
+		body := io.TeeReader(rd, h)
 		switch {
 		case strings.HasPrefix(name, "segments/"):
 			si := segInfo{}
@@ -631,6 +722,16 @@ const exportReadme = `Heimdall – eksport archiwum NIS2 (Urd)
 Paczka zawiera logi w dwóch postaciach: CZYTELNEJ (do analizy w dowolnym
 narzędziu) i ORYGINALNEJ (dowód – bajt w bajt to, co przyszło od agentów),
 oraz sposób sprawdzenia, że jedno odpowiada drugiemu.
+
+NAJPROŚCIEJ (Windows): uruchom odczytaj.exe w tym folderze (dwuklik).
+Program sprawdzi integralność paczki i zapisze w podfolderze ODCZYT:
+  RAPORT.txt              wynik sprawdzenia, opis eksportu, zdarzenia
+                          wymagające uwagi, statystyki
+  zdarzenia\RRRR-MM-DD.txt  wszystkie zdarzenia dnia po kolei, opisane
+                          po polsku, z danymi zdarzenia
+Program nie zmienia paczki. Nie jest podpisany cyfrowo – Windows może
+wyświetlić ostrzeżenie („Więcej informacji” → „Uruchom mimo to”). Jeśli
+nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
 
 1. Zdarzenia do odczytu – katalog zdarzenia/
 ---------------------------------------------

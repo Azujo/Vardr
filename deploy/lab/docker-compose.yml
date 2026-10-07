@@ -153,6 +153,8 @@ services:
     build: { context: ., args: { BIN: siem-archiver } }
     image: siem/archiver:lab
     volumes:
+      # Programy dołączane do paczek eksportu (odczytaj.exe; deploy.sh tools).
+      - ./export-tools:/export-tools:ro
       # Archiwum na osobnym dysku (SIEM_ARCHIVE_PATH w .env, np. /srv/heimdall/archive):
       # zapełnienie archiwum nie zatrzyma wtedy kolejki ani bazy zdarzeń.
       # create_host_path: false – gdy dysk nie jest zamontowany, usługa nie wystartuje

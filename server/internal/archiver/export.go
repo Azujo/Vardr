@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +35,10 @@ type Exporter struct {
 	Keep         time.Duration // po tym czasie paczka jest usuwana
 	MinFreeBytes uint64        // zapas miejsca po zapisaniu paczki
 	Version      string
-	Log          *slog.Logger
+	// ToolsDir: programy dołączane do każdej paczki (np. odczytaj.exe);
+	// "" albo brak katalogu = bez programów (skrypt w Pythonie jest zawsze).
+	ToolsDir string
+	Log      *slog.Logger
 	// Lock: wspólny z usuwaniem danych po retencji – eksport nie może
 	// czytać segmentów, które właśnie znikają.
 	Lock *sync.Mutex
@@ -119,7 +123,8 @@ func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 	}
 	h := sha256.New()
 	cw := &countingWriter{w: io.MultiWriter(f, h)}
-	j, err = e.A.WriteExport(ctx, j, plan, cw, urd.ExportOptions{Version: e.Version, TempDir: e.Dir, Enrich: NormalizerEnricher})
+	j, err = e.A.WriteExport(ctx, j, plan, cw, urd.ExportOptions{Version: e.Version, TempDir: e.Dir, Enrich: NormalizerEnricher,
+		Tools: e.tools()})
 	if err == nil {
 		err = f.Sync()
 	}
@@ -181,4 +186,22 @@ func NormalizerEnricher(ev contract.Event, agentID string, received time.Time, r
 	r.HostName, r.Code, r.Dataset, r.Provider = e.HostName, e.Code, e.Dataset, e.Provider
 	r.Action, r.Outcome, r.UserName, r.UserDomain = e.Action, e.Outcome, e.UserName, e.UserDomain
 	r.SourceIP, r.ProcessName, r.CommandLine, r.TimeQuality = e.SourceIP, e.ProcessName, e.CommandLine, e.TimeQuality
+}
+
+// tools zwraca programy do dołączenia (pliki z katalogu ToolsDir).
+func (e *Exporter) tools() map[string]string {
+	if e.ToolsDir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(e.ToolsDir)
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, en := range entries {
+		if en.Type().IsRegular() && !strings.HasPrefix(en.Name(), ".") {
+			out[en.Name()] = filepath.Join(e.ToolsDir, en.Name())
+		}
+	}
+	return out
 }
