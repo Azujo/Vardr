@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.3.5 • 07.10.2026
+Wersja planistyczna 1.3.6 • 07.10.2026
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -414,7 +414,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
-- **Etap 1.5 – postęp:** K1, K2, W3, K4, W1, M1 i W2 (mechanizm) zrobione (06–07.10.2026). K1, K4, W1 i W2 sprawdzone na VM, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Dalej: K3, opcjonalnie wydajność writera (W7).
+- **Etap 1.5 – postęp:** **etap 1.5 zakończony** (06–07.10.2026): K1, K2, K3, K4, W1, W2 (mechanizm), W3 i M1. K1, K3, K4, W1 i W2 sprawdzone na żywo, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Opcjonalnie później: wydajność writera (W7).
 
 **Kamienie milowe po drodze:**
 
@@ -716,7 +716,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 |---|---|---|---|
 | K1 | Strumienie NATS: `discard: old`, retencja czasowa, limit 20 GB | przy dłuższej awarii writera lub bazy kolejka usuwa najstarsze **nieprzetworzone** dane, a agenci mają już potwierdzenie – cicha utrata | retencja do potwierdzenia przez wszystkich odbiorców, limit rozmiaru z `discard: new` (ingest → 503), limit przyjmowania w ingest (429), alarm zaległości. **Zrobione 06.10.2026** |
 | K2 | Writer ponawia całą paczkę po błędzie ClickHouse | jeden wadliwy wiersz (np. data poza zakresem przy zepsutym zegarze komputera) zatrzymuje zapis wszystkich agentów | dzielenie paczki do wykrycia wadliwego wiersza → kwarantanna; korekta dat spoza zakresu. **Zrobione 06.10.2026** |
-| K3 | Dziennik Windows (domyślnie 20 MB) jest jedynym buforem agenta | przy przerwie w łączności dłuższej niż minuty (serwer) lub godziny (stacja) zdarzenia zostają nadpisane | GPO: Security 512 MB–1 GB na serwerach i DC; ostrzeżenie agenta o zbliżającym się nadpisaniu; bufor dyskowy (etap 2) |
+| K3 | Dziennik Windows (domyślnie 20 MB) jest jedynym buforem agenta | przy przerwie w łączności dłuższej niż minuty (serwer) lub godziny (stacja) zdarzenia zostają nadpisane | GPO: Security 512 MB–1 GB na serwerach i DC; ostrzeżenie agenta o zbliżającym się nadpisaniu; bufor dyskowy (etap 2). **Ostrzeżenia i zalecenia GPO zrobione 07.10.2026**; bufor dyskowy nadal w etapie 2 |
 | K4 | Brak testu obciążenia i metryk | nie wiadomo, gdzie system pęknie ani kiedy dokładać workery | generator ruchu symulujący tysiące agentów, metryki Prometheus, pulpit „zdrowie potoku”. **Zrobione 06–07.10.2026** |
 
 **Ważne**
@@ -834,3 +834,18 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
   - `clickhouse/retention.sh` zmienia retencję działającej bazy na podstawie `.env`.
 - **Decyzja (07.10.2026):** domyślnie 5 dni, czyli bez zmiany, dopóki nie powstanie archiwum NIS2 (Urd, etap 3). Do tego czasu oryginały są dostępne tylko w ClickHouse.
 - Pomiar po testach obciążenia: `fields` 495 MiB, `raw` 484 MiB, razem ok. 85% tabeli. Skrócenie retencji `raw` do 1 dnia zmniejszy bazę o ok. 35% przy 5 dniach retencji.
+
+**K3 – ochrona przed nadpisaniem dziennika Windows (07.10.2026)**
+
+- Agent odczytuje stan dziennika z Windows API: liczbę rekordów, numer najstarszego, rozmiar pliku i maksymalny, tryb nadpisywania. Wartości zgadzają się z `Get-WinEvent -ListLog`.
+- **Co minutę** liczy, jaką część pojemności dziennika zajmują rekordy nowsze niż pozycja agenta:
+  - od 50% ostrzeżenie, od 80% alarm;
+  - szacunek czasu do nadpisania z tempa zapisu i pojemności dziennika;
+  - komunikat raz przy przekroczeniu progu, informacja po odrobieniu zaległości.
+- Pozycję liczy ostrożnie: czytnik widzi tylko zdarzenia pasujące do filtra Event ID. Gdy czytnik był na bieżąco (subskrypcja opróżniona albo brak sygnału), za pozycję przyjmowany jest najnowszy rekord dziennika. Agent na bieżąco nie dostaje fałszywych alarmów, nawet gdy dziennik zawija się zdarzeniami spoza filtra (test).
+- **Luki w danych** są zgłaszane z dokładnym zakresem rekordów:
+  - przy wznowieniu po przerwie, gdy zapisana pozycja jest starsza niż najstarszy rekord dziennika (Windows wznawia wtedy po cichu od najstarszego);
+  - w trakcie pracy (błąd „wyniki nieaktualne” subskrypcji, wykrywany już wcześniej, teraz zgłaszany także w statusie i w Podglądzie zdarzeń).
+- Przy starcie: podpowiedź dla dziennika Security mniejszego niż 128 MB i ostrzeżenie przed trybem „nie nadpisuj”.
+- Sprawdzone na żywo na kanale, który się już zawinął (`Microsoft-Windows-Shell-Core/Operational`, najstarszy rekord 38 054). Agent wznawiający od rekordu 1000 zgłosił „LUKA W DANYCH: rekordy 1001–38053”, a przy nieosiągalnym serwerze ostrzeżenie o zajętości 78%. Oba komunikaty trafiły do `siem_agent status`.
+- Zalecenia rozmiarów dzienników dla GPO: README, sekcja „Rozmiar dzienników Windows”.

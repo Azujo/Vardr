@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -30,6 +31,12 @@ type Reader struct {
 	startAt   string // "now" lub "oldest" – tylko gdy brak zapisanej pozycji
 	pollEvery time.Duration
 	log       *slog.Logger
+
+	// OnGap (opcjonalne) dostaje opis luki w danych (zdarzenia nadpisane
+	// w dzienniku, zanim agent je przeczytał) – np. do statusu agenta.
+	OnGap func(msg string)
+
+	lastDrained atomic.Int64 // UnixNano chwili, gdy subskrypcja była opróżniona
 }
 
 // NewReader tworzy czytnik kanału. Zapytanie powstaje z BuildQuery.
@@ -44,6 +51,41 @@ func NewReader(channel, query, startAt string, log *slog.Logger) *Reader {
 }
 
 func (r *Reader) Channel() string { return r.channel }
+
+// LastDrained zwraca chwilę, w której czytnik ostatnio przeczytał wszystko,
+// co było w subskrypcji (był na bieżąco z dziennikiem).
+func (r *Reader) LastDrained() time.Time {
+	if ns := r.lastDrained.Load(); ns != 0 {
+		return time.Unix(0, ns)
+	}
+	return time.Time{}
+}
+
+// gap zgłasza lukę w danych: log (także do Podglądu zdarzeń) i OnGap.
+func (r *Reader) gap(msg string, attrs ...any) {
+	r.log.Error(msg, append(attrs, "eventlog", true)...)
+	if r.OnGap != nil {
+		r.OnGap("kanał " + r.channel + ": " + msg)
+	}
+}
+
+// checkResumeGap sprawdza przy wznowieniu, czy dziennik nie nadpisał
+// rekordów po zapisanej pozycji (np. agent był długo wyłączony). Windows
+// wznawia wtedy po cichu od najstarszego dostępnego rekordu.
+func (r *Reader) checkResumeGap(pos source.Position) {
+	if !pos.Valid {
+		return
+	}
+	info, err := LogInfo(r.channel)
+	if err != nil {
+		r.log.Debug("odczyt stanu dziennika nieudany", "err", err)
+		return
+	}
+	if info.Records > 0 && info.Oldest > pos.RecordID+1 {
+		r.gap(fmt.Sprintf("LUKA W DANYCH: dziennik nadpisał rekordy %d–%d, zanim agent je przeczytał (np. długa przerwa w działaniu agenta)",
+			pos.RecordID+1, info.Oldest-1), "after_record", pos.RecordID, "oldest_record", info.Oldest)
+	}
+}
 
 // Run realizuje source.Source.
 func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- source.Record) (source.Position, error) {
@@ -63,6 +105,7 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 	}
 	defer func() { evtClose(sub) }()
 	r.log.Info("subskrypcja kanału uruchomiona", "query", r.query, "after_record", pos.RecordID, "resume", pos.Valid)
+	r.checkResumeGap(pos)
 
 	handles := make([]evtHandle, 64)
 	var buf []uint16
@@ -78,6 +121,9 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 			return pos, fmt.Errorf("WaitForSingleObject: %w", err)
 		}
 		if ev == uint32(windows.WAIT_TIMEOUT) {
+			// Brak sygnału = nic pasującego do odczytu: czytnik jest na bieżąco,
+			// nawet jeśli dziennik rośnie o zdarzenia spoza filtra.
+			r.lastDrained.Store(time.Now().UnixNano())
 			continue
 		}
 		windows.ResetEvent(signal)
@@ -88,12 +134,13 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 				// ERROR_INVALID_OPERATION po opróżnieniu subskrypcji też
 				// oznacza brak nowych zdarzeń (nie błąd czytnika).
 				if errors.Is(err, errorNoMoreItems) || errors.Is(err, errorInvalidOperation) {
+					r.lastDrained.Store(time.Now().UnixNano())
 					break
 				}
 				if errors.Is(err, errorEvtQueryResultStale) {
 					// Zdarzenia zostały nadpisane, zanim je przeczytaliśmy:
 					// to realna luka w danych, którą trzeba zgłosić.
-					r.log.Error("LUKA W DANYCH: zdarzenia nadpisane w dzienniku przed odczytem; wznawiam od najstarszego dostępnego", "after_record", pos.RecordID)
+					r.gap("LUKA W DANYCH: zdarzenia nadpisane w dzienniku przed odczytem; wznawiam od najstarszego dostępnego", "after_record", pos.RecordID)
 					evtClose(sub)
 					sub = 0
 					if sub, err = r.subscribe(signal, pos); err != nil {

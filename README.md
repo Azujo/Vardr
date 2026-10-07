@@ -197,6 +197,31 @@ Advanced Audit Policy Configuration*):
 - PowerShell: *Turn on PowerShell Script Block Logging* = Enabled
 - Sysmon: instalacja z konfiguracją bazową (osobno)
 
+## Rozmiar dzienników Windows (bufor agenta)
+
+Dziennik Windows jest jedynym buforem agenta. Gdy serwer jest niedostępny, niewysłane zdarzenia czekają w dzienniku, a po jego zapełnieniu Windows nadpisuje najstarsze. Domyślne 20 MB to przy typowym ruchu:
+
+- na stacji: kilka godzin zapasu;
+- na obciążonym serwerze lub kontrolerze domeny: kilkanaście sekund do kilku minut.
+
+Zalecane rozmiary (GPO: *Computer Configuration → Policies → Administrative Templates → Windows Components → Event Log Service → <dziennik> → Specify the maximum log file size (KB)*, z zachowaniem nadpisywania najstarszych wpisów):
+
+| Dziennik | Stacje robocze | Serwery | Kontrolery domeny |
+|---|---|---|---|
+| Security | 128–256 MB | 512 MB–1 GB | 1–4 GB |
+| System, Application | 64 MB | 128 MB | 128 MB |
+| PowerShell/Operational, Sysmon | 64 MB | 256 MB | 256 MB |
+
+Jednorazowo na pojedynczej maszynie (administrator): `wevtutil sl Security /ms:1073741824`.
+
+Agent pilnuje tego sam:
+
+- **co minutę** sprawdza, jaką część dziennika zajmują zdarzenia jeszcze niewysłane. Od 50% zgłasza ostrzeżenie, od 80% alarm, oba z szacowanym czasem do nadpisania przy obecnym tempie;
+- **przy wznowieniu** (np. po długim wyłączeniu) i w trakcie pracy zgłasza dokładny zakres rekordów nadpisanych przed odczytem („LUKA W DANYCH”);
+- **przy starcie** podpowiada zwiększenie dziennika Security mniejszego niż 128 MB i ostrzega przed ustawieniem „nie nadpisuj”, przy którym Windows po zapełnieniu przestaje zapisywać nowe zdarzenia.
+
+Wszystkie te komunikaty trafiają do logu agenta, do `siem_agent status` i (gdy agent działa jako usługa) do Podglądu zdarzeń (Application, źródło `SiemAgent`).
+
 ## Testy
 
 ```powershell

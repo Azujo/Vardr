@@ -25,6 +25,7 @@ import (
 	"siem/internal/agent/core"
 	"siem/internal/agent/limits"
 	"siem/internal/agent/logging"
+	"siem/internal/agent/logwatch"
 	"siem/internal/agent/secure"
 	"siem/internal/agent/shipper"
 	"siem/internal/agent/source"
@@ -286,6 +287,7 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	})
 
 	var sources []source.Source
+	var watched []logwatch.Channel
 	filters := map[string]map[uint32]bool{}
 	for _, ch := range cfg.Channels {
 		q, agentSide := winevt.BuildQuery(ch.EventIDs)
@@ -297,8 +299,19 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 			filters[ch.Name] = allowed
 			log.Warn("lista Event ID za długa dla XPath – filtr po stronie agenta", "channel", ch.Name, "ids", len(ch.EventIDs))
 		}
-		sources = append(sources, winevt.NewReader(ch.Name, q, cfg.StartAt, log))
+		reader := winevt.NewReader(ch.Name, q, cfg.StartAt, log)
+		reader.OnGap = tracker.Warn
+		sources = append(sources, reader)
+		watched = append(watched, logwatch.Channel{
+			Name:        ch.Name,
+			LastDrained: reader.LastDrained,
+			LastRead:    lastRead(tracker, ch.Name),
+		})
 	}
+
+	// Ostrzeżenie, zanim dziennik Windows nadpisze niewysłane zdarzenia (K3).
+	watcher := &logwatch.Watcher{Info: winevt.LogInfo, Channels: watched, Log: log, Warn: tracker.Warn,
+		Interval: time.Minute, WarnAt: 0.5, AlarmAt: 0.8}
 
 	sender := shipper.NewHTTPSender(client, cfg.Server.URL, filepath.Join(cfg.StateDir, "quarantine"), log)
 	if kbps := cfg.Limits.MaxSendKBps; kbps > 0 {
@@ -325,6 +338,10 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		tracker.Run(statusCtx, cfg.StateDir, 5*time.Second)
 		close(statusDone)
 	}()
+
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	go watcher.Run(watchCtx)
 
 	log.Info("agent uruchomiony", "version", version, "eventlog", true)
 	err = agent.Run(ctx)
@@ -433,4 +450,16 @@ func processCPUTime() time.Duration {
 
 func filetimeTicks(f windows.Filetime) int64 {
 	return int64(f.HighDateTime)<<32 | int64(f.LowDateTime)
+}
+
+// lastRead zwraca numer ostatniego przeczytanego rekordu kanału (ze statusu).
+func lastRead(t *status.Tracker, channel string) func() (uint64, bool) {
+	return func() (uint64, bool) {
+		for _, c := range t.Snapshot().Channels {
+			if c.Name == channel && c.LastRecordID > 0 {
+				return c.LastRecordID, true
+			}
+		}
+		return 0, false
+	}
 }
