@@ -82,9 +82,11 @@ export default function ArchiveExports() {
               <Title order={4}>Eksport dla audytora</Title>
             </Group>
             <Text size="sm" c="dimmed">
-              Paczka (.tar) z oryginalnymi segmentami z wybranych godzin archiwizacji, łańcuchem manifestów do najnowszego
-              i sumami SHA-256. Audytor sprawdza ją poleceniem <code>siem-archiver check-export plik.tar</code> albo
-              ręcznie według README w paczce. Zlecenie i każde pobranie trafiają do dziennika audytu.
+              Paczka (.tar) do przekazania np. audytorowi, CSIRT albo organowi nadzoru – czytelna bez Heimdalla: zdarzenia
+              z wybranych godzin jako NDJSON (pola ECS + oryginalny XML) i CSV, a jako dowód oryginalne segmenty, łańcuch
+              manifestów i sumy SHA-256. Odbiorca sprawdza ją dołączonym skryptem w Pythonie (
+              <code>narzedzia/odczytaj_segmenty.py</code>) albo poleceniem <code>siem-archiver check-export</code>. Zlecenie
+              i każde pobranie trafiają do dziennika audytu.
             </Text>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput

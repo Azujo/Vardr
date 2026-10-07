@@ -3,13 +3,17 @@ package urd
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"testing"
 	"time"
+
+	"siem/internal/contract"
 )
 
 func buildExport(t *testing.T, a *Archive, from, to time.Time) []byte {
@@ -20,7 +24,7 @@ func buildExport(t *testing.T, a *Archive, from, to time.Time) []byte {
 	}
 	var buf bytes.Buffer
 	j := ExportJob{ID: 7, RequestedBy: "adam", Reason: "kontrola NIS2", From: from, To: to}
-	j, err = a.WriteExport(context.Background(), j, p, &buf, "test")
+	j, err = a.WriteExport(context.Background(), j, p, &buf, ExportOptions{Version: "test", TempDir: t.TempDir(), Enrich: testEnrich})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +94,7 @@ func expectProblem(t *testing.T, c ExportCheck, want string) {
 }
 
 func TestExportRoundtripAndTamper(t *testing.T) {
-	a, _, _ := fill(t)
+	a, _, _ := fillReal(t)
 	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
 	to := from.Add(2 * time.Hour) // godziny 10:00 i 11:00 (z 4 manifestów)
 	data := buildExport(t, a, from, to)
@@ -142,4 +146,122 @@ func TestPlanExportEmptyRange(t *testing.T) {
 	if !ValidExportName(ExportName(ExportJob{ID: 3, From: from, To: from.Add(time.Hour)})) || ValidExportName("../../etc/passwd") {
 		t.Fatal("walidacja nazwy pliku eksportu")
 	}
+}
+
+// realBatch buduje paczkę agenta w formacie z załącznika A (gzip + JSON).
+func realBatch(t *testing.T, id string, n int) []byte {
+	t.Helper()
+	b := contract.Batch{Schema: "heimdall.batch/1", BatchID: id, AgentID: "agt-1"}
+	for i := range n {
+		b.Events = append(b.Events, contract.Event{ID: fmt.Sprintf("%s-e%d", id, i), Source: "Security",
+			Raw: fmt.Sprintf(`<Event><System><EventID>4625</EventID><Computer>PC-%d</Computer></System><EventData>%s/%d ąę</EventData></Event>`, i, id, i)})
+	}
+	data, _ := json.Marshal(b)
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, _ = zw.Write(data)
+	_ = zw.Close()
+	return buf.Bytes()
+}
+
+// fillReal: jak fill, ale z prawdziwymi paczkami agentów (2 zdarzenia w paczce).
+func fillReal(t *testing.T) (*Archive, *MemCatalog, *clock) {
+	t.Helper()
+	ctx := context.Background()
+	cat := NewMemCatalog()
+	clk := &clock{t: time.Date(2026, 10, 7, 10, 5, 0, 0, time.UTC)}
+	a := New(t.TempDir(), cat)
+	a.Now = clk.now
+	for h := range 3 {
+		for s := range 2 {
+			w, err := a.OpenSegment()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for r := range 3 {
+				id := fmt.Sprintf("b%d%d%d", h, s, r)
+				if err := w.Add(RecordMeta{Agent: "agt-1", Batch: id, ReceivedAt: clk.t}, realBatch(t, id, 2)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := w.Commit(ctx); err != nil {
+				t.Fatal(err)
+			}
+			clk.t = clk.t.Add(10 * time.Minute)
+		}
+		clk.t = clk.t.Add(time.Hour - 20*time.Minute)
+	}
+	if _, err := a.Seal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return a, cat, clk
+}
+
+func testEnrich(ev contract.Event, _ string, _ time.Time, r *Readable) {
+	r.Code, r.HostName = 4625, "pc-z-normalizatora"
+}
+
+func tarFile(t *testing.T, data []byte, name string) []byte {
+	t.Helper()
+	tr := tar.NewReader(bytes.NewReader(data))
+	for h, err := tr.Next(); err == nil; h, err = tr.Next() {
+		if h.Name == name {
+			b, _ := io.ReadAll(tr)
+			return b
+		}
+	}
+	t.Fatalf("brak pliku %s w paczce", name)
+	return nil
+}
+
+func TestExportReadablePart(t *testing.T) {
+	a, _, _ := fillReal(t)
+	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	data := buildExport(t, a, from, from.Add(2*time.Hour))
+	c := CheckExport(bytes.NewReader(data))
+	if !c.OK || c.Events != 24 {
+		t.Fatalf("paczka z częścią czytelną: %+v", c)
+	}
+
+	// NDJSON: pola ECS i oryginalny XML.
+	gz := tarFile(t, data, "zdarzenia/2026-10-07_10.ndjson.gz")
+	zr, err := gzip.NewReader(bytes.NewReader(gz))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, _ := io.ReadAll(zr)
+	first := strings.SplitN(string(lines), "\n", 2)[0]
+	var ev map[string]any
+	if err := json.Unmarshal([]byte(first), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev["event.code"] != float64(4625) || ev["host.name"] != "pc-z-normalizatora" || ev["winlog.channel"] != "Security" ||
+		!strings.HasPrefix(ev["event.original"].(string), "<Event>") || !strings.Contains(ev["event.original"].(string), "ąę") ||
+		ev["heimdall.batch_sha256"] == "" {
+		t.Fatalf("zdarzenie czytelne: %s", first)
+	}
+
+	// CSV: nagłówek + 24 wiersze, BOM dla Excela.
+	csvData := tarFile(t, data, "zdarzenia/zdarzenia.csv")
+	if !bytes.HasPrefix(csvData, []byte{0xEF, 0xBB, 0xBF}) || strings.Count(string(csvData), "\n") != 25 {
+		t.Fatalf("CSV: %q", csvData[:min(len(csvData), 200)])
+	}
+	if script := tarFile(t, data, "narzedzia/odczytaj_segmenty.py"); !bytes.Contains(script, []byte("HEIMURD1")) {
+		t.Fatal("brak skryptu sprawdzającego")
+	}
+
+	// Zmiana XML w części czytelnej (z przeliczonymi sumami) jest wykrywana.
+	forged := rewriteTar(t, data, map[string]func([]byte) []byte{
+		"zdarzenia/2026-10-07_10.ndjson.gz": func(b []byte) []byte {
+			zr, _ := gzip.NewReader(bytes.NewReader(b))
+			plain, _ := io.ReadAll(zr)
+			plain = bytes.Replace(plain, []byte("<EventID>4625"), []byte("<EventID>4624"), 1)
+			var out bytes.Buffer
+			zw := gzip.NewWriter(&out)
+			_, _ = zw.Write(plain)
+			_ = zw.Close()
+			return out.Bytes()
+		},
+	}, nil, true)
+	expectProblem(t, CheckExport(bytes.NewReader(forged)), "czytelne zdarzenia")
 }

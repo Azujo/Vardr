@@ -3,6 +3,7 @@ package urd
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,7 +32,7 @@ const (
 const MaxExportRange = 31 * 24 * time.Hour
 
 // ExportFormat identyfikuje wersję paczki eksportu.
-const ExportFormat = "heimdall-urd-export/1"
+const ExportFormat = "heimdall-urd-export/2"
 
 // ExportJob to zlecenie eksportu dla audytora: pełne godziny archiwizacji
 // [From, To), oryginalne segmenty z łańcuchem manifestów.
@@ -123,6 +124,7 @@ type exportInfo struct {
 	Manifests     []exportRef     `json:"manifests"`
 	Latest        exportRef       `json:"latest_manifest"`
 	Totals        exportTotals    `json:"totals"`
+	Readable      exportReadable  `json:"readable"`
 	Note          string          `json:"note"`
 	Chain         exportChainSpan `json:"chain"`
 }
@@ -139,6 +141,15 @@ type exportTotals struct {
 	Bytes    int64 `json:"bytes"`
 }
 
+// exportReadable opisuje czytelną część paczki (zdarzenia/).
+type exportReadable struct {
+	Events       int64    `json:"events"`
+	Unreadable   int64    `json:"unreadable_batches"`
+	Files        []string `json:"files"`
+	CSVRows      int      `json:"csv_rows"`
+	CSVTruncated bool     `json:"csv_truncated"`
+}
+
 type exportChainSpan struct {
 	FromSeq int64 `json:"from_seq"`
 	ToSeq   int64 `json:"to_seq"`
@@ -146,10 +157,25 @@ type exportChainSpan struct {
 
 func chainName(seq int64) string { return fmt.Sprintf("chain/%08d.json", seq) }
 
-// WriteExport zapisuje paczkę eksportu (tar) do w. Każdy segment jest przy
-// zapisie porównywany z sumą z manifestu – uszkodzone archiwum przerywa
-// eksport (najpierw trzeba wyjaśnić niezgodność).
-func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w io.Writer, version string) (ExportJob, error) {
+// ExportOptions to parametry zapisu paczki.
+type ExportOptions struct {
+	Version string
+	// TempDir: katalog plików roboczych (czytelne zdarzenia są zapisywane
+	// najpierw do pliku – nagłówek tar wymaga rozmiaru z góry).
+	TempDir string
+	Enrich  Enricher
+}
+
+// WriteExport zapisuje paczkę eksportu (tar) do w:
+//
+//   - segments/ i chain/ – oryginały i łańcuch manifestów (dowód),
+//   - zdarzenia/ – te same zdarzenia w czytelnej postaci (NDJSON z polami ECS
+//     i oryginalnym XML, CSV dla arkusza) – do odczytu bez Heimdalla,
+//   - narzedzia/ – niezależny skrypt sprawdzający (Python, biblioteka standardowa).
+//
+// Każdy segment jest przy zapisie porównywany z sumą z manifestu – uszkodzone
+// archiwum przerywa eksport (najpierw trzeba wyjaśnić niezgodność).
+func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w io.Writer, opt ExportOptions) (ExportJob, error) {
 	now := a.now()
 	tw := tar.NewWriter(w)
 	var sums bytes.Buffer
@@ -165,7 +191,7 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 
 	info := exportInfo{Format: ExportFormat, ExportID: j.ID, RequestedBy: j.RequestedBy, Reason: j.Reason,
-		RequestedAt: j.RequestedAt, CreatedAt: now, ServerVersion: version, From: j.From.UTC(), To: j.To.UTC(),
+		RequestedAt: j.RequestedAt, CreatedAt: now, ServerVersion: opt.Version, From: j.From.UTC(), To: j.To.UTC(),
 		Note:  "Zakres dotyczy godzin archiwizacji (czasu przyjęcia paczek przez serwer), nie czasu zdarzeń.",
 		Chain: exportChainSpan{FromSeq: p.Chain[0].Seq, ToSeq: p.Chain[len(p.Chain)-1].Seq}}
 	for _, m := range p.InRange {
@@ -176,16 +202,8 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 	last := p.Chain[len(p.Chain)-1]
 	info.Latest = exportRef{last.Seq, last.Hour.UTC(), last.SHA256}
-	infoJSON, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		return j, err
-	}
-	if err := add("README.txt", []byte(exportReadme)); err != nil {
-		return j, err
-	}
-	if err := add("export.json", append(infoJSON, '\n')); err != nil {
-		return j, err
-	}
+
+	// 1. Dowód: łańcuch manifestów i oryginalne segmenty.
 	for _, m := range p.Chain {
 		if err := add(chainName(m.Seq), m.Body); err != nil {
 			return j, err
@@ -201,6 +219,47 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 			}
 		}
 	}
+
+	// 2. Czytelne zdarzenia: plik NDJSON (gzip) na godzinę i jeden CSV.
+	csvFile, err := os.CreateTemp(opt.TempDir, "urd-csv-*")
+	if err != nil {
+		return j, err
+	}
+	defer os.Remove(csvFile.Name())
+	defer csvFile.Close()
+	sink, err := newCSVSink(csvFile)
+	if err != nil {
+		return j, err
+	}
+	for _, m := range p.InRange {
+		name := readableName(m.Hour)
+		if err := a.addReadableHour(ctx, tw, &sums, name, p.Bodies[m.Seq].Segments, opt, sink, &info.Readable, now); err != nil {
+			return j, err
+		}
+		info.Readable.Files = append(info.Readable.Files, name)
+	}
+	if err := sink.close(); err != nil {
+		return j, err
+	}
+	info.Readable.CSVRows, info.Readable.CSVTruncated = sink.rows, sink.full
+	if err := addFile(tw, &sums, "zdarzenia/zdarzenia.csv", csvFile, now); err != nil {
+		return j, err
+	}
+
+	// 3. Narzędzie, opis i spis sum.
+	if err := add("narzedzia/odczytaj_segmenty.py", readerScript); err != nil {
+		return j, err
+	}
+	infoJSON, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return j, err
+	}
+	if err := add("export.json", append(infoJSON, '\n')); err != nil {
+		return j, err
+	}
+	if err := add("README.txt", []byte(exportReadme)); err != nil {
+		return j, err
+	}
 	if err := tw.WriteHeader(&tar.Header{Name: "SHA256SUMS", Mode: 0o444, Size: int64(sums.Len()), ModTime: now, Format: tar.FormatPAX}); err != nil {
 		return j, err
 	}
@@ -212,6 +271,93 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 	j.Manifests, j.Segments, j.Records = len(p.InRange), info.Totals.Segments, info.Totals.Records
 	return j, nil
+}
+
+// addReadableHour zapisuje czytelne zdarzenia jednej godziny do pliku
+// roboczego (gzip), a potem dołącza go do paczki.
+func (a *Archive) addReadableHour(ctx context.Context, tw *tar.Writer, sums *bytes.Buffer, name string, segs []Segment,
+	opt ExportOptions, sink *csvSink, stats *exportReadable, now time.Time) error {
+	tmp, err := os.CreateTemp(opt.TempDir, "urd-ndjson-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	zw := gzip.NewWriter(tmp)
+	enc := json.NewEncoder(zw)
+	enc.SetEscapeHTML(false)
+	for _, s := range segs {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := a.forEachRecord(s, func(meta RecordMeta, payload []byte) error {
+			for _, r := range readableEvents(meta, payload, opt.Enrich) {
+				if r.Error != "" {
+					stats.Unreadable++
+				} else {
+					stats.Events++
+				}
+				if err := enc.Encode(r); err != nil {
+					return err
+				}
+				if err := sink.add(r); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	return addFile(tw, sums, name, tmp, now)
+}
+
+// forEachRecord czyta rekordy segmentu (sumy sprawdzono przy kopiowaniu).
+func (a *Archive) forEachRecord(s Segment, fn func(RecordMeta, []byte) error) error {
+	f, err := os.Open(a.abs(s.Path))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	r, err := NewReader(f)
+	if err != nil {
+		return err
+	}
+	for {
+		meta, payload, err := r.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("segment %s: %w", s.Path, err)
+		}
+		if err := fn(meta, payload); err != nil {
+			return err
+		}
+	}
+}
+
+// addFile dołącza do paczki plik roboczy (od początku).
+func addFile(tw *tar.Writer, sums *bytes.Buffer, name string, f *os.File, now time.Time) error {
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o444, Size: st.Size(), ModTime: now, Format: tar.FormatPAX}); err != nil {
+		return err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(tw, io.TeeReader(f, h)); err != nil {
+		return err
+	}
+	fmt.Fprintf(sums, "%s  %s\n", hex.EncodeToString(h.Sum(nil)), name)
+	return nil
 }
 
 func (a *Archive) addSegment(tw *tar.Writer, sums *bytes.Buffer, s Segment, now time.Time) error {
@@ -252,6 +398,7 @@ type ExportCheck struct {
 	Segments  int      `json:"segments"`
 	Records   int64    `json:"records"`
 	Latest    string   `json:"latest_manifest_sha256"`
+	Events    int64    `json:"events"`
 	Problems  []string `json:"problems"`
 }
 
@@ -278,6 +425,7 @@ func CheckExport(r io.Reader) ExportCheck {
 	segs := map[string]segInfo{}
 	var info exportInfo
 	var sumsFile []byte
+	var origDigest, readDigest eventDigest
 
 	tr := tar.NewReader(r)
 	for {
@@ -315,6 +463,13 @@ func CheckExport(r io.Reader) ExportCheck {
 					si.records++
 					if SumHex(payload) != meta.SHA256 || len(payload) != meta.Bytes {
 						si.broken++
+						continue
+					}
+					if b, err := DecodeBatch(payload); err == nil {
+						sum := SumHex(payload)
+						for _, ev := range b.Events {
+							origDigest.add(sum, ev.ID, ev.Raw)
+						}
 					}
 				}
 			}
@@ -323,6 +478,15 @@ func CheckExport(r io.Reader) ExportCheck {
 			si.sum = hex.EncodeToString(h.Sum(nil))
 			segs[name] = si
 			sums[name] = si.sum
+		case strings.HasPrefix(name, "zdarzenia/") && strings.HasSuffix(name, ".ndjson.gz"):
+			if err := readableDigestOf(body, &readDigest); err != nil {
+				p.add("%s: %v", name, err)
+			}
+			_, _ = io.Copy(io.Discard, body)
+			sums[name] = hex.EncodeToString(h.Sum(nil))
+		case strings.HasPrefix(name, "zdarzenia/"):
+			_, _ = io.Copy(io.Discard, body)
+			sums[name] = hex.EncodeToString(h.Sum(nil))
 		default:
 			data, err := io.ReadAll(body)
 			if err != nil {
@@ -372,7 +536,7 @@ func CheckExport(r io.Reader) ExportCheck {
 		}
 	}
 
-	if info.Format != ExportFormat {
+	if info.Format != ExportFormat && info.Format != "heimdall-urd-export/1" {
 		p.add("nieznany format paczki: %q", info.Format)
 	}
 	c.ExportID, c.From, c.To = info.ExportID, info.From.Format(time.RFC3339), info.To.Format(time.RFC3339)
@@ -450,40 +614,79 @@ func CheckExport(r io.Reader) ExportCheck {
 		p.add("segment %s nie należy do żadnego manifestu z zakresu", name)
 	}
 
+	// Czytelne zdarzenia (format 2) muszą odpowiadać oryginałom.
+	c.Events = origDigest.n
+	if info.Format != "heimdall-urd-export/1" && !readDigest.same(origDigest) {
+		p.add("czytelne zdarzenia (%d) nie odpowiadają oryginałom (%d) – zdarzenia/ zmienione albo niekompletne", readDigest.n, origDigest.n)
+	}
+
 	c.Problems = p.result()
 	c.OK = len(c.Problems) == 0
 	return c
 }
 
-const exportReadme = `Heimdall – eksport archiwum NIS2 (Urd) dla audytora
-=====================================================
+const exportReadme = `Heimdall – eksport archiwum NIS2 (Urd)
+======================================
 
-Zawartość paczki:
-  export.json   opis eksportu: kto, kiedy i w jakim celu zlecił, zakres godzin,
-                manifesty z zakresu i kotwica (hash najnowszego manifestu)
-  chain/        manifesty godzinowe od pierwszej godziny zakresu do najnowszej,
-                w dokładnie tej postaci, w jakiej zapisał je archiwizator
-  segments/     oryginalne segmenty archiwum (paczki agentów w postaci,
-                w jakiej przyszły na serwer, przed jakąkolwiek obróbką)
-  SHA256SUMS    sumy SHA-256 wszystkich plików powyżej
+Paczka zawiera logi w dwóch postaciach: CZYTELNEJ (do analizy w dowolnym
+narzędziu) i ORYGINALNEJ (dowód – bajt w bajt to, co przyszło od agentów),
+oraz sposób sprawdzenia, że jedno odpowiada drugiemu.
 
-Jak sprawdzić integralność:
-  1. sha256sum -c SHA256SUMS  – żaden plik nie został zmieniony.
-  2. Każdy manifest w chain/ zawiera "prev_sha256" równy SHA-256 pliku
-     poprzedniego manifestu – manifesty tworzą łańcuch.
-  3. Każdy segment w segments/ ma SHA-256 i rozmiar równe wpisowi w swoim
-     manifeście.
-  4. SHA-256 najnowszego manifestu (latest_manifest w export.json) warto
-     porównać z wartością zapisaną niezależnie (np. w protokole przekazania
-     albo w wydruku z panelu z dnia eksportu).
+1. Zdarzenia do odczytu – katalog zdarzenia/
+---------------------------------------------
+  zdarzenia/RRRR-MM-DD_GG.ndjson.gz
+      Jedna linia = jedno zdarzenie (JSON), plik na każdą godzinę
+      archiwizacji (UTC), skompresowany gzip. Pola według Elastic Common
+      Schema, m.in.:
+        @timestamp          czas zdarzenia (UTC)
+        host.name           komputer
+        event.code          Event ID Windows (np. 4625 – nieudane logowanie)
+        event.action        opis czynności, event.outcome – success/failure
+        user.name, user.domain, source.ip, process.name, winlog.channel
+        agent.id, event.ingested   agent i czas przyjęcia przez serwer
+        event.original      PEŁNY oryginalny zapis zdarzenia (XML Windows)
+        heimdall.batch_sha256      suma paczki agenta, z której pochodzi zdarzenie
+      Odczyt: zcat plik.ndjson.gz | less, jq, 7-Zip; import do Elastic,
+      Splunk, OpenSearch, Sentinel itp. jako NDJSON/JSON lines.
 
-Wszystkie kroki wykonuje automatycznie polecenie:
-  siem-archiver check-export <plik.tar>
+  zdarzenia/zdarzenia.csv
+      Najważniejsze pola w tabeli dla arkusza kalkulacyjnego (UTF-8,
+      separator średnik; najwyżej 1 000 000 wierszy – liczba w export.json).
+      Pełny XML zdarzenia jest w plikach NDJSON (kolumna id_zdarzenia).
+
+2. Dowód – oryginały i łańcuch
+------------------------------
+  segments/   oryginalne segmenty archiwum – paczki agentów w postaci,
+              w jakiej przyszły na serwer, przed jakąkolwiek obróbką
+  chain/      manifesty godzinowe od pierwszej godziny zakresu do najnowszej;
+              każdy zawiera sumy SHA-256 segmentów i SHA-256 poprzedniego
+              manifestu (łańcuch – usunięcie lub zmiana danych go przerywa)
+  export.json kto, kiedy i w jakim celu zlecił eksport, zakres, liczby,
+              kotwica (SHA-256 najnowszego manifestu)
+  SHA256SUMS  sumy SHA-256 wszystkich plików paczki
+
+3. Sprawdzenie – bez Heimdalla
+------------------------------
+  python3 narzedzia/odczytaj_segmenty.py <ta_paczka.tar>
+      (Python 3.8+, tylko biblioteka standardowa) sprawdza:
+        - sumy wszystkich plików (SHA256SUMS),
+        - ciągłość łańcucha manifestów i kotwicę,
+        - każdy segment względem manifestu i każdą paczkę względem jej sumy,
+        - że zdarzenia/*.ndjson.gz zawierają DOKŁADNIE te same zdarzenia
+          (identyfikatory i oryginalny XML) co oryginalne segmenty.
+  python3 narzedzia/odczytaj_segmenty.py <ta_paczka.tar> --wypisz
+      wypisuje zdarzenia odczytane wprost z oryginałów (bez części czytelnej).
+
+  Ręcznie: sha256sum -c SHA256SUMS; dalsze kroki jak wyżej.
+  SHA-256 najnowszego manifestu (kotwicę) warto porównać z wartością
+  zapisaną niezależnie, np. w protokole przekazania lub wydruku z panelu.
 
 Format segmentu: nagłówek "HEIMURD1", potem rekordy: uint32 BE długość
 metadanych, metadane JSON (agent, identyfikator paczki, czas przyjęcia,
-SHA-256 treści), uint32 BE długość treści, treść (paczka agenta, zwykle gzip).
+SHA-256 treści), uint32 BE długość treści, treść – paczka agenta (gzip,
+JSON: {"events": [{"id", "source" (kanał), "raw" (XML zdarzenia)}]}).
 
 Zakres eksportu dotyczy godzin archiwizacji (czasu przyjęcia paczek przez
-serwer), nie czasu zdarzeń zapisanego w logach.
+serwer), nie czasu zdarzeń. Pola znormalizowane (host.name, user.name itd.)
+wylicza Heimdall; rozstrzygający jest zawsze oryginał w event.original.
 `

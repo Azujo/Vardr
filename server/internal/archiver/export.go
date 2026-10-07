@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"siem/internal/contract"
 	"siem/internal/urd"
+	"siem/server/internal/normalize"
 )
 
 // ExportStore to zlecenia eksportu w spisie (implementuje urd.PG).
@@ -40,6 +42,12 @@ type Exporter struct {
 
 // Run sprawdza zlecenia co 15 s i co godzinę usuwa stare paczki.
 func (e *Exporter) Run(ctx context.Context) {
+	for _, pattern := range []string{"urd-ndjson-*", "urd-csv-*", "*.tar.tmp"} {
+		left, _ := filepath.Glob(filepath.Join(e.Dir, pattern))
+		for _, f := range left {
+			_ = os.Remove(f) // pozostałości po przerwanym eksporcie
+		}
+	}
 	if n, err := e.Store.FailInterruptedExports(ctx); err != nil {
 		e.Log.Warn("oznaczanie przerwanych eksportów nieudane", "err", err)
 	} else if n > 0 {
@@ -96,9 +104,11 @@ func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 	if err != nil {
 		return fail(err)
 	}
-	if free, _, err := diskUsageFn(e.Dir); err == nil && free < uint64(plan.Bytes)+e.MinFreeBytes+64<<20 {
+	// Paczka: oryginały + czytelne zdarzenia (NDJSON gzip ≈ oryginały, CSV ≈ 2×)
+	// + pliki robocze – szacunkowo 4× rozmiar oryginałów.
+	if free, _, err := diskUsageFn(e.Dir); err == nil && free < 4*uint64(plan.Bytes)+e.MinFreeBytes+64<<20 {
 		return fail(fmt.Errorf("za mało miejsca na paczkę: potrzeba %.1f GB, wolne %.1f GB",
-			float64(plan.Bytes)/(1<<30), float64(free)/(1<<30)))
+			float64(4*plan.Bytes)/(1<<30), float64(free)/(1<<30)))
 	}
 
 	name := urd.ExportName(j)
@@ -109,7 +119,7 @@ func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 	}
 	h := sha256.New()
 	cw := &countingWriter{w: io.MultiWriter(f, h)}
-	j, err = e.A.WriteExport(ctx, j, plan, cw, e.Version)
+	j, err = e.A.WriteExport(ctx, j, plan, cw, urd.ExportOptions{Version: e.Version, TempDir: e.Dir, Enrich: NormalizerEnricher})
 	if err == nil {
 		err = f.Sync()
 	}
@@ -158,4 +168,17 @@ func (c *countingWriter) Write(b []byte) (int, error) {
 	n, err := c.w.Write(b)
 	c.n += int64(n)
 	return n, err
+}
+
+// NormalizerEnricher uzupełnia czytelne zdarzenia eksportu polami
+// z normalizatora serwera (te same, co w bazie zdarzeń).
+func NormalizerEnricher(ev contract.Event, agentID string, received time.Time, r *urd.Readable) {
+	e, err := normalize.Event(ev, agentID, received)
+	if err != nil {
+		return
+	}
+	r.Timestamp = e.Timestamp.UTC().Format(time.RFC3339Nano)
+	r.HostName, r.Code, r.Dataset, r.Provider = e.HostName, e.Code, e.Dataset, e.Provider
+	r.Action, r.Outcome, r.UserName, r.UserDomain = e.Action, e.Outcome, e.UserName, e.UserDomain
+	r.SourceIP, r.ProcessName, r.CommandLine, r.TimeQuality = e.SourceIP, e.ProcessName, e.CommandLine, e.TimeQuality
 }

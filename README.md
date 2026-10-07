@@ -515,13 +515,20 @@ Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIV
 
 ### Eksport dla audytora (Urd)
 
-Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczka zawiera:
+Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczkę da się w całości odczytać i sprawdzić **bez Heimdalla**, np. przy zgłoszeniu incydentu do CSIRT albo organu nadzoru. Zawiera:
 
-- oryginalne segmenty z zakresu;
-- manifesty od pierwszej godziny zakresu do najnowszego: łańcuch z kotwicą;
-- `export.json`: kto, kiedy, po co i jaki zakres;
-- `README.txt` z opisem sprawdzenia;
-- `SHA256SUMS`.
+- **Zdarzenia do odczytu** (`zdarzenia/`):
+  - `RRRR-MM-DD_GG.ndjson.gz`: jedno zdarzenie w linii, pola według Elastic Common Schema (`@timestamp`, `host.name`, `event.code`, `user.name`, `source.ip`…). Pełny oryginalny XML Windows jest w `event.original`. Plik da się wczytać do Elastic, Splunk czy Sentinel albo przeglądać przez `zcat` i `jq`.
+  - `zdarzenia.csv`: najważniejsze kolumny dla Excela (UTF-8, separator średnik, do miliona wierszy).
+- **Dowód** (`segments/`, `chain/`): oryginalne segmenty, bajt w bajt to, co przyszło od agentów, oraz manifesty od pierwszej godziny zakresu do najnowszego (łańcuch z kotwicą).
+- **Sprawdzenie** (`narzedzia/odczytaj_segmenty.py`): skrypt na samą bibliotekę standardową Pythona 3. Sprawdza:
+  - sumy plików;
+  - łańcuch;
+  - segmenty i każdą paczkę;
+  - że część czytelna zawiera dokładnie te same zdarzenia, czyli identyfikatory i oryginalny XML, co oryginały.
+
+  Z opcją `--wypisz` czyta zdarzenia wprost z oryginałów.
+- `export.json` (kto, kiedy, po co i jaki zakres), `README.txt` dla odbiorcy i `SHA256SUMS`.
 
 Przy zapisie każdy segment jest porównywany z manifestem, więc niezgodne archiwum przerywa eksport. Panel pokazuje SHA-256 całej paczki, który warto wpisać do protokołu przekazania. Zlecenie i każde pobranie trafiają do audytu, a paczki są usuwane po 7 dniach (`SIEM_ARCHIVE_EXPORT_KEEP_DAYS`).
 
@@ -533,12 +540,13 @@ Sprawdzenie paczki bez dostępu do systemu:
 siem-archiver check-export urd-eksport-1-2026100710-2026100716.tar
 ```
 
-Polecenie sprawdza:
+Polecenie Heimdalla sprawdza to samo co skrypt, czyli:
 
 - sumy plików;
 - ciągłość łańcucha;
 - zgodność segmentów z manifestami;
-- sumę każdej paczki agenta.
+- sumę każdej paczki agenta;
+- zgodność części czytelnej z oryginałami.
 
 Kod wyjścia 1 oznacza niezgodności. Na końcu polecenie wypisuje kotwicę, czyli SHA-256 najnowszego manifestu, do porównania z wartością zapisaną niezależnie. Bez programu audytor może sprawdzić paczkę ręcznie według `README.txt`, zaczynając od `sha256sum -c SHA256SUMS`.
 
