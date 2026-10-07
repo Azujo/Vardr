@@ -170,6 +170,28 @@ func TestPostgresCatalog(t *testing.T) {
 		t.Fatalf("brak eksportu: %v", err)
 	}
 
+	// Zlecenia odtworzenia.
+	rp, err := db.CreateReplay(ctx, "adam", "analiza incydentu", from, from.Add(time.Hour), []string{"agt-1"})
+	if err != nil || rp.Status != ReplayPending || len(rp.Agents) != 1 {
+		t.Fatalf("zlecenie odtworzenia: %+v %v", rp, err)
+	}
+	if _, err := db.CreateReplay(ctx, "adam", "bez agentów", from, from.Add(time.Hour), nil); err != nil {
+		t.Fatalf("odtworzenie wszystkich agentów: %v", err)
+	}
+	claimed, ok, err := db.ClaimReplay(ctx)
+	if err != nil || !ok || claimed.ID != rp.ID || claimed.Status != ReplayRunning {
+		t.Fatalf("pobranie odtworzenia: %+v %v %v", claimed, ok, err)
+	}
+	if err := db.ReplayProgress(ctx, claimed.ID, ReplayStats{Batches: 3, Skipped: 1, Bytes: 100}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := db.FailInterruptedReplays(ctx); err != nil || n != 1 {
+		t.Fatalf("przerwane odtworzenia: %d %v", n, err)
+	}
+	if list, err := db.Replays(ctx, 10); err != nil || len(list) != 2 || list[1].Status != ReplayFailed || list[1].Batches != 3 {
+		t.Fatalf("lista odtworzeń: %+v %v", list, err)
+	}
+
 	// Panel przed pierwszym uruchomieniem archiwizatora.
 	if _, err := db.pool.Exec(ctx, "DROP SCHEMA urd CASCADE"); err != nil {
 		t.Fatal(err)

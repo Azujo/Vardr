@@ -55,6 +55,7 @@ services:
       SIEM_PANEL_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
       SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
       SIEM_RAW_TTL_DAYS: ${SIEM_RAW_TTL_DAYS:-5}
+      SIEM_REPLAY_TTL_DAYS: ${SIEM_REPLAY_TTL_DAYS:-7}
     volumes:
       - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
       - ./clickhouse/config.d/siem.xml:/etc/clickhouse-server/config.d/siem.xml:ro
@@ -111,6 +112,38 @@ services:
       nats: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
     mem_limit: 512m
+
+  # Ścieżka odtwarzania z archiwum (replay): te same programy, osobne strumienie
+  # (SIEM_REPLAY_RAW → SIEM_REPLAY_EVENTS) i osobna tabela siem.events_replay.
+  # Bez zleceń odtwarzania czekają bezczynnie.
+  normalizer-replay:
+    <<: *server
+    build: { context: ., args: { BIN: siem-normalizer } }
+    image: siem/normalizer:lab
+    environment:
+      <<: *server-env
+      SIEM_PIPELINE: replay
+      SIEM_NORMALIZER_WORKERS: "2"   # odtwarzanie nie zabiera CPU bieżącym zdarzeniom
+      GOGC: "200"
+      GOMEMLIMIT: 200MiB
+    mem_limit: 256m
+
+  writer-replay:
+    <<: *server
+    build: { context: ., args: { BIN: siem-writer } }
+    image: siem/writer:lab
+    environment:
+      <<: *server-env
+      SIEM_PIPELINE: replay
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_writer
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      GOGC: "200"
+      GOMEMLIMIT: 200MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 256m
 
   # Urd – archiwum NIS2: oryginalne paczki agentów, godzinowe manifesty
   # z łańcuchem hashy (spis w Sadze, schemat urd), okresowa weryfikacja.

@@ -112,7 +112,7 @@ func (s *Searcher) Search(ctx context.Context, p Parsed, from, to time.Time, bef
 	// Duplikaty (ReplacingMergeTree usuwa je dopiero przy scalaniu) usuwamy
 	// niżej – „LIMIT 1 BY event_id” zapamiętywał identyfikatory WSZYSTKICH
 	// zdarzeń z zakresu i przy 7 dniach przekraczał pamięć serwera.
-	sql := `SELECT ` + listCols + ` FROM siem.events WHERE ` + w +
+	sql := `SELECT ` + listCols + ` FROM ` + table(p.Replay) + ` WHERE ` + w +
 		` ORDER BY timestamp DESC, event_id DESC LIMIT ?`
 	args = append(args, limit+dupSlack)
 	rows, err := s.Conn.Query(ctx, sql, args...)
@@ -163,7 +163,7 @@ func (s *Searcher) Histogram(ctx context.Context, p Parsed, from, to time.Time) 
 	// count(), nie uniqExact: duplikaty (przed scaleniem ReplacingMergeTree) są
 	// rzadkie, a dokładne liczenie unikalnych jest wielokrotnie wolniejsze.
 	sql := `SELECT toStartOfInterval(timestamp, toIntervalSecond(?)) AS t, count()
-		FROM siem.events WHERE ` + w + ` GROUP BY t ORDER BY t`
+		FROM ` + table(p.Replay) + ` WHERE ` + w + ` GROUP BY t ORDER BY t`
 	rows, err := s.Conn.Query(ctx, sql, append([]any{int64(step.Seconds())}, args...)...)
 	if err != nil {
 		return nil, step, 0, err
@@ -183,9 +183,9 @@ func (s *Searcher) Histogram(ctx context.Context, p Parsed, from, to time.Time) 
 }
 
 // Get zwraca pełne zdarzenie; ts (z listy) zawęża wyszukiwanie.
-func (s *Searcher) Get(ctx context.Context, id string, ts time.Time) (Detail, error) {
+func (s *Searcher) Get(ctx context.Context, id string, ts time.Time, replay bool) (Detail, error) {
 	sql := `SELECT ` + listCols + `, ingested, event_provider, process_command_line, fields, raw, truncated, parser_version, time_quality
-		FROM siem.events WHERE event_id = ? AND timestamp >= ? AND timestamp <= ? LIMIT 1`
+		FROM ` + table(replay) + ` WHERE event_id = ? AND timestamp >= ? AND timestamp <= ? LIMIT 1`
 	row := s.Conn.QueryRow(ctx, sql, id, ts.Add(-time.Second), ts.Add(time.Second))
 	var d Detail
 	e := &d.Event
@@ -199,4 +199,12 @@ func (s *Searcher) Get(ctx context.Context, id string, ts time.Time) (Detail, er
 		return d, err
 	}
 	return d, nil
+}
+
+// table wybiera tabelę: bieżące zdarzenia albo odtworzone z archiwum.
+func table(replay bool) string {
+	if replay {
+		return "siem.events_replay"
+	}
+	return "siem.events"
 }

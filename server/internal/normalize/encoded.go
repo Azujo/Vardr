@@ -18,7 +18,10 @@ var ErrUnreadable = errors.New("nieczytelna wiadomość")
 // Encoded to pełna ścieżka normalizatora dla jednej wiadomości: rozpakowanie
 // paczki agenta, normalizacja i spakowanie wyniku (model.Batch, gzip+JSON).
 // Wydzielona z programu, żeby dało się ją mierzyć bez NATS.
-func Encoded(gz []byte, agentID string, receivedAt time.Time, maxDecompressed int64) ([]byte, model.Batch, error) {
+//
+// replayID ≠ 0 oznacza paczkę odtworzoną z archiwum: zdarzenia dostają
+// numer zlecenia, a wpisy kwarantanny źródło z przedrostkiem „replay/”.
+func Encoded(gz []byte, agentID string, receivedAt time.Time, replayID uint32, maxDecompressed int64) ([]byte, model.Batch, error) {
 	data, err := bus.Gunzip(gz, maxDecompressed)
 	if err != nil {
 		return nil, model.Batch{}, errors.Join(ErrUnreadable, err)
@@ -28,6 +31,14 @@ func Encoded(gz []byte, agentID string, receivedAt time.Time, maxDecompressed in
 		return nil, model.Batch{}, errors.Join(ErrUnreadable, err)
 	}
 	nb := Batch(b, agentID, receivedAt)
+	if replayID != 0 {
+		for i := range nb.Events {
+			nb.Events[i].ReplayID = replayID
+		}
+		for i := range nb.Quarantine {
+			nb.Quarantine[i].Source = "replay/" + nb.Quarantine[i].Source
+		}
+	}
 	var out bytes.Buffer
 	out.Grow(len(data) + len(data)/2)
 	enc := json.NewEncoder(&out)

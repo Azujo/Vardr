@@ -38,7 +38,7 @@ func BenchmarkEncoded(b *testing.B) {
 	gz := loadBatch(b)
 	b.ReportAllocs()
 	for b.Loop() {
-		if _, _, err := Encoded(gz, "agt-load-0001", time.Now(), 16<<20); err != nil {
+		if _, _, err := Encoded(gz, "agt-load-0001", time.Now(), 0, 16<<20); err != nil {
 			b.Fatal(err)
 		}
 	}

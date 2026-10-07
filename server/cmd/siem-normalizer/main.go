@@ -6,9 +6,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,13 +48,19 @@ func run(log *slog.Logger) error {
 	}
 	defer nc.Close()
 
+	// SIEM_PIPELINE=replay: kopia normalizatora dla paczek odtwarzanych
+	// z archiwum (SIEM_REPLAY_RAW → SIEM_REPLAY_EVENTS).
+	pl, err := bus.PipelineByName(os.Getenv("SIEM_PIPELINE"))
+	if err != nil {
+		return err
+	}
 	var cons jetstream.Consumer
-	if err := svc.Retry(ctx, log, "konsument SIEM_RAW", func() error {
-		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
+	if err := svc.Retry(ctx, log, "konsument "+pl.RawStream, func() error {
+		if err := pl.Ensure(ctx, js, limits); err != nil {
 			return err
 		}
 		var err error
-		cons, err = js.Consumer(ctx, bus.StreamRaw, bus.ConsumerNormalizer)
+		cons, err = js.Consumer(ctx, pl.RawStream, pl.Normalizer)
 		return err
 	}); err != nil {
 		return err
@@ -63,13 +71,13 @@ func run(log *slog.Logger) error {
 	defer statsTick.Stop()
 	m := metrics.NewNormalizer()
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
-	go queue.Watch(ctx, log, js, bus.StreamRaw, bus.ConsumerNormalizer, 0.5, 0.8, metrics.NewQueue())
+	go queue.Watch(ctx, log, js, pl.RawStream, pl.Normalizer, 0.5, 0.8, metrics.NewQueue())
 	workers, err := svc.EnvInt("SIEM_NORMALIZER_WORKERS", runtime.GOMAXPROCS(0))
 	if err != nil {
 		return err
 	}
 	workers = max(1, workers)
-	log.Info("normalizator uruchomiony", "workers", workers)
+	log.Info("normalizator uruchomiony", "pipeline", pl.Name, "workers", workers)
 
 	// Paczki są przetwarzane równolegle (etap 1.5, W1): normalizacja zajmuje
 	// CPU, a publikacja czeka na potwierdzenie NATS – jedna paczka naraz
@@ -77,7 +85,7 @@ func run(log *slog.Logger) error {
 	// potwierdzana osobno, a ponowienie daje duplikat odrzucany przez JetStream.
 	handle := func(msg jetstream.Msg) {
 		start := time.Now()
-		n, q, err := process(ctx, js, msg)
+		n, q, err := process(ctx, js, pl, msg)
 		switch {
 		case errors.Is(err, normalize.ErrUnreadable):
 			log.Error("nieczytelna paczka w kolejce – pominięta", "subject", msg.Subject(), "err", err)
@@ -131,23 +139,36 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-func process(ctx context.Context, js jetstream.JetStream, msg jetstream.Msg) (events, quarantined int, err error) {
+func process(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, msg jetstream.Msg) (events, quarantined int, err error) {
 	h := msg.Headers()
 	agentID := h.Get(bus.HdrAgent)
 	receivedAt, terr := time.Parse(time.RFC3339Nano, h.Get(bus.HdrReceivedAt))
 	if agentID == "" || terr != nil {
 		return 0, 0, errors.Join(normalize.ErrUnreadable, errors.New("brak nagłówków agenta lub czasu"))
 	}
-	gz, nb, err := normalize.Encoded(msg.Data(), agentID, receivedAt, ingest.MaxDecompressed)
+	var replayID uint32
+	if v := h.Get(bus.HdrReplay); v != "" {
+		id, perr := strconv.ParseUint(v, 10, 32)
+		if perr != nil || id == 0 {
+			return 0, 0, errors.Join(normalize.ErrUnreadable, fmt.Errorf("niepoprawny nagłówek %s: %q", bus.HdrReplay, v))
+		}
+		replayID = uint32(id)
+	}
+	gz, nb, err := normalize.Encoded(msg.Data(), agentID, receivedAt, replayID, ingest.MaxDecompressed)
 	if err != nil {
 		return 0, 0, err
 	}
-	pub := &nats.Msg{Subject: bus.EventsSubject(agentID), Data: gz, Header: nats.Header{}}
+	pub := &nats.Msg{Subject: pl.EventsSubject(agentID), Data: gz, Header: nats.Header{}}
 	pub.Header.Set(bus.HdrAgent, agentID)
 	pub.Header.Set(bus.HdrBatch, nb.BatchID)
 	pub.Header.Set(bus.HdrEncoding, "gzip")
 	// Ten sam identyfikator przy ponownym przetworzeniu = duplikat odrzucony przez JetStream.
-	if _, err := js.PublishMsg(ctx, pub, jetstream.WithMsgID(nb.BatchID)); err != nil {
+	msgID := nb.BatchID
+	if replayID != 0 {
+		pub.Header.Set(bus.HdrReplay, strconv.FormatUint(uint64(replayID), 10))
+		msgID = fmt.Sprintf("replay-%d-%s", replayID, nb.BatchID)
+	}
+	if _, err := js.PublishMsg(ctx, pub, jetstream.WithMsgID(msgID)); err != nil {
 		return 0, 0, err
 	}
 	return len(nb.Events), len(nb.Quarantine), nil

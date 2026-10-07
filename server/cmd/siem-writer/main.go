@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,12 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// SIEM_PIPELINE=replay: kopia writera dla zdarzeń odtworzonych z archiwum
+	// (strumień SIEM_REPLAY_EVENTS → tabela siem.events_replay).
+	pl, err := bus.PipelineByName(os.Getenv("SIEM_PIPELINE"))
+	if err != nil {
+		return err
+	}
 	maxRows, err := svc.EnvInt("SIEM_WRITER_MAX_ROWS", 20000)
 	if err != nil {
 		return err
@@ -63,12 +70,13 @@ func run(log *slog.Logger) error {
 	}
 	defer nc.Close()
 	var cons jetstream.Consumer
-	if err := svc.Retry(ctx, log, "konsument SIEM_EVENTS", func() error {
-		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
+	w.Replay = pl.Name == bus.Replay.Name
+	if err := svc.Retry(ctx, log, "konsument "+pl.EventsStream, func() error {
+		if err := pl.Ensure(ctx, js, limits); err != nil {
 			return err
 		}
 		var err error
-		cons, err = js.Consumer(ctx, bus.StreamEvents, bus.ConsumerWriter)
+		cons, err = js.Consumer(ctx, pl.EventsStream, pl.Writer)
 		return err
 	}); err != nil {
 		return err
@@ -76,8 +84,8 @@ func run(log *slog.Logger) error {
 
 	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), m: metrics.NewWriter()}
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
-	go queue.Watch(ctx, log, js, bus.StreamEvents, bus.ConsumerWriter, 0.5, 0.8, metrics.NewQueue())
-	log.Info("zapis do ClickHouse uruchomiony", "max_rows", maxRows, "flush_every", flushEvery)
+	go queue.Watch(ctx, log, js, pl.EventsStream, pl.Writer, 0.5, 0.8, metrics.NewQueue())
+	log.Info("zapis do ClickHouse uruchomiony", "pipeline", pl.Name, "table", pl.Table, "max_rows", maxRows, "flush_every", flushEvery)
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
 
@@ -171,7 +179,7 @@ func (p *pipeline) add(cur *pending, msg jetstream.Msg) {
 	cur.msgs = append(cur.msgs, msg)
 	p.seenMu.Lock()
 	for _, e := range b.Events {
-		if p.seen.Has(e.ID) {
+		if p.seen.Has(seenKey(e)) {
 			p.dups.Add(1)
 			p.m.Duplicates.Inc()
 			continue
@@ -193,7 +201,7 @@ func (p *pipeline) flush(ctx context.Context, r *pending) {
 		// Zapisane od razu oznaczamy – po ponownym dostarczeniu zostaną pominięte.
 		p.seenMu.Lock()
 		for _, e := range ok {
-			p.seen.Add(e.ID)
+			p.seen.Add(seenKey(e))
 		}
 		p.seenMu.Unlock()
 		p.rows.Add(int64(len(ok)))
@@ -227,4 +235,14 @@ func (p *pipeline) flush(ctx context.Context, r *pending) {
 	}
 	p.quarantined.Add(int64(len(quarantine)))
 	p.m.Quarantined.Add(float64(len(quarantine)))
+}
+
+// seenKey: klucz zbioru zapisanych zdarzeń. Na ścieżce replay to samo
+// zdarzenie może zostać odtworzone w kilku zleceniach – każde zapisuje je
+// ze swoim numerem.
+func seenKey(e model.Event) string {
+	if e.ReplayID != 0 {
+		return strconv.FormatUint(uint64(e.ReplayID), 10) + ":" + e.ID
+	}
+	return e.ID
 }

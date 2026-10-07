@@ -30,6 +30,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import ArchiveExports from "./ArchiveExports";
+import ArchiveReplays from "./ArchiveReplays";
 
 function hourLabel(iso?: string) {
   if (!iso) return "—";
@@ -360,6 +361,7 @@ export default function ArchivePage() {
             <Tabs.Tab value="manifests">Manifesty ({data.manifests?.length ?? 0})</Tabs.Tab>
             <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
             {user?.role === "admin" && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
+            {user?.role === "admin" && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="manifests" pt="sm">
             {data.manifests?.length ? (
@@ -382,6 +384,11 @@ export default function ArchivePage() {
           {user?.role === "admin" && (
             <Tabs.Panel value="exports" pt="sm">
               <ArchiveExports />
+            </Tabs.Panel>
+          )}
+          {user?.role === "admin" && (
+            <Tabs.Panel value="replays" pt="sm">
+              <ArchiveReplays />
             </Tabs.Panel>
           )}
         </Tabs>

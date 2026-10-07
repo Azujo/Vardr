@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ type ArchiveReader interface {
 	CreateExport(ctx context.Context, by, reason string, from, to time.Time) (urd.ExportJob, error)
 	Exports(ctx context.Context, limit int) ([]urd.ExportJob, error)
 	ExportByID(ctx context.Context, id int64) (urd.ExportJob, error)
+	CreateReplay(ctx context.Context, by, reason string, from, to time.Time, agents []string) (urd.ReplayJob, error)
+	Replays(ctx context.Context, limit int) ([]urd.ReplayJob, error)
 }
 
 // Stan zgodności archiwum (pole compliance).
@@ -242,4 +245,80 @@ func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-SHA256", j.SHA256)
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, j.FileName, st.ModTime(), f)
+}
+
+type replayRequest struct {
+	From   time.Time `json:"from"`
+	To     time.Time `json:"to"`
+	Agents []string  `json:"agents"`
+	Reason string    `json:"reason"`
+}
+
+func (s *Server) listReplays(w http.ResponseWriter, r *http.Request) {
+	if !s.archiveEnabled(w) {
+		return
+	}
+	jobs, err := s.Archive.Replays(r.Context(), 50)
+	if errors.Is(err, urd.ErrNotConfigured) {
+		jobs, err = nil, nil
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if jobs == nil {
+		jobs = []urd.ReplayJob{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"replays": jobs})
+}
+
+// createReplay zleca odtworzenie paczek z archiwum do osobnej tabeli
+// (siem.events_replay) – np. do analizy danych starszych niż retencja
+// bazy zdarzeń. Wymaga powodu (audyt dostępu do archiwum).
+func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
+	if !s.archiveEnabled(w) {
+		return
+	}
+	a := current(r)
+	var req replayRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	from, to := req.From.UTC().Truncate(time.Hour), req.To.UTC().Truncate(time.Hour)
+	if req.To.After(to) {
+		to = to.Add(time.Hour)
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	agents := make([]string, 0, len(req.Agents))
+	for _, ag := range req.Agents {
+		if ag = strings.TrimSpace(ag); ag != "" && !slices.Contains(agents, ag) {
+			agents = append(agents, ag)
+		}
+	}
+	switch {
+	case req.From.IsZero() || req.To.IsZero() || !to.After(from):
+		writeError(w, http.StatusBadRequest, "bad_range", "podaj początek i koniec zakresu (koniec po początku)")
+		return
+	case to.Sub(from) > urd.MaxExportRange:
+		writeError(w, http.StatusBadRequest, "bad_range", "zakres odtworzenia może mieć najwyżej 31 dni")
+		return
+	case len(agents) > 100:
+		writeError(w, http.StatusBadRequest, "bad_agents", "najwyżej 100 agentów w jednym zleceniu")
+		return
+	case len([]rune(req.Reason)) < 5 || len(req.Reason) > 1000:
+		writeError(w, http.StatusBadRequest, "bad_reason", "podaj powód odtworzenia (5–1000 znaków) – trafi do audytu")
+		return
+	}
+	j, err := s.Archive.CreateReplay(r.Context(), a.user.Username, req.Reason, from, to, agents)
+	if errors.Is(err, urd.ErrNotConfigured) {
+		writeError(w, http.StatusConflict, "archive_not_configured", "archiwizator jeszcze nie działał – nie ma czego odtwarzać")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.audit(r, &a.user, "archive_replay_requested", "urd", map[string]any{
+		"replay_id": j.ID, "from": from, "to": to, "agents": agents, "reason": req.Reason})
+	writeJSON(w, http.StatusAccepted, map[string]any{"replay": j})
 }

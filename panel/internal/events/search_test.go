@@ -88,11 +88,11 @@ func TestSearchClickHouse(t *testing.T) {
 	}
 	t.Logf("histogram: %d słupków po %v, razem %d", len(buckets), step, total)
 
-	d, err := s.Get(ctx, page1[0].ID, page1[0].Timestamp)
+	d, err := s.Get(ctx, page1[0].ID, page1[0].Timestamp, false)
 	if err != nil || d.ID != page1[0].ID || len(d.Fields) == 0 {
 		t.Fatalf("szczegóły: %+v %v", d.Event, err)
 	}
-	if _, err := s.Get(ctx, "nie-ma-takiego", page1[0].Timestamp); err != ErrNotFound {
+	if _, err := s.Get(ctx, "nie-ma-takiego", page1[0].Timestamp, false); err != ErrNotFound {
 		t.Fatalf("brak zdarzenia: %v", err)
 	}
 }

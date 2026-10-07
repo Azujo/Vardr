@@ -14,7 +14,7 @@ import (
 type EventSearcher interface {
 	Search(ctx context.Context, p events.Parsed, from, to time.Time, before *events.Cursor, limit int) ([]events.Event, error)
 	Histogram(ctx context.Context, p events.Parsed, from, to time.Time) ([]events.Bucket, time.Duration, uint64, error)
-	Get(ctx context.Context, id string, ts time.Time) (events.Detail, error)
+	Get(ctx context.Context, id string, ts time.Time, replay bool) (events.Detail, error)
 }
 
 const (
@@ -60,6 +60,8 @@ func (s *Server) searchParams(w http.ResponseWriter, r *http.Request) (events.Pa
 		writeError(w, http.StatusBadRequest, "bad_query", err.Error())
 		return events.Parsed{}, from, to, false
 	}
+	// source=replay: zdarzenia odtworzone z archiwum (osobna tabela).
+	p.Replay = q.Get("source") == "replay"
 	return p, from, to, true
 }
 
@@ -143,7 +145,7 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), SearchTimeout)
 	defer cancel()
-	d, err := s.Events.Get(ctx, id, ts)
+	d, err := s.Events.Get(ctx, id, ts, r.URL.Query().Get("source") == "replay")
 	if errors.Is(err, events.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zdarzenia (mogło zostać usunięte przez retencję)")
 		return

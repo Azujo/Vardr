@@ -67,6 +67,9 @@ type Condition struct {
 type Parsed struct {
 	Conds []Condition
 	Text  []string // słowa i frazy do wyszukania w treści
+	// Replay: szukanie w zdarzeniach odtworzonych z archiwum
+	// (siem.events_replay) zamiast w bieżących (siem.events).
+	Replay bool
 }
 
 // Parse zamienia tekst zapytania na warunki SQL. Nazwy kolumn pochodzą

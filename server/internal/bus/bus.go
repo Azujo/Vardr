@@ -247,3 +247,75 @@ func Gunzip(data []byte, limit int64) ([]byte, error) {
 	}
 	return out, nil
 }
+
+// Pipeline to zestaw strumieni i odbiorców jednej ścieżki przetwarzania.
+// Ścieżka „live” obsługuje bieżące zdarzenia agentów; „replay” – paczki
+// odtwarzane z archiwum NIS2, przetwarzane przez osobne kopie normalizatora
+// i writera do osobnej tabeli (siem.events_replay). Odtwarzanie nie dotyka
+// więc kolejki agentów ani danych produkcyjnych (i przyszłej detekcji).
+type Pipeline struct {
+	Name         string
+	RawStream    string
+	RawPrefix    string // temat surowej paczki: RawPrefix + agent
+	EventsStream string
+	EventsPrefix string
+	Normalizer   string // trwały odbiorca surowych paczek
+	Writer       string // trwały odbiorca zdarzeń
+	Table        string // tabela ClickHouse
+}
+
+// Ścieżki przetwarzania.
+var (
+	Live = Pipeline{Name: "live", RawStream: StreamRaw, RawPrefix: "siem.raw.", EventsStream: StreamEvents,
+		EventsPrefix: "siem.events.", Normalizer: ConsumerNormalizer, Writer: ConsumerWriter, Table: "siem.events"}
+	Replay = Pipeline{Name: "replay", RawStream: "SIEM_REPLAY_RAW", RawPrefix: "siem.replay.raw.",
+		EventsStream: "SIEM_REPLAY_EVENTS", EventsPrefix: "siem.replay.events.",
+		Normalizer: "normalizer-replay", Writer: "clickhouse-writer-replay", Table: "siem.events_replay"}
+)
+
+// HdrReplay: numer zlecenia odtworzenia (paczki ze ścieżki replay).
+const HdrReplay = "Siem-Replay"
+
+// PipelineByName wybiera ścieżkę (SIEM_PIPELINE: live albo replay).
+func PipelineByName(name string) (Pipeline, error) {
+	switch name {
+	case "", Live.Name:
+		return Live, nil
+	case Replay.Name:
+		return Replay, nil
+	}
+	return Pipeline{}, fmt.Errorf("nieznana ścieżka %q (live albo replay)", name)
+}
+
+func (p Pipeline) RawSubject(agentID string) string    { return p.RawPrefix + agentID }
+func (p Pipeline) EventsSubject(agentID string) string { return p.EventsPrefix + agentID }
+
+// ReplayMaxBytes: pojemność strumieni odtwarzania. Po zapełnieniu
+// archiwizator czeka (Discard New), więc odtwarzanie samo się dławi.
+const ReplayMaxBytes = 2 << 30
+
+// Ensure zakłada strumienie i odbiorców ścieżki. Ścieżka live korzysta
+// z EnsurePipeline (limity kolejek z konfiguracji).
+func (p Pipeline) Ensure(ctx context.Context, js jetstream.JetStream, l Limits) error {
+	if p.Name == Live.Name {
+		return EnsurePipeline(ctx, js, l)
+	}
+	consumers := ConsumerConfigs()
+	for _, s := range []struct{ stream, prefix, durable, liveStream string }{
+		{p.RawStream, p.RawPrefix, p.Normalizer, StreamRaw},
+		{p.EventsStream, p.EventsPrefix, p.Writer, StreamEvents},
+	} {
+		cfg := jetstream.StreamConfig{Name: s.stream, Subjects: []string{s.prefix + ">"}, MaxBytes: ReplayMaxBytes,
+			Storage: jetstream.FileStorage, Retention: jetstream.InterestPolicy, Discard: jetstream.DiscardNew,
+			Duplicates: 10 * time.Minute, MaxMsgSize: MaxMessageBytes}
+		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
+			return fmt.Errorf("strumień %s: %w", s.stream, err)
+		}
+		cc := consumers[s.liveStream]
+		cc.Durable = s.durable
+		if _, err := js.CreateOrUpdateConsumer(ctx, s.stream, cc); err != nil {
+			return fmt.Errorf("konsument %s/%s: %w", s.stream, s.durable, err)
+		}
+	}
+	return nil
+}

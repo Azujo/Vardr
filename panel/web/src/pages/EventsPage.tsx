@@ -141,10 +141,12 @@ function SyntaxHelp({ fields }: { fields: { name: string; help: string }[] }) {
 
 function EventDrawer({
   row,
+  source,
   onClose,
   onFilter,
 }: {
   row: EventRow | null;
+  source?: string;
   onClose: () => void;
   onFilter: (f: string) => void;
 }) {
@@ -155,10 +157,10 @@ function EventDrawer({
     setError("");
     if (!row) return;
     eventsApi
-      .get(row.event_id, row.timestamp)
+      .get(row.event_id, row.timestamp, source)
       .then((r) => setEv(r.event))
       .catch((e) => setError(msg(e)));
-  }, [row]);
+  }, [row, source]);
   const xml = useMemo(() => (ev?.raw ? prettyXml(ev.raw) : ""), [ev]);
   const fieldEntries = Object.entries(ev?.fields ?? {}).sort(([a], [b]) => a.localeCompare(b));
 
@@ -272,6 +274,7 @@ export default function EventsPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const range = params.get("range") ?? (params.get("from") ? "custom" : "1h");
+  const source = params.get("source") === "replay" ? "replay" : undefined;
   const [input, setInput] = useState(q);
   const [rows, setRows] = useState<EventRow[]>([]);
   const [next, setNext] = useState<{ before_ts: string; before_id: string } | undefined>();
@@ -304,7 +307,7 @@ export default function EventsPage() {
   useEffect(() => {
     setLoading(true);
     setError("");
-    const p = { q, from: span.from.replace(/\.\d+Z$/, "Z"), to: span.to.replace(/\.\d+Z$/, "Z") };
+    const p = { q, from: span.from.replace(/\.\d+Z$/, "Z"), to: span.to.replace(/\.\d+Z$/, "Z"), source };
     Promise.all([eventsApi.search(p), eventsApi.histogram(p)])
       .then(([s, h]) => {
         setRows(s.events);
@@ -318,7 +321,7 @@ export default function EventsPage() {
         setError(msg(e));
       })
       .finally(() => setLoading(false));
-  }, [q, span]);
+  }, [q, span, source]);
 
   const search = (text: string) => {
     const p = new URLSearchParams(params);
@@ -416,6 +419,23 @@ export default function EventsPage() {
               {fmtTime(span.from)} – {fmtTime(span.to)}
             </Badge>
           )}
+          <Tooltip label="Zdarzenia odtworzone z archiwum NIS2 są w osobnej tabeli – nie mieszają się z bieżącymi">
+            <SegmentedControl
+              size="xs"
+              color={source ? "orange" : undefined}
+              value={source ?? "live"}
+              onChange={(v) => {
+                const p = new URLSearchParams(params);
+                if (v === "replay") p.set("source", "replay");
+                else p.delete("source");
+                setParams(p);
+              }}
+              data={[
+                { value: "live", label: "Bieżące" },
+                { value: "replay", label: "Odtworzone z archiwum" },
+              ]}
+            />
+          </Tooltip>
           <Tooltip label="Odśwież">
             <ActionIcon variant="default" onClick={() => setReload((r) => r + 1)} aria-label="Odśwież">
               <IconRefresh size={16} />
@@ -505,7 +525,7 @@ export default function EventsPage() {
         </Group>
       )}
 
-      <EventDrawer row={selected} onClose={() => setSelected(null)} onFilter={addFilter} />
+      <EventDrawer row={selected} source={source} onClose={() => setSelected(null)} onFilter={addFilter} />
     </Stack>
   );
 }

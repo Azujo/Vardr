@@ -18,11 +18,18 @@ const insertEvents = `INSERT INTO siem.events (timestamp, ingested, event_id, ag
 	event_provider, event_action, event_outcome, host_name, user_name, user_domain, source_ip, process_name,
 	process_command_line, message, fields, raw, truncated, parser_version, time_quality)`
 
+// insertReplayEvents: zdarzenia odtworzone z archiwum (osobna tabela).
+const insertReplayEvents = `INSERT INTO siem.events_replay (timestamp, ingested, event_id, agent_id, event_dataset, event_code,
+	event_provider, event_action, event_outcome, host_name, user_name, user_domain, source_ip, process_name,
+	process_command_line, message, fields, raw, truncated, parser_version, time_quality, replay_id)`
+
 const insertQuarantine = `INSERT INTO siem.quarantine (ingested, agent_id, event_id, source, reason, raw)`
 
 // Writer zapisuje wiersze do ClickHouse.
 type Writer struct {
 	Conn driver.Conn
+	// Replay: zapis do siem.events_replay (ścieżka odtwarzania z archiwum).
+	Replay bool
 }
 
 // Open łączy się z ClickHouse (protokół natywny).
@@ -47,14 +54,22 @@ func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
 	if len(events) == 0 {
 		return nil
 	}
-	b, err := w.Conn.PrepareBatch(ctx, insertEvents)
+	query := insertEvents
+	if w.Replay {
+		query = insertReplayEvents
+	}
+	b, err := w.Conn.PrepareBatch(ctx, query)
 	if err != nil {
 		return err
 	}
 	for _, e := range events {
-		if err := b.Append(e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
+		row := []any{e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
 			e.Provider, e.Action, e.Outcome, e.HostName, e.UserName, e.UserDomain, ipv6(e.SourceIP), e.ProcessName,
-			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality); err != nil {
+			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality}
+		if w.Replay {
+			row = append(row, e.ReplayID)
+		}
+		if err := b.Append(row...); err != nil {
 			_ = b.Abort()
 			return &dataError{fmt.Errorf("zdarzenie %s: %w", e.ID, err)}
 		}

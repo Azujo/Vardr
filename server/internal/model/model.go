@@ -30,6 +30,8 @@ type Event struct {
 	Truncated   bool              `json:"truncated"`
 	Parser      string            `json:"parser_version"`
 	TimeQuality string            `json:"time_quality"` // "" | "missing" | "future" | "invalid"
+	// ReplayID: numer zlecenia odtworzenia z archiwum (tylko ścieżka replay).
+	ReplayID uint32 `json:"replay_id,omitempty"`
 }
 
 // Quarantined to zdarzenie, którego nie udało się znormalizować.

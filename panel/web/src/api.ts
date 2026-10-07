@@ -265,6 +265,8 @@ export interface SearchParams {
   to: string;
   before_ts?: string;
   before_id?: string;
+  // "replay": zdarzenia odtworzone z archiwum (osobna tabela).
+  source?: string;
 }
 
 function qs(p: Record<string, string | undefined>): string {
@@ -282,10 +284,10 @@ export const eventsApi = {
   histogram: (p: SearchParams) =>
     request<{ buckets: { t: string; count: number }[]; interval_s: number; total: number }>(
       "GET",
-      `/api/v1/events/histogram?${qs({ q: p.q, from: p.from, to: p.to })}`,
+      `/api/v1/events/histogram?${qs({ q: p.q, from: p.from, to: p.to, source: p.source })}`,
     ),
-  get: (id: string, ts: string) =>
-    request<{ event: EventDetail }>("GET", `/api/v1/events/${encodeURIComponent(id)}?${qs({ ts })}`),
+  get: (id: string, ts: string, source?: string) =>
+    request<{ event: EventDetail }>("GET", `/api/v1/events/${encodeURIComponent(id)}?${qs({ ts, source })}`),
   fields: () => request<{ fields: { name: string; help: string }[] }>("GET", "/api/v1/events/fields"),
 };
 
@@ -481,4 +483,36 @@ export const exportStatusLabels: Record<ExportStatus, { label: string; color: st
   done: { label: "gotowy", color: "green" },
   failed: { label: "nieudany", color: "red" },
   expired: { label: "usunięty po terminie", color: "gray" },
+};
+
+export type ReplayStatus = "pending" | "running" | "done" | "failed";
+
+export interface ArchiveReplay {
+  id: number;
+  requested_at: string;
+  requested_by: string;
+  reason: string;
+  from: string;
+  to: string;
+  agents: string[];
+  status: ReplayStatus;
+  started_at?: string;
+  finished_at?: string;
+  error?: string;
+  batches: number;
+  skipped: number;
+  bytes: number;
+}
+
+export const replaysApi = {
+  list: () => request<{ replays: ArchiveReplay[] }>("GET", "/api/v1/archive/replays"),
+  create: (r: { from: string; to: string; agents: string[]; reason: string }) =>
+    request<{ replay: ArchiveReplay }>("POST", "/api/v1/archive/replays", r),
+};
+
+export const replayStatusLabels: Record<ReplayStatus, { label: string; color: string }> = {
+  pending: { label: "w kolejce", color: "blue" },
+  running: { label: "w toku", color: "blue" },
+  done: { label: "zakończone", color: "green" },
+  failed: { label: "nieudane", color: "red" },
 };

@@ -28,7 +28,7 @@ func (f *fakeSearcher) Search(_ context.Context, p events.Parsed, from, to time.
 func (f *fakeSearcher) Histogram(context.Context, events.Parsed, time.Time, time.Time) ([]events.Bucket, time.Duration, uint64, error) {
 	return []events.Bucket{{Count: 3}}, time.Minute, 3, nil
 }
-func (f *fakeSearcher) Get(_ context.Context, id string, _ time.Time) (events.Detail, error) {
+func (f *fakeSearcher) Get(_ context.Context, id string, _ time.Time, _ bool) (events.Detail, error) {
 	if id != "e1" {
 		return events.Detail{}, events.ErrNotFound
 	}

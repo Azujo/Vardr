@@ -65,6 +65,8 @@ for t in "${targets[@]}"; do
       -ldflags="-s -w -X siem/internal/svc.Version=$version" -o "deploy/lab/bin/" "./${pkg[$t]}"
     copy "deploy/lab/bin/$(basename "${pkg[$t]}")" "$host:$dir/bin/"
     services+=("$t")
+    # Kopie ścieżki odtwarzania z archiwum używają tych samych programów.
+    case "$t" in normalizer | writer) services+=("$t-replay") ;; esac
     ;;
   *)
     echo "nieznany cel: $t" >&2

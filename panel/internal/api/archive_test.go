@@ -18,6 +18,7 @@ type fakeArchive struct {
 	err         error
 	requestedBy string
 	exports     []urd.ExportJob
+	replays     []urd.ReplayJob
 }
 
 func (f *fakeArchive) Overview(context.Context) (urd.Overview, error) { return f.o, f.err }
@@ -163,5 +164,43 @@ func TestArchiveExportAPI(t *testing.T) {
 	acts := e.st.actions()
 	if !slices.Contains(acts, "archive_export_requested") || !slices.Contains(acts, "archive_export_downloaded") {
 		t.Fatalf("audyt: %v", acts)
+	}
+}
+
+func (f *fakeArchive) CreateReplay(_ context.Context, by, reason string, from, to time.Time, agents []string) (urd.ReplayJob, error) {
+	j := urd.ReplayJob{ID: int64(len(f.replays) + 1), RequestedBy: by, Reason: reason, From: from, To: to, Agents: agents, Status: urd.ReplayPending}
+	f.replays = append(f.replays, j)
+	return j, f.err
+}
+func (f *fakeArchive) Replays(context.Context, int) ([]urd.ReplayJob, error) { return f.replays, f.err }
+
+func TestArchiveReplayAPI(t *testing.T) {
+	e := newEnv(t)
+	fa := &fakeArchive{}
+	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), Archive: fa}
+	srv.now = func() time.Time { return e.clock }
+	e.h = srv.Handler()
+	e.addUser("ola", store.RoleAnalyst, "haslo-oli-12345", false)
+	e.addUser("adam", store.RoleAdmin, "haslo-adama-123", false)
+	analyst, admin := e.client("10.0.0.1"), e.client("10.0.0.2")
+	analyst.login("ola", "haslo-oli-12345")
+	admin.login("adam", "haslo-adama-123")
+
+	from := e.clock.Add(-10 * 24 * time.Hour)
+	body := map[string]any{"from": from, "to": from.Add(3 * time.Hour), "agents": []string{" agt-1 ", "agt-1", ""}, "reason": "analiza incydentu"}
+	if code, _, _ := analyst.do("POST", "/api/v1/archive/replays", body); code != 403 {
+		t.Fatalf("odtworzenie tylko dla administratora: %d", code)
+	}
+	if code, out, _ := admin.do("POST", "/api/v1/archive/replays", body); code != 202 {
+		t.Fatalf("zlecenie: %d %v", code, out)
+	}
+	if j := fa.replays[0]; len(j.Agents) != 1 || j.Agents[0] != "agt-1" || j.RequestedBy != "adam" {
+		t.Fatalf("agenci po oczyszczeniu: %+v", j)
+	}
+	if code, out, _ := admin.do("GET", "/api/v1/archive/replays", nil); code != 200 || len(out["replays"].([]any)) != 1 {
+		t.Fatalf("lista: %d %v", code, out)
+	}
+	if !slices.Contains(e.st.actions(), "archive_replay_requested") {
+		t.Fatalf("audyt: %v", e.st.actions())
 	}
 }

@@ -257,3 +257,78 @@ func TestExporterWritesVerifiablePackage(t *testing.T) {
 		t.Fatalf("paczka powinna zniknąć: %v", err)
 	}
 }
+
+type fakeReplays struct {
+	jobs     []urd.ReplayJob
+	finished []urd.ReplayJob
+}
+
+func (f *fakeReplays) ClaimReplay(context.Context) (urd.ReplayJob, bool, error) {
+	if len(f.jobs) == 0 {
+		return urd.ReplayJob{}, false, nil
+	}
+	j := f.jobs[0]
+	f.jobs = f.jobs[1:]
+	return j, true, nil
+}
+func (f *fakeReplays) ReplayProgress(context.Context, int64, urd.ReplayStats) error { return nil }
+func (f *fakeReplays) FinishReplay(_ context.Context, j urd.ReplayJob) error {
+	f.finished = append(f.finished, j)
+	return nil
+}
+func (f *fakeReplays) FailInterruptedReplays(context.Context) (int64, error) { return 0, nil }
+
+type fakePub struct {
+	msgs     []*nats.Msg
+	ids      []string
+	fullOnce bool
+}
+
+func (p *fakePub) PublishMsg(_ context.Context, m *nats.Msg, opts ...jetstream.PublishOpt) (*jetstream.PubAck, error) {
+	if p.fullOnce {
+		p.fullOnce = false
+		return nil, &jetstream.APIError{ErrorCode: 10077, Description: "maximum bytes exceeded"}
+	}
+	p.msgs = append(p.msgs, m)
+	return &jetstream.PubAck{}, nil
+}
+
+func TestReplayerPublishesToReplayPipeline(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 7, 10, 10, 0, 0, time.UTC)
+	a := urd.New(t.TempDir(), urd.NewMemCatalog())
+	a.Now = func() time.Time { return now }
+	w, _ := a.OpenSegment()
+	for _, agent := range []string{"agt-1", "agt-2", "agt-1"} {
+		_ = w.Add(urd.RecordMeta{Agent: agent, Batch: "b-" + agent, Encoding: "gzip", ReceivedAt: now}, []byte("paczka "+agent))
+	}
+	if _, err := w.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	if _, err := a.Seal(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	store := &fakeReplays{}
+	pub := &fakePub{fullOnce: true}
+	r := &Replayer{A: a, Store: store, Pub: pub, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Lock: &sync.Mutex{},
+		RetryWait: time.Millisecond}
+	j := r.runJob(ctx, urd.ReplayJob{ID: 5, From: from, To: from.Add(time.Hour), Agents: []string{"agt-1"}})
+	if j.Status != urd.ReplayDone || j.Batches != 2 || j.Skipped != 1 {
+		t.Fatalf("odtworzenie: %+v", j)
+	}
+	if len(pub.msgs) != 2 {
+		t.Fatalf("pełny strumień powinien zostać ponowiony: %d wiadomości", len(pub.msgs))
+	}
+	m := pub.msgs[0]
+	if m.Subject != "siem.replay.raw.agt-1" || m.Header.Get(bus.HdrReplay) != "5" || m.Header.Get(bus.HdrAgent) != "agt-1" ||
+		m.Header.Get(bus.HdrReceivedAt) == "" || string(m.Data) != "paczka agt-1" {
+		t.Fatalf("wiadomość: %s %v %q", m.Subject, m.Header, m.Data)
+	}
+	// Pusty zakres: zlecenie nieudane z opisem.
+	if j := r.runJob(ctx, urd.ReplayJob{ID: 6, From: from.Add(-48 * time.Hour), To: from.Add(-47 * time.Hour)}); j.Status != urd.ReplayFailed || j.Error == "" {
+		t.Fatalf("pusty zakres: %+v", j)
+	}
+}

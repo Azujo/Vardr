@@ -280,7 +280,8 @@ agent ──mTLS:8443──► siem-ingest ──► NATS SIEM_RAW ──► sie
 | `siem-ingest` | endpoint `/v1/ingest` (mTLS); potwierdza paczkę po zapisie w JetStream (deduplikacja po `batch_id`, okno 10 min) |
 | `siem-normalizer` | XML Windows → wspólny schemat (`event.dataset`, `event.action`, użytkownik, IP, proces, pola `fields`); błędne zdarzenia → kwarantanna |
 | `siem-writer` | zapis do ClickHouse paczkami (do 20 000 wierszy / 1 s), potwierdzenie z kolejki dopiero po udanym INSERT; wiersz odrzucony przez bazę → kwarantanna, reszta zapisana |
-| `siem-archiver` | Urd – archiwum NIS2: oryginalne paczki w segmentach na dysku, godzinowe manifesty z łańcuchem hashy, weryfikacja integralności co 6 h |
+| `siem-archiver` | Urd – archiwum NIS2: oryginalne paczki w segmentach na dysku, godzinowe manifesty z łańcuchem hashy, weryfikacja integralności, eksport dla audytora, odtwarzanie (replay) |
+| `normalizer-replay`, `writer-replay` | kopie normalizatora i writera dla paczek odtwarzanych z archiwum → `siem.events_replay` |
 | NATS JetStream | trwała kolejka zaległości (wiadomość znika po przetworzeniu); po zapełnieniu ingest odmawia przyjęcia, nic nie jest usuwane po cichu |
 | ClickHouse | `siem.events` (retencja 5 dni od przyjęcia), `siem.quarantine`; konta `siem_writer` (zapis) i `grafana` (odczyt) |
 | Grafana | pulpit „SIEM – przegląd zdarzeń” (folder SIEM) |
@@ -542,6 +543,27 @@ Polecenie sprawdza:
 Kod wyjścia 1 oznacza niezgodności. Na końcu polecenie wypisuje kotwicę, czyli SHA-256 najnowszego manifestu, do porównania z wartością zapisaną niezależnie. Bez programu audytor może sprawdzić paczkę ręcznie według `README.txt`, zaczynając od `sha256sum -c SHA256SUMS`.
 
 Zakres dotyczy czasu przyjęcia paczek przez serwer, nie czasu zdarzeń. Eksport obejmuje całe segmenty, więc wszystkie źródła z danych godzin. Filtrowanie po źródłach dojdzie z polityką archiwum per źródło.
+
+### Odtworzenie z archiwum (replay)
+
+Administrator zleca odtworzenie w panelu, w zakładce *Urd → Odtworzenie*: zakres godzin archiwizacji (do 31 dni), opcjonalnie lista agentów i obowiązkowy powód. Służy np. do analizy danych starszych niż retencja bazy zdarzeń albo do ponownej normalizacji po zmianie parsera.
+
+```
+archiwum ──► siem-archiver ──► NATS SIEM_REPLAY_RAW ──► normalizer-replay ──► SIEM_REPLAY_EVENTS ──► writer-replay ──► siem.events_replay
+```
+
+- **Osobna ścieżka.** Te same programy (`SIEM_PIPELINE=replay`) pracują na osobnych strumieniach. Odtwarzanie nie zajmuje kolejki agentów i nie powoduje odmów 503. Normalizator replay ma 2 wątki, żeby nie zabierać CPU bieżącym zdarzeniom.
+- **Osobna tabela** `siem.events_replay`, z numerem zlecenia (`replay_id`) i czasem odtworzenia (`replayed_at`). Dane żyją 7 dni od odtworzenia (`SIEM_REPLAY_TTL_DAYS`). Odtworzenie nie zmienia danych produkcyjnych: ClickHouse usuwa duplikaty tylko w obrębie partycji, więc wspólna tabela mogłaby podmienić bieżące wiersze. Odtworzone zdarzenia nie trafią też do detekcji. `ingested` zostaje oryginalnym czasem przyjęcia paczki.
+- **W Mímirze** przełącznik „Odtworzone z archiwum” przeszukuje tę tabelę. Link „pokaż w Mímirze” przy zleceniu ustawia zakres.
+- **Kontrola danych.** Każda paczka i każdy segment są przy odczycie porównywane z sumami, więc niezgodne archiwum przerywa odtwarzanie. Gdy strumień odtwarzania jest pełny, archiwizator czeka.
+
+Istniejąca baza ClickHouse potrzebuje jednorazowo nowej tabeli. Nowe instalacje zakładają ją same:
+
+```bash
+docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/02-replay.sh
+```
+
+Sprawdzone na VM: odtworzenie 2446 paczek trwało 1,5 s i dało 100 117 zdarzeń. Wszystkie są identyczne z zapisanymi wcześniej w `siem.events` i mają oryginalne czasy przyjęcia.
 
 ### Kopie zapasowe
 
