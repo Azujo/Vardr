@@ -4,4 +4,4 @@ package heartbeat
 
 import "runtime"
 
-func osVersion() string { return runtime.GOOS }
+func OSVersion() string { return runtime.GOOS }

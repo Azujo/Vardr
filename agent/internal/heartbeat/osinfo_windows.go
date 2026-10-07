@@ -10,8 +10,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// osVersion zwraca np. „Windows 11 Enterprise LTSC 2024 24H2 (26100.4061)”.
-func osVersion() string {
+// OSVersion zwraca np. „Windows 11 Enterprise LTSC 2024 24H2 (26100.4061)”.
+func OSVersion() string {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows NT\CurrentVersion`, registry.QUERY_VALUE)
 	if err != nil {
 		return "Windows"

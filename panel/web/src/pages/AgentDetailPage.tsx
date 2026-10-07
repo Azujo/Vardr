@@ -16,9 +16,9 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowLeft, IconTrash } from "@tabler/icons-react";
+import { IconArrowLeft, IconCertificateOff, IconTrash } from "@tabler/icons-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { agentsApi, ago, formatDate, formatNumber, type AgentStatusDoc, type AgentView } from "../api";
+import { agentsApi, ago, enrollApi, formatDate, formatNumber, type AgentStatusDoc, type AgentView } from "../api";
 import { useAuth } from "../auth";
 import { StateBadge } from "./AgentsPage";
 
@@ -88,6 +88,27 @@ export default function AgentDetailPage() {
     }
   };
 
+  const revokeCert = async () => {
+    const reason = window.prompt(
+      `Unieważnić certyfikaty agenta ${id}? Agent natychmiast straci dostęp do serwera (np. zgubiony laptop).
+
+Powód:`,
+      "zgubiony lub wycofany komputer",
+    );
+    if (reason === null) return;
+    try {
+      const r = await enrollApi.revokeAgent(id, reason);
+      notifications.show({
+        color: r.revoked ? "green" : "yellow",
+        message: r.revoked
+          ? `Unieważniono certyfikaty: ${r.revoked}. Agent nie połączy się już z serwerem.`
+          : "Brak certyfikatów wystawionych przez panel (agent z paczki laboratoryjnej).",
+      });
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   const back = (
     <Anchor component={Link} to="/agents" size="sm">
       <Group gap={4}>
@@ -120,9 +141,14 @@ export default function AgentDetailPage() {
           </Text>
         </div>
         {user?.role === "admin" && (
-          <Button variant="default" color="red" leftSection={<IconTrash size={16} />} onClick={() => void remove()}>
-            Usuń z listy
-          </Button>
+          <Group gap="xs">
+            <Button variant="light" color="red" leftSection={<IconCertificateOff size={16} />} onClick={() => void revokeCert()}>
+              Unieważnij certyfikat
+            </Button>
+            <Button variant="default" leftSection={<IconTrash size={16} />} onClick={() => void remove()}>
+              Usuń z listy
+            </Button>
+          </Group>
         )}
       </Group>
 

@@ -30,6 +30,8 @@ func usage() {
 Użycie:
   siem-pki ca     [-out certs]                                  nowy urząd certyfikacji
   siem-pki server [-out certs] [-hosts localhost,127.0.0.1]     certyfikat serwera
+  siem-pki agents-ca [-out certs]                               CA agentów (online, tylko certyfikaty klientów;
+                                                               używane przez panel do rejestracji tokenem)
   siem-pki agent  [-out certs] [-id agt-...] [-name agent]      certyfikat agenta (CN = identyfikator agenta)
   siem-pki package -id agt-pc01 [-server 192.168.88.98] [-agent bin/siem_agent.exe] [-out dist] [-ca-dir certs]
                                                                paczka instalacyjna agenta dla jednego komputera
@@ -57,6 +59,8 @@ func main() {
 		err = makeCA(*out)
 	case "server":
 		err = makeServer(*out, strings.Split(*hosts, ","))
+	case "agents-ca":
+		err = makeAgentsCA(*out)
 	case "agent":
 		agentID := *id
 		if agentID == "" {
@@ -286,4 +290,41 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.WriteFile(dst, data, 0o600)
+}
+
+// makeAgentsCA tworzy osobny urząd dla certyfikatów agentów. Jego klucz
+// leży na serwerze (panel podpisuje nim certyfikaty przy rejestracji
+// tokenem), dlatego może wystawiać WYŁĄCZNIE certyfikaty klientów
+// (ExtKeyUsage = ClientAuth). Główne CA (ca.key) zostaje offline – agenci
+// sprawdzają nim serwer, więc wyciek klucza CA agentów nie pozwala podszyć
+// się pod serwer.
+func makeAgentsCA(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, "agents-ca.key")); err == nil {
+		return errors.New("CA agentów już istnieje w " + dir + " – usuń ją ręcznie, jeśli naprawdę chcesz nową")
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial(),
+		Subject:               pkix.Name{CommonName: "SIEM Lab Agents CA", Organization: []string{"SIEM Lab"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().AddDate(3, 0, 0),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return err
+	}
+	if err := write(dir, "agents-ca", der, key); err != nil {
+		return err
+	}
+	fmt.Println("Utworzono CA agentów:", filepath.Join(dir, "agents-ca.crt"))
+	fmt.Println("Klucz agents-ca.key skopiuj na serwer (katalog certs stosu) – używa go panel do rejestracji agentów.")
+	return nil
 }

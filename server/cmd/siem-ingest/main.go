@@ -12,6 +12,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"siem/internal/contract"
 	"siem/internal/fleet"
 	"siem/internal/svc"
@@ -60,11 +62,36 @@ func run(log *slog.Logger) error {
 		return err
 	}
 
-	tlsCfg, err := serverTLS(svc.Env("SIEM_TLS_CA", "/certs/ca.crt"),
-		svc.Env("SIEM_TLS_CERT", "/certs/server.crt"), svc.Env("SIEM_TLS_KEY", "/certs/server.key"))
+	// Unieważnione certyfikaty agentów (zapisuje je panel) – odrzucane przy TLS.
+	revoked := fleet.NewRevokedSet()
+	go func() {
+		var kv jetstream.KeyValue
+		if err := svc.Retry(ctx, log, "lista unieważnionych certyfikatów", func() error {
+			var err error
+			kv, err = fleet.EnsureRevoked(ctx, js)
+			return err
+		}); err != nil {
+			return
+		}
+		for ctx.Err() == nil {
+			if err := revoked.Watch(ctx, kv, log); err != nil {
+				log.Warn("obserwacja unieważnień przerwana – wznawiam", "err", err)
+				time.Sleep(5 * time.Second)
+			}
+		}
+	}()
+
+	// Certyfikaty agentów: z głównego CA (paczki laboratoryjne) i z CA agentów
+	// (rejestracja tokenem, jeśli plik istnieje).
+	caFiles := []string{svc.Env("SIEM_TLS_CA", "/certs/ca.crt")}
+	if f := svc.Env("SIEM_TLS_AGENTS_CA", "/certs/agents-ca.crt"); fileExists(f) {
+		caFiles = append(caFiles, f)
+	}
+	tlsCfg, err := serverTLS(caFiles, svc.Env("SIEM_TLS_CERT", "/certs/server.crt"), svc.Env("SIEM_TLS_KEY", "/certs/server.key"), revoked)
 	if err != nil {
 		return err
 	}
+	log.Info("zaufane urzędy dla certyfikatów agentów", "files", caFiles)
 
 	adm := ingest.NewAdmission(maxInFlight, highWater)
 	go adm.WatchFill(ctx, log, 2*time.Second, func(ctx context.Context) (float64, error) {
@@ -119,14 +146,16 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-func serverTLS(caFile, certFile, keyFile string) (*tls.Config, error) {
-	caPEM, err := os.ReadFile(caFile)
-	if err != nil {
-		return nil, err
-	}
+func serverTLS(caFiles []string, certFile, keyFile string, revoked *fleet.RevokedSet) (*tls.Config, error) {
 	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, errors.New("niepoprawny plik CA")
+	for _, f := range caFiles {
+		caPEM, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, errors.New("niepoprawny plik CA: " + f)
+		}
 	}
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -137,5 +166,16 @@ func serverTLS(caFile, certFile, keyFile string) (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
 		ClientCAs:    pool,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			if len(cs.PeerCertificates) > 0 && revoked.Has(cs.PeerCertificates[0].SerialNumber.Text(16)) {
+				return errors.New("certyfikat agenta został unieważniony")
+			}
+			return nil
+		},
 	}, nil
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

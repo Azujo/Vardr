@@ -21,7 +21,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"agents", "audit_log", "sessions", "users", "schema_migrations"} {
+	for _, tbl := range []string{"agent_certs", "enrollment_tokens", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
 		}
@@ -120,6 +120,7 @@ func TestPostgresStore(t *testing.T) {
 	}
 
 	testAgents(t, db)
+	testEnrollment(t, db)
 }
 
 func testAgents(t *testing.T, db *PG) {
@@ -156,5 +157,75 @@ func testAgents(t *testing.T, db *PG) {
 	}
 	if err := db.DeleteAgent(ctx, "agt-2"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ponowne usunięcie: %v", err)
+	}
+}
+
+func testEnrollment(t *testing.T, db *PG) {
+	ctx := context.Background()
+	now := time.Now()
+	tok, err := db.CreateEnrollToken(ctx, EnrollToken{Name: "Księgowość", TokenHash: "h1", Profile: "workstation", MaxUses: 2,
+		ExpiresAt: now.Add(time.Hour), CreatedBy: "admin"})
+	if err != nil || tok.ID == 0 || tok.Uses != 0 {
+		t.Fatalf("token: %+v %v", tok, err)
+	}
+	if _, err := db.CreateEnrollToken(ctx, EnrollToken{Name: "x", TokenHash: "h2", Profile: "root", ExpiresAt: now}); err == nil {
+		t.Fatal("baza powinna odrzucić nieznany profil")
+	}
+	if got, err := db.EnrollTokenByHash(ctx, "h1", now); err != nil || got.ID != tok.ID {
+		t.Fatalf("po skrócie: %+v %v", got, err)
+	}
+	for i := range 2 {
+		if got, err := db.UseEnrollToken(ctx, "h1", now); err != nil || got.Uses != i+1 {
+			t.Fatalf("użycie %d: %+v %v", i+1, got, err)
+		}
+	}
+	if _, err := db.UseEnrollToken(ctx, "h1", now); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("po limicie: %v", err)
+	}
+	exp, _ := db.CreateEnrollToken(ctx, EnrollToken{Name: "stary", TokenHash: "h3", Profile: "server", ExpiresAt: now.Add(-time.Minute)})
+	if _, err := db.UseEnrollToken(ctx, "h3", now); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("wygasły: %v", err)
+	}
+	live, _ := db.CreateEnrollToken(ctx, EnrollToken{Name: "dc", TokenHash: "h4", Profile: "dc", ExpiresAt: now.Add(time.Hour)})
+	if r, err := db.RevokeEnrollToken(ctx, live.ID); err != nil || r.RevokedAt == nil {
+		t.Fatalf("unieważnienie tokenu: %+v %v", r, err)
+	}
+	if _, err := db.UseEnrollToken(ctx, "h4", now); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("unieważniony: %v", err)
+	}
+	if list, err := db.ListEnrollTokens(ctx); err != nil || len(list) != 3 || list[0].ID != live.ID || list[2].ID != tok.ID {
+		t.Fatalf("lista: %d %v (%d)", len(list), err, exp.ID)
+	}
+
+	tid := tok.ID
+	for _, c := range []AgentCert{
+		{Serial: "aa01", AgentID: "agt-pc9", IssuedAt: now, NotAfter: now.Add(90 * 24 * time.Hour), TokenID: &tid, Hostname: "PC9"},
+		{Serial: "aa02", AgentID: "agt-pc9", IssuedAt: now, NotAfter: now.Add(90 * 24 * time.Hour), RenewedFrom: "aa01"},
+		{Serial: "aa03", AgentID: "agt-old", IssuedAt: now, NotAfter: now.Add(-time.Hour)},
+	} {
+		if err := db.RecordAgentCert(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if taken, err := db.AgentIDTaken(ctx, "agt-pc9"); err != nil || !taken {
+		t.Fatalf("zajęty identyfikator: %v %v", taken, err)
+	}
+	if taken, _ := db.AgentIDTaken(ctx, "agt-wolny"); taken {
+		t.Fatal("wolny identyfikator oznaczony jako zajęty")
+	}
+	serials, err := db.RevokeAgentCerts(ctx, "agt-pc9", "kradzież")
+	if err != nil || len(serials) != 2 {
+		t.Fatalf("unieważnienie certyfikatów: %v %v", serials, err)
+	}
+	if again, _ := db.RevokeAgentCerts(ctx, "agt-pc9", "ponownie"); len(again) != 0 {
+		t.Fatalf("ponowne unieważnienie zwróciło %v", again)
+	}
+	db.RevokeAgentCerts(ctx, "agt-old", "wygasły")
+	if c, err := db.AgentCertBySerial(ctx, "aa02"); err != nil || c.RevokedAt == nil || c.RevokeReason != "kradzież" || c.RenewedFrom != "aa01" {
+		t.Fatalf("certyfikat: %+v %v", c, err)
+	}
+	// Lista dla ingest: tylko unieważnione i jeszcze nie wygasłe.
+	if rs, err := db.RevokedSerials(ctx, now); err != nil || len(rs) != 2 {
+		t.Fatalf("unieważnione do rozesłania: %v %v", rs, err)
 	}
 }

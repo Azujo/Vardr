@@ -74,8 +74,8 @@ export default function HomePage() {
 
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         {[
-          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie i szczegóły", icon: IconDatabaseSearch },
-          { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem", icon: IconBolt },
+          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie i szczegóły", icon: IconDatabaseSearch, soon: true },
+          { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem i paczki instalacyjne", icon: IconBolt, soon: false },
         ].map((m) => (
           <Card key={m.to} withBorder component={Link} to={m.to}>
             <Group mb="xs">
@@ -83,9 +83,11 @@ export default function HomePage() {
                 <m.icon size={20} />
               </ThemeIcon>
               <Text fw={600}>{m.name}</Text>
-              <Badge size="xs" variant="light" color="gray">
-                w budowie
-              </Badge>
+              {m.soon && (
+                <Badge size="xs" variant="light" color="gray">
+                  w budowie
+                </Badge>
+              )}
             </Group>
             <Text size="sm" c="dimmed">
               {m.what}

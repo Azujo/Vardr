@@ -58,7 +58,7 @@ func (s *Sender) Run(ctx context.Context) {
 		s.FirstAfter = 5 * time.Second
 	}
 	s.hostname, _ = os.Hostname()
-	s.os = osVersion()
+	s.os = OSVersion()
 
 	wait := s.FirstAfter
 	failing := false

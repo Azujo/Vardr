@@ -62,6 +62,9 @@ type ServerConfig struct {
 	CertFile string        `yaml:"cert_file"`
 	KeyFile  string        `yaml:"key_file"`
 	Timeout  time.Duration `yaml:"timeout"`
+	// PanelURL: adres panelu do odnawiania certyfikatu (domyślnie
+	// https://<host serwera>:8444).
+	PanelURL string `yaml:"panel_url"`
 }
 
 // BatchConfig określa paczkowanie (załącznik A).

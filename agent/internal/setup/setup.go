@@ -118,7 +118,7 @@ func GenerateConfig(o Options) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, `# Konfiguracja agenta SIEM – utworzona przez "siem_agent install".
 # Zmiana adresu serwera: siem_agent set-server <adres>
-# Pozostałe opcje i opis: configs/agent.example.yaml w repozytorium projektu.
+# Pozostałe opcje i opis: agent/configs/agent.example.yaml w repozytorium projektu.
 
 server:
   url: %s

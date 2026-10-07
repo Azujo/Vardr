@@ -339,6 +339,34 @@ Panel pokazuje dla każdego agenta:
 
 Agenci ze starszych wersji wysyłają zdarzenia, ale nie pojawiają się na liście, dopóki nie zostaną zaktualizowani. Generator ruchu też wysyła heartbeaty (`-heartbeat`, domyślnie włączone), więc listę da się sprawdzić na tysiącach agentów.
 
+**Bifröst – wdrażanie agentów tokenem:** administrator tworzy w panelu token rejestracyjny: nazwa, profil zdarzeń, ważność i limit instalacji. Token jest widoczny raz, a w bazie zostaje tylko jego skrót. Do tokenu panel daje paczkę ZIP (program agenta, główne CA, adres serwera, token, `install.cmd`) **bez klucza prywatnego** i gotowe polecenie do GPO lub Intune:
+
+```bash
+siem_agent.exe install -server 192.168.88.98 -token hdt_…
+```
+
+Przebieg instalacji:
+
+1. Agent generuje klucz na komputerze. Klucz nigdy go nie opuszcza.
+2. Agent wysyła prośbę o certyfikat (CSR) z tokenem do panelu (`POST /enroll/v1/register`, port 8444).
+3. Panel nadaje identyfikator z nazwy hosta. Zajęty identyfikator dostaje dopisek, więc nikt nie przejmie cudzej tożsamości.
+4. Panel wydaje certyfikat na 90 dni, a agent odnawia go sam na 30 dni przed końcem (`/enroll/v1/renew`, z nowym kluczem).
+
+Certyfikaty podpisuje osobne **CA agentów** (`siem-pki agents-ca`), które może wystawiać wyłącznie certyfikaty klientów. Główne CA zostaje offline, a agenci sprawdzają nim serwer.
+
+**Unieważnianie:** w panelu (Huginn → agent → „Unieważnij certyfikat”). Panel zapisuje unieważnienie w NATS (`SIEM_REVOKED_CERTS`), a ingest odrzuca taki certyfikat przy nawiązywaniu połączenia.
+
+Inne polecenia agenta:
+
+- `siem_agent enroll -server … -token … -dir …`: rejestracja bez instalowania usługi, np. do testów;
+- `siem_agent upgrade`: aktualizacja programu z folderu nowej wersji, z zachowaniem konfiguracji, certyfikatów i stanu.
+
+Przygotowanie serwera:
+
+- `binsiem-pki.exe agents-ca`, potem `agents-ca.crt` i `agents-ca.key` do `~/siem-lab/certs`;
+- `siem_agent.exe` do `~/siem-lab/agent-dist`;
+- w `.env`: `SIEM_PUBLIC_SERVER=192.168.88.98`.
+
 **Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
 
 **Bezpieczeństwo:**

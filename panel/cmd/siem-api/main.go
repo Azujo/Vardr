@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	"siem/panel/internal/api"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
+	"siem/panel/internal/enroll"
 	"siem/panel/internal/fleetsync"
 	"siem/panel/web"
 )
@@ -101,10 +103,38 @@ func serve(log *slog.Logger) error {
 	if ui == nil {
 		log.Warn("frontend nie został zbudowany – panel pokaże stronę zastępczą (cd panel/web && npm ci && npm run build)")
 	}
+
+	// Bifröst: rejestracja agentów tokenem (wymaga CA agentów z siem-pki agents-ca).
+	enrollment := &api.Enrollment{
+		AgentExe:     svc.Env("SIEM_AGENT_EXE", "/agent-dist/siem_agent.exe"),
+		RootCA:       svc.Env("SIEM_ROOT_CA", "/certs/ca.crt"),
+		PublicServer: os.Getenv("SIEM_PUBLIC_SERVER"),
+	}
+	agentsCA := svc.Env("SIEM_AGENTS_CA_CERT", "/certs/agents-ca.crt")
+	if signer, err := enroll.LoadSigner(agentsCA, svc.Env("SIEM_AGENTS_CA_KEY", "/certs/agents-ca.key")); err == nil {
+		enrollment.Signer = signer
+		log.Info("rejestracja agentów tokenem włączona", "agents_ca", signer.CA.Subject.CommonName, "public_server", enrollment.PublicServer)
+	} else {
+		log.Warn("rejestracja agentów tokenem wyłączona – brak CA agentów", "err", err)
+	}
+	if enrollment.PublicServer == "" {
+		log.Warn("brak SIEM_PUBLIC_SERVER – paczki instalacyjne nie będą zawierały adresu serwera")
+	}
+
+	// Certyfikat klienta jest opcjonalny: wymaga go tylko odnowienie
+	// certyfikatu agenta (/enroll/v1/renew); przeglądarki logują się hasłem.
+	clientCAs := x509.NewCertPool()
+	for _, f := range []string{enrollment.RootCA, agentsCA} {
+		if data, err := os.ReadFile(f); err == nil {
+			clientCAs.AppendCertsFromPEM(data)
+		}
+	}
+	apiServer := &api.Server{Store: db, Log: log, UI: ui, Enroll: enrollment}
 	srv := &http.Server{
-		Addr:              svc.Env("SIEM_API_LISTEN", ":8444"),
-		Handler:           (&api.Server{Store: db, Log: log, UI: ui}).Handler(),
-		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert}},
+		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
+		Handler: apiServer.Handler(),
+		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{cert},
+			ClientAuth: tls.VerifyClientCertIfGiven, ClientCAs: clientCAs},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
@@ -123,6 +153,29 @@ func serve(log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		// Unieważnienia certyfikatów: zapis do NATS KV (czyta je siem-ingest),
+		// przy starcie synchronizacja z bazą (np. po odtworzeniu NATS).
+		enrollment.Revoke = func(ctx context.Context, serials []string, reason string) error {
+			kv, err := fleet.EnsureRevoked(ctx, js)
+			if err != nil {
+				return err
+			}
+			for _, s := range serials {
+				if _, err := kv.PutString(ctx, s, reason); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		go func() {
+			_ = svc.Retry(ctx, log, "synchronizacja unieważnień", func() error {
+				serials, err := db.RevokedSerials(ctx, time.Now())
+				if err != nil {
+					return err
+				}
+				return enrollment.Revoke(ctx, serials, "unieważniony (synchronizacja z bazą)")
+			})
+		}()
 		go func() {
 			var cons jetstream.Consumer
 			if err := svc.Retry(ctx, log, "strumień heartbeatów", func() error {

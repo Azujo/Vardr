@@ -40,6 +40,15 @@ type Store interface {
 	ListAgents(ctx context.Context) ([]store.Agent, error)
 	AgentByID(ctx context.Context, id string) (store.Agent, error)
 	DeleteAgent(ctx context.Context, id string) error
+	CreateEnrollToken(ctx context.Context, t store.EnrollToken) (store.EnrollToken, error)
+	ListEnrollTokens(ctx context.Context) ([]store.EnrollToken, error)
+	RevokeEnrollToken(ctx context.Context, id int64) (store.EnrollToken, error)
+	UseEnrollToken(ctx context.Context, tokenHash string, now time.Time) (store.EnrollToken, error)
+	EnrollTokenByHash(ctx context.Context, tokenHash string, now time.Time) (store.EnrollToken, error)
+	AgentIDTaken(ctx context.Context, agentID string) (bool, error)
+	RecordAgentCert(ctx context.Context, c store.AgentCert) error
+	AgentCertBySerial(ctx context.Context, serial string) (store.AgentCert, error)
+	RevokeAgentCerts(ctx context.Context, agentID, reason string) ([]string, error)
 }
 
 // Server to handler HTTP panelu.
@@ -48,6 +57,8 @@ type Server struct {
 	Log   *slog.Logger
 	// UI to zbudowana aplikacja (web/dist); nil = strona zastępcza.
 	UI fs.FS
+	// Enroll (opcjonalne) – rejestracja agentów tokenem.
+	Enroll *Enrollment
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -106,6 +117,19 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/agents", s.authed(roleViewer, 0, s.listAgents))
 	mux.Handle("GET /api/v1/agents/{id}", s.authed(roleViewer, 0, s.getAgent))
 	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
+	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(roleAdmin, 0, s.revokeAgent))
+
+	mux.Handle("GET /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.listTokens))
+	mux.Handle("POST /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.createToken))
+	mux.Handle("POST /api/v1/enroll-tokens/{id}/revoke", s.authed(roleAdmin, 0, s.revokeToken))
+	mux.Handle("POST /api/v1/enroll-tokens/package", s.authed(roleAdmin, 0, s.tokenPackage))
+
+	// Dla agentów (bez sesji panelu): rejestracja tokenem i odnowienie certyfikatu.
+	mux.HandleFunc("POST /enroll/v1/register", s.enrollRegister)
+	mux.HandleFunc("POST /enroll/v1/renew", s.enrollRenew)
+	mux.HandleFunc("/enroll/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu")
+	})
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu API")
@@ -191,17 +215,18 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// allowLogin ogranicza próby logowania z jednego adresu: 10 na minutę.
-func (s *Server) allowLogin(ip string) bool {
+// allow ogranicza liczbę prób dla klucza (np. „login:adres IP”): perMin na
+// minutę z zapasem burst.
+func (s *Server) allow(key string, perMin, burst float64) bool {
 	s.limitMu.Lock()
 	defer s.limitMu.Unlock()
-	l, ok := s.limits[ip]
+	l, ok := s.limits[key]
 	if !ok {
 		if len(s.limits) > 10000 { // ochrona pamięci przed wieloma adresami
 			clear(s.limits)
 		}
-		l = throttle.New(10.0/60, 10)
-		s.limits[ip] = l
+		l = throttle.New(perMin/60, burst)
+		s.limits[key] = l
 	}
 	return l.Allow(1)
 }

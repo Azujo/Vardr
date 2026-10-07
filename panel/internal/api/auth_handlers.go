@@ -127,7 +127,7 @@ const badLogin = "nieprawidłowy login lub hasło albo konto tymczasowo zablokow
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
-	if !s.allowLogin(ip) {
+	if !s.allow("login:"+ip, 10, 10) {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "zbyt wiele prób logowania – odczekaj minutę")
 		return

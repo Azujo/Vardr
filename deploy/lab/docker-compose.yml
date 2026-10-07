@@ -138,8 +138,11 @@ services:
     environment:
       SIEM_API_DB_URL: postgres://siem_api:${SAGA_DB_PASSWORD}@saga:5432/saga?sslmode=disable
       SIEM_NATS_URL: nats://nats:4222
+      # Bifröst: adres serwera wpisywany do paczek instalacyjnych agentów.
+      SIEM_PUBLIC_SERVER: ${SIEM_PUBLIC_SERVER:-}
     volumes:
       - ./certs:/certs:ro
+      - ./agent-dist:/agent-dist:ro   # siem_agent.exe do paczek instalacyjnych
     ports:
       - "8444:8444"
     depends_on:

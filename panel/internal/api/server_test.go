@@ -24,6 +24,8 @@ type memStore struct {
 	users    map[int64]store.User
 	sessions map[string]store.Session
 	agents   map[string]store.Agent
+	tokens   []store.EnrollToken
+	certs    []store.AgentCert
 	audit    []store.AuditEntry
 	nextID   int64
 	now      func() time.Time

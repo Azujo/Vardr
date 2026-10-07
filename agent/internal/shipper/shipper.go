@@ -287,14 +287,44 @@ func truncate(b []byte) string {
 // agenta odczytany z pola CN certyfikatu – tożsamość agenta wynika z
 // certyfikatu, a nie z konfiguracji.
 func NewTLSClient(caFile, certFile, keyFile string, timeout time.Duration) (*http.Client, string, error) {
-	caPEM, err := os.ReadFile(caFile)
+	c, h, err := NewReloadableTLSClient(caFile, certFile, keyFile, timeout)
 	if err != nil {
-		return nil, "", fmt.Errorf("CA: %w", err)
+		return nil, "", err
 	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, "", errors.New("CA: brak poprawnego certyfikatu PEM")
+	return c, h.AgentID(), nil
+}
+
+// CertHolder przechowuje bieżący certyfikat agenta. Po odnowieniu
+// (Reload) nowe połączenia używają nowego certyfikatu bez restartu agenta.
+type CertHolder struct {
+	cur     atomic.Pointer[tls.Certificate]
+	agentID string
+	tr      *http.Transport
+}
+
+// AgentID zwraca identyfikator agenta (CN certyfikatu).
+func (h *CertHolder) AgentID() string { return h.agentID }
+
+// Leaf zwraca bieżący certyfikat (np. do sprawdzenia daty ważności).
+func (h *CertHolder) Leaf() *x509.Certificate { return h.cur.Load().Leaf }
+
+// Reload wczytuje certyfikat z plików. Identyfikator agenta nie może się zmienić.
+func (h *CertHolder) Reload(certFile, keyFile string) error {
+	cert, agentID, err := loadAgentCert(certFile, keyFile)
+	if err != nil {
+		return err
 	}
+	if agentID != h.agentID {
+		return fmt.Errorf("nowy certyfikat ma inny identyfikator agenta (%s ≠ %s)", agentID, h.agentID)
+	}
+	h.cur.Store(cert)
+	if h.tr != nil {
+		h.tr.CloseIdleConnections()
+	}
+	return nil
+}
+
+func loadAgentCert(certFile, keyFile string) (*tls.Certificate, string, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, "", fmt.Errorf("certyfikat agenta: %w", err)
@@ -303,6 +333,7 @@ func NewTLSClient(caFile, certFile, keyFile string, timeout time.Duration) (*htt
 	if err != nil {
 		return nil, "", fmt.Errorf("certyfikat agenta: %w", err)
 	}
+	cert.Leaf = leaf
 	agentID := leaf.Subject.CommonName
 	if agentID == "" {
 		return nil, "", errors.New("certyfikat agenta nie zawiera CN (identyfikatora agenta)")
@@ -310,15 +341,38 @@ func NewTLSClient(caFile, certFile, keyFile string, timeout time.Duration) (*htt
 	if time.Now().After(leaf.NotAfter) {
 		return nil, "", fmt.Errorf("certyfikat agenta wygasł %s", leaf.NotAfter.Format(time.RFC3339))
 	}
+	return &cert, agentID, nil
+}
+
+// NewReloadableTLSClient tworzy klienta mTLS z certyfikatem, który można
+// podmienić w trakcie działania (automatyczne odnawianie certyfikatu).
+func NewReloadableTLSClient(caFile, certFile, keyFile string, timeout time.Duration) (*http.Client, *CertHolder, error) {
+	caPEM, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return nil, nil, errors.New("CA: brak poprawnego certyfikatu PEM")
+	}
+	cert, agentID, err := loadAgentCert(certFile, keyFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	h := &CertHolder{agentID: agentID}
+	h.cur.Store(cert)
 
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{
-		MinVersion:   tls.VersionTLS13,
-		RootCAs:      pool,
-		Certificates: []tls.Certificate{cert},
+		MinVersion: tls.VersionTLS12, // siem-ingest wymaga 1.3; panel (odnowienie) przyjmuje 1.2+
+		RootCAs:    pool,
+		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return h.cur.Load(), nil
+		},
 	}
 	tr.Proxy = nil // ruch agenta nie powinien przechodzić przez proxy systemowe
-	return &http.Client{Transport: tr, Timeout: timeout}, agentID, nil
+	h.tr = tr
+	return &http.Client{Transport: tr, Timeout: timeout}, h, nil
 }
 
 // CheckServer sprawdza połączenie z serwerem: TLS, weryfikację certyfikatu

@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,8 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"siem/agent/internal/config"
+	"siem/agent/internal/enrollment"
+	"siem/agent/internal/heartbeat"
 	"siem/agent/internal/logging"
 	"siem/agent/internal/secure"
 	"siem/agent/internal/setup"
@@ -41,6 +44,7 @@ const envKey = `SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
 
 type installOptions struct {
 	server, ca, cert, key, profile, startAt string
+	token, panel                            string // rejestracja tokenem (Bifröst)
 	noStart                                 bool
 }
 
@@ -51,6 +55,7 @@ func install(o installOptions) error {
 	if st, err := queryService(); err == nil {
 		return fmt.Errorf("agent jest już zainstalowany (usługa: %s).\n"+
 			"  zmiana serwera:          siem_agent set-server <adres>\n"+
+			"  nowa wersja programu:    siem_agent upgrade (uruchomione z folderu nowej wersji)\n"+
 			"  ponowna instalacja:      siem_agent uninstall, a potem install", stateNames[st.State])
 	}
 
@@ -65,17 +70,31 @@ func install(o installOptions) error {
 		}
 		return filepath.Join(srcDir, name)
 	}
+	// Paczka z panelu (Bifröst) zawiera token zamiast certyfikatu i klucza:
+	// agent zarejestruje się sam, generując klucz u siebie.
+	if o.token == "" {
+		if data, err := os.ReadFile(filepath.Join(srcDir, "token.txt")); err == nil {
+			o.token = strings.TrimSpace(string(data))
+		}
+	}
+	enrolling := o.token != "" && o.cert == "" && o.key == "" && !fileExists(filepath.Join(srcDir, "agent.crt"))
 	o.ca, o.cert, o.key = pick(o.ca, "ca.crt"), pick(o.cert, "agent.crt"), pick(o.key, "agent.key")
 
 	// Weryfikacja WSZYSTKIEGO przed jakąkolwiek zmianą w systemie – błąd
 	// w tym miejscu nie zostawia połowicznej instalacji.
-	if err := checkPackage(srcDir, o.ca, o.cert, o.key); err != nil {
-		return err
-	}
-	if _, agentID, err := shipper.NewTLSClient(o.ca, o.cert, o.key, 10*time.Second); err != nil {
-		return fmt.Errorf("certyfikaty z paczki są niepoprawne: %w", err)
+	if enrolling {
+		if err := checkPackage(srcDir, o.ca); err != nil {
+			return err
+		}
 	} else {
-		fmt.Println("Paczka instalacyjna agenta:", agentID)
+		if err := checkPackage(srcDir, o.ca, o.cert, o.key); err != nil {
+			return err
+		}
+		if _, agentID, err := shipper.NewTLSClient(o.ca, o.cert, o.key, 10*time.Second); err != nil {
+			return fmt.Errorf("certyfikaty z paczki są niepoprawne: %w", err)
+		} else {
+			fmt.Println("Paczka instalacyjna agenta:", agentID)
+		}
 	}
 
 	if o.server == "" {
@@ -95,6 +114,44 @@ func install(o installOptions) error {
 	serverURL, err := setup.ServerURL(o.server)
 	if err != nil {
 		return err
+	}
+
+	// Rejestracja tokenem – też przed zmianami w systemie (zły token = nic
+	// nie zostaje zainstalowane). Klucz powstaje tutaj i trafia tylko na dysk
+	// tego komputera.
+	var enrolled *enrollment.Result
+	var enrolledKey []byte
+	if enrolling {
+		panelURL := o.panel
+		if panelURL == "" {
+			if panelURL, err = enrollment.PanelURL(serverURL); err != nil {
+				return err
+			}
+		}
+		caPEM, err := os.ReadFile(o.ca)
+		if err != nil {
+			return err
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(caPEM) {
+			return errors.New("ca.crt z paczki jest niepoprawny")
+		}
+		host, _ := os.Hostname()
+		fmt.Printf("Rejestracja agenta w panelu %s tokenem z paczki…\n", panelURL)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		res, key, err := enrollment.Register(ctx, panelURL, roots, o.token, enrollment.Info{Hostname: host, OS: heartbeat.OSVersion(), Version: version})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("rejestracja agenta: %w", err)
+		}
+		enrolled, enrolledKey = &res, key
+		fmt.Printf("Zarejestrowano: agent %s (certyfikat ważny do %s)\n", res.AgentID, res.NotAfter.Local().Format("2006-01-02"))
+	}
+	if o.profile == "" {
+		o.profile = "workstation"
+		if enrolled != nil && enrolled.Profile != "" {
+			o.profile = enrolled.Profile // profil przypisany do tokenu w panelu
+		}
 	}
 	cfgText, err := setup.GenerateConfig(setup.Options{ServerURL: serverURL, Profile: o.profile, StartAt: o.startAt})
 	if err != nil {
@@ -125,7 +182,15 @@ func install(o installOptions) error {
 	if err := secure.RestrictDir(dataDir); err != nil {
 		return err
 	}
-	for _, f := range [][2]string{{o.ca, "ca.crt"}, {o.cert, "agent.crt"}, {o.key, "agent.key"}} {
+	files := [][2]string{{o.ca, "ca.crt"}, {o.cert, "agent.crt"}, {o.key, "agent.key"}}
+	if enrolled != nil {
+		files = files[:1] // tylko CA – certyfikat i klucz z rejestracji zapisujemy niżej
+		if err := enrollment.WritePair(filepath.Join(certDir, "agent.crt"), filepath.Join(certDir, "agent.key"),
+			[]byte(enrolled.Certificate), enrolledKey); err != nil {
+			return fmt.Errorf("zapis certyfikatu agenta: %w", err)
+		}
+	}
+	for _, f := range files {
 		src, name := f[0], f[1]
 		dst := filepath.Join(certDir, name)
 		if samePath(src, dst) {
@@ -422,4 +487,9 @@ func checkPackage(srcDir string, files ...string) error {
 		`  .\siem_agent.exe install`+"\n"+
 		"(albo wskaż pliki opcjami -ca, -cert, -key). Folder %s nie zawiera paczki.",
 		strings.Join(missing, "\n  "), srcDir)
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }

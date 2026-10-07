@@ -23,6 +23,7 @@ import (
 
 	"siem/agent/internal/config"
 	"siem/agent/internal/core"
+	"siem/agent/internal/enrollment"
 	"siem/agent/internal/heartbeat"
 	"siem/agent/internal/limits"
 	"siem/agent/internal/logging"
@@ -43,9 +44,11 @@ func usage() {
 
 Instalacja (PowerShell lub cmd jako administrator, w folderze z siem_agent.exe,
 ca.crt, agent.crt i agent.key):
-  siem_agent install [-server adres] [-profile workstation|server|dc] [-start-at now|oldest] [-no-start]
+  siem_agent install [-server adres] [-token token] [-profile workstation|server|dc] [-start-at now|oldest] [-no-start]
       -server   adres serwera, np. 192.168.88.98 lub siem.firma.local:8443 (bez -server: pytanie)
       -profile  zestaw zbieranych zdarzeń (domyślnie workstation)
+      -token    token rejestracyjny z panelu (Bifröst) – agent sam wygeneruje klucz i pobierze
+                certyfikat; w paczce z panelu token jest w pliku token.txt
       -ca, -cert, -key   inne położenie certyfikatów
 
 Sterowanie (po instalacji polecenie działa z każdego miejsca):
@@ -53,11 +56,14 @@ Sterowanie (po instalacji polecenie działa z każdego miejsca):
   siem_agent start | stop | restart
   siem_agent test                   sprawdzenie połączenia z serwerem
   siem_agent set-server <adres>     zmiana adresu serwera (restartuje agenta)
+  siem_agent upgrade                aktualizacja programu (uruchom z folderu nowej wersji)
   siem_agent uninstall [-purge]     odinstalowanie (-purge: także dane i certyfikaty)
 
 Diagnostyka:
   siem_agent check                  walidacja konfiguracji, certyfikatów i uprawnień
   siem_agent run                    uruchomienie w konsoli zamiast usługi (Ctrl+C kończy)
+  siem_agent enroll -server <adres> -token <token> -dir <katalog>
+                                    rejestracja bez instalacji usługi (test, konsola)
   siem_agent version
 
 Opcja -config <plik> (przed lub po poleceniu) wskazuje inną konfigurację.
@@ -100,11 +106,14 @@ func main() {
 	cf.Usage = usage
 	cfgPath := cf.String("config", *cfgFlag, "plik konfiguracji")
 	var opts installOptions
+	var eo enrollOptions
 	purge := new(bool)
 	switch cmd {
 	case "install":
 		cf.StringVar(&opts.server, "server", "", "adres serwera")
-		cf.StringVar(&opts.profile, "profile", "workstation", "profil zdarzeń")
+		cf.StringVar(&opts.profile, "profile", "", "profil zdarzeń (domyślnie z tokenu albo workstation)")
+		cf.StringVar(&opts.token, "token", "", "token rejestracyjny z panelu (zamiast certyfikatu w paczce)")
+		cf.StringVar(&opts.panel, "panel", "", "adres panelu do rejestracji (domyślnie https://<serwer>:8444)")
 		cf.StringVar(&opts.startAt, "start-at", "now", "now | oldest")
 		cf.StringVar(&opts.ca, "ca", "", "plik CA")
 		cf.StringVar(&opts.cert, "cert", "", "certyfikat agenta")
@@ -112,6 +121,13 @@ func main() {
 		cf.BoolVar(&opts.noStart, "no-start", false, "nie uruchamiaj usługi po instalacji")
 	case "uninstall":
 		purge = cf.Bool("purge", false, "usuń także dane, konfigurację i certyfikaty")
+	case "enroll":
+		cf.StringVar(&eo.server, "server", "", "adres serwera")
+		cf.StringVar(&eo.token, "token", "", "token rejestracyjny z panelu")
+		cf.StringVar(&eo.ca, "ca", "", "plik głównego CA (domyślnie ca.crt obok programu)")
+		cf.StringVar(&eo.panel, "panel", "", "adres panelu (domyślnie https://<serwer>:8444)")
+		cf.StringVar(&eo.dir, "dir", "", "katalog na certyfikaty i agent.yaml")
+		cf.StringVar(&eo.profile, "profile", "", "profil zdarzeń (domyślnie z tokenu)")
 	}
 	_ = cf.Parse(rest)
 	if *cfgPath == "" {
@@ -124,6 +140,10 @@ func main() {
 		err = install(opts)
 	case "uninstall":
 		err = uninstall(*purge)
+	case "upgrade":
+		err = upgrade()
+	case "enroll":
+		err = enrollOnly(eo)
 	case "start":
 		err = startService()
 	case "stop":
@@ -244,10 +264,11 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	warnings := protectFiles(cfg, log)
 	runtime.GOMAXPROCS(cfg.Limits.MaxProcs)
 
-	client, agentID, err := shipper.NewTLSClient(cfg.Server.CAFile, cfg.Server.CertFile, cfg.Server.KeyFile, cfg.Server.Timeout)
+	client, certs, err := shipper.NewReloadableTLSClient(cfg.Server.CAFile, cfg.Server.CertFile, cfg.Server.KeyFile, cfg.Server.Timeout)
 	if err != nil {
 		return err
 	}
+	agentID := certs.AgentID()
 	log = log.With("agent_id", agentID)
 
 	// Kaganiec nakładany przed rozpoczęciem odczytu.
@@ -349,6 +370,17 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
 			Status: func() any { return tracker.Snapshot() }, Log: log}
 		go hb.Run(watchCtx)
+	}
+
+	// Bifröst: odnowienie certyfikatu przed wygaśnięciem (bez restartu agenta).
+	panelURL := cfg.Server.PanelURL
+	if panelURL == "" {
+		panelURL, _ = enrollment.PanelURL(cfg.Server.URL)
+	}
+	if panelURL != "" {
+		renewer := &enrollment.Renewer{Client: client, PanelURL: panelURL, CertFile: cfg.Server.CertFile, KeyFile: cfg.Server.KeyFile,
+			Holder: certs, Log: log, Warn: tracker.Warn}
+		go renewer.Run(watchCtx)
 	}
 
 	log.Info("agent uruchomiony", "version", version, "eventlog", true)

@@ -175,3 +175,50 @@ export function ago(iso?: string, now = Date.now()): string {
 export function formatNumber(n?: number): string {
   return n === undefined ? "—" : n.toLocaleString("pl-PL");
 }
+
+// ---- Bifröst: rejestracja agentów tokenem ----
+
+export type AgentProfile = "workstation" | "server" | "dc";
+
+export interface EnrollToken {
+  id: number;
+  name: string;
+  profile: AgentProfile;
+  max_uses: number;
+  uses: number;
+  expires_at: string;
+  created_at: string;
+  created_by: string;
+  revoked_at?: string;
+}
+
+export const enrollApi = {
+  list: () =>
+    request<{ tokens: EnrollToken[]; profiles: Record<AgentProfile, string>; enabled: boolean; public_server: string }>("GET", "/api/v1/enroll-tokens"),
+  create: (t: { name: string; profile: AgentProfile; valid_hours: number; max_uses: number }) =>
+    request<{ token: EnrollToken; secret: string }>("POST", "/api/v1/enroll-tokens", t),
+  revoke: (id: number) => request<{ token: EnrollToken }>("POST", `/api/v1/enroll-tokens/${id}/revoke`),
+  revokeAgent: (id: string, reason: string) =>
+    request<{ revoked: number }>("POST", `/api/v1/agents/${encodeURIComponent(id)}/revoke`, { reason }),
+
+  // Paczka ZIP: token w treści żądania (nie w adresie), plik zapisywany przez przeglądarkę.
+  downloadPackage: async (secret: string) => {
+    const res = await fetch("/api/v1/enroll-tokens/package", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
+      body: JSON.stringify({ secret }),
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "heimdall-agent.zip";
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
+};
