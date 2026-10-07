@@ -414,7 +414,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
-- **Etap 1.5 – postęp:** K1, K2, W3, K4 i W1 zrobione (06–07.10.2026). K1, K4 i W1 sprawdzone na VM, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Dalej: W2, K3, M1, opcjonalnie wydajność writera (W7).
+- **Etap 1.5 – postęp:** K1, K2, W3, K4, W1, M1 i W2 (mechanizm) zrobione (06–07.10.2026). K1, K4, W1 i W2 sprawdzone na VM, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Dalej: K3, opcjonalnie wydajność writera (W7).
 
 **Kamienie milowe po drodze:**
 
@@ -724,7 +724,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | # | Problem | Poprawka |
 |---|---|---|
 | W1 | Normalizator przetwarza sekwencyjnie w jednym wątku i jest kosztowny (pomiar K4: ok. 4500 zdarzeń/s na kopię, 1,1 rdzenia) | własny parser XML zamiast `encoding/xml` (53% czasu), szybsza kompresja wewnętrzna, mniej alokacji, pula wątków i publikacja asynchroniczna; dokładanie kopii pomaga dopiero przy wolnych rdzeniach. **Zrobione 07.10.2026** |
-| W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności |
+| W2 | Surowy XML i pola dublują dane (80% miejsca) | krótka retencja kolumny `raw` (np. 1 dzień), pełny oryginał w archiwum Urd; plan pojemności. **Mechanizm zrobiony 07.10.2026** (domyślnie 5 dni do czasu archiwum) |
 | W3 | „Spróbuj za 2 s” bez losowego rozrzutu, brak limitu przyjmowania | rozrzut w agencie; limit jednoczesnych żądań i 429 w ingest. **Zrobione 06.10.2026** |
 | W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo) |
 | W5 | Konfiguracja agenta wyłącznie lokalna | konfiguracja z serwera per grupa (etap 2) |
@@ -732,7 +732,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | W7 | Writer po W1 jest najdroższym etapem: ok. 1,3 rdzenia przy 10 000 wierszy/s (rozpakowanie, JSON, przygotowanie kolumn) i sufit ok. 10–11 tys. wierszy/s na kopię | profil writera; lżejszy format wiadomości między normalizatorem a writerem; równoległe dekodowanie; kopie writera na osobnych rdzeniach |
 
 **Mniejsze**
-- M1: brak CI na GitHubie i testu wyścigów;
+- M1: brak CI na GitHubie i testu wyścigów – **zrobione 07.10.2026** (GitHub Actions: Linux z `-race` i fuzzingiem, Windows z testami agenta);
 - M2: nieczytelne wiadomości w normalizatorze są pomijane zamiast trafiać do kwarantanny;
 - M3: brak czytelnego opisu większości zdarzeń (decyzja: opis renderowany przez agenta czy mapowanie na serwerze);
 - M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn;
@@ -824,3 +824,13 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | 20 000 zdarzeń/s, 2 min | – | ingest przyjmuje 100% (720 krótkich odmów 429), normalizator do 17 000/s, writer ok. 10 000/s, VM wysycona (load 11 na 4 vCPU); 2 596 929 z 2 596 929 zdarzeń w bazie po opróżnieniu kolejki |
 
 - Wniosek: przy 10 000 zdarzeń/s, czyli szacowanym szczycie dla firmy z roadmapy, cały potok mieści się na jednej VM z 4 vCPU. Następnym ograniczeniem są writer (W7) i liczba rdzeni. Dalej skaluje się dokładaniem rdzeni lub maszyn.
+
+**W2 – osobna retencja surowego XML (07.10.2026)**
+
+- Kolumna `raw` ma własny TTL (`SIEM_RAW_TTL_DAYS`, nie dłuższy niż `SIEM_EVENTS_TTL_DAYS`). Po jego upływie ClickHouse czyści oryginalny XML, a wiersz i pola znormalizowane zostają.
+- Sprawdzone na VM:
+  - działa razem z `ttl_only_drop_parts=1`;
+  - świeża instalacja tworzy kolumnę z TTL;
+  - `clickhouse/retention.sh` zmienia retencję działającej bazy na podstawie `.env`.
+- **Decyzja (07.10.2026):** domyślnie 5 dni, czyli bez zmiany, dopóki nie powstanie archiwum NIS2 (Urd, etap 3). Do tego czasu oryginały są dostępne tylko w ClickHouse.
+- Pomiar po testach obciążenia: `fields` 495 MiB, `raw` 484 MiB, razem ok. 85% tabeli. Skrócenie retencji `raw` do 1 dnia zmniejszy bazę o ok. 35% przy 5 dniach retencji.

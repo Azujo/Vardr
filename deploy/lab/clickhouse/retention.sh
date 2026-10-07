@@ -1,0 +1,32 @@
+#!/bin/bash
+# Stosuje retencję z pliku .env do istniejącej bazy (schemat w init/ działa
+# tylko przy pierwszym starcie z pustym wolumenem). Bezpieczne do
+# wielokrotnego uruchamiania. Użycie (na serwerze, w katalogu stosu):
+#
+#   ./clickhouse/retention.sh
+#
+# Zmienne: SIEM_EVENTS_TTL_DAYS (zdarzenia i kwarantanna),
+#          SIEM_RAW_TTL_DAYS   (surowy XML, ≤ SIEM_EVENTS_TTL_DAYS).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+set -a; . ./.env; set +a
+
+events=${SIEM_EVENTS_TTL_DAYS:-5}
+raw=${SIEM_RAW_TTL_DAYS:-$events}
+if ! [[ $events =~ ^[0-9]+$ && $raw =~ ^[0-9]+$ ]] || (( events < 1 || raw < 1 )); then
+  echo "SIEM_EVENTS_TTL_DAYS i SIEM_RAW_TTL_DAYS muszą być liczbami dni ≥ 1" >&2; exit 2
+fi
+if (( raw > events )); then
+  echo "SIEM_RAW_TTL_DAYS ($raw) nie może być większe niż SIEM_EVENTS_TTL_DAYS ($events)" >&2; exit 2
+fi
+
+ch() { docker compose exec -T clickhouse clickhouse-client --user "$CLICKHOUSE_ADMIN_USER" --password "$CLICKHOUSE_ADMIN_PASSWORD" --multiquery "$@"; }
+
+ch <<SQL
+ALTER TABLE siem.events MODIFY TTL toDateTime(ingested) + INTERVAL $events DAY;
+ALTER TABLE siem.events MODIFY COLUMN raw String CODEC(ZSTD(3)) TTL toDateTime(ingested) + INTERVAL $raw DAY;
+ALTER TABLE siem.quarantine MODIFY TTL toDateTime(ingested) + INTERVAL $events DAY;
+SQL
+
+echo "Retencja: zdarzenia i kwarantanna $events dni, surowy XML $raw dni."
+ch -q "SELECT name, formatReadableSize(data_compressed_bytes) AS na_dysku FROM system.columns WHERE database = 'siem' AND table = 'events' ORDER BY data_compressed_bytes DESC LIMIT 4 FORMAT PrettyCompactMonoBlock"

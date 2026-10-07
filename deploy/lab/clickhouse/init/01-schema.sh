@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS siem.events
     process_command_line String CODEC(ZSTD(3)),
     message              String CODEC(ZSTD(3)),
     fields               Map(LowCardinality(String), String) CODEC(ZSTD(3)),
-    raw                  String CODEC(ZSTD(3)),
+    -- Surowy XML ma własną retencję (SIEM_RAW_TTL_DAYS ≤ SIEM_EVENTS_TTL_DAYS):
+    -- to ok. połowa miejsca, a pola znormalizowane zostają do końca retencji
+    -- zdarzeń (roadmapa, zał. E, W2).
+    raw                  String CODEC(ZSTD(3)) TTL toDateTime(ingested) + INTERVAL ${SIEM_RAW_TTL_DAYS} DAY,
     truncated            Bool,
     parser_version       LowCardinality(String),
     time_quality         LowCardinality(String),

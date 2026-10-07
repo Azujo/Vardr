@@ -252,6 +252,13 @@ Na VM (katalog `~/siem-lab`): plik `.env` z hasłami według `.env.example`,
 `chmod 600 certs/server.key`, następnie `docker compose up -d --build`.
 Hasło administratora Grafany: `grep GRAFANA_ADMIN_PASSWORD ~/siem-lab/.env`.
 
+Retencję ustawia się w `.env`:
+
+- `SIEM_EVENTS_TTL_DAYS`: zdarzenia i kwarantanna, domyślnie 5 dni;
+- `SIEM_RAW_TTL_DAYS`: surowy XML, domyślnie 5 dni. Po tym czasie zostają pola znormalizowane, a XML to ok. 40–50% miejsca w bazie.
+
+Zmiany na działającej bazie stosuje skrypt `./clickhouse/retention.sh`, uruchamiany na VM w katalogu stosu. Wypisuje też, ile miejsca zajmują największe kolumny. Surowy XML warto skracać dopiero wtedy, gdy oryginały będą trafiać do archiwum NIS2 (etap 3).
+
 Zweryfikowane: 40 290 zdarzeń z agenta w ClickHouse bez braków i duplikatów,
 kompresja ~15× (31,6 MB → 2,1 MB), czas od zdarzenia do zapisu w bazie ~0,8 s,
 zatrzymanie ClickHouse – zdarzenia czekają w NATS i są zapisywane po powrocie.
