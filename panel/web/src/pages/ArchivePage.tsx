@@ -29,6 +29,7 @@ import {
   type ArchiveVerification,
 } from "../api";
 import { useAuth } from "../auth";
+import ArchiveExports from "./ArchiveExports";
 
 function hourLabel(iso?: string) {
   if (!iso) return "—";
@@ -358,6 +359,7 @@ export default function ArchivePage() {
           <Tabs.List>
             <Tabs.Tab value="manifests">Manifesty ({data.manifests?.length ?? 0})</Tabs.Tab>
             <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
+            {user?.role === "admin" && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="manifests" pt="sm">
             {data.manifests?.length ? (
@@ -377,6 +379,11 @@ export default function ArchivePage() {
               </Text>
             )}
           </Tabs.Panel>
+          {user?.role === "admin" && (
+            <Tabs.Panel value="exports" pt="sm">
+              <ArchiveExports />
+            </Tabs.Panel>
+          )}
         </Tabs>
       )}
 

@@ -446,3 +446,39 @@ export function formatBytes(n?: number): string {
   }
   return `${v.toLocaleString("pl-PL", { maximumFractionDigits: i ? 1 : 0 })} ${units[i]}`;
 }
+
+export type ExportStatus = "pending" | "running" | "done" | "failed" | "expired";
+
+export interface ArchiveExport {
+  id: number;
+  requested_at: string;
+  requested_by: string;
+  reason: string;
+  from: string;
+  to: string;
+  status: ExportStatus;
+  started_at?: string;
+  finished_at?: string;
+  error?: string;
+  file_name?: string;
+  bytes: number;
+  sha256?: string;
+  manifests: number;
+  segments: number;
+  records: number;
+}
+
+export const exportsApi = {
+  list: () => request<{ exports: ArchiveExport[]; downloads: boolean }>("GET", "/api/v1/archive/exports"),
+  create: (e: { from: string; to: string; reason: string }) =>
+    request<{ export: ArchiveExport }>("POST", "/api/v1/archive/exports", e),
+  downloadUrl: (id: number) => `/api/v1/archive/exports/${id}/download`,
+};
+
+export const exportStatusLabels: Record<ExportStatus, { label: string; color: string }> = {
+  pending: { label: "w kolejce", color: "blue" },
+  running: { label: "w przygotowaniu", color: "blue" },
+  done: { label: "gotowy", color: "green" },
+  failed: { label: "nieudany", color: "red" },
+  expired: { label: "usunięty po terminie", color: "gray" },
+};

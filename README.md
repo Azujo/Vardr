@@ -512,6 +512,37 @@ docker compose up -d api archiver
 
 Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIVER_PASSWORD`, np. `openssl rand -hex 24`. Superużytkownik, z którym baza była zakładana, zostaje przemianowany na `saga_admin`, bo PostgreSQL nie pozwala odebrać mu uprawnień. Konsola administratora: `docker compose exec saga psql -U saga_admin -d saga`.
 
+### Eksport dla audytora (Urd)
+
+Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczka zawiera:
+
+- oryginalne segmenty z zakresu;
+- manifesty od pierwszej godziny zakresu do najnowszego: łańcuch z kotwicą;
+- `export.json`: kto, kiedy, po co i jaki zakres;
+- `README.txt` z opisem sprawdzenia;
+- `SHA256SUMS`.
+
+Przy zapisie każdy segment jest porównywany z manifestem, więc niezgodne archiwum przerywa eksport. Panel pokazuje SHA-256 całej paczki, który warto wpisać do protokołu przekazania. Zlecenie i każde pobranie trafiają do audytu, a paczki są usuwane po 7 dniach (`SIEM_ARCHIVE_EXPORT_KEEP_DAYS`).
+
+Uprawnienia: rola panelu może tylko złożyć zlecenie (wybrane kolumny) i czytać jego stan. Nie oznaczy go jako gotowego i nie wskaże dowolnego pliku do pobrania.
+
+Sprawdzenie paczki bez dostępu do systemu:
+
+```bash
+siem-archiver check-export urd-eksport-1-2026100710-2026100716.tar
+```
+
+Polecenie sprawdza:
+
+- sumy plików;
+- ciągłość łańcucha;
+- zgodność segmentów z manifestami;
+- sumę każdej paczki agenta.
+
+Kod wyjścia 1 oznacza niezgodności. Na końcu polecenie wypisuje kotwicę, czyli SHA-256 najnowszego manifestu, do porównania z wartością zapisaną niezależnie. Bez programu audytor może sprawdzić paczkę ręcznie według `README.txt`, zaczynając od `sha256sum -c SHA256SUMS`.
+
+Zakres dotyczy czasu przyjęcia paczek przez serwer, nie czasu zdarzeń. Eksport obejmuje całe segmenty, więc wszystkie źródła z danych godzin. Filtrowanie po źródłach dojdzie z polityką archiwum per źródło.
+
 ### Kopie zapasowe
 
 Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) zapisuje:

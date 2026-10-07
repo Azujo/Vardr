@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -15,6 +17,7 @@ type fakeArchive struct {
 	o           urd.Overview
 	err         error
 	requestedBy string
+	exports     []urd.ExportJob
 }
 
 func (f *fakeArchive) Overview(context.Context) (urd.Overview, error) { return f.o, f.err }
@@ -88,5 +91,77 @@ func TestArchiveAPI(t *testing.T) {
 	}
 	if code, _, _ := admin.do("POST", "/api/v1/archive/verify", nil); code != 409 {
 		t.Fatalf("zlecenie bez archiwum: %d", code)
+	}
+}
+
+func (f *fakeArchive) CreateExport(_ context.Context, by, reason string, from, to time.Time) (urd.ExportJob, error) {
+	if f.err != nil {
+		return urd.ExportJob{}, f.err
+	}
+	j := urd.ExportJob{ID: int64(len(f.exports) + 1), RequestedBy: by, Reason: reason, From: from, To: to, Status: urd.ExportPending}
+	f.exports = append(f.exports, j)
+	return j, nil
+}
+func (f *fakeArchive) Exports(context.Context, int) ([]urd.ExportJob, error) { return f.exports, f.err }
+func (f *fakeArchive) ExportByID(_ context.Context, id int64) (urd.ExportJob, error) {
+	for _, j := range f.exports {
+		if j.ID == id {
+			return j, nil
+		}
+	}
+	return urd.ExportJob{}, urd.ErrExportNotFound
+}
+
+func TestArchiveExportAPI(t *testing.T) {
+	e := newEnv(t)
+	fa := &fakeArchive{}
+	dir := t.TempDir()
+	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), Archive: fa, ExportDir: dir}
+	srv.now = func() time.Time { return e.clock }
+	e.h = srv.Handler()
+	e.addUser("ola", store.RoleAnalyst, "haslo-oli-12345", false)
+	e.addUser("adam", store.RoleAdmin, "haslo-adama-123", false)
+	analyst, admin := e.client("10.0.0.1"), e.client("10.0.0.2")
+	analyst.login("ola", "haslo-oli-12345")
+	admin.login("adam", "haslo-adama-123")
+
+	from := e.clock.Add(-30 * time.Hour)
+	body := map[string]any{"from": from, "to": from.Add(90 * time.Minute), "reason": "kontrola KSC"}
+	if code, _, _ := analyst.do("POST", "/api/v1/archive/exports", body); code != 403 {
+		t.Fatalf("eksport tylko dla administratora: %d", code)
+	}
+	if code, _, _ := admin.do("POST", "/api/v1/archive/exports", map[string]any{"from": from, "to": from.Add(time.Hour), "reason": "x"}); code != 400 {
+		t.Fatalf("powód jest obowiązkowy: %d", code)
+	}
+	if code, _, _ := admin.do("POST", "/api/v1/archive/exports", map[string]any{"from": from, "to": from.Add(40 * 24 * time.Hour), "reason": "za długo"}); code != 400 {
+		t.Fatalf("limit 31 dni: %d", code)
+	}
+	code, out, _ := admin.do("POST", "/api/v1/archive/exports", body)
+	if code != 202 {
+		t.Fatalf("zlecenie: %d %v", code, out)
+	}
+	j := fa.exports[0]
+	if !j.From.Equal(from.UTC().Truncate(time.Hour)) || j.To.Sub(j.From) != 2*time.Hour || j.RequestedBy != "adam" {
+		t.Fatalf("zakres zaokrąglony do pełnych godzin: %+v", j)
+	}
+	if code, _, _ := admin.do("GET", "/api/v1/archive/exports/1/download", nil); code != 409 {
+		t.Fatalf("niegotowy eksport: %d", code)
+	}
+	fa.exports[0].Status = urd.ExportDone
+	fa.exports[0].FileName = urd.ExportName(fa.exports[0])
+	if err := os.WriteFile(filepath.Join(dir, fa.exports[0].FileName), []byte("tar"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, resp := admin.do("GET", "/api/v1/archive/exports/1/download", nil)
+	if code != 200 || resp.Header.Get("Content-Disposition") == "" {
+		t.Fatalf("pobranie: %d", code)
+	}
+	fa.exports[0].FileName = "../../etc/passwd"
+	if code, _, _ := admin.do("GET", "/api/v1/archive/exports/1/download", nil); code != 409 {
+		t.Fatalf("nazwa spoza wzorca nie może zostać wydana: %d", code)
+	}
+	acts := e.st.actions()
+	if !slices.Contains(acts, "archive_export_requested") || !slices.Contains(acts, "archive_export_downloaded") {
+		t.Fatalf("audyt: %v", acts)
 	}
 }

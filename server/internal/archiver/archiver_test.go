@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -176,5 +177,83 @@ func TestArchiverPausesOnLowDisk(t *testing.T) {
 	}
 	if _, _, p := h.Get(); p != "" {
 		t.Fatalf("panel nadal widzi wstrzymanie: %q", p)
+	}
+}
+
+type fakeExports struct {
+	jobs     []urd.ExportJob
+	finished []urd.ExportJob
+	expired  []string
+}
+
+func (f *fakeExports) ClaimExport(context.Context) (urd.ExportJob, bool, error) {
+	if len(f.jobs) == 0 {
+		return urd.ExportJob{}, false, nil
+	}
+	j := f.jobs[0]
+	f.jobs = f.jobs[1:]
+	return j, true, nil
+}
+func (f *fakeExports) FinishExport(_ context.Context, j urd.ExportJob) error {
+	f.finished = append(f.finished, j)
+	return nil
+}
+func (f *fakeExports) FailInterruptedExports(context.Context) (int64, error) { return 0, nil }
+func (f *fakeExports) ExpireExports(context.Context, time.Time) ([]string, error) {
+	return f.expired, nil
+}
+
+func TestExporterWritesVerifiablePackage(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 10, 7, 10, 10, 0, 0, time.UTC)
+	cat := urd.NewMemCatalog()
+	a := urd.New(t.TempDir(), cat)
+	a.Now = func() time.Time { return now }
+	w, _ := a.OpenSegment()
+	_ = w.Add(urd.RecordMeta{Agent: "agt-1", Batch: "b1", ReceivedAt: now}, []byte("paczka"))
+	if _, err := w.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	if _, err := a.Seal(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	store := &fakeExports{jobs: []urd.ExportJob{
+		{ID: 1, RequestedBy: "adam", Reason: "audyt", From: from, To: from.Add(time.Hour)},
+		{ID: 2, RequestedBy: "adam", Reason: "pusty zakres", From: from.Add(-48 * time.Hour), To: from.Add(-47 * time.Hour)},
+	}}
+	e := &Exporter{A: a, Store: store, Dir: dir, Keep: time.Hour, Version: "test",
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Lock: &sync.Mutex{}}
+	for {
+		j, ok, _ := store.ClaimExport(ctx)
+		if !ok {
+			break
+		}
+		_ = store.FinishExport(ctx, e.runJob(ctx, j))
+	}
+	ok, bad := store.finished[0], store.finished[1]
+	if ok.Status != urd.ExportDone || ok.Records != 1 || len(ok.SHA256) != 64 || !urd.ValidExportName(ok.FileName) {
+		t.Fatalf("eksport: %+v", ok)
+	}
+	if bad.Status != urd.ExportFailed || bad.Error == "" {
+		t.Fatalf("pusty zakres powinien się nie udać: %+v", bad)
+	}
+	f, err := os.Open(filepath.Join(dir, ok.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if c := urd.CheckExport(f); !c.OK || c.Records != 1 {
+		t.Fatalf("paczka z dysku: %+v", c)
+	}
+	// Wygasła paczka jest usuwana.
+	store.expired = []string{ok.FileName}
+	f.Close()
+	e.expire(ctx)
+	if _, err := os.Stat(filepath.Join(dir, ok.FileName)); !os.IsNotExist(err) {
+		t.Fatalf("paczka powinna zniknąć: %v", err)
 	}
 }

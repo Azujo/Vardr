@@ -3,6 +3,7 @@ package urd
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,6 +135,39 @@ func TestPostgresCatalog(t *testing.T) {
 	}
 	if vs, err := db.Verifications(ctx, 5); err != nil || len(vs) != 1 || !vs[0].OK {
 		t.Fatalf("historia weryfikacji: %+v %v", vs, err)
+	}
+
+	// Zlecenia eksportu.
+	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	if _, err := db.CreateExport(ctx, "adam", "x", from, from.Add(time.Hour)); err == nil {
+		t.Fatal("baza powinna odrzucić zbyt krótki powód")
+	}
+	if _, err := db.CreateExport(ctx, "adam", "kontrola", from, from.Add(40*24*time.Hour)); err == nil {
+		t.Fatal("baza powinna odrzucić zakres ponad 31 dni")
+	}
+	ex, err := db.CreateExport(ctx, "adam", "kontrola KSC", from, from.Add(time.Hour))
+	if err != nil || ex.Status != ExportPending {
+		t.Fatalf("zlecenie: %+v %v", ex, err)
+	}
+	got, ok, err := db.ClaimExport(ctx)
+	if err != nil || !ok || got.ID != ex.ID || got.Status != ExportRunning {
+		t.Fatalf("pobranie zlecenia: %+v %v %v", got, ok, err)
+	}
+	if _, ok, _ := db.ClaimExport(ctx); ok {
+		t.Fatal("zlecenie pobrane dwa razy")
+	}
+	got.Status, got.FileName, got.SHA256, got.Bytes = ExportDone, ExportName(got), strings.Repeat("a", 64), 10
+	if err := db.FinishExport(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if list, err := db.Exports(ctx, 10); err != nil || len(list) != 1 || list[0].FinishedAt == nil {
+		t.Fatalf("lista eksportów: %+v %v", list, err)
+	}
+	if names, err := db.ExpireExports(ctx, time.Now().Add(time.Hour)); err != nil || len(names) != 1 || names[0] != got.FileName {
+		t.Fatalf("wygaszanie: %v %v", names, err)
+	}
+	if _, err := db.ExportByID(ctx, 999); err != ErrExportNotFound {
+		t.Fatalf("brak eksportu: %v", err)
 	}
 
 	// Panel przed pierwszym uruchomieniem archiwizatora.

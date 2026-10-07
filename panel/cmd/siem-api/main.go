@@ -157,6 +157,7 @@ func serve(log *slog.Logger) error {
 	}
 	defer archive.Close()
 	apiServer.Archive = archive
+	apiServer.ExportDir = os.Getenv("SIEM_ARCHIVE_EXPORT_DIR")
 	srv := &http.Server{
 		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
 		Handler: apiServer.Handler(),

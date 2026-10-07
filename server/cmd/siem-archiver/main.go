@@ -7,6 +7,8 @@
 //	siem-archiver            praca ciągła (usługa)
 //	siem-archiver verify     jednorazowa weryfikacja w ramach budżetu (kod wyjścia 1 = niezgodności)
 //	siem-archiver verify --full   jak wyżej, ale całe archiwum czytane w całości
+//	siem-archiver check-export <plik.tar>  sprawdza paczkę eksportu dla audytora
+//	                         (bez dostępu do systemu; kod wyjścia 1 = niezgodności)
 //	siem-archiver disable    wyłącza archiwizację nowych paczek (usuwa konsumenta
 //	                         kolejki; dane w archiwum zostają do końca retencji)
 package main
@@ -19,6 +21,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -47,10 +50,20 @@ func main() {
 		if err == nil && !ok {
 			os.Exit(1)
 		}
+	case "check-export":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "użycie: siem-archiver check-export <plik.tar>")
+			os.Exit(2)
+		}
+		ok, cerr := checkExport(os.Args[2])
+		if cerr == nil && !ok {
+			os.Exit(1)
+		}
+		err = cerr
 	case "disable":
 		err = disable(log)
 	default:
-		fmt.Fprintln(os.Stderr, "użycie: siem-archiver [serve|verify|disable]")
+		fmt.Fprintln(os.Stderr, "użycie: siem-archiver [serve|verify [--full]|check-export <plik.tar>|disable]")
 		os.Exit(2)
 	}
 	if err != nil {
@@ -71,6 +84,8 @@ type settings struct {
 	minFreePct   float64
 	warnFreePct  float64
 	verifyBudget int64
+	exportDir    string
+	exportKeep   time.Duration
 }
 
 func load(log *slog.Logger) (settings, error) {
@@ -99,6 +114,12 @@ func load(log *slog.Logger) (settings, error) {
 			s.exclude = append(s.exclude, p)
 		}
 	}
+	s.exportDir = svc.Env("SIEM_ARCHIVE_EXPORT_DIR", "/exports")
+	keepDays, err := svc.EnvInt("SIEM_ARCHIVE_EXPORT_KEEP_DAYS", 7)
+	if err != nil {
+		return s, err
+	}
+	s.exportKeep = time.Duration(max(1, keepDays)) * 24 * time.Hour
 	budgetGB, err := svc.EnvInt("SIEM_ARCHIVE_VERIFY_BUDGET_GB", 50)
 	if err != nil {
 		return s, err
@@ -194,9 +215,12 @@ func serve(log *slog.Logger) error {
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	go queue.Watch(ctx, log, js, bus.StreamRaw, bus.ConsumerArchiver, 0.5, 0.8, metrics.NewQueue())
 	health := &archiver.Health{}
+	dataLock := &sync.Mutex{}
+	go (&archiver.Exporter{A: a, Store: cat, Dir: cfg.exportDir, Keep: cfg.exportKeep, MinFreeBytes: uint64(cfg.minFreeGB) << 30,
+		Version: svc.Version, Log: log, Lock: dataLock}).Run(ctx)
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,
-		State: cat, Health: health, StateBase: urd.ArchiverState{
+		State: cat, Health: health, DataLock: dataLock, StateBase: urd.ArchiverState{
 			Version: svc.Version, RetentionDays: int(cfg.retention / (24 * time.Hour)),
 			SegmentMaxMB: int(cfg.segBytes >> 20), SegmentMaxAgeS: int(cfg.segAge / time.Second),
 			VerifyEveryS: int(cfg.verifyEvery / time.Second), StartedAt: time.Now().UTC(),
@@ -273,4 +297,20 @@ func disable(log *slog.Logger) error {
 	}
 	log.Warn("archiwizacja nowych paczek WYŁĄCZONA (konsument usunięty); zatrzymaj usługę archiver – dane w archiwum zostają do końca retencji")
 	return nil
+}
+
+// checkExport sprawdza paczkę eksportu (np. u audytora, bez dostępu do systemu).
+func checkExport(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	c := urd.CheckExport(f)
+	out, _ := json.MarshalIndent(c, "", "  ")
+	fmt.Println(string(out))
+	if c.OK {
+		fmt.Fprintf(os.Stderr, "Paczka zgodna. Porównaj kotwicę (SHA-256 najnowszego manifestu) z wartością zapisaną niezależnie:\n%s\n", c.Latest)
+	}
+	return c.OK, nil
 }

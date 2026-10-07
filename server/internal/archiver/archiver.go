@@ -6,6 +6,7 @@ package archiver
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -194,7 +195,8 @@ type MaintainConfig struct {
 	VerifyBudget int64         // bajty czytane w całości w jednym przebiegu (0 = wszystko)
 	State        StateStore    // nil = bez stanu dla panelu
 	StateBase    urd.ArchiverState
-	Health       *Health // stan dysku z pętli archiwizatora
+	Health       *Health     // stan dysku z pętli archiwizatora
+	DataLock     *sync.Mutex // wspólna z eksportem (nil = bez blokady)
 }
 
 // Maintain co minutę zapisuje stan dla panelu, usuwa dane po retencji
@@ -223,7 +225,14 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 		}
 		if time.Since(lastExpire) >= time.Hour {
 			lastExpire = time.Now()
-			if n, err := a.Expire(ctx, c.Retention); err != nil {
+			if c.DataLock != nil {
+				c.DataLock.Lock()
+			}
+			n, err := a.Expire(ctx, c.Retention)
+			if c.DataLock != nil {
+				c.DataLock.Unlock()
+			}
+			if err != nil {
 				m.Errors.WithLabelValues("expire").Inc()
 				log.Error("usuwanie danych po retencji nieudane", "err", err)
 			} else if n > 0 {

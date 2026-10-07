@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"siem/internal/urd"
@@ -15,6 +19,9 @@ type ArchiveReader interface {
 	RecentManifests(ctx context.Context, limit int) ([]urd.ManifestRecord, error)
 	Verifications(ctx context.Context, limit int) ([]urd.Verification, error)
 	RequestVerify(ctx context.Context, by string, at time.Time) error
+	CreateExport(ctx context.Context, by, reason string, from, to time.Time) (urd.ExportJob, error)
+	Exports(ctx context.Context, limit int) ([]urd.ExportJob, error)
+	ExportByID(ctx context.Context, id int64) (urd.ExportJob, error)
 }
 
 // Stan zgodności archiwum (pole compliance).
@@ -117,4 +124,122 @@ func (s *Server) archiveVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "archive_verify_requested", "urd", nil)
 	writeJSON(w, http.StatusAccepted, map[string]any{"message": "weryfikacja zlecona – archiwizator rozpocznie ją w ciągu minuty"})
+}
+
+type exportRequest struct {
+	From   time.Time `json:"from"`
+	To     time.Time `json:"to"`
+	Reason string    `json:"reason"`
+}
+
+func (s *Server) listExports(w http.ResponseWriter, r *http.Request) {
+	if !s.archiveEnabled(w) {
+		return
+	}
+	jobs, err := s.Archive.Exports(r.Context(), 50)
+	if errors.Is(err, urd.ErrNotConfigured) {
+		jobs, err = nil, nil
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if jobs == nil {
+		jobs = []urd.ExportJob{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"exports": jobs, "downloads": s.ExportDir != ""})
+}
+
+// createExport składa zlecenie eksportu dla audytora: pełne godziny
+// archiwizacji [from, to), z obowiązkowym powodem (audyt dostępu).
+func (s *Server) createExport(w http.ResponseWriter, r *http.Request) {
+	if !s.archiveEnabled(w) {
+		return
+	}
+	a := current(r)
+	var req exportRequest
+	if !readJSON(w, r, &req) {
+		return
+	}
+	from, to := req.From.UTC().Truncate(time.Hour), req.To.UTC().Truncate(time.Hour)
+	if req.To.After(to) {
+		to = to.Add(time.Hour) // koniec zakresu zaokrąglany w górę do pełnej godziny
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	switch {
+	case req.From.IsZero() || req.To.IsZero() || !to.After(from):
+		writeError(w, http.StatusBadRequest, "bad_range", "podaj początek i koniec zakresu (koniec po początku)")
+		return
+	case to.Sub(from) > urd.MaxExportRange:
+		writeError(w, http.StatusBadRequest, "bad_range", "zakres eksportu może mieć najwyżej 31 dni")
+		return
+	case to.After(s.now().UTC().Truncate(time.Hour).Add(time.Hour)):
+		writeError(w, http.StatusBadRequest, "bad_range", "zakres nie może sięgać w przyszłość")
+		return
+	case len([]rune(req.Reason)) < 5 || len(req.Reason) > 1000:
+		writeError(w, http.StatusBadRequest, "bad_reason", "podaj powód eksportu (5–1000 znaków) – trafi do audytu i do paczki")
+		return
+	}
+	j, err := s.Archive.CreateExport(r.Context(), a.user.Username, req.Reason, from, to)
+	if errors.Is(err, urd.ErrNotConfigured) {
+		writeError(w, http.StatusConflict, "archive_not_configured", "archiwizator jeszcze nie działał – nie ma czego eksportować")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.audit(r, &a.user, "archive_export_requested", "urd", map[string]any{
+		"export_id": j.ID, "from": from, "to": to, "reason": req.Reason})
+	writeJSON(w, http.StatusAccepted, map[string]any{"export": j})
+}
+
+// downloadExport wydaje gotową paczkę (tylko administrator, z audytem).
+func (s *Server) downloadExport(w http.ResponseWriter, r *http.Request) {
+	if !s.archiveEnabled(w) {
+		return
+	}
+	if s.ExportDir == "" {
+		writeError(w, http.StatusServiceUnavailable, "exports_disabled", "pobieranie eksportów wyłączone – brak SIEM_ARCHIVE_EXPORT_DIR w siem-api")
+		return
+	}
+	a := current(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_id", "niepoprawny identyfikator")
+		return
+	}
+	j, err := s.Archive.ExportByID(r.Context(), id)
+	if errors.Is(err, urd.ErrExportNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego eksportu")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if j.Status != urd.ExportDone || !urd.ValidExportName(j.FileName) {
+		writeError(w, http.StatusConflict, "export_not_ready", "eksport nie jest gotowy do pobrania")
+		return
+	}
+	f, err := os.Open(filepath.Join(s.ExportDir, j.FileName))
+	if err != nil {
+		writeError(w, http.StatusGone, "export_missing", "plik eksportu jest niedostępny (usunięty po terminie?)")
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.audit(r, &a.user, "archive_export_downloaded", "urd", map[string]any{
+		"export_id": j.ID, "file": j.FileName, "sha256": j.SHA256, "bytes": st.Size()})
+	// Paczka może mieć wiele GB – bez limitu czasu zapisu serwera.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+	w.Header().Set("Content-Type", "application/x-tar")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+j.FileName+`"`)
+	w.Header().Set("X-Content-SHA256", j.SHA256)
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeContent(w, r, j.FileName, st.ModTime(), f)
 }
