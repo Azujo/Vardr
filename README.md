@@ -265,8 +265,9 @@ Wynik widać w zakładce *Actions* repozytorium.
 - instalator MSI (etap 2)
 - token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu i synchronizacji czasu (razem z heartbeatem)
-- archiwum NIS2 (etap 3): stan w panelu, polityka per źródło, eksport dla audytora, replay
 - detekcja (etap 4), alerty i reguły w panelu (etap 5)
+
+Podsumowanie etapów i lista znanych luk: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
 
 ## Serwer laboratoryjny (`deploy/lab`)
 
@@ -625,6 +626,8 @@ Do czasu modułu alertów (Gjallarhorn, etap 4) awarie zgłasza Grafana. Reguły
 
 - weryfikacja archiwum wykryła niezgodności;
 - archiwizator nie działa;
+- archiwizacja wyłączona w polityce;
+- zaplanowane osłabienie polityki archiwum (karencja – czas na anulowanie);
 - archiwizacja wstrzymana z braku miejsca;
 - mało miejsca na dysku archiwum albo na dysku systemowym (< 15%);
 - weryfikacja nieaktualna;
