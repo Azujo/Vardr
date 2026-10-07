@@ -9,22 +9,23 @@ import (
 )
 
 const exportCols = `id, requested_at, requested_by, reason, from_hour, to_hour, status, started_at, finished_at,
-	error, file_name, bytes, sha256, manifests, segments, records`
+	error, file_name, bytes, sha256, manifests, segments, records, agents`
 
 func scanExport(r pgx.Row) (ExportJob, error) {
 	var j ExportJob
 	err := r.Scan(&j.ID, &j.RequestedAt, &j.RequestedBy, &j.Reason, &j.From, &j.To, &j.Status, &j.StartedAt, &j.FinishedAt,
-		&j.Error, &j.FileName, &j.Bytes, &j.SHA256, &j.Manifests, &j.Segments, &j.Records)
+		&j.Error, &j.FileName, &j.Bytes, &j.SHA256, &j.Manifests, &j.Segments, &j.Records, &j.Agents)
+	j.Agents = nonNil(j.Agents)
 	return j, err
 }
 
 // ErrExportNotFound: nie ma takiego zlecenia eksportu.
 var ErrExportNotFound = errors.New("nie ma takiego eksportu")
 
-// CreateExport składa zlecenie eksportu (panel).
-func (p *PG) CreateExport(ctx context.Context, by, reason string, from, to time.Time) (ExportJob, error) {
-	j, err := scanExport(p.pool.QueryRow(ctx, `INSERT INTO urd.exports (requested_by, reason, from_hour, to_hour)
-		VALUES ($1, $2, $3, $4) RETURNING `+exportCols, by, reason, from, to))
+// CreateExport składa zlecenie eksportu (panel); agents puste = wszyscy agenci.
+func (p *PG) CreateExport(ctx context.Context, by, reason string, from, to time.Time, agents []string) (ExportJob, error) {
+	j, err := scanExport(p.pool.QueryRow(ctx, `INSERT INTO urd.exports (requested_by, reason, from_hour, to_hour, agents)
+		VALUES ($1, $2, $3, $4, $5) RETURNING `+exportCols, by, reason, from, to, nonNil(agents)))
 	return j, notConfigured(err)
 }
 

@@ -3,6 +3,7 @@ package urd
 import (
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -139,13 +140,13 @@ func TestPostgresCatalog(t *testing.T) {
 
 	// Zlecenia eksportu.
 	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
-	if _, err := db.CreateExport(ctx, "adam", "x", from, from.Add(time.Hour)); err == nil {
+	if _, err := db.CreateExport(ctx, "adam", "x", from, from.Add(time.Hour), nil); err == nil {
 		t.Fatal("baza powinna odrzucić zbyt krótki powód")
 	}
-	if _, err := db.CreateExport(ctx, "adam", "kontrola", from, from.Add(40*24*time.Hour)); err == nil {
+	if _, err := db.CreateExport(ctx, "adam", "kontrola", from, from.Add(40*24*time.Hour), nil); err == nil {
 		t.Fatal("baza powinna odrzucić zakres ponad 31 dni")
 	}
-	ex, err := db.CreateExport(ctx, "adam", "kontrola KSC", from, from.Add(time.Hour))
+	ex, err := db.CreateExport(ctx, "adam", "kontrola KSC", from, from.Add(time.Hour), nil)
 	if err != nil || ex.Status != ExportPending {
 		t.Fatalf("zlecenie: %+v %v", ex, err)
 	}
@@ -198,5 +199,101 @@ func TestPostgresCatalog(t *testing.T) {
 	}
 	if _, err := db.Overview(ctx); err != ErrNotConfigured {
 		t.Fatalf("brak schematu: %v", err)
+	}
+}
+
+// Polityka archiwum: zlecenia z panelu, karencja osłabień, granice, anulowanie.
+func TestPostgresPolicy(t *testing.T) {
+	url := os.Getenv("SIEM_TEST_PG_URL")
+	if url == "" {
+		t.Skip("brak SIEM_TEST_PG_URL – pomijam test na PostgreSQL")
+	}
+	ctx := context.Background()
+	db, err := OpenPG(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.pool.Exec(ctx, "DROP SCHEMA IF EXISTS urd CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	b := PolicyBounds{MinRetentionDays: 30, MaxRetentionDays: 365}
+	if _, _, err := db.ProcessPolicyChanges(ctx, b, time.Hour, now); err != ErrNoPolicy {
+		t.Fatalf("bez polityki: %v", err)
+	}
+	pol, created, err := db.InitPolicy(ctx, Policy{Enabled: true, RetentionDays: 90, UpdatedAt: now, UpdatedBy: "konfiguracja serwera"})
+	if err != nil || !created || pol.RetentionDays != 90 {
+		t.Fatalf("założenie polityki: %+v %v %v", pol, created, err)
+	}
+	if pol, created, _ := db.InitPolicy(ctx, Policy{Enabled: true, RetentionDays: 7, UpdatedAt: now}); created || pol.RetentionDays != 90 {
+		t.Fatal("ponowny start nie może nadpisać polityki z panelu")
+	}
+	change := func(enabled bool, days int, agents ...string) PolicyChange {
+		t.Helper()
+		c, err := db.CreatePolicyChange(ctx, PolicyChange{RequestedBy: "adam", Reason: "zmiana testowa", Enabled: enabled,
+			RetentionDays: days, ExcludedAgents: agents})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+
+	// Wzmocnienie – od razu.
+	c1 := change(true, 120)
+	changed, cur, err := db.ProcessPolicyChanges(ctx, b, time.Hour, now)
+	if err != nil || len(changed) != 1 || changed[0].Status != PolicyApplied || cur.RetentionDays != 120 || *cur.ChangeID != c1.ID {
+		t.Fatalf("wzmocnienie: %+v %+v %v", changed, cur, err)
+	}
+	// Osłabienie – po karencji.
+	c2 := change(false, 120, "agt-x")
+	changed, cur, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now)
+	if len(changed) != 1 || changed[0].Status != PolicyScheduled || !cur.Enabled ||
+		!slices.Equal(changed[0].Weakening, []string{WeakenDisable, WeakenAgents}) {
+		t.Fatalf("osłabienie: %+v %+v", changed, cur)
+	}
+	if sc, _ := db.ScheduledChange(ctx); sc == nil || sc.ID != c2.ID {
+		t.Fatalf("zaplanowana zmiana: %+v", sc)
+	}
+	if changed, cur, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now.Add(30*time.Minute)); len(changed) != 0 || !cur.Enabled {
+		t.Fatalf("przed końcem karencji: %+v", changed)
+	}
+	changed, cur, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now.Add(61*time.Minute))
+	if len(changed) != 1 || changed[0].Status != PolicyApplied || cur.Enabled || !slices.Equal(cur.ExcludedAgents, []string{"agt-x"}) {
+		t.Fatalf("po karencji: %+v %+v", changed, cur)
+	}
+	// Anulowanie zaplanowanego osłabienia.
+	c3 := change(false, 60)
+	_, _, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now.Add(2*time.Hour))
+	if _, err := db.CancelPolicyChange(ctx, c3.ID, "ewa", now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.CancelPolicyChange(ctx, c3.ID, "ewa", now.Add(2*time.Hour)); err != ErrPolicyChangeClosed {
+		t.Fatalf("ponowne anulowanie: %v", err)
+	}
+	changed, cur, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now.Add(4*time.Hour))
+	if len(changed) != 1 || changed[0].Status != PolicyCancelled || cur.RetentionDays != 120 {
+		t.Fatalf("anulowanie: %+v %+v", changed, cur)
+	}
+	// Retencja spoza granic – odrzucenie; starsze otwarte zlecenie – zastąpione.
+	c4 := change(true, 200)
+	c5 := change(true, 10)
+	changed, cur, _ = db.ProcessPolicyChanges(ctx, b, time.Hour, now.Add(5*time.Hour))
+	st := map[int64]string{}
+	for _, c := range changed {
+		st[c.ID] = c.Status
+	}
+	if st[c4.ID] != PolicySuperseded || st[c5.ID] != PolicyRejected || cur.RetentionDays != 120 {
+		t.Fatalf("zastąpienie i odrzucenie: %v %+v", st, cur)
+	}
+	if hist, err := db.PolicyChanges(ctx, 10); err != nil || len(hist) != 5 || hist[0].ID != c5.ID || hist[0].Error == "" {
+		t.Fatalf("historia: %+v %v", hist, err)
+	}
+	// Grupy agentów z tabel panelu – w pustej bazie testowej ich nie ma.
+	if _, _, ok, err := db.SourceGroups(ctx); err != nil || ok {
+		t.Fatalf("grupy bez tabel panelu: %v %v", ok, err)
 	}
 }

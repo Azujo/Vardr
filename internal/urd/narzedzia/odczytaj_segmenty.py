@@ -112,6 +112,7 @@ def main():
 
     # 3. Segmenty: zgodność z manifestem, suma każdej paczki, zdarzenia.
     original = Digest()
+    selected = set(info.get("agents") or [])
     out = sys.stdout
     for path, seg in sorted(expected_segments.items()):
         if path not in members:
@@ -128,6 +129,10 @@ def main():
             try:
                 batch = json.loads(gzip.decompress(payload))
             except Exception:  # paczka nieczytelna – w czytelnej części jest wpis z błędem
+                continue
+            # Eksport ograniczony do wybranych agentów: część czytelna
+            # zawiera tylko ich zdarzenia (segmenty są zawsze kompletne).
+            if selected and meta["agent"] not in selected:
                 continue
             for ev in batch.get("events", []):
                 original.add(batch_sha, ev["id"], ev.get("raw", ""))
@@ -152,6 +157,8 @@ def main():
         problems.append(f"czytelne zdarzenia ({readable.n}) nie odpowiadają oryginałom ({original.n})")
 
     print(f"eksport {info['export_id']}: {len(expected_segments)} segmentów, {original.n} zdarzeń z oryginałów")
+    if selected:
+        print("część czytelna tylko z agentów: " + ", ".join(sorted(selected)))
     print(f"kotwica (SHA-256 najnowszego manifestu): {info['latest_manifest']['sha256']}")
     if problems:
         print("NIEZGODNOŚCI:")

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -317,5 +318,26 @@ func TestCheckDirRefusesEmptyDirWithCatalog(t *testing.T) {
 	// Nowe archiwum: pusty spis i pusty katalog są w porządku.
 	if err := New(t.TempDir(), NewMemCatalog()).CheckDir(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPolicyWeakening(t *testing.T) {
+	cur := Policy{Enabled: true, RetentionDays: 90, ExcludedGroups: []int64{1}, ExcludedAgents: []string{"a"}}
+	for _, c := range []struct {
+		next Policy
+		want []string
+	}{
+		{Policy{Enabled: true, RetentionDays: 120, ExcludedGroups: []int64{}, ExcludedAgents: []string{}}, []string{}},
+		{Policy{Enabled: true, RetentionDays: 90, ExcludedGroups: []int64{1}, ExcludedAgents: []string{"a"}}, []string{}},
+		{Policy{Enabled: false, RetentionDays: 60, ExcludedGroups: []int64{1, 2}, ExcludedAgents: []string{"a", "b"}},
+			[]string{WeakenDisable, WeakenRetention, WeakenGroups, WeakenAgents}},
+	} {
+		if got := Weakening(cur, c.next); !slices.Equal(got, c.want) {
+			t.Errorf("%+v: %v, oczekiwano %v", c.next, got, c.want)
+		}
+	}
+	b := PolicyBounds{MinRetentionDays: 30, MaxRetentionDays: 365}
+	if b.Check(29) == nil || b.Check(366) == nil || b.Check(30) != nil {
+		t.Fatal("granice retencji")
 	}
 }

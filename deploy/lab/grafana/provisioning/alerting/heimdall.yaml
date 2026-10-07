@@ -55,6 +55,52 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-archive-disabled
+        title: "Archiwizacja NIS2 wyłączona w polityce"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Archiwizacja NIS2 wyłączona w polityce"
+          description: "Polityka archiwum wyłączyła zapis nowych paczek. Sprawdź historię zmian polityki w panelu (Urd → Polityka) i dziennik audytu."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'min(siem_archive_policy_enabled)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+      - uid: heimdall-archive-policy-scheduled
+        title: "Zaplanowane osłabienie polityki archiwum NIS2"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Zaplanowane osłabienie polityki archiwum NIS2"
+          description: "Ktoś zlecił wyłączenie archiwum, krótszą retencję albo wyłączenie źródeł. Zmiana wejdzie w życie po karencji – jeśli nie była uzgodniona, anuluj ją w panelu (Urd → Polityka)."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'max(siem_archive_policy_scheduled_weakening)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
       - uid: heimdall-archive-paused
         title: "Archiwizacja wstrzymana – brak miejsca na dysku archiwum"
         condition: C
@@ -87,7 +133,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Mało miejsca na dysku archiwum (< 15%)"
-          description: "Archiwum wkrótce się zatrzyma. Sprawdź retencję (SIEM_ARCHIVE_RETENTION_DAYS) albo powiększ dysk."
+          description: "Archiwum wkrótce się zatrzyma. Sprawdź retencję (panel: Urd → Polityka) albo powiększ dysk."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }

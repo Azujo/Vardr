@@ -57,6 +57,10 @@ type ExportJob struct {
 	Manifests   int        `json:"manifests"`
 	Segments    int        `json:"segments"`
 	Records     int64      `json:"records"`
+	// Agents: część czytelna tylko z tych agentów (puste = wszyscy).
+	// Segmenty (dowód) zawsze są kompletne – tylko całe segmenty można
+	// sprawdzić względem manifestu.
+	Agents []string `json:"agents"`
 }
 
 // exportNameRe: jedyna dopuszczalna postać nazwy pliku eksportu (panel nie
@@ -125,6 +129,7 @@ type exportInfo struct {
 	ServerVersion string          `json:"server_version"`
 	From          time.Time       `json:"from"`
 	To            time.Time       `json:"to"`
+	Agents        []string        `json:"agents,omitempty"` // część czytelna tylko z tych agentów
 	Manifests     []exportRef     `json:"manifests"`
 	Latest        exportRef       `json:"latest_manifest"`
 	Totals        exportTotals    `json:"totals"`
@@ -200,8 +205,9 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 
 	info := exportInfo{Format: ExportFormat, ExportID: j.ID, RequestedBy: j.RequestedBy, Reason: j.Reason,
 		RequestedAt: j.RequestedAt, CreatedAt: now, ServerVersion: opt.Version, From: j.From.UTC(), To: j.To.UTC(),
-		Note:  "Zakres dotyczy godzin archiwizacji (czasu przyjęcia paczek przez serwer), nie czasu zdarzeń.",
-		Chain: exportChainSpan{FromSeq: p.Chain[0].Seq, ToSeq: p.Chain[len(p.Chain)-1].Seq}}
+		Agents: j.Agents,
+		Note:   "Zakres dotyczy godzin archiwizacji (czasu przyjęcia paczek przez serwer), nie czasu zdarzeń.",
+		Chain:  exportChainSpan{FromSeq: p.Chain[0].Seq, ToSeq: p.Chain[len(p.Chain)-1].Seq}}
 	for _, m := range p.InRange {
 		info.Manifests = append(info.Manifests, exportRef{m.Seq, m.Hour.UTC(), m.SHA256})
 		info.Totals.Segments += m.Segments
@@ -241,7 +247,7 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 	for _, m := range p.InRange {
 		name := readableName(m.Hour)
-		if err := a.addReadableHour(ctx, tw, &sums, name, p.Bodies[m.Seq].Segments, opt, sink, &info.Readable, now); err != nil {
+		if err := a.addReadableHour(ctx, tw, &sums, name, p.Bodies[m.Seq].Segments, j.Agents, opt, sink, &info.Readable, now); err != nil {
 			return j, err
 		}
 		info.Readable.Files = append(info.Readable.Files, name)
@@ -297,7 +303,7 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 // addReadableHour zapisuje czytelne zdarzenia jednej godziny do pliku
 // roboczego (gzip), a potem dołącza go do paczki.
 func (a *Archive) addReadableHour(ctx context.Context, tw *tar.Writer, sums *bytes.Buffer, name string, segs []Segment,
-	opt ExportOptions, sink *csvSink, stats *exportReadable, now time.Time) error {
+	agents []string, opt ExportOptions, sink *csvSink, stats *exportReadable, now time.Time) error {
 	tmp, err := os.CreateTemp(opt.TempDir, "urd-ndjson-*")
 	if err != nil {
 		return err
@@ -312,6 +318,9 @@ func (a *Archive) addReadableHour(ctx context.Context, tw *tar.Writer, sums *byt
 			return ctx.Err()
 		}
 		if err := a.forEachRecord(s, func(meta RecordMeta, payload []byte) error {
+			if !agentSelected(agents, meta.Agent) {
+				return nil
+			}
 			for _, r := range readableEvents(meta, payload, opt.Enrich) {
 				if r.Error != "" {
 					stats.Unreadable++
@@ -334,6 +343,11 @@ func (a *Archive) addReadableHour(ctx context.Context, tw *tar.Writer, sums *byt
 		return err
 	}
 	return addFile(tw, sums, name, tmp, now)
+}
+
+// agentSelected: czy paczka agenta należy do części czytelnej (puste = wszyscy).
+func agentSelected(agents []string, agent string) bool {
+	return len(agents) == 0 || slices.Contains(agents, agent)
 }
 
 // forEachRecord czyta rekordy segmentu (sumy sprawdzono przy kopiowaniu).
@@ -420,6 +434,7 @@ type ExportCheck struct {
 	Records   int64    `json:"records"`
 	Latest    string   `json:"latest_manifest_sha256"`
 	Events    int64    `json:"events"`
+	Agents    []string `json:"agents,omitempty"` // eksport ograniczony do tych agentów
 	Problems  []string `json:"problems"`
 }
 
@@ -518,7 +533,8 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	segs := map[string]segInfo{}
 	var info exportInfo
 	var sumsFile []byte
-	var origDigest, readDigest eventDigest
+	var readDigest eventDigest
+	origByAgent := map[string]*eventDigest{} // oryginały według agenta (filtr z export.json)
 
 	for {
 		name, rd, err := next()
@@ -558,8 +574,13 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 					}
 					if b, err := DecodeBatch(payload); err == nil {
 						sum := SumHex(payload)
+						d := origByAgent[meta.Agent]
+						if d == nil {
+							d = &eventDigest{}
+							origByAgent[meta.Agent] = d
+						}
 						for _, ev := range b.Events {
-							origDigest.add(sum, ev.ID, ev.Raw)
+							d.add(sum, ev.ID, ev.Raw)
 						}
 					}
 				}
@@ -705,7 +726,14 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 		p.add("segment %s nie należy do żadnego manifestu z zakresu", name)
 	}
 
-	// Czytelne zdarzenia (format 2) muszą odpowiadać oryginałom.
+	// Czytelne zdarzenia (format 2) muszą odpowiadać oryginałom (wybranych agentów).
+	var origDigest eventDigest
+	for agent, d := range origByAgent {
+		if agentSelected(info.Agents, agent) {
+			origDigest.merge(*d)
+		}
+	}
+	c.Agents = info.Agents
 	c.Events = origDigest.n
 	if info.Format != "heimdall-urd-export/1" && !readDigest.same(origDigest) {
 		p.add("czytelne zdarzenia (%d) nie odpowiadają oryginałom (%d) – zdarzenia/ zmienione albo niekompletne", readDigest.n, origDigest.n)
@@ -786,6 +814,12 @@ Format segmentu: nagłówek "HEIMURD1", potem rekordy: uint32 BE długość
 metadanych, metadane JSON (agent, identyfikator paczki, czas przyjęcia,
 SHA-256 treści), uint32 BE długość treści, treść – paczka agenta (gzip,
 JSON: {"events": [{"id", "source" (kanał), "raw" (XML zdarzenia)}]}).
+
+Eksport ograniczony do wybranych agentów (export.json, pole "agents"):
+część czytelna (zdarzenia/, ODCZYT) zawiera tylko ich zdarzenia, a segmenty
+(dowód) – wszystkie paczki z wybranych godzin, bo tylko cały segment można
+sprawdzić względem manifestu. Sprawdzenie porównuje część czytelną
+z oryginałami wybranych agentów.
 
 Zakres eksportu dotyczy godzin archiwizacji (czasu przyjęcia paczek przez
 serwer), nie czasu zdarzeń. Pola znormalizowane (host.name, user.name itd.)

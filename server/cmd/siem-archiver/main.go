@@ -86,6 +86,8 @@ type settings struct {
 	verifyBudget int64
 	exportDir    string
 	exportKeep   time.Duration
+	bounds       urd.PolicyBounds
+	grace        time.Duration
 }
 
 func load(log *slog.Logger) (settings, error) {
@@ -98,6 +100,23 @@ func load(log *slog.Logger) (settings, error) {
 		return s, fmt.Errorf("SIEM_ARCHIVE_RETENTION_DAYS musi być ≥ 1")
 	}
 	s.retention = time.Duration(days) * 24 * time.Hour
+	// Granice polityki ustawianej w panelu: przejęcie panelu nie pozwala
+	// skrócić retencji poniżej minimum ani wyłączyć ochrony bez karencji.
+	if s.bounds.MinRetentionDays, err = svc.EnvInt("SIEM_ARCHIVE_MIN_RETENTION_DAYS", 30); err != nil {
+		return s, err
+	}
+	if s.bounds.MaxRetentionDays, err = svc.EnvInt("SIEM_ARCHIVE_MAX_RETENTION_DAYS", 3650); err != nil {
+		return s, err
+	}
+	if s.bounds.MinRetentionDays < 1 || s.bounds.MaxRetentionDays < s.bounds.MinRetentionDays {
+		return s, fmt.Errorf("SIEM_ARCHIVE_MIN_RETENTION_DAYS musi być ≥ 1 i ≤ SIEM_ARCHIVE_MAX_RETENTION_DAYS")
+	}
+	if err := s.bounds.Check(days); err != nil {
+		return s, fmt.Errorf("SIEM_ARCHIVE_RETENTION_DAYS: %w", err)
+	}
+	if s.grace, err = svc.EnvDuration("SIEM_ARCHIVE_POLICY_GRACE", 24*time.Hour); err != nil {
+		return s, err
+	}
 	mb, err := svc.EnvInt("SIEM_ARCHIVE_SEGMENT_MB", 64)
 	if err != nil {
 		return s, err
@@ -180,6 +199,20 @@ func serve(log *slog.Logger) error {
 	}
 	defer release()
 
+	// Polityka: przy pierwszym starcie z konfiguracji serwera, potem z panelu.
+	initial, created, err := cat.InitPolicy(ctx, urd.Policy{Enabled: true, RetentionDays: int(cfg.retention / (24 * time.Hour)),
+		UpdatedAt: time.Now().UTC(), UpdatedBy: "konfiguracja serwera"})
+	if err != nil {
+		return fmt.Errorf("polityka archiwum: %w", err)
+	}
+	if created {
+		log.Info("założono politykę archiwum z konfiguracji serwera (dalsze zmiany w panelu)", "retention_days", initial.RetentionDays)
+	} else {
+		log.Info("polityka archiwum z panelu", "enabled", initial.Enabled, "retention_days", initial.RetentionDays,
+			"excluded_groups", initial.ExcludedGroups, "excluded_agents", initial.ExcludedAgents)
+	}
+	policy := archiver.NewPolicy(initial, cfg.bounds)
+
 	a := urd.New(cfg.dir, cat)
 	if err := a.CheckDir(ctx); err != nil {
 		return fmt.Errorf("%s: %w", cfg.dir, err)
@@ -227,16 +260,20 @@ func serve(log *slog.Logger) error {
 	go (&archiver.Replayer{A: a, Store: cat, Pub: js, Log: log, Lock: dataLock}).Run(ctx)
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,
+		Policy: policy, PolicyStore: cat, PolicyGrace: cfg.grace,
 		State: cat, Health: health, DataLock: dataLock, StateBase: urd.ArchiverState{
+			MinRetentionDays: cfg.bounds.MinRetentionDays, MaxRetentionDays: cfg.bounds.MaxRetentionDays,
+			PolicyGraceS: int(cfg.grace / time.Second), ExcludePrefixes: cfg.exclude,
 			Version: svc.Version, RetentionDays: int(cfg.retention / (24 * time.Hour)),
 			SegmentMaxMB: int(cfg.segBytes >> 20), SegmentMaxAgeS: int(cfg.segAge / time.Second),
 			VerifyEveryS: int(cfg.verifyEvery / time.Second), StartedAt: time.Now().UTC(),
 		}})
 
-	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health,
+	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health, Policy: policy,
 		Cfg: archiver.Config{SegmentMaxBytes: cfg.segBytes, SegmentMaxAge: cfg.segAge, ExcludeAgents: cfg.exclude,
 			MinFreeBytes: uint64(cfg.minFreeGB) << 30, MinFreePercent: cfg.minFreePct, WarnFreePercent: cfg.warnFreePct}}
 	log.Info("archiwizator uruchomiony", "dir", cfg.dir, "retention", cfg.retention.String(),
+		"min_retention_days", cfg.bounds.MinRetentionDays, "policy_grace", cfg.grace.String(),
 		"segment_mb", cfg.segBytes>>20, "segment_age", cfg.segAge.String(), "verify_every", cfg.verifyEvery.String(),
 		"exclude_agents", cfg.exclude, "min_free_gb", cfg.minFreeGB, "min_free_percent", cfg.minFreePct)
 	for ctx.Err() == nil {

@@ -20,23 +20,28 @@ type ArchiveReader interface {
 	RecentManifests(ctx context.Context, limit int) ([]urd.ManifestRecord, error)
 	Verifications(ctx context.Context, limit int) ([]urd.Verification, error)
 	RequestVerify(ctx context.Context, by string, at time.Time) error
-	CreateExport(ctx context.Context, by, reason string, from, to time.Time) (urd.ExportJob, error)
+	CreateExport(ctx context.Context, by, reason string, from, to time.Time, agents []string) (urd.ExportJob, error)
 	Exports(ctx context.Context, limit int) ([]urd.ExportJob, error)
 	ExportByID(ctx context.Context, id int64) (urd.ExportJob, error)
 	CreateReplay(ctx context.Context, by, reason string, from, to time.Time, agents []string) (urd.ReplayJob, error)
 	Replays(ctx context.Context, limit int) ([]urd.ReplayJob, error)
+	PolicyChanges(ctx context.Context, limit int) ([]urd.PolicyChange, error)
+	CreatePolicyChange(ctx context.Context, c urd.PolicyChange) (urd.PolicyChange, error)
+	CancelPolicyChange(ctx context.Context, id int64, by string, at time.Time) (urd.PolicyChange, error)
 }
 
 // Stan zgodności archiwum (pole compliance).
 const (
-	complianceOK            = "ok"             // archiwizator działa, ostatnia weryfikacja zgodna i aktualna
-	complianceProblems      = "problems"       // ostatnia weryfikacja wykryła niezgodności
-	complianceDown          = "archiver_down"  // brak sygnału archiwizatora
-	complianceDiskFull      = "disk_full"      // archiwizacja wstrzymana z braku miejsca
-	complianceDiskLow       = "disk_low"       // mniej niż 15% wolnego miejsca
-	complianceStale         = "stale"          // weryfikacja dawno nie przeszła
-	complianceNeverVerified = "never_verified" // archiwizator działa, weryfikacji jeszcze nie było
-	complianceNotConfigured = "not_configured" // archiwizator nigdy nie działał
+	complianceOK            = "ok"               // archiwizator działa, ostatnia weryfikacja zgodna i aktualna
+	complianceProblems      = "problems"         // ostatnia weryfikacja wykryła niezgodności
+	complianceDown          = "archiver_down"    // brak sygnału archiwizatora
+	complianceDisabled      = "disabled"         // polityka wyłączyła archiwizację nowych paczek
+	complianceScheduled     = "policy_scheduled" // zaplanowane osłabienie polityki (karencja)
+	complianceDiskFull      = "disk_full"        // archiwizacja wstrzymana z braku miejsca
+	complianceDiskLow       = "disk_low"         // mniej niż 15% wolnego miejsca
+	complianceStale         = "stale"            // weryfikacja dawno nie przeszła
+	complianceNeverVerified = "never_verified"   // archiwizator działa, weryfikacji jeszcze nie było
+	complianceNotConfigured = "not_configured"   // archiwizator nigdy nie działał
 )
 
 // archiverDownAfter: archiwizator zapisuje stan co minutę.
@@ -50,8 +55,12 @@ func compliance(o urd.Overview, now time.Time) string {
 		return complianceProblems
 	case now.Sub(o.State.HeartbeatAt) > archiverDownAfter:
 		return complianceDown
+	case o.Policy != nil && !o.Policy.Enabled:
+		return complianceDisabled
 	case o.State.Paused != "":
 		return complianceDiskFull
+	case o.ScheduledChange != nil:
+		return complianceScheduled
 	case o.State.DiskTotalBytes > 0 && float64(o.State.DiskFreeBytes) < 0.15*float64(o.State.DiskTotalBytes):
 		return complianceDiskLow
 	case o.LastVerification == nil:
@@ -108,6 +117,8 @@ func (s *Server) archiveOverview(w http.ResponseWriter, r *http.Request) {
 		"last_verification": o.LastVerification,
 		"manifests":         manifests,
 		"verifications":     verifs,
+		"policy":            o.Policy,
+		"scheduled_change":  o.ScheduledChange,
 	})
 }
 
@@ -133,6 +144,10 @@ type exportRequest struct {
 	From   time.Time `json:"from"`
 	To     time.Time `json:"to"`
 	Reason string    `json:"reason"`
+	// Agents/Groups: część czytelna tylko z tych źródeł (grupy rozwijane
+	// do agentów w chwili zlecenia); oba puste = wszyscy.
+	Agents []string `json:"agents"`
+	Groups []int64  `json:"groups"`
 }
 
 func (s *Server) listExports(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +198,11 @@ func (s *Server) createExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_reason", "podaj powód eksportu (5–1000 znaków) – trafi do audytu i do paczki")
 		return
 	}
-	j, err := s.Archive.CreateExport(r.Context(), a.user.Username, req.Reason, from, to)
+	agents, ok := s.exportAgents(w, r, req.Agents, req.Groups)
+	if !ok {
+		return
+	}
+	j, err := s.Archive.CreateExport(r.Context(), a.user.Username, req.Reason, from, to, agents)
 	if errors.Is(err, urd.ErrNotConfigured) {
 		writeError(w, http.StatusConflict, "archive_not_configured", "archiwizator jeszcze nie działał – nie ma czego eksportować")
 		return
@@ -193,7 +212,7 @@ func (s *Server) createExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "archive_export_requested", "urd", map[string]any{
-		"export_id": j.ID, "from": from, "to": to, "reason": req.Reason})
+		"export_id": j.ID, "from": from, "to": to, "reason": req.Reason, "agents": agents, "groups": req.Groups})
 	writeJSON(w, http.StatusAccepted, map[string]any{"export": j})
 }
 
@@ -321,4 +340,42 @@ func (s *Server) createReplay(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, &a.user, "archive_replay_requested", "urd", map[string]any{
 		"replay_id": j.ID, "from": from, "to": to, "agents": agents, "reason": req.Reason})
 	writeJSON(w, http.StatusAccepted, map[string]any{"replay": j})
+}
+
+// exportAgents łączy wybranych agentów i agentów z wybranych grup.
+func (s *Server) exportAgents(w http.ResponseWriter, r *http.Request, agents []string, groups []int64) ([]string, bool) {
+	out := []string{}
+	for _, ag := range agents {
+		if ag = strings.TrimSpace(ag); ag != "" && !slices.Contains(out, ag) {
+			out = append(out, ag)
+		}
+	}
+	if len(groups) > 0 {
+		all, err := s.Store.ListAgents(r.Context())
+		if err != nil {
+			s.internalError(w, r, err)
+			return nil, false
+		}
+		groupOf, err := s.groupResolver(r)
+		if err != nil {
+			s.internalError(w, r, err)
+			return nil, false
+		}
+		n := len(out)
+		for _, a := range all {
+			if slices.Contains(groups, groupOf(a.ID).ID) && !slices.Contains(out, a.ID) {
+				out = append(out, a.ID)
+			}
+		}
+		if len(out) == n && n == 0 {
+			writeError(w, http.StatusBadRequest, "bad_sources", "w wybranych grupach nie ma agentów")
+			return nil, false
+		}
+	}
+	if len(out) > 1000 {
+		writeError(w, http.StatusBadRequest, "bad_sources", "najwyżej 1000 agentów w jednym eksporcie – wybierz mniej grup albo cały zakres")
+		return nil, false
+	}
+	slices.Sort(out)
+	return out, true
 }

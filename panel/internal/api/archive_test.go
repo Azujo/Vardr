@@ -19,6 +19,25 @@ type fakeArchive struct {
 	requestedBy string
 	exports     []urd.ExportJob
 	replays     []urd.ReplayJob
+	changes     []urd.PolicyChange
+}
+
+func (f *fakeArchive) PolicyChanges(context.Context, int) ([]urd.PolicyChange, error) {
+	return f.changes, f.err
+}
+func (f *fakeArchive) CreatePolicyChange(_ context.Context, c urd.PolicyChange) (urd.PolicyChange, error) {
+	c.ID, c.Status = int64(len(f.changes)+1), urd.PolicyPending
+	f.changes = append(f.changes, c)
+	return c, f.err
+}
+func (f *fakeArchive) CancelPolicyChange(_ context.Context, id int64, by string, at time.Time) (urd.PolicyChange, error) {
+	for i, c := range f.changes {
+		if c.ID == id && c.Status == urd.PolicyPending && c.CancelledAt == nil {
+			f.changes[i].CancelledAt, f.changes[i].CancelledBy = &at, by
+			return f.changes[i], nil
+		}
+	}
+	return urd.PolicyChange{}, urd.ErrPolicyChangeClosed
 }
 
 func (f *fakeArchive) Overview(context.Context) (urd.Overview, error) { return f.o, f.err }
@@ -52,6 +71,9 @@ func TestCompliance(t *testing.T) {
 		{"stara weryfikacja", urd.Overview{State: st, LastVerification: &urd.Verification{OK: true, FinishedAt: now.Add(-14 * time.Hour)}}, complianceStale},
 		{"brak miejsca", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now, VerifyEveryS: 3600, Paused: "mało miejsca", DiskFreeBytes: 1, DiskTotalBytes: 100}, LastVerification: ok}, complianceDiskFull},
 		{"mało miejsca", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now, VerifyEveryS: 3600, DiskFreeBytes: 10, DiskTotalBytes: 100}, LastVerification: ok}, complianceDiskLow},
+		{"archiwum wyłączone", urd.Overview{State: st, LastVerification: ok, Policy: &urd.Policy{Enabled: false}}, complianceDisabled},
+		{"zaplanowane osłabienie", urd.Overview{State: st, LastVerification: ok, Policy: &urd.Policy{Enabled: true},
+			ScheduledChange: &urd.PolicyChange{ID: 3}}, complianceScheduled},
 		{"archiwizator milczy", urd.Overview{State: &urd.ArchiverState{HeartbeatAt: now.Add(-5 * time.Minute), VerifyEveryS: 3600}, LastVerification: ok}, complianceDown},
 	} {
 		if got := compliance(c.o, now); got != c.want {
@@ -95,11 +117,12 @@ func TestArchiveAPI(t *testing.T) {
 	}
 }
 
-func (f *fakeArchive) CreateExport(_ context.Context, by, reason string, from, to time.Time) (urd.ExportJob, error) {
+func (f *fakeArchive) CreateExport(_ context.Context, by, reason string, from, to time.Time, agents []string) (urd.ExportJob, error) {
 	if f.err != nil {
 		return urd.ExportJob{}, f.err
 	}
-	j := urd.ExportJob{ID: int64(len(f.exports) + 1), RequestedBy: by, Reason: reason, From: from, To: to, Status: urd.ExportPending}
+	j := urd.ExportJob{ID: int64(len(f.exports) + 1), RequestedBy: by, Reason: reason, From: from, To: to, Status: urd.ExportPending,
+		Agents: agents}
 	f.exports = append(f.exports, j)
 	return j, nil
 }
@@ -202,5 +225,80 @@ func TestArchiveReplayAPI(t *testing.T) {
 	}
 	if !slices.Contains(e.st.actions(), "archive_replay_requested") {
 		t.Fatalf("audyt: %v", e.st.actions())
+	}
+}
+
+func TestArchivePolicyAPI(t *testing.T) {
+	e := newEnv(t)
+	fa := &fakeArchive{o: urd.Overview{
+		State:  &urd.ArchiverState{HeartbeatAt: e.clock, VerifyEveryS: 3600, MinRetentionDays: 30, MaxRetentionDays: 365, PolicyGraceS: 86400},
+		Policy: &urd.Policy{Enabled: true, RetentionDays: 90, ExcludedGroups: []int64{}, ExcludedAgents: []string{}}}}
+	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), Archive: fa}
+	srv.now = func() time.Time { return e.clock }
+	e.h = srv.Handler()
+	e.addUser("ola", store.RoleAnalyst, "haslo-oli-12345", false)
+	e.addUser("adam", store.RoleAdmin, "haslo-adama-123", false)
+	analyst, admin := e.client("10.0.0.1"), e.client("10.0.0.2")
+	analyst.login("ola", "haslo-oli-12345")
+	admin.login("adam", "haslo-adama-123")
+	e.st.agents = map[string]store.Agent{"agt-a": {ID: "agt-a", Hostname: "PC-A"}, "agt-b": {ID: "agt-b", Hostname: "PC-B"}}
+
+	code, out, _ := analyst.do("GET", "/api/v1/archive/policy", nil)
+	if code != 200 || out["policy"].(map[string]any)["retention_days"] != 90.0 || len(out["unarchived"].([]any)) != 0 {
+		t.Fatalf("polityka: %d %v", code, out)
+	}
+	body := func(enabled bool, days int, agents []string, pw string) map[string]any {
+		return map[string]any{"enabled": enabled, "retention_days": days, "excluded_agents": agents, "excluded_groups": []int64{},
+			"reason": "zmiana testowa", "password": pw}
+	}
+	if code, _, _ := analyst.do("POST", "/api/v1/archive/policy", body(true, 120, nil, "")); code != 403 {
+		t.Fatalf("zmiana tylko dla administratora: %d", code)
+	}
+	// Wzmocnienie (dłuższa retencja) – bez hasła.
+	if code, out, _ := admin.do("POST", "/api/v1/archive/policy", body(true, 120, nil, "")); code != 202 || len(out["weakening"].([]any)) != 0 {
+		t.Fatalf("wydłużenie retencji: %d %v", code, out)
+	}
+	// Retencja spoza granic z konfiguracji serwera.
+	if code, _, _ := admin.do("POST", "/api/v1/archive/policy", body(true, 7, nil, "haslo-adama-123")); code != 400 {
+		t.Fatalf("retencja poniżej minimum: %d", code)
+	}
+	// Osłabienia wymagają hasła.
+	for _, b := range []map[string]any{body(false, 90, nil, ""), body(true, 60, nil, ""), body(true, 90, []string{"agt-b"}, "")} {
+		if code, out, _ := admin.do("POST", "/api/v1/archive/policy", b); code != 403 || out["error"] != "reauth_required" {
+			t.Fatalf("osłabienie bez hasła: %d %v", code, out)
+		}
+	}
+	if code, out, _ := admin.do("POST", "/api/v1/archive/policy", body(false, 90, nil, "zle-haslo")); code != 403 || out["error"] != "reauth_failed" {
+		t.Fatalf("błędne hasło: %d %v", code, out)
+	}
+	code, out, _ = admin.do("POST", "/api/v1/archive/policy", body(true, 90, []string{"agt-b", " agt-b "}, "haslo-adama-123"))
+	if code != 202 || out["weakening"].([]any)[0] != urd.WeakenAgents {
+		t.Fatalf("wyłączenie agenta z hasłem: %d %v", code, out)
+	}
+	last := fa.changes[len(fa.changes)-1]
+	if !last.Reauth || !slices.Equal(last.ExcludedAgents, []string{"agt-b"}) || last.RequestedBy != "adam" {
+		t.Fatalf("zlecenie: %+v", last)
+	}
+	acts := e.st.actions()
+	if !slices.Contains(acts, "archive_policy_change_requested") || !slices.Contains(acts, "reauth_failed") {
+		t.Fatalf("audyt: %v", acts)
+	}
+	if code, _, _ := admin.do("POST", "/api/v1/archive/policy/changes/2/cancel", nil); code != 200 {
+		t.Fatalf("anulowanie: %d", code)
+	}
+	if code, _, _ := admin.do("POST", "/api/v1/archive/policy/changes/2/cancel", nil); code != 409 {
+		t.Fatalf("ponowne anulowanie: %d", code)
+	}
+
+	// Źródła bez archiwizacji według obowiązującej polityki.
+	fa.o.Policy.ExcludedAgents = []string{"agt-b"}
+	code, out, _ = admin.do("GET", "/api/v1/archive/policy", nil)
+	un := out["unarchived"].([]any)
+	if code != 200 || len(un) != 1 || un[0].(map[string]any)["agent_id"] != "agt-b" || un[0].(map[string]any)["reason"] != "agent" {
+		t.Fatalf("źródła bez archiwum: %d %v", code, out)
+	}
+	fa.o.Policy.Enabled = false
+	if _, out, _ := admin.do("GET", "/api/v1/archive/policy", nil); len(out["unarchived"].([]any)) != 2 {
+		t.Fatalf("wyłączone archiwum – wszyscy bez archiwizacji: %v", out)
 	}
 }

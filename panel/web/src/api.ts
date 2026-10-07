@@ -337,6 +337,8 @@ export type Compliance =
   | "ok"
   | "problems"
   | "archiver_down"
+  | "disabled"
+  | "policy_scheduled"
   | "disk_full"
   | "disk_low"
   | "stale"
@@ -356,6 +358,10 @@ export interface ArchiverState {
   disk_free_bytes: number;
   disk_total_bytes: number;
   paused?: string;
+  min_retention_days: number;
+  max_retention_days: number;
+  policy_grace_s: number;
+  exclude_prefixes: string[];
 }
 
 export interface ArchiveSummary {
@@ -407,12 +413,104 @@ export interface ArchiveOverview {
   last_verification?: ArchiveVerification | null;
   manifests?: ArchiveManifest[];
   verifications?: ArchiveVerification[];
+  policy?: ArchivePolicy | null;
+  scheduled_change?: PolicyChange | null;
+}
+
+export interface ArchivePolicy {
+  enabled: boolean;
+  retention_days: number;
+  excluded_groups: number[];
+  excluded_agents: string[];
+  change_id?: number;
+  updated_at: string;
+  updated_by: string;
+}
+
+export type PolicyChangeStatus = "pending" | "scheduled" | "applied" | "rejected" | "cancelled" | "superseded";
+export type Weakening = "disable" | "retention" | "groups" | "agents";
+
+export interface PolicyChange {
+  id: number;
+  requested_at: string;
+  requested_by: string;
+  reason: string;
+  enabled: boolean;
+  retention_days: number;
+  excluded_groups: number[];
+  excluded_agents: string[];
+  reauth: boolean;
+  status: PolicyChangeStatus;
+  weakening: Weakening[];
+  effective_at?: string;
+  applied_at?: string;
+  cancelled_at?: string;
+  cancelled_by?: string;
+  error?: string;
+}
+
+export interface UnarchivedSource {
+  agent_id: string;
+  hostname: string;
+  group: string;
+  reason: "disabled" | "agent" | "group" | "prefix";
+}
+
+export interface PolicyInfo {
+  policy: ArchivePolicy | null;
+  scheduled_change?: PolicyChange | null;
+  bounds: { min_retention_days: number; max_retention_days: number; grace_s: number; exclude_prefixes: string[] };
+  changes: PolicyChange[];
+  unarchived: UnarchivedSource[];
+  agents_total?: number;
+}
+
+export interface PolicyChangeRequest {
+  enabled: boolean;
+  retention_days: number;
+  excluded_groups: number[];
+  excluded_agents: string[];
+  reason: string;
+  password?: string;
 }
 
 export const archiveApi = {
   overview: () => request<ArchiveOverview>("GET", "/api/v1/archive"),
   verify: () => request<{ message: string }>("POST", "/api/v1/archive/verify"),
+  policy: () => request<PolicyInfo>("GET", "/api/v1/archive/policy"),
+  changePolicy: (p: PolicyChangeRequest) =>
+    request<{ change: PolicyChange; weakening: Weakening[]; grace_s: number; message: string }>("POST", "/api/v1/archive/policy", p),
+  cancelChange: (id: number) => request<{ message: string }>("POST", `/api/v1/archive/policy/changes/${id}/cancel`),
 };
+
+export const weakeningLabels: Record<Weakening, string> = {
+  disable: "wyłączenie archiwizacji",
+  retention: "krótsza retencja",
+  groups: "wyłączenie grup agentów",
+  agents: "wyłączenie agentów",
+};
+
+export const policyStatusLabels: Record<PolicyChangeStatus, { label: string; color: string }> = {
+  pending: { label: "oczekuje", color: "yellow" },
+  scheduled: { label: "zaplanowana", color: "orange" },
+  applied: { label: "obowiązuje / obowiązywała", color: "green" },
+  rejected: { label: "odrzucona", color: "red" },
+  cancelled: { label: "anulowana", color: "gray" },
+  superseded: { label: "zastąpiona", color: "gray" },
+};
+
+export const unarchivedReasonLabels: Record<UnarchivedSource["reason"], string> = {
+  disabled: "archiwum wyłączone",
+  agent: "agent wyłączony",
+  group: "grupa wyłączona",
+  prefix: "konfiguracja serwera",
+};
+
+export function formatDuration(s: number): string {
+  if (s >= 86400 && s % 86400 === 0) return `${s / 86400} d`;
+  if (s >= 3600) return `${Math.round(s / 360) / 10} h`;
+  return `${Math.round(s / 60)} min`;
+}
 
 export const complianceLabels: Record<Compliance, { label: string; color: string; hint: string }> = {
   ok: { label: "zgodne", color: "green", hint: "Archiwizator działa, ostatnia weryfikacja integralności nie wykryła zmian." },
@@ -430,6 +528,16 @@ export const complianceLabels: Record<Compliance, { label: string; color: string
     label: "archiwizacja wstrzymana – brak miejsca",
     color: "red",
     hint: "Na dysku archiwum zostało za mało miejsca. Nowe paczki czekają w kolejce; po jej zapełnieniu serwer wstrzyma przyjmowanie zdarzeń. Zwolnij lub powiększ dysk archiwum.",
+  },
+  disabled: {
+    label: "archiwizacja WYŁĄCZONA",
+    color: "red",
+    hint: "Polityka archiwum wyłączyła zapis nowych paczek. Dane już zarchiwizowane zostają do końca retencji. Zmiana – zakładka Polityka.",
+  },
+  policy_scheduled: {
+    label: "zaplanowane osłabienie polityki",
+    color: "orange",
+    hint: "Zlecono zmianę osłabiającą ochronę archiwum (wyłączenie, krótszą retencję albo wyłączenie źródeł). Wejdzie w życie po karencji – do tego czasu można ją anulować w zakładce Polityka.",
   },
   disk_low: { label: "mało miejsca na dysku", color: "orange", hint: "Na dysku archiwum zostało mniej niż 15% miejsca." },
   stale: { label: "weryfikacja nieaktualna", color: "orange", hint: "Weryfikacja nie przeszła w zaplanowanym czasie." },
@@ -468,11 +576,12 @@ export interface ArchiveExport {
   manifests: number;
   segments: number;
   records: number;
+  agents: string[];
 }
 
 export const exportsApi = {
   list: () => request<{ exports: ArchiveExport[]; downloads: boolean }>("GET", "/api/v1/archive/exports"),
-  create: (e: { from: string; to: string; reason: string }) =>
+  create: (e: { from: string; to: string; reason: string; agents?: string[]; groups?: number[] }) =>
     request<{ export: ArchiveExport }>("POST", "/api/v1/archive/exports", e),
   downloadUrl: (id: number) => `/api/v1/archive/exports/${id}/download`,
 };

@@ -332,3 +332,30 @@ func TestReplayerPublishesToReplayPipeline(t *testing.T) {
 		t.Fatalf("pusty zakres: %+v", j)
 	}
 }
+
+func TestArchiverPolicy(t *testing.T) {
+	pol := NewPolicy(urd.Policy{Enabled: true, RetentionDays: 10, ExcludedAgents: []string{"agt-x"}, ExcludedGroups: []int64{7}},
+		urd.PolicyBounds{MinRetentionDays: 30, MaxRetentionDays: 365})
+	r := &Archiver{Cfg: Config{ExcludeAgents: []string{"agt-load-"}}, Policy: pol}
+	// Przypisania grup jeszcze nieznane – wykluczenie grupy nie działa (archiwum zbiera wszystko).
+	if got := r.skipReason("agt-in-7"); got != "" {
+		t.Fatalf("grupy nieznane: %q", got)
+	}
+	pol.Set(pol.Current(), map[string]int64{"agt-in-7": 7, "agt-in-2": 2}, 7, true)
+	for agent, want := range map[string]string{
+		"agt-load-1": skipPrefix, "agt-x": skipAgent, "agt-in-7": skipGroup, "agt-in-2": "",
+		"agt-nowy": skipGroup, // bez przypisania – grupa domyślna (7)
+	} {
+		if got := r.skipReason(agent); got != want {
+			t.Errorf("%s: %q, oczekiwano %q", agent, got, want)
+		}
+	}
+	// Retencja nigdy poniżej minimum z konfiguracji serwera.
+	if got := pol.Retention(); got != 30*24*time.Hour {
+		t.Fatalf("retencja: %v", got)
+	}
+	pol.Set(urd.Policy{Enabled: false, RetentionDays: 90}, nil, 0, false)
+	if got := r.skipReason("agt-in-2"); got != skipDisabled || pol.Retention() != 90*24*time.Hour {
+		t.Fatalf("wyłączone archiwum: %q %v", got, pol.Retention())
+	}
+}

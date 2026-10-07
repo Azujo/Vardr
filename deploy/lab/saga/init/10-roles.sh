@@ -73,5 +73,13 @@ GRANT USAGE ON SCHEMA urd TO urd_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA urd TO urd_reader;
 SELECT 'GRANT UPDATE (verify_requested_at, verify_requested_by) ON urd.archiver_state TO urd_reader'
   WHERE to_regclass('urd.archiver_state') IS NOT NULL \gexec
+
+-- Archiwizator czyta przypisania agentów do grup (wykluczenia grup z polityki
+-- archiwum); tabele zakłada panel, więc grant także w jego migracji 005.
+GRANT USAGE ON SCHEMA public TO siem_archiver;
+SELECT 'GRANT SELECT (id, is_default) ON public.agent_groups TO siem_archiver'
+  WHERE to_regclass('public.agent_groups') IS NOT NULL \gexec
+SELECT 'GRANT SELECT (agent_id, group_id) ON public.agent_assignments TO siem_archiver'
+  WHERE to_regclass('public.agent_assignments') IS NOT NULL \gexec
 SQL
 echo "role bazy Saga gotowe: $admin (administracja), siem_api (panel), siem_archiver (archiwum)"

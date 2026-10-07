@@ -7,9 +7,11 @@ import {
   Card,
   CopyButton,
   Group,
+  MultiSelect,
   SimpleGrid,
   Stack,
   Table,
+  TagsInput,
   Text,
   TextInput,
   Textarea,
@@ -18,7 +20,18 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconFileExport } from "@tabler/icons-react";
-import { exportStatusLabels, exportsApi, formatBytes, formatDate, formatNumber, type ArchiveExport } from "../api";
+import {
+  agentsApi,
+  exportStatusLabels,
+  exportsApi,
+  formatBytes,
+  formatDate,
+  formatNumber,
+  groupsApi,
+  type AgentGroup,
+  type AgentView,
+  type ArchiveExport,
+} from "../api";
 
 // Wartość dla <input type="datetime-local"> (czas lokalny, pełna godzina).
 function localHour(d: Date): string {
@@ -36,6 +49,10 @@ export default function ArchiveExports() {
   const [from, setFrom] = useState(() => localHour(new Date(Date.now() - 24 * 3600_000)));
   const [to, setTo] = useState(() => localHour(new Date()));
   const [reason, setReason] = useState("");
+  const [selGroups, setSelGroups] = useState<string[]>([]);
+  const [selAgents, setSelAgents] = useState<string[]>([]);
+  const [groups, setGroups] = useState<AgentGroup[]>([]);
+  const [agents, setAgents] = useState<AgentView[]>([]);
   const [busy, setBusy] = useState(false);
   const [items, setItems] = useState<ArchiveExport[]>([]);
   const [downloads, setDownloads] = useState(true);
@@ -52,6 +69,16 @@ export default function ArchiveExports() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => {
+    groupsApi
+      .list()
+      .then((r) => setGroups(r.groups))
+      .catch(() => {});
+    agentsApi
+      .list()
+      .then((r) => setAgents(r.agents))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
     load();
     const t = setInterval(load, 10000);
     return () => clearInterval(t);
@@ -61,7 +88,13 @@ export default function ArchiveExports() {
     e.preventDefault();
     setBusy(true);
     try {
-      await exportsApi.create({ from: new Date(from).toISOString(), to: new Date(to).toISOString(), reason });
+      await exportsApi.create({
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        reason,
+        agents: selAgents,
+        groups: selGroups.map(Number),
+      });
       notifications.show({ color: "green", message: "Eksport zlecony – archiwizator przygotuje paczkę w ciągu kilkunastu sekund." });
       setReason("");
       load();
@@ -104,6 +137,27 @@ export default function ArchiveExports() {
                 onChange={(e) => setTo(e.currentTarget.value)}
               />
             </SimpleGrid>
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <MultiSelect
+                label="Tylko grupy agentów (opcjonalnie)"
+                data={groups.map((g) => ({ value: String(g.id), label: `${g.name} (${g.agents} agentów)` }))}
+                value={selGroups}
+                onChange={setSelGroups}
+                searchable
+                clearable
+              />
+              <TagsInput
+                label="Tylko agenci (opcjonalnie)"
+                data={agents.map((a) => ({ value: a.id, label: `${a.id} (${a.hostname})` }))}
+                value={selAgents}
+                onChange={setSelAgents}
+                clearable
+              />
+            </SimpleGrid>
+            <Text size="xs" c="dimmed">
+              Bez wyboru – wszystkie źródła. Wybór ogranicza część czytelną (zdarzenia, raport odczytaj.exe); dowód (segmenty)
+              zawiera wszystkie paczki z wybranych godzin, bo tylko cały segment można sprawdzić względem manifestu.
+            </Text>
             <Textarea
               label="Powód eksportu"
               description="np. numer kontroli lub zgłoszenia – trafi do audytu i do paczki"
@@ -154,6 +208,11 @@ export default function ArchiveExports() {
                     <Text size="xs" c="dimmed" lineClamp={2} title={x.reason}>
                       {x.reason}
                     </Text>
+                    {x.agents?.length > 0 && (
+                      <Text size="xs" c="dimmed" lineClamp={1} title={x.agents.join(", ")}>
+                        agenci: {x.agents.join(", ")}
+                      </Text>
+                    )}
                   </Table.Td>
                   <Table.Td>
                     <Tooltip label={x.error || formatDate(x.finished_at ?? x.requested_at)} multiline maw={400}>

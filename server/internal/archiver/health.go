@@ -3,7 +3,6 @@ package archiver
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 )
@@ -34,16 +33,6 @@ func (h *Health) Get() (free, total uint64, paused string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.free, h.total, h.paused
-}
-
-// excluded sprawdza, czy paczki agenta są wyłączone z archiwum.
-func (r *Archiver) excluded(agent string) bool {
-	for _, p := range r.Cfg.ExcludeAgents {
-		if p != "" && strings.HasPrefix(agent, p) {
-			return true
-		}
-	}
-	return false
 }
 
 // CheckDisk mierzy wolne miejsce (najwyżej co 10 s) i zwraca powód

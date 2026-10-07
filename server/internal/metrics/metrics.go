@@ -162,10 +162,15 @@ type Archiver struct {
 	VerifyOK      prometheus.Gauge
 	VerifyProblem prometheus.Gauge
 	LastVerify    prometheus.Gauge
-	Skipped       prometheus.Counter
+	Skipped       *prometheus.CounterVec
 	DiskFree      prometheus.Gauge
 	DiskTotal     prometheus.Gauge
 	Paused        prometheus.Gauge
+	// Polityka archiwum z panelu.
+	PolicyEnabled       prometheus.Gauge
+	PolicyScheduled     prometheus.Gauge
+	PolicyRetentionDays prometheus.Gauge
+	PolicyExcluded      prometheus.Gauge
 }
 
 func NewArchiver() *Archiver {
@@ -186,9 +191,15 @@ func NewArchiver() *Archiver {
 		VerifyOK:      g("verify_ok", "Wynik ostatniej weryfikacji integralności (1 = zgodne, 0 = problemy)."),
 		VerifyProblem: g("verify_problems", "Liczba problemów w ostatniej weryfikacji."),
 		LastVerify:    g("last_verify_timestamp_seconds", "Czas zakończenia ostatniej weryfikacji."),
-		Skipped:       c("skipped_total", "Paczki agentów wyłączonych z archiwum (SIEM_ARCHIVE_EXCLUDE_AGENTS)."),
+		Skipped: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive", Name: "skipped_total",
+			Help: "Paczki pominięte przez archiwizator według powodu (prefix, disabled, agent, group)."}, []string{"reason"}),
 		DiskFree:      g("disk_free_bytes", "Wolne miejsce na dysku archiwum."),
 		DiskTotal:     g("disk_total_bytes", "Rozmiar dysku archiwum."),
 		Paused:        g("paused", "1 = archiwizacja wstrzymana z braku miejsca (paczki czekają w kolejce)."),
+		PolicyEnabled: g("policy_enabled", "1 = polityka archiwum włącza archiwizację nowych paczek."),
+		PolicyScheduled: g("policy_scheduled_weakening",
+			"1 = zaplanowane osłabienie polityki archiwum (wejdzie w życie po karencji, można je anulować w panelu)."),
+		PolicyRetentionDays: g("policy_retention_days", "Obowiązująca retencja archiwum (dni)."),
+		PolicyExcluded:      g("policy_excluded_sources", "Liczba grup i agentów wyłączonych z archiwum w polityce."),
 	}
 }

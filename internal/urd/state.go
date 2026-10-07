@@ -27,6 +27,11 @@ type ArchiverState struct {
 	DiskFreeBytes  int64  `json:"disk_free_bytes"`
 	DiskTotalBytes int64  `json:"disk_total_bytes"`
 	Paused         string `json:"paused,omitempty"`
+	// Granice polityki z konfiguracji serwera i źródła wyłączone na stałe.
+	MinRetentionDays int      `json:"min_retention_days"`
+	MaxRetentionDays int      `json:"max_retention_days"`
+	PolicyGraceS     int      `json:"policy_grace_s"`
+	ExcludePrefixes  []string `json:"exclude_prefixes"`
 }
 
 // Summary podsumowuje zawartość archiwum.
@@ -48,6 +53,8 @@ type Overview struct {
 	State            *ArchiverState `json:"archiver"`
 	Summary          Summary        `json:"summary"`
 	LastVerification *Verification  `json:"last_verification"`
+	Policy           *Policy        `json:"policy"`
+	ScheduledChange  *PolicyChange  `json:"scheduled_change"` // zaplanowane osłabienie polityki
 }
 
 func notConfigured(err error) error {
@@ -63,14 +70,20 @@ func notConfigured(err error) error {
 func (p *PG) SaveState(ctx context.Context, s ArchiverState) error {
 	_, err := p.pool.Exec(ctx, `INSERT INTO urd.archiver_state
 		(id, version, retention_days, segment_max_mb, segment_max_age_s, verify_every_s, started_at, heartbeat_at,
-		 disk_free_bytes, disk_total_bytes, paused_reason)
-		VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 disk_free_bytes, disk_total_bytes, paused_reason, min_retention_days, max_retention_days, policy_grace_s, exclude_prefixes)
+		VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT (id) DO UPDATE SET version = $1, retention_days = $2, segment_max_mb = $3,
 			segment_max_age_s = $4, verify_every_s = $5, started_at = $6, heartbeat_at = $7,
-			disk_free_bytes = $8, disk_total_bytes = $9, paused_reason = $10`,
+			disk_free_bytes = $8, disk_total_bytes = $9, paused_reason = $10, min_retention_days = $11,
+			max_retention_days = $12, policy_grace_s = $13, exclude_prefixes = $14`,
 		s.Version, s.RetentionDays, s.SegmentMaxMB, s.SegmentMaxAgeS, s.VerifyEveryS, s.StartedAt, s.HeartbeatAt,
-		s.DiskFreeBytes, s.DiskTotalBytes, s.Paused)
+		s.DiskFreeBytes, s.DiskTotalBytes, s.Paused, s.MinRetentionDays, s.MaxRetentionDays, s.PolicyGraceS, nonNil(s.ExcludePrefixes))
 	return err
+}
+
+func isPermission(err error) bool {
+	var pg *pgconn.PgError
+	return errors.As(err, &pg) && pg.Code == "42501"
 }
 
 // RequestVerify zleca weryfikację (panel); archiwizator sprawdza zlecenia co minutę.
@@ -113,10 +126,12 @@ func (p *PG) Overview(ctx context.Context) (Overview, error) {
 	var st ArchiverState
 	err := p.pool.QueryRow(ctx, `SELECT version, retention_days, segment_max_mb, segment_max_age_s, verify_every_s,
 		started_at, heartbeat_at, verify_requested_at, coalesce(verify_requested_by, ''),
-		disk_free_bytes, disk_total_bytes, paused_reason FROM urd.archiver_state WHERE id = 1`).
+		disk_free_bytes, disk_total_bytes, paused_reason, min_retention_days, max_retention_days, policy_grace_s,
+		exclude_prefixes FROM urd.archiver_state WHERE id = 1`).
 		Scan(&st.Version, &st.RetentionDays, &st.SegmentMaxMB, &st.SegmentMaxAgeS, &st.VerifyEveryS,
 			&st.StartedAt, &st.HeartbeatAt, &st.VerifyRequestedAt, &st.VerifyRequestedBy,
-			&st.DiskFreeBytes, &st.DiskTotalBytes, &st.Paused)
+			&st.DiskFreeBytes, &st.DiskTotalBytes, &st.Paused, &st.MinRetentionDays, &st.MaxRetentionDays,
+			&st.PolicyGraceS, &st.ExcludePrefixes)
 	switch {
 	case err == nil:
 		o.State = &st
@@ -142,6 +157,16 @@ func (p *PG) Overview(ctx context.Context) (Overview, error) {
 	} else if ok {
 		o.LastVerification = &v
 	}
+	if pol, err := p.Policy(ctx); err == nil {
+		o.Policy = &pol
+	} else if !errors.Is(err, ErrNoPolicy) {
+		return o, err
+	}
+	sc, err := p.ScheduledChange(ctx)
+	if err != nil {
+		return o, err
+	}
+	o.ScheduledChange = sc
 	return o, nil
 }
 

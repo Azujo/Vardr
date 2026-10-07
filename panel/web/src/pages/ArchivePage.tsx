@@ -30,6 +30,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import ArchiveExports from "./ArchiveExports";
+import ArchivePolicy from "./ArchivePolicy";
 import ArchiveReplays from "./ArchiveReplays";
 
 function hourLabel(iso?: string) {
@@ -307,7 +308,15 @@ export default function ArchivePage() {
             value={`${sum.manifests} h`}
             sub={sum.oldest_hour ? `od ${formatDate(sum.oldest_hour)}` : "pierwszy manifest po pełnej godzinie"}
           />
-          <Stat label="Retencja" value={`${st.retention_days} dni`} sub={`łańcuch: ${sum.manifests_total} manifestów od początku`} />
+          <Stat
+            label="Retencja"
+            value={`${st.retention_days} dni`}
+            sub={
+              data?.policy && !data.policy.enabled
+                ? "archiwizacja nowych paczek WYŁĄCZONA"
+                : `łańcuch: ${sum.manifests_total} manifestów od początku`
+            }
+          />
           <Stat
             label="Dysk archiwum"
             value={
@@ -360,6 +369,7 @@ export default function ArchivePage() {
           <Tabs.List>
             <Tabs.Tab value="manifests">Manifesty ({data.manifests?.length ?? 0})</Tabs.Tab>
             <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
+            <Tabs.Tab value="policy">Polityka</Tabs.Tab>
             {user?.role === "admin" && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
             {user?.role === "admin" && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
           </Tabs.List>
@@ -380,6 +390,9 @@ export default function ArchivePage() {
                 Jeszcze nie było weryfikacji.
               </Text>
             )}
+          </Tabs.Panel>
+          <Tabs.Panel value="policy" pt="sm">
+            <ArchivePolicy admin={user?.role === "admin"} onChanged={load} />
           </Tabs.Panel>
           {user?.role === "admin" && (
             <Tabs.Panel value="exports" pt="sm">

@@ -189,3 +189,11 @@ func readableDigestOf(r io.Reader, d *eventDigest) error {
 
 // same porównuje zbiory zdarzeń (bez licznika nieczytelnych paczek).
 func (d eventDigest) same(o eventDigest) bool { return d.n == o.n && d.a == o.a && d.b == o.b }
+
+// merge dołącza drugi skrót (suma zbiorów – kolejność nie ma znaczenia).
+func (d *eventDigest) merge(o eventDigest) {
+	d.n += o.n
+	d.unreadable += o.unreadable
+	d.a += o.a
+	d.b += o.b
+}

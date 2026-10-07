@@ -29,6 +29,7 @@ type packageInfo struct {
 	ServerVersion string    `json:"server_version"`
 	From          time.Time `json:"from"`
 	To            time.Time `json:"to"`
+	Agents        []string  `json:"agents"`
 	Latest        struct {
 		Seq    int64  `json:"seq"`
 		SHA256 string `json:"sha256"`
@@ -393,6 +394,10 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	t.line("   Powód:              %s", info.Reason)
 	t.line("   Zakres (przyjęcie przez serwer): %s – %s (czas polski)", plTime(info.From), plTime(info.To))
 	t.line("   Paczkę utworzono:   %s (czas polski), Heimdall %s", plTime(info.CreatedAt), info.ServerVersion)
+	if len(info.Agents) > 0 {
+		t.line("   Tylko agenci:       %s", strings.Join(info.Agents, ", "))
+		t.line("                       (zdarzenia innych agentów są tylko w segmentach – dowodzie)")
+	}
 	hosts, agents := map[string]int{}, map[string]int{}
 	for _, e := range l.events {
 		hosts[orDash(e.r.HostName)]++

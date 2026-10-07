@@ -171,7 +171,12 @@ services:
     environment:
       <<: *server-env
       SIEM_ARCHIVE_DB_URL: postgres://siem_archiver:${SAGA_ARCHIVER_PASSWORD}@saga:5432/saga?sslmode=disable
+      # Retencja przy pierwszym starcie; potem obowiązuje polityka z panelu
+      # w granicach MIN/MAX. Osłabienie polityki wchodzi w życie po karencji.
       SIEM_ARCHIVE_RETENTION_DAYS: ${SIEM_ARCHIVE_RETENTION_DAYS:-30}
+      SIEM_ARCHIVE_MIN_RETENTION_DAYS: ${SIEM_ARCHIVE_MIN_RETENTION_DAYS:-30}
+      SIEM_ARCHIVE_MAX_RETENTION_DAYS: ${SIEM_ARCHIVE_MAX_RETENTION_DAYS:-3650}
+      SIEM_ARCHIVE_POLICY_GRACE: ${SIEM_ARCHIVE_POLICY_GRACE:-24h}
       SIEM_ARCHIVE_EXPORT_DIR: /exports
       # Agenci wyłączeni z archiwum (prefiksy): generator ruchu nie zapełnia dysku.
       SIEM_ARCHIVE_EXCLUDE_AGENTS: ${SIEM_ARCHIVE_EXCLUDE_AGENTS-agt-load-}

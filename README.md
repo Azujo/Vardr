@@ -453,12 +453,12 @@ Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skomp
   - potem sprawdzone najdawniej.
 
   Kolejne przebiegi obejmują więc całe archiwum po kolei. Manifest z problemem nie dostaje znacznika sprawdzenia, więc niezgodność nie znika z widoku. Panel pokazuje, od kiedy całość jest sprawdzona w całości. `verify --full` czyta całe archiwum, np. przed audytem. Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
-- **Retencja:** `SIEM_ARCHIVE_RETENTION_DAYS` w `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
+- **Retencja:** ustawiana w polityce w panelu (niżej), przy pierwszym starcie `SIEM_ARCHIVE_RETENTION_DAYS` z `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
 - **Miejsce na dysku:** archiwum zajmuje ok. 100 B na zdarzenie, czyli ~85 GB na dobę przy 10 000 zdarzeń/s. Powinno więc leżeć na osobnym dysku: `SIEM_ARCHIVE_PATH` w `.env`, np. `/srv/heimdall/archive`.
   - Poniżej 15% wolnego miejsca archiwizator ostrzega.
   - Poniżej 5% albo 2 GB wstrzymuje archiwizację (`SIEM_ARCHIVE_MIN_FREE_PERCENT`, `SIEM_ARCHIVE_MIN_FREE_GB`). Paczki czekają wtedy w kolejce, zamiast zapełnić dysk.
   - Stan dysku jest widoczny w panelu i w metrykach `siem_archive_disk_free_bytes` i `siem_archive_paused`.
-- **Wyłączeni agenci:** paczki agentów o prefiksach z `SIEM_ARCHIVE_EXCLUDE_AGENTS` nie trafiają do archiwum. Domyślnie dotyczy to `agt-load-`, czyli generatora ruchu. Pusta wartość archiwizuje wszystko, np. do testu wydajności archiwum.
+- **Agenci zawsze wyłączeni:** paczki agentów o prefiksach z `SIEM_ARCHIVE_EXCLUDE_AGENTS` nie trafiają do archiwum niezależnie od polityki. Domyślnie dotyczy to `agt-load-`, czyli generatora ruchu. Pusta wartość archiwizuje wszystko, np. do testu wydajności archiwum.
 
 W panelu stan archiwum widać w module **Urd**:
 
@@ -466,6 +466,8 @@ W panelu stan archiwum widać w module **Urd**:
 - rozmiar i zakres danych oraz retencję;
 - łańcuch manifestów z hashami i oznaczeniem zerwanego ogniwa;
 - historię weryfikacji.
+
+- politykę archiwum ze źródłami bez archiwizacji i historią zmian (zakładka *Polityka*).
 
 Administrator może zlecić weryfikację przyciskiem „Zweryfikuj teraz”. Archiwizator rozpoczyna ją w ciągu minuty, a zlecenie trafia do audytu. Kafelek z tym stanem jest też na stronie startowej.
 
@@ -482,13 +484,30 @@ W `.env` ustaw `SIEM_ARCHIVE_PATH=/srv/heimdall/archive`. Dzięki `nofail` brak 
 - Docker nie zakłada brakującego katalogu (`create_host_path: false`), więc archiwizator nie wystartuje;
 - archiwizator odmawia pracy, gdy spis w bazie ma manifesty, a katalog nie zawiera archiwum (znacznik `.urd-archive`).
 
+**Polityka archiwum (panel, *Urd → Polityka*).** Administrator ustawia:
+
+- czy nowe paczki są archiwizowane;
+- retencję w dniach;
+- grupy agentów i pojedynczych agentów wyłączonych z archiwum. Nowy agent w wyłączonej grupie też nie jest archiwizowany.
+
+Panel tylko składa zlecenie zmiany. Rozpatruje je archiwizator, w ciągu minuty, według zasad z konfiguracji serwera, których panel nie zmieni:
+
+- **wzmocnienie** (włączenie, dłuższa retencja, objęcie archiwum kolejnych źródeł) działa od razu;
+- **osłabienie** (wyłączenie, krótsza retencja, wyłączenie źródła) wymaga ponownego podania hasła i powodu. Wchodzi w życie dopiero po karencji `SIEM_ARCHIVE_POLICY_GRACE`, domyślnie 24 h. Do tego czasu panel i alert w Grafanie pokazują je jako zaplanowane, a administrator może je anulować;
+- retencja musi mieścić się w granicach `SIEM_ARCHIVE_MIN_RETENTION_DAYS`–`SIEM_ARCHIVE_MAX_RETENTION_DAYS` (domyślnie 30–3650 dni). Archiwizator nigdy nie usuwa danych przed minimum, nawet gdyby ktoś zapisał w bazie krótszą retencję;
+- wyłączenie dotyczy tylko **nowych** paczek; zarchiwizowane dane zostają do końca retencji, a manifesty powstają dalej (także puste), więc przerwa jest widoczna w łańcuchu.
+
+Każde zlecenie, anulowanie i nieudane potwierdzenie hasłem trafia do audytu, a błędne hasło liczy się do blokady konta jak przy logowaniu. Stan zgodności pokazuje „archiwizacja WYŁĄCZONA” i „zaplanowane osłabienie polityki”, a Grafana ma alerty `heimdall-archive-disabled` i `heimdall-archive-policy-scheduled`. Metryki: `siem_archive_policy_enabled`, `siem_archive_policy_scheduled_weakening`, `siem_archive_policy_retention_days`, `siem_archive_skipped_total{reason}`.
+
+Rola panelu w bazie może tylko złożyć zlecenie i je anulować; nie zmieni obowiązującej polityki ani stanu zlecenia. Archiwizator czyta z tabel panelu wyłącznie przypisania agentów do grup.
+
 ```bash
 docker compose exec archiver /app verify          # weryfikacja na żądanie, w ramach budżetu (kod wyjścia 1 = niezgodności)
 docker compose exec archiver /app verify --full   # całe archiwum odczytane w całości
-docker compose exec archiver /app disable   # wyłączenie archiwizacji nowych paczek, potem: docker compose stop archiver
+docker compose exec archiver /app disable   # awaryjne wyłączenie (usuwa konsumenta kolejki), potem: docker compose stop archiver
 ```
 
-Zatrzymany archiwizator **nie gubi danych**: paczki czekają w kolejce, a po jej zapełnieniu ingest odmawia przyjęcia (503) i dane czekają u agentów. Żeby wyłączyć archiwum na dłużej, użyj `disable`, a nie samego zatrzymania usługi.
+Zatrzymany archiwizator **nie gubi danych**: paczki czekają w kolejce, a po jej zapełnieniu ingest odmawia przyjęcia (503) i dane czekają u agentów. Archiwum wyłącza się polityką w panelu; `disable` zostaje na sytuację awaryjną, gdy archiwizator ma w ogóle nie działać.
 
 W laboratorium archiwum leży na dysku lokalnym. Ochrona polega tu na wykrywaniu zmian przez łańcuch hashy, a nie na blokadzie zapisu. Backend S3 z Object Lock w trybie compliance dojdzie później. Napastnik z pełnym dostępem do dysku **i** bazy może przepisać cały łańcuch, dlatego docelowo hash ostatniego manifestu będzie też zapisywany poza systemem.
 
@@ -555,7 +574,7 @@ Polecenie Heimdalla sprawdza to samo co skrypt, czyli:
 
 Kod wyjścia 1 oznacza niezgodności. Na końcu polecenie wypisuje kotwicę, czyli SHA-256 najnowszego manifestu, do porównania z wartością zapisaną niezależnie. Bez programu audytor może sprawdzić paczkę ręcznie według `README.txt`, zaczynając od `sha256sum -c SHA256SUMS`.
 
-Zakres dotyczy czasu przyjęcia paczek przez serwer, nie czasu zdarzeń. Eksport obejmuje całe segmenty, więc wszystkie źródła z danych godzin. Filtrowanie po źródłach dojdzie z polityką archiwum per źródło.
+Zakres dotyczy czasu przyjęcia paczek przez serwer, nie czasu zdarzeń. Eksport można ograniczyć do wybranych grup agentów i agentów (grupy są rozwijane do agentów w chwili zlecenia). Filtr dotyczy części czytelnej: zdarzeń, CSV i raportu `odczytaj.exe`. Dowód (`segments/`) zawsze zawiera wszystkie paczki z wybranych godzin, bo tylko cały segment można sprawdzić względem manifestu. Sprawdzenie porównuje część czytelną z oryginałami wybranych agentów, więc usunięcie filtra z `export.json` też wychodzi jako niezgodność.
 
 ### Odtworzenie z archiwum (replay)
 

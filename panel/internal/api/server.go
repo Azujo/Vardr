@@ -150,6 +150,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/archive/exports", s.authed(roleAdmin, 0, s.listExports))
 	mux.Handle("POST /api/v1/archive/exports", s.authed(roleAdmin, 0, s.createExport))
 	mux.Handle("GET /api/v1/archive/exports/{id}/download", s.authed(roleAdmin, 0, s.downloadExport))
+	mux.Handle("GET /api/v1/archive/policy", s.authed(roleViewer, 0, s.archivePolicy))
+	mux.Handle("POST /api/v1/archive/policy", s.authed(roleAdmin, 0, s.changeArchivePolicy))
+	mux.Handle("POST /api/v1/archive/policy/changes/{id}/cancel", s.authed(roleAdmin, 0, s.cancelArchivePolicyChange))
 	mux.Handle("GET /api/v1/archive/replays", s.authed(roleAdmin, 0, s.listReplays))
 	mux.Handle("POST /api/v1/archive/replays", s.authed(roleAdmin, 0, s.createReplay))
 

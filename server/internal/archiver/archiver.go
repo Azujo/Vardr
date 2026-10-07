@@ -49,6 +49,8 @@ type Archiver struct {
 	Cfg Config
 	Log *slog.Logger
 	M   *metrics.Archiver
+	// Policy: polityka z panelu (nil = archiwizowane wszystko poza ExcludeAgents).
+	Policy *Policy
 
 	cur       *urd.SegmentWriter
 	pending   []Msg
@@ -63,8 +65,8 @@ type Archiver struct {
 
 // Add dopisuje wiadomość do bieżącego segmentu (bez potwierdzenia).
 func (r *Archiver) Add(ctx context.Context, msg Msg) error {
-	if r.excluded(msg.Headers().Get(bus.HdrAgent)) {
-		r.M.Skipped.Inc()
+	if reason := r.skipReason(msg.Headers().Get(bus.HdrAgent)); reason != "" {
+		r.M.Skipped.WithLabelValues(reason).Inc()
 		return msg.Ack()
 	}
 	now := r.A.Now().UTC()
@@ -189,7 +191,7 @@ type StateStore interface {
 
 // MaintainConfig to parametry pracy okresowej.
 type MaintainConfig struct {
-	Retention    time.Duration
+	Retention    time.Duration // gdy Policy == nil
 	VerifyEvery  time.Duration
 	FirstVerify  time.Duration // pierwsza weryfikacja po starcie
 	VerifyBudget int64         // bajty czytane w całości w jednym przebiegu (0 = wszystko)
@@ -197,6 +199,11 @@ type MaintainConfig struct {
 	StateBase    urd.ArchiverState
 	Health       *Health     // stan dysku z pętli archiwizatora
 	DataLock     *sync.Mutex // wspólna z eksportem (nil = bez blokady)
+	// Polityka z panelu: zlecenia zmian rozpatrywane co minutę, osłabienia
+	// po karencji PolicyGrace; retencja z polityki (w granicach).
+	Policy      *Policy
+	PolicyStore PolicyStore
+	PolicyGrace time.Duration
 }
 
 // Maintain co minutę zapisuje stan dla panelu, usuwa dane po retencji
@@ -208,8 +215,16 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 	defer tick.Stop()
 	lastExpire := time.Time{}
 	for {
+		retention := c.Retention
+		if c.Policy != nil {
+			if c.PolicyStore != nil {
+				refreshPolicy(ctx, c.PolicyStore, c.Policy, c.PolicyGrace, log, m)
+			}
+			retention = c.Policy.Retention()
+		}
 		if c.State != nil {
 			st := c.StateBase
+			st.RetentionDays = int(retention / (24 * time.Hour))
 			st.HeartbeatAt = time.Now().UTC()
 			free, total, paused := c.Health.Get()
 			st.DiskFreeBytes, st.DiskTotalBytes, st.Paused = int64(free), int64(total), paused
@@ -228,7 +243,7 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 			if c.DataLock != nil {
 				c.DataLock.Lock()
 			}
-			n, err := a.Expire(ctx, c.Retention)
+			n, err := a.Expire(ctx, retention)
 			if c.DataLock != nil {
 				c.DataLock.Unlock()
 			}
@@ -236,7 +251,7 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 				m.Errors.WithLabelValues("expire").Inc()
 				log.Error("usuwanie danych po retencji nieudane", "err", err)
 			} else if n > 0 {
-				log.Info("usunięto dane po retencji", "hours", n, "retention", c.Retention.String())
+				log.Info("usunięto dane po retencji", "hours", n, "retention", retention.String())
 			}
 		}
 		if !time.Now().Before(verifyAt) {

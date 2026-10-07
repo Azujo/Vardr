@@ -265,3 +265,56 @@ func TestExportReadablePart(t *testing.T) {
 	}, nil, true)
 	expectProblem(t, CheckExport(bytes.NewReader(forged)), "czytelne zdarzenia")
 }
+
+func TestExportAgentFilter(t *testing.T) {
+	ctx := context.Background()
+	clk := &clock{t: time.Date(2026, 10, 7, 10, 5, 0, 0, time.UTC)}
+	a := New(t.TempDir(), NewMemCatalog())
+	a.Now = clk.now
+	w, err := a.OpenSegment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 6 {
+		agent := []string{"agt-1", "agt-2", "agt-3"}[i%3]
+		id := fmt.Sprintf("f%d", i)
+		if err := w.Add(RecordMeta{Agent: agent, Batch: id, ReceivedAt: clk.t}, realBatch(t, id, 2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := w.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	clk.t = clk.t.Add(time.Hour)
+	if _, err := a.Seal(ctx); err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
+	p, err := a.PlanExport(ctx, from, from.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	j := ExportJob{ID: 8, RequestedBy: "adam", Reason: "incydent na PC-2", From: from, To: from.Add(time.Hour), Agents: []string{"agt-2", "agt-3"}}
+	if _, err := a.WriteExport(ctx, j, p, &buf, ExportOptions{Version: "test", TempDir: t.TempDir(), Enrich: testEnrich}); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	c := CheckExport(bytes.NewReader(data))
+	// 4 paczki wybranych agentów × 2 zdarzenia; segment (dowód) z wszystkimi 6 paczkami.
+	if !c.OK || c.Events != 8 || c.Records != 6 || len(c.Agents) != 2 {
+		t.Fatalf("eksport z filtrem agentów: %+v", c)
+	}
+	csvData := tarFile(t, data, "zdarzenia/zdarzenia.csv")
+	if strings.Count(string(csvData), "\n") != 9 || strings.Contains(string(csvData), "agt-1") {
+		t.Fatalf("CSV tylko z wybranych agentów: %s", csvData)
+	}
+	// Usunięcie filtra z export.json (z przeliczonymi sumami) – część czytelna
+	// nie odpowiada już deklarowanemu zakresowi.
+	forged := rewriteTar(t, data, map[string]func([]byte) []byte{
+		"export.json": func(b []byte) []byte {
+			return bytes.Replace(b, []byte(`"agt-2",`), []byte{}, 1)
+		},
+	}, nil, true)
+	expectProblem(t, CheckExport(bytes.NewReader(forged)), "czytelne zdarzenia")
+}
