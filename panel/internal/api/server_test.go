@@ -20,15 +20,18 @@ import (
 
 // memStore to baza w pamięci do testów (ta sama semantyka co store.PG).
 type memStore struct {
-	mu       sync.Mutex
-	users    map[int64]store.User
-	sessions map[string]store.Session
-	agents   map[string]store.Agent
-	tokens   []store.EnrollToken
-	certs    []store.AgentCert
-	audit    []store.AuditEntry
-	nextID   int64
-	now      func() time.Time
+	mu        sync.Mutex
+	users     map[int64]store.User
+	sessions  map[string]store.Session
+	agents    map[string]store.Agent
+	tokens    []store.EnrollToken
+	certs     []store.AgentCert
+	groups    map[int64]store.AgentGroup
+	assign    map[string]int64
+	nextGroup int64
+	audit     []store.AuditEntry
+	nextID    int64
+	now       func() time.Time
 }
 
 func newMemStore(now func() time.Time) *memStore {

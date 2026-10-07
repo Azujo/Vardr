@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,16 +29,18 @@ import (
 	"siem/agent/internal/limits"
 	"siem/agent/internal/logging"
 	"siem/agent/internal/logwatch"
+	"siem/agent/internal/managed"
 	"siem/agent/internal/secure"
 	"siem/agent/internal/shipper"
 	"siem/agent/internal/source"
 	"siem/agent/internal/state"
 	"siem/agent/internal/status"
 	"siem/agent/internal/winevt"
+	"siem/internal/contract"
 	"siem/internal/throttle"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -308,6 +311,118 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		s.Process.CPUTime = processCPUTime()
 	})
 
+	sender := shipper.NewHTTPSender(client, cfg.Server.URL, filepath.Join(cfg.StateDir, "quarantine"), log)
+	sender.AttachStatus(tracker)
+
+	statusCtx, stopStatus := context.WithCancel(context.Background())
+	statusDone := make(chan struct{})
+	go func() {
+		tracker.Run(statusCtx, cfg.StateDir, 5*time.Second)
+		close(statusDone)
+	}()
+	defer func() {
+		stopStatus()
+		<-statusDone
+	}()
+
+	bgCtx, stopBg := context.WithCancel(ctx)
+	defer stopBg()
+
+	// Heartbeat dla panelu (Huginn): stan agenta co minutę.
+	if hbURL, err := heartbeat.URLFromIngest(cfg.Server.URL); err == nil {
+		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
+			Status: func() any { return tracker.Snapshot() }, Log: log}
+		go hb.Run(bgCtx)
+	}
+
+	// Bifröst: odnowienie certyfikatu przed wygaśnięciem (bez restartu agenta).
+	panelURL := cfg.Server.PanelURL
+	if panelURL == "" {
+		panelURL, _ = enrollment.PanelURL(cfg.Server.URL)
+	}
+	if panelURL != "" {
+		renewer := &enrollment.Renewer{Client: client, PanelURL: panelURL, CertFile: cfg.Server.CertFile, KeyFile: cfg.Server.KeyFile,
+			Holder: certs, Log: log, Warn: tracker.Warn}
+		go renewer.Run(bgCtx)
+	}
+
+	// Konfiguracja z panelu (grupa agentów): kanały i limity. Ostatnia znana
+	// jest zapisana lokalnie; zmiana przeładowuje odczyt bez restartu usługi.
+	current, err := managed.Load(cfg.StateDir)
+	if err != nil {
+		log.Warn("zapisana konfiguracja z panelu jest nieczytelna – używam agent.yaml", "err", err)
+		current = nil
+	}
+	reload := make(chan *contract.AgentConfig, 1)
+	if panelURL != "" {
+		// SIEM_CONFIG_POLL_SECONDS: częstsze sprawdzanie konfiguracji (diagnostyka, testy).
+		pollEvery := 5 * time.Minute
+		if s, err := strconv.Atoi(os.Getenv("SIEM_CONFIG_POLL_SECONDS")); err == nil && s >= 5 {
+			pollEvery = time.Duration(s) * time.Second
+		}
+		poller := &managed.Poller{Client: client, PanelURL: panelURL, StateDir: cfg.StateDir, Log: log,
+			Every: pollEvery,
+			OnChange: func(c *contract.AgentConfig) {
+				select {
+				case <-reload: // starsza oczekująca zmiana – zastępujemy ją nowszą
+				default:
+				}
+				reload <- c
+			}}
+		go poller.Run(bgCtx, current)
+	}
+
+	log.Info("agent uruchomiony", "version", version, "eventlog", true)
+	defer func() {
+		s := sender.Stats
+		log.Info("agent zatrzymany", "batches_accepted", s.BatchesAccepted.Load(), "events_accepted", s.EventsAccepted.Load(),
+			"retries", s.Retries.Load(), "events_quarantined", s.EventsQuarantined.Load(), "eventlog", true)
+	}()
+
+	for {
+		eff, err := managed.Apply(cfg, current)
+		if err != nil {
+			log.Error("nie można zastosować konfiguracji z panelu – używam agent.yaml", "err", err, "eventlog", true)
+			tracker.Warn("konfiguracja z panelu odrzucona: " + err.Error())
+			eff, current = cfg, nil
+		}
+		cs := status.ConfigStatus{Source: "local", AppliedAt: time.Now()}
+		if current != nil {
+			cs = status.ConfigStatus{Source: "panel", Group: current.Group, Version: current.Version, AppliedAt: time.Now()}
+		}
+		tracker.SetConfig(cs)
+
+		// Limity: Job Object aktualizowany w miejscu (bez nakładania kolejnego).
+		if err := lim.Update(eff.Limits.Resource()); err != nil {
+			log.Error("zmiana limitów zasobów nieudana", "err", err)
+		}
+		runtime.GOMAXPROCS(eff.Limits.MaxProcs)
+		sender.Bandwidth = nil
+		if kbps := eff.Limits.MaxSendKBps; kbps > 0 {
+			sender.Bandwidth = throttle.New(float64(kbps)*1024, float64(kbps)*1024)
+		}
+		tracker.SetLimits(limitMap(eff.Limits))
+		tracker.ResetChannels()
+		log.Info("konfiguracja kanałów i limitów", append([]any{"source", cs.Source, "group", cs.Group, "version", cs.Version,
+			"channels", len(eff.Channels)}, limitAttrs(eff.Limits)...)...)
+
+		next, err := runPipeline(ctx, eff, agentID, sender, store, tracker, log, reload)
+		if ctx.Err() != nil {
+			return nil
+		}
+		if next == nil {
+			return err // agent zakończył się sam (błąd) – usługa uruchomi się ponownie
+		}
+		log.Info("nowa konfiguracja z panelu – przeładowuję odczyt", "group", next.Group, "version", next.Version, "eventlog", true)
+		current = next
+	}
+}
+
+// runPipeline uruchamia odczyt kanałów i wysyłkę dla danej konfiguracji.
+// Kończy się przy anulowaniu ctx albo nadejściu nowej konfiguracji (wtedy
+// zwraca ją – pozycje odczytu są już zapisane, odczyt wznowi się od nich).
+func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender *shipper.HTTPSender, store *state.Store,
+	tracker *status.Tracker, log *slog.Logger, reload <-chan *contract.AgentConfig) (*contract.AgentConfig, error) {
 	var sources []source.Source
 	var watched []logwatch.Channel
 	filters := map[string]map[uint32]bool{}
@@ -331,16 +446,6 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		})
 	}
 
-	// Ostrzeżenie, zanim dziennik Windows nadpisze niewysłane zdarzenia (K3).
-	watcher := &logwatch.Watcher{Info: winevt.LogInfo, Channels: watched, Log: log, Warn: tracker.Warn,
-		Interval: time.Minute, WarnAt: 0.5, AlarmAt: 0.8}
-
-	sender := shipper.NewHTTPSender(client, cfg.Server.URL, filepath.Join(cfg.StateDir, "quarantine"), log)
-	if kbps := cfg.Limits.MaxSendKBps; kbps > 0 {
-		sender.Bandwidth = throttle.New(float64(kbps)*1024, float64(kbps)*1024)
-	}
-	sender.AttachStatus(tracker)
-
 	agent := core.New(core.Options{
 		AgentID:       agentID,
 		MaxEvents:     cfg.Batch.MaxEvents,
@@ -354,44 +459,32 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		ClassifyError: classifyError,
 	}, sources, sender, store, log)
 
-	statusCtx, stopStatus := context.WithCancel(context.Background())
-	statusDone := make(chan struct{})
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+
+	// Ostrzeżenie, zanim dziennik Windows nadpisze niewysłane zdarzenia (K3).
+	watcher := &logwatch.Watcher{Info: winevt.LogInfo, Channels: watched, Log: log, Warn: tracker.Warn,
+		Interval: time.Minute, WarnAt: 0.5, AlarmAt: 0.8}
+	go watcher.Run(runCtx)
+
+	// Nowa konfiguracja przerywa odczyt; przekazujemy ją kanałem (bez wspólnej zmiennej).
+	nextCh := make(chan *contract.AgentConfig, 1)
 	go func() {
-		tracker.Run(statusCtx, cfg.StateDir, 5*time.Second)
-		close(statusDone)
+		select {
+		case c := <-reload:
+			nextCh <- c
+			stop()
+		case <-runCtx.Done():
+		}
 	}()
-
-	watchCtx, stopWatch := context.WithCancel(ctx)
-	defer stopWatch()
-	go watcher.Run(watchCtx)
-
-	// Heartbeat dla panelu (Huginn): stan agenta co minutę.
-	if hbURL, err := heartbeat.URLFromIngest(cfg.Server.URL); err == nil {
-		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
-			Status: func() any { return tracker.Snapshot() }, Log: log}
-		go hb.Run(watchCtx)
+	err := agent.Run(runCtx)
+	stop()
+	select {
+	case c := <-nextCh:
+		return c, nil
+	default:
+		return nil, err
 	}
-
-	// Bifröst: odnowienie certyfikatu przed wygaśnięciem (bez restartu agenta).
-	panelURL := cfg.Server.PanelURL
-	if panelURL == "" {
-		panelURL, _ = enrollment.PanelURL(cfg.Server.URL)
-	}
-	if panelURL != "" {
-		renewer := &enrollment.Renewer{Client: client, PanelURL: panelURL, CertFile: cfg.Server.CertFile, KeyFile: cfg.Server.KeyFile,
-			Holder: certs, Log: log, Warn: tracker.Warn}
-		go renewer.Run(watchCtx)
-	}
-
-	log.Info("agent uruchomiony", "version", version, "eventlog", true)
-	err = agent.Run(ctx)
-	stopStatus()
-	<-statusDone
-
-	s := sender.Stats
-	log.Info("agent zatrzymany", "batches_accepted", s.BatchesAccepted.Load(), "events_accepted", s.EventsAccepted.Load(),
-		"retries", s.Retries.Load(), "events_quarantined", s.EventsQuarantined.Load(), "eventlog", true)
-	return err
 }
 
 func showStatus(cfgPath string) error {

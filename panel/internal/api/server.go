@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"siem/internal/contract"
 	"siem/internal/throttle"
 	"siem/panel/internal/api/store"
 )
@@ -49,6 +50,14 @@ type Store interface {
 	RecordAgentCert(ctx context.Context, c store.AgentCert) error
 	AgentCertBySerial(ctx context.Context, serial string) (store.AgentCert, error)
 	RevokeAgentCerts(ctx context.Context, agentID, reason string) ([]string, error)
+	ListGroups(ctx context.Context) ([]store.AgentGroup, error)
+	GroupByID(ctx context.Context, id int64) (store.AgentGroup, error)
+	CreateGroup(ctx context.Context, g store.AgentGroup) (store.AgentGroup, error)
+	UpdateGroup(ctx context.Context, g store.AgentGroup) (store.AgentGroup, error)
+	DeleteGroup(ctx context.Context, id int64) error
+	AssignAgent(ctx context.Context, agentID string, groupID int64) error
+	GroupForAgent(ctx context.Context, agentID string) (store.AgentGroup, error)
+	AgentGroupIDs(ctx context.Context) (map[string]int64, error)
 }
 
 // Server to handler HTTP panelu.
@@ -120,6 +129,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/agents/{id}", s.authed(roleViewer, 0, s.getAgent))
 	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
 	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(roleAdmin, 0, s.revokeAgent))
+	mux.Handle("PUT /api/v1/agents/{id}/group", s.authed(roleAdmin, 0, s.setAgentGroup))
+
+	mux.Handle("GET /api/v1/groups", s.authed(roleViewer, 0, s.listGroups))
+	mux.Handle("POST /api/v1/groups", s.authed(roleAdmin, 0, s.createGroup))
+	mux.Handle("PATCH /api/v1/groups/{id}", s.authed(roleAdmin, 0, s.updateGroup))
+	mux.Handle("DELETE /api/v1/groups/{id}", s.authed(roleAdmin, 0, s.deleteGroup))
 
 	mux.Handle("GET /api/v1/events", s.authed(roleViewer, 0, s.searchEvents))
 	mux.Handle("GET /api/v1/events/histogram", s.authed(roleViewer, 0, s.eventsHistogram))
@@ -134,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	// Dla agentów (bez sesji panelu): rejestracja tokenem i odnowienie certyfikatu.
 	mux.HandleFunc("POST /enroll/v1/register", s.enrollRegister)
 	mux.HandleFunc("POST /enroll/v1/renew", s.enrollRenew)
+	mux.HandleFunc("GET "+contract.AgentConfigPath, s.agentConfig)
 	mux.HandleFunc("/enroll/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu")
 	})

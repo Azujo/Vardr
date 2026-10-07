@@ -66,16 +66,24 @@ type agentView struct {
 	LastWarning    string     `json:"last_warning,omitempty"`
 	ChannelsOK     int        `json:"channels_ok"`
 	ChannelsTotal  int        `json:"channels_total"`
+	// Konfiguracja z panelu: grupa, wersja oczekiwana i zastosowana przez agenta.
+	GroupID        int64  `json:"group_id"`
+	Group          string `json:"group"`
+	ConfigExpected string `json:"config_expected"`
+	ConfigApplied  string `json:"config_applied,omitempty"`
+	ConfigState    string `json:"config_state"` // applied | pending | unknown
 	// Problems to czytelne opisy problemów (pusta lista = wszystko w porządku).
 	Problems []string `json:"problems"`
 }
 
-func viewAgent(a store.Agent, now time.Time) agentView {
+func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	v := agentView{
+		GroupID: g.ID, Group: g.Name, ConfigExpected: g.Config().Version,
 		ID: a.ID, Hostname: a.Hostname, OS: a.OS, Version: a.Version, RemoteIP: a.RemoteIP,
 		FirstSeen: a.FirstSeen, LastSeen: a.LastSeen, StartedAt: a.StartedAt, CertNotAfter: a.CertNotAfter,
 		State: "online", Problems: []string{},
 	}
+	v.ConfigApplied, v.ConfigState = agentConfigState(a.Status, v.ConfigExpected)
 	if now.Sub(a.LastSeen) > offlineAfter {
 		v.State = "offline"
 		v.Problems = append(v.Problems, "brak heartbeatu od "+humanAgo(now.Sub(a.LastSeen)))
@@ -154,11 +162,16 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	groupOf, err := s.groupResolver(r)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	now := s.now()
 	views := make([]agentView, 0, len(agents))
 	var sum agentsSummary
 	for _, a := range agents {
-		v := viewAgent(a, now)
+		v := viewAgent(a, groupOf(a.ID), now)
 		views = append(views, v)
 		sum.Total++
 		if v.State == "online" {
@@ -196,7 +209,12 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"agent": viewAgent(a, s.now()), "status": a.Status})
+	g, err := s.Store.GroupForAgent(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"agent": viewAgent(a, g, s.now()), "status": a.Status})
 }
 
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -215,4 +233,33 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "agent_removed", id, nil)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// groupResolver wczytuje grupy i przypisania raz na żądanie i zwraca
+// funkcję agent → grupa (domyślna dla agentów bez przypisania).
+func (s *Server) groupResolver(r *http.Request) (func(agentID string) store.AgentGroup, error) {
+	groups, err := s.Store.ListGroups(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	assign, err := s.Store.AgentGroupIDs(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	byID := map[int64]store.AgentGroup{}
+	var def store.AgentGroup
+	for _, g := range groups {
+		byID[g.ID] = g
+		if g.IsDefault {
+			def = g
+		}
+	}
+	return func(agentID string) store.AgentGroup {
+		if id, ok := assign[agentID]; ok {
+			if g, ok := byID[id]; ok {
+				return g
+			}
+		}
+		return def
+	}, nil
 }

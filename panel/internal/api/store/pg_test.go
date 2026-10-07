@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"siem/internal/contract"
 )
 
 // Test integracyjny na prawdziwym PostgreSQL. Uruchamiany tylko z adresem
@@ -21,7 +23,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"agent_certs", "enrollment_tokens", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
+	for _, tbl := range []string{"agent_assignments", "agent_certs", "enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
 		}
@@ -121,6 +123,7 @@ func TestPostgresStore(t *testing.T) {
 
 	testAgents(t, db)
 	testEnrollment(t, db)
+	testGroups(t, db)
 }
 
 func testAgents(t *testing.T, db *PG) {
@@ -227,5 +230,69 @@ func testEnrollment(t *testing.T, db *PG) {
 	// Lista dla ingest: tylko unieważnione i jeszcze nie wygasłe.
 	if rs, err := db.RevokedSerials(ctx, now); err != nil || len(rs) != 2 {
 		t.Fatalf("unieważnione do rozesłania: %v %v", rs, err)
+	}
+}
+
+func testGroups(t *testing.T, db *PG) {
+	ctx := context.Background()
+	groups, err := db.ListGroups(ctx)
+	if err != nil || len(groups) != 1 || !groups[0].IsDefault || groups[0].Profile != "workstation" {
+		t.Fatalf("grupa domyślna z migracji: %+v %v", groups, err)
+	}
+	def := groups[0]
+	five, eps := 5.0, 2000
+	g, err := db.CreateGroup(ctx, AgentGroup{Name: "Serwery IIS", Profile: "server",
+		Limits: contract.AgentLimits{CPUMaxPercent: &five, MaxEPS: &eps}})
+	if err != nil || g.ID == 0 || *g.Limits.MaxEPS != 2000 {
+		t.Fatalf("tworzenie: %+v %v", g, err)
+	}
+	if _, err := db.CreateGroup(ctx, AgentGroup{Name: "serwery iis", Profile: "dc"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("nazwa bez rozróżniania wielkości liter: %v", err)
+	}
+	g.Profile = "dc"
+	if u, err := db.UpdateGroup(ctx, g); err != nil || u.Profile != "dc" {
+		t.Fatalf("zmiana: %+v %v", u, err)
+	}
+
+	// agt-1 i agt-2 istnieją (heartbeat z testAgents); agt-1 trafia do grupy.
+	if err := db.AssignAgent(ctx, "agt-1", g.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.GroupForAgent(ctx, "agt-1"); err != nil || got.ID != g.ID {
+		t.Fatalf("grupa agenta: %+v %v", got, err)
+	}
+	if got, err := db.GroupForAgent(ctx, "agt-nieznany"); err != nil || got.ID != def.ID {
+		t.Fatalf("agent bez przypisania → domyślna: %+v %v", got, err)
+	}
+	groups, _ = db.ListGroups(ctx)
+	counts := map[string]int{}
+	for _, x := range groups {
+		counts[x.Name] = x.Agents
+	}
+	if counts["Serwery IIS"] != 1 || counts["Domyślna"] != 0 {
+		t.Fatalf("liczby agentów: %v", counts)
+	}
+	if err := db.DeleteGroup(ctx, g.ID); !errors.Is(err, ErrInUse) {
+		t.Fatalf("usunięcie grupy z agentem: %v", err)
+	}
+	if err := db.DeleteGroup(ctx, def.ID); !errors.Is(err, ErrInUse) {
+		t.Fatalf("usunięcie domyślnej: %v", err)
+	}
+	if err := db.AssignAgent(ctx, "agt-1", 999999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nieistniejąca grupa: %v", err)
+	}
+	if ids, err := db.AgentGroupIDs(ctx); err != nil || ids["agt-1"] != g.ID {
+		t.Fatalf("przypisania: %v %v", ids, err)
+	}
+
+	// Token z grupą.
+	tok, err := db.CreateEnrollToken(ctx, EnrollToken{Name: "IIS", TokenHash: "hg", Profile: "server",
+		ExpiresAt: time.Now().Add(time.Hour), GroupID: &g.ID})
+	if err != nil || tok.GroupID == nil || *tok.GroupID != g.ID {
+		t.Fatalf("token z grupą: %+v %v", tok, err)
+	}
+	empty, _ := db.CreateGroup(ctx, AgentGroup{Name: "Pusta", Profile: "workstation"})
+	if err := db.DeleteGroup(ctx, empty.ID); err != nil {
+		t.Fatalf("usunięcie pustej: %v", err)
 	}
 }

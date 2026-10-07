@@ -131,6 +131,11 @@ export interface AgentView {
   channels_ok: number;
   channels_total: number;
   problems: string[];
+  group_id: number;
+  group: string;
+  config_expected: string;
+  config_applied?: string;
+  config_state: "applied" | "pending" | "unknown";
 }
 
 export interface AgentsSummary {
@@ -190,12 +195,13 @@ export interface EnrollToken {
   created_at: string;
   created_by: string;
   revoked_at?: string;
+  group_id?: number;
 }
 
 export const enrollApi = {
   list: () =>
     request<{ tokens: EnrollToken[]; profiles: Record<AgentProfile, string>; enabled: boolean; public_server: string }>("GET", "/api/v1/enroll-tokens"),
-  create: (t: { name: string; profile: AgentProfile; valid_hours: number; max_uses: number }) =>
+  create: (t: { name: string; profile: AgentProfile; valid_hours: number; max_uses: number; group_id?: number }) =>
     request<{ token: EnrollToken; secret: string }>("POST", "/api/v1/enroll-tokens", t),
   revoke: (id: number) => request<{ token: EnrollToken }>("POST", `/api/v1/enroll-tokens/${id}/revoke`),
   revokeAgent: (id: string, reason: string) =>
@@ -280,4 +286,44 @@ export const eventsApi = {
   get: (id: string, ts: string) =>
     request<{ event: EventDetail }>("GET", `/api/v1/events/${encodeURIComponent(id)}?${qs({ ts })}`),
   fields: () => request<{ fields: { name: string; help: string }[] }>("GET", "/api/v1/events/fields"),
+};
+
+// ---- Grupy agentów (konfiguracja z serwera) ----
+
+export interface AgentLimits {
+  priority?: "normal" | "below_normal" | "background";
+  cpu_max_percent?: number;
+  memory_soft_mb?: number;
+  memory_hard_mb?: number;
+  max_eps?: number;
+  max_send_kbps?: number;
+}
+
+export interface AgentGroup {
+  id: number;
+  name: string;
+  description: string;
+  profile: AgentProfile;
+  limits: AgentLimits;
+  is_default: boolean;
+  agents: number;
+  config_version: string;
+  updated_at: string;
+}
+
+export const groupsApi = {
+  list: () => request<{ groups: AgentGroup[] }>("GET", "/api/v1/groups"),
+  create: (g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
+    request<{ group: AgentGroup }>("POST", "/api/v1/groups", g),
+  update: (id: number, g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
+    request<{ group: AgentGroup }>("PATCH", `/api/v1/groups/${id}`, g),
+  remove: (id: number) => request<void>("DELETE", `/api/v1/groups/${id}`),
+  assign: (agentId: string, groupId: number) =>
+    request<{ group: AgentGroup }>("PUT", `/api/v1/agents/${encodeURIComponent(agentId)}/group`, { group_id: groupId }),
+};
+
+export const configStateLabels: Record<string, { label: string; color: string; hint: string }> = {
+  applied: { label: "aktualna", color: "green", hint: "agent stosuje bieżącą konfigurację grupy" },
+  pending: { label: "oczekuje", color: "yellow", hint: "agent pobierze nową konfigurację w ciągu ok. 5 minut" },
+  unknown: { label: "nieznana", color: "gray", hint: "agent starszy niż 0.5.0 albo jeszcze nie pobrał konfiguracji" },
 };

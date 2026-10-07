@@ -9,6 +9,7 @@ import {
   Collapse,
   Group,
   List,
+  Select,
   SimpleGrid,
   Stack,
   Table,
@@ -18,7 +19,19 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconCertificateOff, IconTrash } from "@tabler/icons-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { agentsApi, ago, enrollApi, formatDate, formatNumber, type AgentStatusDoc, type AgentView } from "../api";
+import {
+  agentsApi,
+  ago,
+  configStateLabels,
+  enrollApi,
+  formatDate,
+  formatNumber,
+  groupsApi,
+  type AgentGroup,
+  type AgentStatusDoc,
+  type AgentView,
+} from "../api";
+import { limitsSummary, profileLabels } from "./GroupsPage";
 import { useAuth } from "../auth";
 import { StateBadge } from "./AgentsPage";
 
@@ -60,6 +73,24 @@ export default function AgentDetailPage() {
   const [status, setStatus] = useState<AgentStatusDoc>({});
   const [error, setError] = useState("");
   const [raw, setRaw] = useState(false);
+  const [groups, setGroups] = useState<AgentGroup[]>([]);
+  useEffect(() => {
+    groupsApi
+      .list()
+      .then((r) => setGroups(r.groups))
+      .catch(() => setGroups([]));
+  }, []);
+
+  const changeGroup = async (groupId: number) => {
+    try {
+      await groupsApi.assign(id, groupId);
+      const r = await agentsApi.get(id);
+      setAgent(r.agent);
+      notifications.show({ color: "green", message: "Zmieniono grupę – agent pobierze nową konfigurację w ciągu ok. 5 minut." });
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
 
   useEffect(() => {
     const load = () =>
@@ -161,6 +192,48 @@ Powód:`,
           </List>
         </Alert>
       )}
+
+      <Card withBorder>
+        <Group justify="space-between" align="flex-start" wrap="wrap">
+          <div>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
+              Konfiguracja z panelu
+            </Text>
+            <Group gap="xs" mt={4}>
+              <Badge variant="light" color={configStateLabels[agent.config_state]?.color}>
+                {configStateLabels[agent.config_state]?.label}
+              </Badge>
+              <Text size="sm" c="dimmed">
+                {configStateLabels[agent.config_state]?.hint}
+              </Text>
+            </Group>
+            {(() => {
+              const g = groups.find((x) => x.id === agent.group_id);
+              return g ? (
+                <Text size="sm" mt={6}>
+                  {profileLabels[g.profile]} · {limitsSummary(g.limits)}
+                </Text>
+              ) : null;
+            })()}
+            <Text size="xs" c="dimmed" ff="monospace" mt={4}>
+              wersja oczekiwana {agent.config_expected}
+              {agent.config_applied ? ` · zastosowana ${agent.config_applied}` : ""}
+            </Text>
+          </div>
+          {user?.role === "admin" ? (
+            <Select
+              label="Grupa"
+              w={240}
+              data={groups.map((g) => ({ value: String(g.id), label: g.name }))}
+              value={String(agent.group_id)}
+              allowDeselect={false}
+              onChange={(v) => v && Number(v) !== agent.group_id && void changeGroup(Number(v))}
+            />
+          ) : (
+            <Text size="sm">Grupa: {agent.group}</Text>
+          )}
+        </Group>
+      </Card>
 
       <Card withBorder>
         <SimpleGrid cols={{ base: 2, md: 4 }} spacing="lg">

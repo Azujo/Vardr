@@ -70,6 +70,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		Profile    string `json:"profile"`
 		ValidHours int    `json:"valid_hours"`
 		MaxUses    int    `json:"max_uses"`
+		GroupID    int64  `json:"group_id"` // 0 = grupa domyślna
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -89,10 +90,25 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_max_uses", "limit użyć: 0 (bez limitu) do 100 000")
 		return
 	}
+	// Grupa decyduje o profilu – nowi agenci od razu dostają jej konfigurację.
+	var groupID *int64
+	if req.GroupID > 0 {
+		g, err := s.Store.GroupByID(r.Context(), req.GroupID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "bad_group", "nie ma takiej grupy")
+			return
+		}
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		groupID, req.Profile = &g.ID, g.Profile
+	}
 	secret := tokenPrefix + auth.NewToken()
 	t, err := s.Store.CreateEnrollToken(r.Context(), store.EnrollToken{
 		Name: req.Name, TokenHash: auth.TokenID(secret), Profile: req.Profile, MaxUses: req.MaxUses,
 		ExpiresAt: s.now().Add(time.Duration(req.ValidHours) * time.Hour), CreatedBy: a.user.Username,
+		GroupID: groupID,
 	})
 	if err != nil {
 		s.internalError(w, r, err)
@@ -368,6 +384,16 @@ func (s *Server) enrollRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tokenID := t.ID
+	profile := t.Profile
+	if t.GroupID != nil {
+		if err := s.Store.AssignAgent(r.Context(), agentID, *t.GroupID); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		if g, err := s.Store.GroupByID(r.Context(), *t.GroupID); err == nil {
+			profile = g.Profile
+		}
+	}
 	if err := s.Store.RecordAgentCert(r.Context(), store.AgentCert{Serial: iss.Serial, AgentID: agentID, IssuedAt: now,
 		NotAfter: iss.NotAfter, TokenID: &tokenID, Hostname: truncate(req.Hostname, 255), RemoteIP: ip}); err != nil {
 		s.internalError(w, r, err)
@@ -376,7 +402,7 @@ func (s *Server) enrollRegister(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, nil, "agent_enrolled", agentID, map[string]any{"token": t.Name, "hostname": truncate(req.Hostname, 255),
 		"version": truncate(req.Version, 64), "serial": iss.Serial})
 	s.Log.Info("zarejestrowano agenta", "agent_id", agentID, "token", t.Name, "ip", ip)
-	writeJSON(w, http.StatusOK, enrollResponse{AgentID: agentID, Certificate: iss.PEM, NotAfter: iss.NotAfter, Profile: t.Profile,
+	writeJSON(w, http.StatusOK, enrollResponse{AgentID: agentID, Certificate: iss.PEM, NotAfter: iss.NotAfter, Profile: profile,
 		RenewBeforeS: int(enroll.RenewBefore.Seconds()), ServerAddress: s.Enroll.PublicServer})
 }
 

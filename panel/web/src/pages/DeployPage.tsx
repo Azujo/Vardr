@@ -18,7 +18,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconCopy, IconDownload, IconKey, IconPlus } from "@tabler/icons-react";
-import { enrollApi, formatDate, type AgentProfile, type EnrollToken } from "../api";
+import { enrollApi, formatDate, groupsApi, type AgentGroup, type AgentProfile, type EnrollToken } from "../api";
 import { useAuth } from "../auth";
 
 const profileLabels: Record<AgentProfile, string> = {
@@ -119,7 +119,8 @@ export default function DeployPage() {
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState<{ token: EnrollToken; secret: string } | null>(null);
-  const [form, setForm] = useState({ name: "", profile: "workstation" as AgentProfile, hours: "168", maxUses: 0 });
+  const [form, setForm] = useState({ name: "", groupId: "", hours: "168", maxUses: 0 });
+  const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
@@ -135,6 +136,16 @@ export default function DeployPage() {
   useEffect(() => {
     if (user?.role === "admin") load();
   }, [load, user]);
+  useEffect(() => {
+    groupsApi
+      .list()
+      .then((r) => {
+        setGroups(r.groups);
+        const def = r.groups.find((g) => g.is_default);
+        if (def) setForm((f) => (f.groupId ? f : { ...f, groupId: String(def.id) }));
+      })
+      .catch(() => setGroups([]));
+  }, []);
 
   if (user?.role !== "admin") {
     return (
@@ -148,9 +159,16 @@ export default function DeployPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await enrollApi.create({ name: form.name, profile: form.profile, valid_hours: Number(form.hours), max_uses: form.maxUses });
+      const g = groups.find((x) => String(x.id) === form.groupId);
+      const res = await enrollApi.create({
+        name: form.name,
+        profile: g?.profile ?? "workstation",
+        group_id: g?.id,
+        valid_hours: Number(form.hours),
+        max_uses: form.maxUses,
+      });
       setOpen(false);
-      setForm({ name: "", profile: "workstation", hours: "168", maxUses: 0 });
+      setForm({ ...form, name: "", hours: "168", maxUses: 0 });
       setSecret(res);
       load();
     } catch (err) {
@@ -207,7 +225,7 @@ export default function DeployPage() {
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Nazwa</Table.Th>
-              <Table.Th>Profil</Table.Th>
+              <Table.Th>Grupa / profil</Table.Th>
               <Table.Th>Instalacje</Table.Th>
               <Table.Th>Ważny do</Table.Th>
               <Table.Th>Utworzył</Table.Th>
@@ -226,7 +244,12 @@ export default function DeployPage() {
                       <Text fw={500}>{t.name}</Text>
                     </Group>
                   </Table.Td>
-                  <Table.Td>{profileLabels[t.profile] ?? t.profile}</Table.Td>
+                  <Table.Td>
+                    {groups.find((g) => g.id === t.group_id)?.name ?? "Domyślna"}
+                    <Text size="xs" c="dimmed">
+                      {profileLabels[t.profile] ?? t.profile}
+                    </Text>
+                  </Table.Td>
                   <Table.Td>
                     {t.uses} / {t.max_uses === 0 ? "∞" : t.max_uses}
                   </Table.Td>
@@ -267,11 +290,12 @@ export default function DeployPage() {
               onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
             />
             <Select
-              label="Profil zdarzeń"
-              data={(Object.keys(profileLabels) as AgentProfile[]).map((p) => ({ value: p, label: profileLabels[p] }))}
-              value={form.profile}
+              label="Grupa agentów"
+              description="Zarejestrowani agenci trafią do tej grupy (profil zdarzeń i limity)"
+              data={groups.map((g) => ({ value: String(g.id), label: `${g.name} – ${profileLabels[g.profile]}` }))}
+              value={form.groupId}
               allowDeselect={false}
-              onChange={(v) => v && setForm({ ...form, profile: v as AgentProfile })}
+              onChange={(v) => v && setForm({ ...form, groupId: v })}
             />
             <Select
               label="Ważność tokenu"

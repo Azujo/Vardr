@@ -88,7 +88,7 @@ func New(opts Options, sources []source.Source, sender Sender, store StateStore,
 	}
 	a := &Agent{opts: opts, sources: sources, sender: sender, store: store, log: log,
 		eps: throttle.New(float64(opts.MaxEPS), float64(opts.MaxEPS))}
-	opts.Status.AddProbe(func(s *status.Status) {
+	opts.Status.SetProbe("core", func(s *status.Status) {
 		s.Counters.Read = a.read.Load()
 		s.Counters.Filtered = a.filtered.Load()
 		s.Counters.Truncated = a.truncated.Load()

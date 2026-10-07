@@ -15,6 +15,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import {
+  IconAdjustments,
   IconAlertTriangle,
   IconBolt,
   IconChevronDown,
@@ -45,6 +46,7 @@ interface Item {
 const main: Item[] = [
   { to: "/", label: "Start", icon: <IconHome size={18} /> },
   { to: "/agents", label: "Huginn", hint: "agenci", icon: <IconDeviceDesktop size={18} /> },
+  { to: "/groups", label: "Grupy agentów", hint: "profile i limity", icon: <IconAdjustments size={18} /> },
   { to: "/events", label: "Mímir", hint: "zdarzenia", icon: <IconDatabaseSearch size={18} /> },
   { to: "/alerts", label: "Gjallarhorn", hint: "alerty – etap 4", icon: <IconAlertTriangle size={18} />, disabled: true },
   { to: "/deploy", label: "Bifröst", hint: "wdrażanie agentów", icon: <IconBolt size={18} /> },

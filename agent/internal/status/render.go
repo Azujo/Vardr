@@ -75,6 +75,13 @@ func Render(w io.Writer, s Status, now time.Time) {
 		parts = append(parts, fmt.Sprintf("%s=%v", key, s.Limits[key]))
 	}
 	fmt.Fprintf(w, "Limity:   %s\n", strings.Join(parts, " "))
+	switch s.Config.Source {
+	case "panel":
+		fmt.Fprintf(w, "Konfig.:  z panelu – grupa %q, wersja %s (zastosowana %s)\n", s.Config.Group, s.Config.Version,
+			s.Config.AppliedAt.Local().Format("2006-01-02 15:04:05"))
+	case "local":
+		fmt.Fprintln(w, "Konfig.:  lokalna (agent.yaml) – panel nie przysłał jeszcze konfiguracji")
+	}
 	fmt.Fprintf(w, "Dławienie od startu: EPS %s, łącze %s\n", s.Throttle.EPS.Round(time.Millisecond), s.Throttle.Bandwidth.Round(time.Millisecond))
 	p := s.Process
 	fmt.Fprintf(w, "Proces:   czas CPU %s, sterta Go %.1f MB (pamięć Go łącznie %.1f MB), gorutyny %d, GOMAXPROCS %d\n",

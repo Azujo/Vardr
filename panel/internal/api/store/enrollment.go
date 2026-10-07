@@ -24,6 +24,7 @@ type EnrollToken struct {
 	CreatedAt time.Time  `json:"created_at"`
 	CreatedBy string     `json:"created_by"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	GroupID   *int64     `json:"group_id,omitempty"` // grupa nowych agentów (nil = domyślna)
 }
 
 // AgentCert to certyfikat wystawiony agentowi.
@@ -40,11 +41,11 @@ type AgentCert struct {
 	RevokeReason string     `json:"revoke_reason,omitempty"`
 }
 
-const tokenCols = `id, name, token_hash, profile, max_uses, uses, expires_at, created_at, created_by, revoked_at`
+const tokenCols = `id, name, token_hash, profile, max_uses, uses, expires_at, created_at, created_by, revoked_at, group_id`
 
 func scanToken(row pgx.Row) (EnrollToken, error) {
 	var t EnrollToken
-	err := row.Scan(&t.ID, &t.Name, &t.TokenHash, &t.Profile, &t.MaxUses, &t.Uses, &t.ExpiresAt, &t.CreatedAt, &t.CreatedBy, &t.RevokedAt)
+	err := row.Scan(&t.ID, &t.Name, &t.TokenHash, &t.Profile, &t.MaxUses, &t.Uses, &t.ExpiresAt, &t.CreatedAt, &t.CreatedBy, &t.RevokedAt, &t.GroupID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -53,8 +54,8 @@ func scanToken(row pgx.Row) (EnrollToken, error) {
 
 // CreateEnrollToken zapisuje token (tylko skrót).
 func (s *PG) CreateEnrollToken(ctx context.Context, t EnrollToken) (EnrollToken, error) {
-	return scanToken(s.pool.QueryRow(ctx, `INSERT INTO enrollment_tokens (name, token_hash, profile, max_uses, expires_at, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+tokenCols, t.Name, t.TokenHash, t.Profile, t.MaxUses, t.ExpiresAt, t.CreatedBy))
+	return scanToken(s.pool.QueryRow(ctx, `INSERT INTO enrollment_tokens (name, token_hash, profile, max_uses, expires_at, created_by, group_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+tokenCols, t.Name, t.TokenHash, t.Profile, t.MaxUses, t.ExpiresAt, t.CreatedBy, t.GroupID))
 }
 
 // ListEnrollTokens zwraca tokeny od najnowszych.

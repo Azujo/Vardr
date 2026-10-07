@@ -15,7 +15,7 @@ import {
 } from "@mantine/core";
 import { IconAlertTriangle, IconCircleCheck, IconPlugConnectedX, IconSearch, IconServer } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { agentsApi, ago, formatNumber, type AgentView, type AgentsSummary } from "../api";
+import { agentsApi, ago, configStateLabels, formatNumber, type AgentView, type AgentsSummary } from "../api";
 
 type Filter = "all" | "online" | "offline" | "problems";
 
@@ -77,7 +77,7 @@ export default function AgentsPage() {
       if (filter === "online" && a.state !== "online") return false;
       if (filter === "offline" && a.state !== "offline") return false;
       if (filter === "problems" && a.problems.length === 0) return false;
-      return !q || [a.id, a.hostname, a.remote_ip, a.version, a.os].some((v) => v.toLowerCase().includes(q));
+      return !q || [a.id, a.hostname, a.remote_ip, a.version, a.os, a.group].some((v) => v.toLowerCase().includes(q));
     });
   }, [agents, query, filter]);
 
@@ -112,7 +112,7 @@ export default function AgentsPage() {
 
       <Group justify="space-between" wrap="wrap">
         <TextInput
-          placeholder="Szukaj: agent, host, IP, wersja"
+          placeholder="Szukaj: agent, host, IP, wersja, grupa"
           leftSection={<IconSearch size={16} />}
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
@@ -144,6 +144,7 @@ export default function AgentsPage() {
                 <Table.Th>Stan</Table.Th>
                 <Table.Th>Agent</Table.Th>
                 <Table.Th>Adres IP</Table.Th>
+                <Table.Th>Grupa</Table.Th>
                 <Table.Th>Wersja</Table.Th>
                 <Table.Th>Ostatni sygnał</Table.Th>
                 <Table.Th>Zdarzenia</Table.Th>
@@ -170,6 +171,14 @@ export default function AgentsPage() {
                     <Text size="sm" ff="monospace">
                       {a.remote_ip || "—"}
                     </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{a.group}</Text>
+                    <Tooltip label={configStateLabels[a.config_state]?.hint}>
+                      <Badge size="xs" variant="light" color={configStateLabels[a.config_state]?.color}>
+                        konfiguracja {configStateLabels[a.config_state]?.label}
+                      </Badge>
+                    </Tooltip>
                   </Table.Td>
                   <Table.Td>{a.version || "—"}</Table.Td>
                   <Table.Td style={{ whiteSpace: "nowrap" }}>

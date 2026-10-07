@@ -38,6 +38,7 @@ type Status struct {
 	Limits   map[string]any  `json:"limits"`
 	Throttle ThrottleStatus  `json:"throttle"`
 	Process  ProcessStatus   `json:"process"`
+	Config   ConfigStatus    `json:"config"`
 	Warnings []string        `json:"warnings,omitempty"`
 }
 
@@ -68,6 +69,14 @@ type Counters struct {
 	Retries     int64 `json:"retries"`
 }
 
+// ConfigStatus mówi, skąd pochodzi konfiguracja kanałów i limitów.
+type ConfigStatus struct {
+	Source    string    `json:"source"` // local (agent.yaml) | panel (grupa)
+	Group     string    `json:"group,omitempty"`
+	Version   string    `json:"version,omitempty"` // wersja z panelu (porównywana w Huginn)
+	AppliedAt time.Time `json:"applied_at,omitzero"`
+}
+
 type ThrottleStatus struct {
 	EPS       time.Duration `json:"eps_ns"`
 	Bandwidth time.Duration `json:"bandwidth_ns"`
@@ -87,6 +96,7 @@ type Tracker struct {
 	s        Status
 	channels map[string]*ChannelStatus
 	probes   []func(*Status)
+	named    map[string]func(*Status)
 	now      func() time.Time
 }
 
@@ -190,6 +200,9 @@ func (t *Tracker) Snapshot() Status {
 		s.Channels = append(s.Channels, *c)
 	}
 	probes := append([]func(*Status){}, t.probes...)
+	for _, p := range t.named {
+		probes = append(probes, p)
+	}
 	t.mu.Unlock()
 
 	sort.Slice(s.Channels, func(i, j int) bool { return s.Channels[i].Name < s.Channels[j].Name })
@@ -245,4 +258,48 @@ func Read(path string) (Status, error) {
 		return s, err
 	}
 	return s, json.Unmarshal(data, &s)
+}
+
+// SetConfig zapisuje źródło i wersję zastosowanej konfiguracji.
+func (t *Tracker) SetConfig(c ConfigStatus) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Config = c
+}
+
+// SetLimits zapisuje aktualne limity (po zmianie konfiguracji).
+func (t *Tracker) SetLimits(limits map[string]any) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Limits = limits
+}
+
+// ResetChannels czyści stan kanałów (po zmianie listy kanałów).
+func (t *Tracker) ResetChannels() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.channels = map[string]*ChannelStatus{}
+}
+
+// SetProbe rejestruje sondę pod nazwą, zastępując poprzednią o tej samej
+// nazwie (np. liczniki rdzenia agenta po przeładowaniu konfiguracji).
+func (t *Tracker) SetProbe(name string, p func(*Status)) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.named == nil {
+		t.named = map[string]func(*Status){}
+	}
+	t.named[name] = p
 }

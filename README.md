@@ -388,6 +388,16 @@ Stan wyszukiwania jest zapisany w adresie strony, więc wynik można wysłać ja
 
 Panel łączy się z ClickHouse kontem `siem_panel`, które ma tylko prawo odczytu oraz limity czasu i rozmiaru wyniku po stronie bazy. Wartości z zapytania trafiają do SQL wyłącznie jako parametry. Na istniejącej instalacji konto zakłada się raz (instrukcja w `clickhouse/init/01-schema.sh`), a hasło trafia do `CLICKHOUSE_PANEL_PASSWORD` w `.env`.
 
+**Grupy agentów – konfiguracja z serwera:** grupa określa profil zdarzeń (stacja, serwer, kontroler domeny) i limity zasobów (CPU, pamięć, zdarzenia/s, łącze, priorytet). Agent od wersji 0.5.0:
+
+- co 5 minut pobiera konfigurację swojej grupy z panelu (`GET /enroll/v1/config`, mTLS, ETag);
+- stosuje ją **bez restartu usługi**: przeładowuje odczyt kanałów i aktualizuje limity w Job Object;
+- zapisuje ostatnią konfigurację lokalnie (`managed.json` w katalogu stanu), więc działa na niej także przy niedostępnym panelu.
+
+Lokalny `agent.yaml` dalej decyduje o adresie serwera i certyfikatach. Agent bez przypisania należy do grupy „Domyślna”. Token rejestracyjny wskazuje grupę dla nowych agentów.
+
+Panel pokazuje przy agencie, czy jego konfiguracja jest aktualna (wersja z heartbeatu porównana z wersją grupy). `siem_agent status` pokazuje źródło konfiguracji. Zmienna `SIEM_CONFIG_POLL_SECONDS` przyspiesza pobieranie (diagnostyka).
+
 **Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
 
 **Bezpieczeństwo:**
