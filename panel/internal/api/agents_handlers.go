@@ -169,9 +169,12 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 			v.Problems = append(v.Problems, fmt.Sprintf("zegar komputera %s o %s względem serwera", dir, off.Round(time.Second)))
 		}
 	}
+	// „stopped” to zwykły stan na komputerach spoza domeny: Windows
+	// uruchamia W32Time na żądanie. Problemem jest wyłączona albo brak
+	// usługi (o rozjechanym zegarze i tak mówi pomiar odchylenia).
 	switch c.TimeService {
-	case "stopped", "disabled", "missing":
-		v.Problems = append(v.Problems, "usługa czasu Windows (W32Time) nie działa – zegar nie jest synchronizowany")
+	case "disabled", "missing":
+		v.Problems = append(v.Problems, "usługa czasu Windows (W32Time) wyłączona – zegar nie jest synchronizowany")
 	}
 	return v
 }

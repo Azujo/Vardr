@@ -340,6 +340,8 @@ Powód:`,
               <Field label="Usługa czasu Windows">
                 {status.clock?.time_service === "running" ? (
                   <Badge color="green" variant="light">działa</Badge>
+                ) : status.clock?.time_service === "stopped" ? (
+                  <Badge color="gray" variant="light">na żądanie</Badge>
                 ) : (
                   <Badge color="red" variant="light">{status.clock?.time_service ?? "—"}</Badge>
                 )}

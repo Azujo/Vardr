@@ -145,7 +145,7 @@ func timeServiceLabel(s string) string {
 	case "running":
 		return "działa"
 	case "stopped":
-		return "ZATRZYMANA"
+		return "zatrzymana (Windows uruchamia ją na żądanie)"
 	case "disabled":
 		return "WYŁĄCZONA"
 	case "missing":
