@@ -289,6 +289,66 @@ Powód:`,
         </Card>
       </SimpleGrid>
 
+      <SimpleGrid cols={{ base: 1, md: 2 }}>
+        <Card withBorder>
+          <Title order={4} mb="sm">
+            Bufor dyskowy
+          </Title>
+          {!status.buffer ? (
+            <Text size="sm" c="dimmed">
+              Agent starszy niż 0.6.0 – bez bufora dyskowego.
+            </Text>
+          ) : status.buffer.disabled ? (
+            <Text size="sm">Wyłączony – przy braku łączności zdarzenia czekają w dzienniku Windows.</Text>
+          ) : (
+            <SimpleGrid cols={3} spacing="md">
+              <Field label="W buforze">
+                {status.buffer.batches} paczek, {(status.buffer.bytes / 1048576).toFixed(1)} MB
+              </Field>
+              <Field label="Limit">{Math.round(status.buffer.max_bytes / 1048576)} MB</Field>
+              <Field label="Po zapełnieniu">{status.buffer.on_full === "drop_oldest" ? "usuwa najstarsze" : "wstrzymuje odczyt"}</Field>
+              <Field label="Najstarsza paczka">{status.buffer.oldest_at ? ago(status.buffer.oldest_at) : "—"}</Field>
+              <Field label="Buforowane od startu">{formatNumber(status.buffer.spooled_events)} zdarzeń</Field>
+              <Field label="Utracone">
+                {status.buffer.dropped_events > 0 ? (
+                  <Text c="red" size="sm">
+                    {formatNumber(status.buffer.dropped_events)} zdarzeń
+                  </Text>
+                ) : (
+                  "0"
+                )}
+              </Field>
+            </SimpleGrid>
+          )}
+        </Card>
+        <Card withBorder>
+          <Title order={4} mb="sm">
+            Zegar
+          </Title>
+          {!status.clock?.measured_at && !status.clock?.time_service ? (
+            <Text size="sm" c="dimmed">
+              Agent starszy niż 0.6.0 albo jeszcze bez pomiaru.
+            </Text>
+          ) : (
+            <SimpleGrid cols={3} spacing="md">
+              <Field label="Odchylenie od serwera">
+                {status.clock?.measured_at
+                  ? `${status.clock.offset_ms > 0 ? "+" : ""}${(status.clock.offset_ms / 1000).toFixed(1)} s (±${status.clock.uncertainty_ms} ms)`
+                  : "—"}
+              </Field>
+              <Field label="Pomiar">{ago(status.clock?.measured_at)}</Field>
+              <Field label="Usługa czasu Windows">
+                {status.clock?.time_service === "running" ? (
+                  <Badge color="green" variant="light">działa</Badge>
+                ) : (
+                  <Badge color="red" variant="light">{status.clock?.time_service ?? "—"}</Badge>
+                )}
+              </Field>
+            </SimpleGrid>
+          )}
+        </Card>
+      </SimpleGrid>
+
       <Card withBorder>
         <Title order={4} mb="sm">
           Kanały

@@ -87,9 +87,71 @@ func Render(w io.Writer, s Status, now time.Time) {
 	fmt.Fprintf(w, "Proces:   czas CPU %s, sterta Go %.1f MB (pamięć Go łącznie %.1f MB), gorutyny %d, GOMAXPROCS %d\n",
 		p.CPUTime.Round(time.Millisecond), p.HeapMB, p.SysMB, p.Goroutines, p.MaxProcs)
 
+	if b := s.Buffer; b != nil {
+		switch {
+		case b.Disabled:
+			fmt.Fprintln(w, "Bufor:    wyłączony – przy braku łączności zdarzenia czekają w dzienniku Windows")
+		case b.Batches == 0:
+			fmt.Fprintf(w, "Bufor:    pusty (limit %d MB, po zapełnieniu: %s)\n", b.MaxBytes>>20, onFullLabel(b.OnFull))
+		default:
+			fmt.Fprintf(w, "Bufor:    %d paczek, %.1f MB z %d MB, najstarsza z %s – dosyłanie po powrocie serwera\n",
+				b.Batches, float64(b.Bytes)/(1<<20), b.MaxBytes>>20, b.OldestAt.Local().Format("2006-01-02 15:04:05"))
+		}
+		if b.Full {
+			fmt.Fprintf(w, "  PEŁNY – %s\n", onFullLabel(b.OnFull))
+		}
+		if b.Dropped > 0 {
+			fmt.Fprintf(w, "  UTRACONO %d zdarzeń (usunięte z pełnego bufora)\n", b.Dropped)
+		}
+	}
+	if c := s.Clock; !c.MeasuredAt.IsZero() || c.TimeService != "" {
+		line := "Zegar:    "
+		if !c.MeasuredAt.IsZero() {
+			line += fmt.Sprintf("odchylenie od serwera %s (±%d ms, pomiar %s temu)", formatOffset(c.OffsetMs), c.UncertaintyMs,
+				ago(now.Sub(c.MeasuredAt)))
+		} else {
+			line += "odchylenie jeszcze nie zmierzone"
+		}
+		if c.TimeService != "" {
+			line += ", usługa czasu Windows: " + timeServiceLabel(c.TimeService)
+		}
+		fmt.Fprintln(w, line)
+	}
+
 	for _, warn := range s.Warnings {
 		fmt.Fprintf(w, "UWAGA: %s\n", warn)
 	}
+}
+
+func onFullLabel(s string) string {
+	if s == "drop_oldest" {
+		return "usuwanie najstarszych paczek"
+	}
+	return "wstrzymanie odczytu (zdarzenia czekają w dzienniku Windows)"
+}
+
+func formatOffset(ms int64) string {
+	switch {
+	case ms > 0:
+		return fmt.Sprintf("+%s (agent się spieszy)", time.Duration(ms)*time.Millisecond)
+	case ms < 0:
+		return fmt.Sprintf("-%s (agent się spóźnia)", time.Duration(-ms)*time.Millisecond)
+	}
+	return "0"
+}
+
+func timeServiceLabel(s string) string {
+	switch s {
+	case "running":
+		return "działa"
+	case "stopped":
+		return "ZATRZYMANA"
+	case "disabled":
+		return "WYŁĄCZONA"
+	case "missing":
+		return "BRAK"
+	}
+	return "nieznany stan"
 }
 
 func ago(d time.Duration) string {

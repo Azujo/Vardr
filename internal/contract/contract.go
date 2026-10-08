@@ -49,6 +49,10 @@ type Event struct {
 }
 
 // Response to odpowiedź serwera na paczkę.
+// HeaderServerTime: czas serwera (RFC 3339, ns) w odpowiedzi na heartbeat –
+// agent wylicza z niego odchylenie swojego zegara.
+const HeaderServerTime = "X-Heimdall-Time"
+
 type Response struct {
 	BatchID string `json:"batch_id"`
 	Status  string `json:"status"`

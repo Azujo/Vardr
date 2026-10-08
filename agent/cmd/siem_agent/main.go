@@ -33,14 +33,16 @@ import (
 	"siem/agent/internal/secure"
 	"siem/agent/internal/shipper"
 	"siem/agent/internal/source"
+	"siem/agent/internal/spool"
 	"siem/agent/internal/state"
 	"siem/agent/internal/status"
+	"siem/agent/internal/timesync"
 	"siem/agent/internal/winevt"
 	"siem/internal/contract"
 	"siem/internal/throttle"
 )
 
-const version = "0.5.0"
+const version = "0.6.0"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -328,10 +330,43 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	bgCtx, stopBg := context.WithCancel(ctx)
 	defer stopBg()
 
+	// Bufor dyskowy: paczki, których nie udało się wysłać od razu, czekają na
+	// dysku zamiast w dzienniku Windows (który przy długiej przerwie nadpisuje
+	// niewysłane zdarzenia). Limit i zachowanie po zapełnieniu – z konfiguracji.
+	buf, err := spool.Open(filepath.Join(cfg.StateDir, "buffer"), sender, log)
+	if err != nil {
+		return fmt.Errorf("bufor dyskowy: %w", err)
+	}
+	buf.FreeSpace = spool.DiskFree
+	if st := buf.Stats(); st.Batches > 0 {
+		log.Info("bufor dyskowy zawiera paczki z poprzedniego uruchomienia – dosyłam", "batches", st.Batches, "bytes", st.Bytes)
+	}
+	go buf.Run(bgCtx)
+	tracker.SetProbe("buffer", func(s *status.Status) {
+		b := buf.Stats()
+		s.Buffer = &status.BufferStatus{Batches: b.Batches, Bytes: b.Bytes, MaxBytes: b.MaxBytes, OnFull: b.OnFull,
+			OldestAt: b.OldestAt, Spooled: b.Spooled, Dropped: b.Dropped, Full: b.Full, Disabled: b.Disabled,
+			LastError: b.LastError, LastErrorTime: b.LastErrorTime}
+	})
+
+	// Zegar: usługa czasu Windows (co 5 min) i odchylenie względem serwera (heartbeat).
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for {
+			tracker.SetTimeService(timesync.ServiceState())
+			select {
+			case <-bgCtx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+
 	// Heartbeat dla panelu (Huginn): stan agenta co minutę.
 	if hbURL, err := heartbeat.URLFromIngest(cfg.Server.URL); err == nil {
 		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
-			Status: func() any { return tracker.Snapshot() }, Log: log}
+			Status: func() any { return tracker.Snapshot() }, Clock: tracker.SetClock, Log: log}
 		go hb.Run(bgCtx)
 	}
 
@@ -401,12 +436,14 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		if kbps := eff.Limits.MaxSendKBps; kbps > 0 {
 			sender.Bandwidth = throttle.New(float64(kbps)*1024, float64(kbps)*1024)
 		}
+		buf.Configure(eff.Buffer.MaxBytes(), eff.Buffer.OnFull, int64(eff.Buffer.MinFreeMB)<<20)
 		tracker.SetLimits(limitMap(eff.Limits))
 		tracker.ResetChannels()
 		log.Info("konfiguracja kanałów i limitów", append([]any{"source", cs.Source, "group", cs.Group, "version", cs.Version,
-			"channels", len(eff.Channels)}, limitAttrs(eff.Limits)...)...)
+			"channels", len(eff.Channels), "buffer_max_mb", eff.Buffer.MBValue(), "buffer_on_full", eff.Buffer.OnFull},
+			limitAttrs(eff.Limits)...)...)
 
-		next, err := runPipeline(ctx, eff, agentID, sender, store, tracker, log, reload)
+		next, err := runPipeline(ctx, eff, agentID, buf, store, tracker, log, reload)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -421,7 +458,7 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 // runPipeline uruchamia odczyt kanałów i wysyłkę dla danej konfiguracji.
 // Kończy się przy anulowaniu ctx albo nadejściu nowej konfiguracji (wtedy
 // zwraca ją – pozycje odczytu są już zapisane, odczyt wznowi się od nich).
-func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender *shipper.HTTPSender, store *state.Store,
+func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender core.Sender, store *state.Store,
 	tracker *status.Tracker, log *slog.Logger, reload <-chan *contract.AgentConfig) (*contract.AgentConfig, error) {
 	var sources []source.Source
 	var watched []logwatch.Channel

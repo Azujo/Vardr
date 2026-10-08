@@ -84,65 +84,85 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 		s.quarantine(b, "błąd serializacji: "+err.Error())
 		return nil
 	}
-
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
 			s.Stats.Retries.Add(1)
 		}
-		if err := s.Bandwidth.Wait(ctx, len(body)); err != nil {
+		done, wait, err := s.attempt(ctx, b, body, attempt)
+		if err != nil || done {
 			return err
 		}
-		status, retryAfter, respBody, err := s.post(ctx, body)
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-		var wait time.Duration
-		if err != nil {
-			s.Status.SendFailed(err.Error())
-		} else if status != http.StatusOK {
-			s.Status.SendFailed(fmt.Sprintf("HTTP %d: %s", status, truncate(respBody)))
-		}
-		switch {
-		case err != nil:
-			s.Log.Warn("wysyłka nieudana, ponowię", "batch_id", b.BatchID, "attempt", attempt+1, "err", err)
-			wait = backoff(s.MinBackoff, s.MaxBackoff, attempt)
-
-		case status == http.StatusOK:
-			var resp contract.Response
-			if err := json.Unmarshal(respBody, &resp); err == nil &&
-				resp.Status == contract.StatusAccepted && resp.BatchID == b.BatchID {
-				s.Stats.BatchesAccepted.Add(1)
-				s.Status.SendOK()
-				s.Stats.EventsAccepted.Add(int64(len(b.Events)))
-				return nil
-			}
-			s.Log.Warn("niepoprawne potwierdzenie serwera, ponowię", "batch_id", b.BatchID, "body", truncate(respBody))
-			wait = backoff(s.MinBackoff, s.MaxBackoff, attempt)
-
-		case status == http.StatusRequestEntityTooLarge:
-			return s.split(ctx, b)
-
-		case status == http.StatusBadRequest:
-			s.quarantine(b, "serwer odrzucił paczkę (400): "+truncate(respBody))
-			return nil
-
-		case status == http.StatusUnauthorized || status == http.StatusForbidden:
-			s.Log.Error("serwer odrzucił tożsamość agenta – sprawdź certyfikat", "status", status, "body", truncate(respBody))
-			wait = backoff(s.MinBackoff*10, s.AuthBackoff, attempt)
-
-		case status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable:
-			wait = afterServerHint(retryAfter, backoff(s.MinBackoff, s.MaxBackoff, attempt))
-			s.Log.Info("serwer przeciążony, czekam", "status", status, "wait", wait)
-
-		default:
-			s.Log.Warn("błąd serwera, ponowię", "status", status, "attempt", attempt+1, "body", truncate(respBody))
-			wait = backoff(s.MinBackoff, s.MaxBackoff, attempt)
-		}
-
 		if err := sleep(ctx, wait); err != nil {
 			return err
 		}
+	}
+}
+
+// TrySend wykonuje jedną próbę wysyłki. done = paczka przyjęta albo
+// ostatecznie odłożona (kwarantanna, podział zbyt dużej paczki); false =
+// błąd przejściowy (brak sieci, przeciążenie serwera) – paczkę trzeba
+// wysłać później (bufor dyskowy).
+func (s *HTTPSender) TrySend(ctx context.Context, b *contract.Batch) (bool, error) {
+	body, err := encode(b)
+	if err != nil {
+		s.quarantine(b, "błąd serializacji: "+err.Error())
+		return true, nil
+	}
+	done, _, err := s.attempt(ctx, b, body, 0)
+	return done, err
+}
+
+// attempt to jedna próba wysyłki; zwraca, czy skończono, i ile czekać
+// przed kolejną próbą.
+func (s *HTTPSender) attempt(ctx context.Context, b *contract.Batch, body []byte, attempt int) (bool, time.Duration, error) {
+	if err := s.Bandwidth.Wait(ctx, len(body)); err != nil {
+		return false, 0, err
+	}
+	status, retryAfter, respBody, err := s.post(ctx, body)
+	if ctx.Err() != nil {
+		return false, 0, ctx.Err()
+	}
+	if err != nil {
+		s.Status.SendFailed(err.Error())
+	} else if status != http.StatusOK {
+		s.Status.SendFailed(fmt.Sprintf("HTTP %d: %s", status, truncate(respBody)))
+	}
+	switch {
+	case err != nil:
+		s.Log.Warn("wysyłka nieudana, ponowię", "batch_id", b.BatchID, "attempt", attempt+1, "err", err)
+		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
+
+	case status == http.StatusOK:
+		var resp contract.Response
+		if err := json.Unmarshal(respBody, &resp); err == nil &&
+			resp.Status == contract.StatusAccepted && resp.BatchID == b.BatchID {
+			s.Stats.BatchesAccepted.Add(1)
+			s.Status.SendOK()
+			s.Stats.EventsAccepted.Add(int64(len(b.Events)))
+			return true, 0, nil
+		}
+		s.Log.Warn("niepoprawne potwierdzenie serwera, ponowię", "batch_id", b.BatchID, "body", truncate(respBody))
+		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
+
+	case status == http.StatusRequestEntityTooLarge:
+		return true, 0, s.split(ctx, b)
+
+	case status == http.StatusBadRequest:
+		s.quarantine(b, "serwer odrzucił paczkę (400): "+truncate(respBody))
+		return true, 0, nil
+
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		s.Log.Error("serwer odrzucił tożsamość agenta – sprawdź certyfikat", "status", status, "body", truncate(respBody))
+		return false, backoff(s.MinBackoff*10, s.AuthBackoff, attempt), nil
+
+	case status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable:
+		wait := afterServerHint(retryAfter, backoff(s.MinBackoff, s.MaxBackoff, attempt))
+		s.Log.Info("serwer przeciążony, czekam", "status", status, "wait", wait)
+		return false, wait, nil
+
+	default:
+		s.Log.Warn("błąd serwera, ponowię", "status", status, "attempt", attempt+1, "body", truncate(respBody))
+		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
 	}
 }
 

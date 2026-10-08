@@ -23,6 +23,7 @@ type Config struct {
 	StartAt  string          `yaml:"start_at"`
 	Batch    BatchConfig     `yaml:"batch"`
 	Limits   LimitsConfig    `yaml:"limits"`
+	Buffer   BufferConfig    `yaml:"buffer"`
 	Logging  LoggingConfig   `yaml:"logging"`
 	Channels []ChannelConfig `yaml:"channels"`
 }
@@ -54,6 +55,25 @@ func (l LimitsConfig) Resource() limits.Limits {
 		MemoryHardMB:  *l.MemoryHardMB,
 	}
 }
+
+// BufferConfig to dyskowy bufor paczek na czas braku łączności z serwerem
+// (katalog <state_dir>\buffer). Panel może nadpisać max_mb i on_full w grupie.
+type BufferConfig struct {
+	MaxMB     *int   `yaml:"max_mb"`      // brak = 1024, 0 = bufor wyłączony
+	OnFull    string `yaml:"on_full"`     // pause (domyślnie) | drop_oldest
+	MinFreeMB int    `yaml:"min_free_mb"` // rezerwa wolnego miejsca na dysku (domyślnie 1024)
+}
+
+// MaxBytes zwraca limit bufora w bajtach (brak ustawienia = 1024 MB).
+func (b BufferConfig) MaxBytes() int64 {
+	if b.MaxMB == nil {
+		return 1024 << 20
+	}
+	return int64(*b.MaxMB) << 20
+}
+
+// MBValue zwraca limit w MB (do logów).
+func (b BufferConfig) MBValue() int { return int(b.MaxBytes() >> 20) }
 
 // ServerConfig opisuje połączenie mTLS z serwerem.
 type ServerConfig struct {
@@ -147,6 +167,16 @@ func (c *Config) applyDefaults(baseDir string) {
 	if c.Logging.MaxFiles == 0 {
 		c.Logging.MaxFiles = 3
 	}
+	if c.Buffer.MaxMB == nil {
+		v := 1024
+		c.Buffer.MaxMB = &v
+	}
+	if c.Buffer.OnFull == "" {
+		c.Buffer.OnFull = "pause"
+	}
+	if c.Buffer.MinFreeMB == 0 {
+		c.Buffer.MinFreeMB = 1024
+	}
 	if c.Limits.Priority == "" {
 		c.Limits.Priority = limits.PriorityBelowNormal
 	}
@@ -202,6 +232,15 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.MaxEPS < 0 || c.Limits.MaxSendKBps < 0 {
 		errs = append(errs, errors.New("limits.max_eps i limits.max_send_kbps nie mogą być ujemne"))
+	}
+	if c.Buffer.MaxMB != nil && (*c.Buffer.MaxMB < 0 || *c.Buffer.MaxMB > 102400) {
+		errs = append(errs, errors.New("buffer.max_mb: 0 (wyłączony) – 102400"))
+	}
+	if c.Buffer.OnFull != "" && c.Buffer.OnFull != "pause" && c.Buffer.OnFull != "drop_oldest" {
+		errs = append(errs, errors.New("buffer.on_full: pause albo drop_oldest"))
+	}
+	if c.Buffer.MinFreeMB < 0 {
+		errs = append(errs, errors.New("buffer.min_free_mb nie może być ujemne"))
 	}
 	if len(c.Channels) == 0 {
 		errs = append(errs, errors.New("brak skonfigurowanych kanałów"))

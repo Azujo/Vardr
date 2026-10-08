@@ -158,6 +158,19 @@ export interface AgentStatusDoc {
   limits?: Record<string, unknown>;
   throttle?: { eps_ns?: number; bandwidth_ns?: number };
   process?: { cpu_time_ns?: number; heap_mb?: number; sys_mb?: number; goroutines?: number; max_procs?: number };
+  buffer?: {
+    batches: number;
+    bytes: number;
+    max_bytes: number;
+    on_full: string;
+    oldest_at?: string;
+    spooled_events: number;
+    dropped_events: number;
+    full: boolean;
+    disabled: boolean;
+    last_error?: string;
+  };
+  clock?: { offset_ms: number; uncertainty_ms: number; measured_at?: string; time_service?: string };
   warnings?: string[];
 }
 
@@ -300,6 +313,8 @@ export interface AgentLimits {
   memory_hard_mb?: number;
   max_eps?: number;
   max_send_kbps?: number;
+  buffer_max_mb?: number;
+  buffer_on_full?: "pause" | "drop_oldest";
 }
 
 export interface AgentGroup {

@@ -45,6 +45,7 @@ export function limitsSummary(l: AgentLimits): string {
   if (l.memory_hard_mb !== undefined) parts.push(l.memory_hard_mb ? `pamięć ≤ ${l.memory_hard_mb} MB` : "pamięć bez limitu");
   if (l.max_eps !== undefined) parts.push(l.max_eps ? `≤ ${l.max_eps} zdarzeń/s` : "zdarzenia bez limitu");
   if (l.max_send_kbps !== undefined) parts.push(l.max_send_kbps ? `łącze ≤ ${l.max_send_kbps} KiB/s` : "łącze bez limitu");
+  if (l.buffer_max_mb !== undefined) parts.push(l.buffer_max_mb ? `bufor ${l.buffer_max_mb} MB` : "bez bufora dyskowego");
   if (l.priority) parts.push(`priorytet ${priorityLabels[l.priority]}`);
   return parts.length ? parts.join(" · ") : "domyślne agenta";
 }
@@ -298,6 +299,26 @@ export default function GroupsPage() {
                   suffix=" KiB/s"
                   value={edit.form.limits.max_send_kbps}
                   onChange={(v) => setLimit("max_send_kbps", v)}
+                />
+                <LimitInput
+                  label="Bufor dyskowy"
+                  description="MB na paczki przy braku łączności (agent 0.6+), 0 = wyłączony; domyślnie 1024"
+                  max={102400}
+                  suffix=" MB"
+                  value={edit.form.limits.buffer_max_mb}
+                  onChange={(v) => setLimit("buffer_max_mb", v)}
+                />
+                <Select
+                  label="Gdy bufor się zapełni"
+                  description="Wstrzymanie: zdarzenia czekają w dzienniku Windows; usuwanie: tracone najstarsze paczki"
+                  placeholder="domyślne agenta (wstrzymanie)"
+                  clearable
+                  data={[
+                    { value: "pause", label: "wstrzymaj odczyt" },
+                    { value: "drop_oldest", label: "usuwaj najstarsze paczki" },
+                  ]}
+                  value={edit.form.limits.buffer_on_full ?? null}
+                  onChange={(v) => setLimit("buffer_on_full", (v ?? undefined) as AgentLimits["buffer_on_full"])}
                 />
               </SimpleGrid>
               <Button type="submit" loading={busy}>

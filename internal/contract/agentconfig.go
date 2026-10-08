@@ -32,6 +32,9 @@ type AgentLimits struct {
 	MemoryHardMB  *int     `json:"memory_hard_mb,omitempty"`
 	MaxEPS        *int     `json:"max_eps,omitempty"`
 	MaxSendKBps   *int     `json:"max_send_kbps,omitempty"`
+	// Bufor dyskowy agenta (MB, 0 = wyłączony) i zachowanie po zapełnieniu.
+	BufferMaxMB  *int    `json:"buffer_max_mb,omitempty"`
+	BufferOnFull *string `json:"buffer_on_full,omitempty"` // pause | drop_oldest
 }
 
 // ValidProfiles to profile zdarzeń znane agentowi.
@@ -67,6 +70,12 @@ func (l AgentLimits) Validate() error {
 	}
 	if l.MaxSendKBps != nil && (*l.MaxSendKBps < 0 || *l.MaxSendKBps > 10_000_000) {
 		errs = append(errs, errors.New("limit łącza: 0–10 000 000 KiB/s"))
+	}
+	if l.BufferMaxMB != nil && (*l.BufferMaxMB < 0 || *l.BufferMaxMB > 102400) {
+		errs = append(errs, errors.New("bufor dyskowy: 0 (wyłączony) – 102 400 MB"))
+	}
+	if l.BufferOnFull != nil && *l.BufferOnFull != "pause" && *l.BufferOnFull != "drop_oldest" {
+		errs = append(errs, errors.New("pełny bufor: pause albo drop_oldest"))
 	}
 	return errors.Join(errs...)
 }

@@ -92,6 +92,13 @@ func Apply(base *config.Config, m *contract.AgentConfig) (*config.Config, error)
 	if l.MaxSendKBps != nil {
 		eff.Limits.MaxSendKBps = *l.MaxSendKBps
 	}
+	if l.BufferMaxMB != nil {
+		v := *l.BufferMaxMB
+		eff.Buffer.MaxMB = &v
+	}
+	if l.BufferOnFull != nil {
+		eff.Buffer.OnFull = *l.BufferOnFull
+	}
 	if err := eff.Validate(); err != nil {
 		return nil, fmt.Errorf("konfiguracja z panelu jest niepoprawna: %w", err)
 	}

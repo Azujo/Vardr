@@ -39,7 +39,34 @@ type Status struct {
 	Throttle ThrottleStatus  `json:"throttle"`
 	Process  ProcessStatus   `json:"process"`
 	Config   ConfigStatus    `json:"config"`
+	Buffer   *BufferStatus   `json:"buffer,omitempty"`
+	Clock    ClockStatus     `json:"clock"`
 	Warnings []string        `json:"warnings,omitempty"`
+}
+
+// BufferStatus to stan dyskowego bufora paczek.
+type BufferStatus struct {
+	Batches       int       `json:"batches"`
+	Bytes         int64     `json:"bytes"`
+	MaxBytes      int64     `json:"max_bytes"`
+	OnFull        string    `json:"on_full"`
+	OldestAt      time.Time `json:"oldest_at,omitzero"`
+	Spooled       int64     `json:"spooled_events"`
+	Dropped       int64     `json:"dropped_events"`
+	Full          bool      `json:"full"`
+	Disabled      bool      `json:"disabled"`
+	LastError     string    `json:"last_error,omitempty"`
+	LastErrorTime time.Time `json:"last_error_at,omitzero"`
+}
+
+// ClockStatus to zegar komputera względem serwera Heimdalla i stan usługi
+// czasu Windows (W32Time).
+type ClockStatus struct {
+	// OffsetMs: zegar agenta minus zegar serwera (ms); dodatnie = agent się spieszy.
+	OffsetMs      int64     `json:"offset_ms"`
+	UncertaintyMs int64     `json:"uncertainty_ms"`
+	MeasuredAt    time.Time `json:"measured_at,omitzero"`
+	TimeService   string    `json:"time_service,omitempty"` // running | stopped | disabled | missing | unknown
 }
 
 type ServerStatus struct {
@@ -302,4 +329,24 @@ func (t *Tracker) SetProbe(name string, p func(*Status)) {
 		t.named = map[string]func(*Status){}
 	}
 	t.named[name] = p
+}
+
+// SetClock zapisuje pomiar odchylenia zegara.
+func (t *Tracker) SetClock(offset, uncertainty time.Duration, at time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Clock.OffsetMs, t.s.Clock.UncertaintyMs, t.s.Clock.MeasuredAt = offset.Milliseconds(), uncertainty.Milliseconds(), at.UTC()
+}
+
+// SetTimeService zapisuje stan usługi czasu Windows.
+func (t *Tracker) SetTimeService(state string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Clock.TimeService = state
 }

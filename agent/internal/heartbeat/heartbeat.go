@@ -29,7 +29,10 @@ type Sender struct {
 	Started time.Time
 	// Status zwraca bieżący stan agenta (status.json).
 	Status func() any
-	Log    *slog.Logger
+	// Clock (opcjonalne) dostaje odchylenie zegara agenta względem serwera
+	// (z nagłówka X-Heimdall-Time) i niepewność pomiaru (połowa czasu żądania).
+	Clock func(offset, uncertainty time.Duration, at time.Time)
+	Log   *slog.Logger
 
 	Interval   time.Duration // domyślnie contract.HeartbeatInterval
 	FirstAfter time.Duration // pierwszy heartbeat po starcie (domyślnie 5 s)
@@ -110,12 +113,21 @@ func (s *Sender) send(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
+	t0 := time.Now()
 	resp, err := s.Client.Do(req)
 	if err != nil {
 		return err
 	}
+	t1 := time.Now()
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	if s.Clock != nil {
+		if srv, err := time.Parse(time.RFC3339Nano, resp.Header.Get(contract.HeaderServerTime)); err == nil {
+			rtt := t1.Sub(t0)
+			mid := t0.Add(rtt / 2)
+			s.Clock(mid.Sub(srv), rtt/2, t1)
+		}
+	}
 	switch {
 	case resp.StatusCode == http.StatusOK:
 		return nil

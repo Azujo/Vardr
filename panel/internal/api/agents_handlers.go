@@ -41,7 +41,24 @@ type agentStatus struct {
 		Error string `json:"error"`
 	} `json:"channels"`
 	Warnings []string `json:"warnings"`
+	Buffer   *struct {
+		Batches  int       `json:"batches"`
+		Bytes    int64     `json:"bytes"`
+		OldestAt time.Time `json:"oldest_at"`
+		Dropped  int64     `json:"dropped_events"`
+		Full     bool      `json:"full"`
+	} `json:"buffer"`
+	Clock struct {
+		OffsetMs      int64     `json:"offset_ms"`
+		UncertaintyMs int64     `json:"uncertainty_ms"`
+		MeasuredAt    time.Time `json:"measured_at"`
+		TimeService   string    `json:"time_service"`
+	} `json:"clock"`
 }
+
+// clockTolerance: odchylenie zegara agenta od serwera, od którego panel
+// zgłasza problem (czasy zdarzeń przestają się zgadzać; Kerberos toleruje 5 min).
+const clockTolerance = 60 * time.Second
 
 // agentView to agent na liście w panelu.
 type agentView struct {
@@ -125,6 +142,36 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	}
 	if st.Counters.Quarantined > 0 {
 		v.Problems = append(v.Problems, fmt.Sprintf("%d zdarzeń w kwarantannie agenta", st.Counters.Quarantined))
+	}
+	if b := st.Buffer; b != nil {
+		if b.Batches > 0 && !b.OldestAt.IsZero() && now.Sub(b.OldestAt) > 5*time.Minute {
+			v.Problems = append(v.Problems, fmt.Sprintf("bufor dyskowy: %d paczek (%.1f MB) czeka na wysyłkę od %s",
+				b.Batches, float64(b.Bytes)/(1<<20), humanAgo(now.Sub(b.OldestAt))))
+		}
+		if b.Full {
+			v.Problems = append(v.Problems, "bufor dyskowy agenta pełny")
+		}
+		if b.Dropped > 0 {
+			v.Problems = append(v.Problems, fmt.Sprintf("utracono %d zdarzeń z pełnego bufora dyskowego", b.Dropped))
+		}
+	}
+	c := st.Clock
+	if !c.MeasuredAt.IsZero() {
+		off := time.Duration(c.OffsetMs) * time.Millisecond
+		if off < 0 {
+			off = -off
+		}
+		if off-time.Duration(c.UncertaintyMs)*time.Millisecond > clockTolerance {
+			dir := "spieszy się"
+			if c.OffsetMs < 0 {
+				dir = "spóźnia się"
+			}
+			v.Problems = append(v.Problems, fmt.Sprintf("zegar komputera %s o %s względem serwera", dir, off.Round(time.Second)))
+		}
+	}
+	switch c.TimeService {
+	case "stopped", "disabled", "missing":
+		v.Problems = append(v.Problems, "usługa czasu Windows (W32Time) nie działa – zegar nie jest synchronizowany")
 	}
 	return v
 }
