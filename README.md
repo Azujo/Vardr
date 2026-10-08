@@ -311,7 +311,7 @@ Retencję ustawia się w `.env`:
 - `SIEM_EVENTS_TTL_DAYS`: zdarzenia i kwarantanna, domyślnie 5 dni;
 - `SIEM_RAW_TTL_DAYS`: surowy XML, domyślnie 5 dni. Po tym czasie zostają pola znormalizowane, a XML to ok. 40–50% miejsca w bazie.
 
-Zmiany na działającej bazie stosuje skrypt `./clickhouse/retention.sh`, uruchamiany na VM w katalogu stosu. Wypisuje też, ile miejsca zajmują największe kolumny. Surowy XML warto skracać dopiero wtedy, gdy oryginały będą trafiać do archiwum NIS2 (etap 3).
+Zmiany na działającej bazie stosuje skrypt `./clickhouse/retention.sh`, uruchamiany na VM w katalogu stosu. Wypisuje też, ile miejsca zajmują największe kolumny. W laboratorium surowy XML jest trzymany 2 dni (zdarzenia 5 dni): oryginały są w archiwum Urd, więc starszy XML da się odtworzyć (replay) albo wyeksportować. Wyjątek: agenci wyłączeni z archiwum polityką tracą XML po 2 dniach bezpowrotnie.
 
 Zweryfikowane: 40 290 zdarzeń z agenta w ClickHouse bez braków i duplikatów,
 kompresja ~15× (31,6 MB → 2,1 MB), czas od zdarzenia do zapisu w bazie ~0,8 s,
@@ -635,7 +635,16 @@ Do czasu modułu alertów (Gjallarhorn, etap 4) awarie zgłasza Grafana. Reguły
 - kolejka zapełniona ponad 80%;
 - ingest odmawia przyjęcia zdarzeń (503).
 
-Stan alertów widać w Grafanie (*Alerting → Alert rules*). Powiadomienia wymagają punktu kontaktowego, np. webhooka Discorda, w *Alerting → Contact points*.
+Stan alertów widać w Grafanie (*Alerting → Alert rules*). Grafana wysyła je do siem-api (punkt kontaktowy w `provisioning/alerting/contact.yaml`, wewnętrzny port 8081 dostępny tylko w sieci stosu, token `SIEM_ALERT_RELAY_TOKEN` w `.env`). siem-api przekazuje je na kanały ustawione w panelu.
+
+### Powiadomienia (panel → Powiadomienia)
+
+Administrator dodaje kanały: **Discord** (adres webhooka kanału) albo **webhook** (POST z JSON `{event, severity, title, text, fields, at}`, np. do n8n lub własnej usługi). Dla każdego kanału wybiera, co ma dostawać:
+
+- **alerty zdrowia systemu** z Grafany (z wiadomością „Rozwiązane” po ustąpieniu problemu);
+- **kotwicę archiwum Urd**, codziennie o `SIEM_ANCHOR_HOUR` (domyślnie 7:00): numer i SHA-256 najnowszego manifestu łańcucha. Kopia u odbiorcy jest dowodem niezależnym od systemu – kto przepisze archiwum razem ze spisem w bazie, nie zmieni wiadomości wysłanych wcześniej. Panel porównuje wysłane kotwice z łańcuchem („zgodna z łańcuchem”), a przycisk „Wyślij kotwicę teraz” wysyła ją poza terminem.
+
+Adres webhooka jest sekretem: przechowuje go tylko baza panelu, API go nie zwraca (panel pokazuje początek i 4 ostatnie znaki), a błędy wysyłki nie zawierają adresu. Wyłączenie kanału, rezygnacja z rodzaju powiadomień, zmiana adresu i usunięcie wymagają ponownego podania hasła i trafiają do audytu. Dziennik wysyłek jest trzymany 90 dni, a wpisy kotwic bezterminowo. Później te same kanały dostaną alerty detekcji (Gjallarhorn).
 
 ### Skalowanie
 

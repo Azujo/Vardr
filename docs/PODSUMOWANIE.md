@@ -141,16 +141,16 @@ Priorytety: **W** = ważne (bezpieczeństwo lub poprawność), **Ś** = średnie
 
 | # | Pr. | Problem | Skutek | Propozycja |
 |---|---|---|---|---|
-| 1 | W | Grafana nie ma punktu kontaktowego – alerty nikogo nie powiadamiają | karencja 24 h dla osłabień polityki i wszystkie alerty zdrowia działają tylko, gdy ktoś akurat patrzy w Grafanę | dodać webhook Discorda w Grafanie (decyzja odłożona) |
-| 2 | W | Przeniesienie agenta do wyłączonej grupy (albo token z taką grupą) nie jest traktowane jak osłabienie | administrator bez hasła i bez karencji może wyłączyć agenta z archiwum, przypisując go do wyłączonej grupy | archiwizator traktuje przypisanie młodsze niż karencja jak brak wykluczenia (`agent_assignments.updated_at`), panel to pokazuje |
-| 3 | W | Kotwica łańcucha tylko w systemie | ktoś z dostępem do dysku **i** bazy może przepisać cały łańcuch bez śladu | codzienne wysłanie kotwicy poza system (webhook lub e-mail) i/lub znacznik czasu RFC 3161 z zewnętrznego TSA |
-| 4 | W | Kopie zapasowe (z kluczem CA agentów i `.env`) leżą na tej samej VM | utrata VM = utrata kopii | okresowe kopiowanie na inny komputer, najlepiej zaszyfrowane |
-| 5 | Ś | Archiwum i paczki eksportu nie są szyfrowane | dane osobowe (konta, adresy IP) w jawnej postaci na dysku i w paczce przekazywanej na zewnątrz | LUKS na dysku archiwum (wymaga sformatowania; sudo); opcjonalne szyfrowanie paczki eksportu |
+| 1 | W | Grafana nie ma punktu kontaktowego – alerty nikogo nie powiadamiają | karencja 24 h dla osłabień polityki i wszystkie alerty zdrowia działają tylko, gdy ktoś akurat patrzy w Grafanę | **zrobione 08.10:** kanały powiadomień w panelu (Discord, webhook), Grafana przekazuje alerty przez siem-api |
+| 2 | W | Przeniesienie agenta do wyłączonej grupy (albo token z taką grupą) nie jest traktowane jak osłabienie | administrator bez hasła i bez karencji może wyłączyć agenta z archiwum, przypisując go do wyłączonej grupy | **zrobione 08.10:** archiwizator zapisuje czas wejścia agenta do grupy (`urd.group_membership`), wykluczenie po karencji |
+| 3 | W | Kotwica łańcucha tylko w systemie | ktoś z dostępem do dysku **i** bazy może przepisać cały łańcuch bez śladu | **zrobione 08.10:** codzienna kotwica na kanały powiadomień, porównanie z łańcuchem w panelu |
+| 4 | W | Kopie zapasowe (z kluczem CA agentów i `.env`) leżą na tej samej VM | utrata VM = utrata kopii | **w toku:** codzienna wysyłka zaszyfrowanych kopii na TrueNAS + `restore.sh` |
+| 5 | Ś | Archiwum i paczki eksportu nie są szyfrowane (decyzja odłożona: eksport ma być łatwy do odczytu) | dane osobowe (konta, adresy IP) w jawnej postaci na dysku i w paczce przekazywanej na zewnątrz | LUKS na dysku archiwum (wymaga sformatowania; sudo); opcjonalne szyfrowanie paczki eksportu |
 | 6 | Ś | Brak laboratorium AD | etap 4 nie ma na czym sprawdzić scenariuszy detekcji | postawić DC + stację przed etapem 4 |
-| 7 | Ś | Etap 2 oznaczony jako zakończony mimo braku MSI i bufora dyskowego | roadmapa myląca | poprawić opis w roadmapie, MSI i bufor jako osobne zadania |
+| 7 | Ś | Etap 2 oznaczony jako zakończony mimo braku MSI i bufora dyskowego | roadmapa myląca | **poprawione 08.10** w roadmapie; MSI i bufor dyskowy (limit w grupie agentów) w agencie 0.6 |
 | 8 | Ś | Minimalizacja danych w eksporcie z filtrem | organ dostaje w segmentach także dane innych źródeł | manifest v2 z indeksem rekordów pozwoli udowodnić pojedyncze paczki bez całego segmentu |
 | 9 | Ś | Agent nie raportuje synchronizacji zegara (roadmapa, sekcja 6) | błędny zegar komputera widać tylko po `time_quality` w normalizatorze | dodać stan synchronizacji czasu do heartbeatu |
-| 10 | N | README: nieaktualna sekcja „Czego jeszcze nie ma” i lista alertów bez dwóch nowych reguł | dokumentacja | poprawione razem z tym plikiem |
-| 11 | N | Decyzja o retencji surowego XML w ClickHouse (dziś 5 dni) | miejsce na dysku | po etapie 3 oryginał jest w archiwum – można skrócić do 1–2 dni |
+| 10 | N | README: nieaktualna sekcja „Czego jeszcze nie ma” i lista alertów bez dwóch nowych reguł | dokumentacja | **zrobione 07.10** |
+| 11 | N | Decyzja o retencji surowego XML w ClickHouse (dziś 5 dni) | miejsce na dysku | **zrobione 08.10:** surowy XML 2 dni (oryginały w Urd) |
 | 12 | N | `odczytaj.exe` bez podpisu cyfrowego | ostrzeżenie SmartScreen u odbiorcy | certyfikat code signing, gdy projekt wyjdzie poza laboratorium |
-| 13 | N | Wpisy testowe w bazie (`test-eksportu`, `test-odtworzenia`, `test-polityki`) i ~270 MB starych danych testowych w `data/` | porządek | eksporty i replay wygasają same; historia polityki zostaje (to dziennik) |
+| 13 | N | Wpisy testowe w bazie (`test-eksportu`, `test-odtworzenia`, `test-polityki`) i ~270 MB starych danych testowych w `data/` | porządek | **zrobione 08.10:** `data/` usunięty; historia polityki zostaje jako dziennik |
