@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -208,9 +209,21 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 			{"server.txt", []byte(s.Enroll.PublicServer + "\n")},
 			{"token.txt", []byte(req.Secret + "\n")},
 			{"install.cmd", crlf(installCmd)},
+			{"install-msi.cmd", crlf(fmt.Sprintf(installMSICmd, s.Enroll.PublicServer, req.Secret))},
 			{"INSTRUKCJA.txt", crlf(fmt.Sprintf(packageReadme, t.Name, enrollProfiles[t.Profile], t.ExpiresAt.Local().Format("2006-01-02 15:04"), s.Enroll.PublicServer))},
 		} {
 			if err := add(x.name, x.data); err != nil {
+				return err
+			}
+		}
+		// Instalator MSI (budowany przez deploy.sh obok programu agenta), jeśli jest.
+		if msi, err := os.Open(filepath.Join(filepath.Dir(s.Enroll.AgentExe), "heimdall-agent.msi")); err == nil {
+			defer msi.Close()
+			f, err := zw.Create("heimdall-agent.msi")
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, msi); err != nil {
 				return err
 			}
 		}
@@ -247,6 +260,14 @@ rem (prawy przycisk myszy -> Uruchom jako administrator).
 pause
 `
 
+// installMSICmd: instalacja z MSI na jednym komputerze (adres i token wpisane).
+const installMSICmd = `@echo off
+rem Instalacja agenta Heimdall z pakietu MSI. Uruchom jako administrator.
+msiexec /i "%%~dp0heimdall-agent.msi" /qn SERVER=%s TOKEN=%s /l*v "%%TEMP%%\heimdall-agent-msi.log"
+if errorlevel 1 (echo Instalacja nieudana - dziennik: %%TEMP%%\heimdall-agent-msi.log oraz %%ProgramData%%\SiemAgent\msi.log) else (echo Agent zainstalowany.)
+pause
+`
+
 const packageReadme = `Heimdall – paczka instalacyjna agenta (Huginn)
 ==============================================
 
@@ -261,8 +282,17 @@ Instalacja na jednym komputerze:
      Agent wygeneruje własny klucz prywatny (nie opuszcza komputera),
      zarejestruje się tokenem i zainstaluje jako usługa Windows.
 
-Wdrożenie masowe (GPO / Intune / SCCM), z konta SYSTEM lub administratora:
+Wdrożenie masowe (Intune / SCCM / skrypt GPO), z konta SYSTEM lub
+administratora – instalator MSI (heimdall-agent.msi, jeśli jest w paczce):
+  msiexec /i heimdall-agent.msi /qn SERVER=<adres> TOKEN=<token>
+albo bez MSI:
   siem_agent.exe install -server <adres> -token <token>
+(install-msi.cmd robi to samo z adresem i tokenem tej paczki.)
+
+Aktualizacja: nowszy heimdall-agent.msi bez TOKEN (rejestracja zostaje):
+  msiexec /i heimdall-agent.msi /qn
+Odinstalowanie: Programy i funkcje albo msiexec /x heimdall-agent.msi /qn
+(dane i certyfikaty zostają w C:\ProgramData\SiemAgent).
 
 Paczka NIE zawiera klucza prywatnego, ale zawiera token – przechowuj ją
 jak hasło do czasu wygaśnięcia tokenu albo unieważnij token w panelu

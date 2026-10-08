@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Instalator MSI agenta Heimdall (Huginn). Buduje go deploy.sh (cel agent)
+  narzędziem wixl na serwerze – z CA tej instalacji (ca.crt).
+
+  Cicha instalacja (GPO/Intune/SCCM, jako administrator albo SYSTEM):
+    msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…
+  Aktualizacja: ten sam plik w nowszej wersji (bez TOKEN – rejestracja zostaje).
+  Odinstalowanie: Programy i funkcje albo msiexec /x heimdall-agent.msi /qn
+  (dane i certyfikaty zostają w %ProgramData%\SiemAgent).
+  Przebieg instalacji agenta: %ProgramData%\SiemAgent\msi.log.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Heimdall Agent (Huginn)" Language="1033" Version="$(var.Version)"
+           Manufacturer="Heimdall SIEM" UpgradeCode="6F1C2A3B-4D5E-4F60-8A71-92B3C4D5E6F7">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="Heimdall SIEM agent (Windows Event Log)" Comments="Wersja $(var.Version)"/>
+    <Media Id="1" Cabinet="agent.cab" EmbedCab="yes"/>
+    <MajorUpgrade DowngradeErrorMessage="Zainstalowana jest nowsza wersja agenta Heimdall."/>
+    <!-- Token nie trafia do dziennika instalatora. -->
+    <Property Id="MsiHiddenProperties" Value="TOKEN"/>
+    <Property Id="ARPNOMODIFY" Value="1"/>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="SiemAgent">
+          <Component Id="AgentExe" Guid="1A2B3C4D-0001-4000-8000-000000000001" Win64="yes">
+            <File Id="AgentExe" Name="siem_agent.exe" Source="siem_agent.exe" KeyPath="yes"/>
+          </Component>
+          <Component Id="CaCrt" Guid="1A2B3C4D-0001-4000-8000-000000000002" Win64="yes">
+            <File Id="CaCrt" Name="ca.crt" Source="ca.crt" KeyPath="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="AgentExe"/>
+      <ComponentRef Id="CaCrt"/>
+    </Feature>
+    <!-- Agent zainstalowany wcześniej bez MSI: zatrzymanie usługi, żeby dało się podmienić plik. -->
+    <CustomAction Id="AgentStopOld" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]siem_agent.exe&quot; stop"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
+    <CustomAction Id="AgentInstall" FileKey="AgentExe" ExeCommand="msi-install -server &quot;[SERVER]&quot; -token &quot;[TOKEN]&quot;"
+                  Execute="deferred" Impersonate="no" Return="check"/>
+    <CustomAction Id="AgentUninstall" FileKey="AgentExe" ExeCommand="msi-uninstall"
+                  Execute="deferred" Impersonate="no" Return="ignore"/>
+    <InstallExecuteSequence>
+      <RemoveExistingProducts Sequence="1410"/>
+      <Custom Action="AgentUninstall" Sequence="3490">REMOVE="ALL"</Custom>
+      <Custom Action="AgentStopOld" Sequence="3990">NOT REMOVE</Custom>
+      <Custom Action="AgentInstall" Sequence="4010">NOT REMOVE</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

@@ -63,10 +63,18 @@ for t in "${targets[@]}"; do
     copy deploy/lab/export-tools/odczytaj.exe "$host:$dir/export-tools/odczytaj.exe"
     ;;
   agent)
-    echo "== agent Windows -> agent-dist/"
+    echo "== agent Windows -> agent-dist/ (program i instalator MSI)"
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o deploy/lab/bin/siem_agent.exe ./agent/cmd/siem_agent
-    remote "mkdir -p agent-dist"
+    agent_version=$(sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/siem_agent/main.go)
+    remote "mkdir -p agent-dist msi"
     copy deploy/lab/bin/siem_agent.exe "$host:$dir/agent-dist/siem_agent.exe"
+    copy deploy/lab/msi/Dockerfile deploy/lab/msi/agent.wxs "$host:$dir/msi/"
+    # MSI z CA tej instalacji (certs/ca.crt na serwerze), narzędziem wixl w kontenerze.
+    remote "docker image inspect siem/wixl:lab >/dev/null 2>&1 || docker build -q -t siem/wixl:lab msi >/dev/null; \
+      docker run --rm -u 1000:1000 -v \$PWD/msi:/src:ro -v \$PWD/agent-dist:/out \
+        -v \$PWD/agent-dist/siem_agent.exe:/w/siem_agent.exe:ro -v \$PWD/certs/ca.crt:/w/ca.crt:ro \
+        siem/wixl:lab -a x64 -D Version=$agent_version -o /out/heimdall-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
+      ls -l agent-dist/heimdall-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
     ;;
   ingest | normalizer | writer | archiver | api)
     echo "== $t ($version)"

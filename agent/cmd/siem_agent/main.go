@@ -124,6 +124,9 @@ func main() {
 		cf.StringVar(&opts.cert, "cert", "", "certyfikat agenta")
 		cf.StringVar(&opts.key, "key", "", "klucz agenta")
 		cf.BoolVar(&opts.noStart, "no-start", false, "nie uruchamiaj usługi po instalacji")
+	case "msi-install":
+		cf.StringVar(&opts.server, "server", "", "adres serwera (właściwość SERVER instalatora MSI)")
+		cf.StringVar(&opts.token, "token", "", "token rejestracyjny (właściwość TOKEN instalatora MSI)")
 	case "uninstall":
 		purge = cf.Bool("purge", false, "usuń także dane, konfigurację i certyfikaty")
 	case "enroll":
@@ -147,6 +150,10 @@ func main() {
 		err = uninstall(*purge)
 	case "upgrade":
 		err = upgrade()
+	case "msi-install":
+		err = msiInstall(opts.server, opts.token)
+	case "msi-uninstall":
+		err = msiUninstall()
 	case "enroll":
 		err = enrollOnly(eo)
 	case "start":
