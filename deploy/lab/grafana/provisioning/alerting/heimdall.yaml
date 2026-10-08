@@ -193,6 +193,29 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [15] }
+      - uid: heimdall-backup-remote-stale
+        title: "Kopia zapasowa nie trafiła poza VM od ponad 26 h"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Kopia zapasowa nie trafiła poza VM od ponad 26 h"
+          description: "Wysyłka kopii na serwer kopii (SIEM_BACKUP_REMOTE, np. TrueNAS) nie powiodła się. Log: ~/siem-lab/backup.log."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'time() - max(heimdall_backup_remote_last_success_timestamp_seconds)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [93600] }
       - uid: heimdall-backup-stale
         title: "Brak udanej kopii zapasowej od ponad 26 h"
         condition: C
@@ -202,7 +225,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Brak udanej kopii zapasowej od ponad 26 h"
-          description: "Nocna kopia bazy Saga i kluczy (backup.sh, cron 02:15) nie powiodła się. Log: ~/siem-lab/backup.log."
+          description: "Nocna kopia bazy Saga i kluczy (backup.sh, cron 02:15) nie powiodła się – np. brak hasła kopii (./backup.sh haslo init). Log: ~/siem-lab/backup.log."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
