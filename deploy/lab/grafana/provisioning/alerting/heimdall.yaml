@@ -1,7 +1,7 @@
 # Reguły alertów Heimdalla (Grafana, alerting zunifikowany) – zdrowie potoku,
 # archiwum NIS2 i kopii zapasowych. Do czasu modułu alertów (Gjallarhorn,
-# etap 4) to jedyne powiadomienia o awariach. Punkt kontaktowy (np. Discord)
-# ustawia się w Grafanie: Alerting → Contact points.
+# etap 4) to jedyne powiadomienia o awariach. Grafana przekazuje je do
+# siem-api (contact.yaml), a ten na kanały ustawione w panelu (Powiadomienia).
 apiVersion: 1
 groups:
   - orgId: 1

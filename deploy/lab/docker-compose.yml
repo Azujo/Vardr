@@ -226,6 +226,10 @@ services:
       SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
       # Urd: paczki eksportu dla audytora do pobrania (tylko odczyt).
       SIEM_ARCHIVE_EXPORT_DIR: /exports
+      # Powiadomienia: przekaźnik alertów Grafany (:8081 tylko w sieci stosu)
+      # i godzina codziennej kotwicy archiwum.
+      SIEM_ALERT_RELAY_TOKEN: ${SIEM_ALERT_RELAY_TOKEN:-}
+      SIEM_ANCHOR_HOUR: ${SIEM_ANCHOR_HOUR:-7}
     volumes:
       - ./certs:/certs:ro
       - ./agent-dist:/agent-dist:ro   # siem_agent.exe do paczek instalacyjnych
@@ -277,6 +281,8 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Token przekaźnika alertów do siem-api (punkt kontaktowy w provisioning/alerting/contact.yaml).
+      SIEM_ALERT_RELAY_TOKEN: ${SIEM_ALERT_RELAY_TOKEN:-}
       CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

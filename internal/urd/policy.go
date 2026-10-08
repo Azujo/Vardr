@@ -368,3 +368,23 @@ func (p *PG) SaveGroupMembership(ctx context.Context, changed map[string]Members
 	}
 	return p.pool.SendBatch(ctx, b).Close()
 }
+
+// ManifestHashes zwraca SHA-256 manifestów o podanych numerach (panel
+// porównuje z nimi kotwice wysłane poza system).
+func (p *PG) ManifestHashes(ctx context.Context, seqs []int64) (map[int64]string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT seq, sha256 FROM urd.manifests WHERE seq = ANY($1)`, seqs)
+	if err != nil {
+		return nil, notConfigured(err)
+	}
+	defer rows.Close()
+	out := map[int64]string{}
+	for rows.Next() {
+		var s int64
+		var h string
+		if err := rows.Scan(&s, &h); err != nil {
+			return nil, err
+		}
+		out[s] = h
+	}
+	return out, rows.Err()
+}

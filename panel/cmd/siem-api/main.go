@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"time"
+	_ "time/tzdata" // strefa czasu kotwicy (obraz bez tzdata)
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -36,6 +37,7 @@ import (
 	"siem/panel/internal/enroll"
 	"siem/panel/internal/events"
 	"siem/panel/internal/fleetsync"
+	"siem/panel/internal/notify"
 	"siem/panel/web"
 )
 
@@ -158,6 +160,54 @@ func serve(log *slog.Logger) error {
 	defer archive.Close()
 	apiServer.Archive = archive
 	apiServer.ExportDir = os.Getenv("SIEM_ARCHIVE_EXPORT_DIR")
+
+	// Powiadomienia: kanały z panelu, kotwica archiwum raz na dobę i przekaźnik
+	// alertów Grafany (wewnętrzny adres, tylko w sieci stosu, z tokenem).
+	notifySvc := &notify.Service{Store: db, Log: log}
+	relayToken := os.Getenv("SIEM_ALERT_RELAY_TOKEN")
+	anchorHour, err := svc.EnvInt("SIEM_ANCHOR_HOUR", 7)
+	if err != nil || anchorHour < 0 || anchorHour > 23 {
+		return fmt.Errorf("SIEM_ANCHOR_HOUR: godzina 0–23")
+	}
+	loc, err := time.LoadLocation(svc.Env("SIEM_ANCHOR_TZ", "Europe/Warsaw"))
+	if err != nil {
+		return fmt.Errorf("SIEM_ANCHOR_TZ: %w", err)
+	}
+	anchor := &notify.Anchor{Svc: notifySvc, Archive: archive, Store: db, Log: log, Hour: anchorHour, Loc: loc}
+	apiServer.Notify = &api.Notifications{Store: db, Svc: notifySvc, Anchor: anchor, RelayConfigured: relayToken != ""}
+	go anchor.Run(ctx)
+	go func() {
+		t := time.NewTicker(24 * time.Hour)
+		defer t.Stop()
+		for {
+			if n, err := db.PruneNotifyLog(ctx, time.Now().Add(-90*24*time.Hour)); err != nil && ctx.Err() == nil {
+				log.Warn("sprzątanie dziennika wysyłek nieudane", "err", err)
+			} else if n > 0 {
+				log.Info("usunięto stare wpisy dziennika wysyłek", "count", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
+	if relayToken != "" {
+		relay := &http.Server{Addr: svc.Env("SIEM_API_INTERNAL_LISTEN", ":8081"), ReadHeaderTimeout: 10 * time.Second,
+			Handler: notifySvc.GrafanaHandler(relayToken)}
+		go func() {
+			log.Info("przekaźnik alertów Grafany nasłuchuje (tylko sieć stosu)", "addr", relay.Addr)
+			if err := relay.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Error("przekaźnik alertów zatrzymany", "err", err)
+			}
+		}()
+		go func() {
+			<-ctx.Done()
+			_ = relay.Close()
+		}()
+	} else {
+		log.Warn("brak SIEM_ALERT_RELAY_TOKEN – alerty Grafany nie będą przekazywane na kanały powiadomień")
+	}
 	srv := &http.Server{
 		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
 		Handler: apiServer.Handler(),

@@ -7,6 +7,7 @@ import ChangePasswordPage from "./pages/ChangePasswordPage";
 import HomePage from "./pages/HomePage";
 import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
+import NotificationsPage from "./pages/NotificationsPage";
 import AgentsPage from "./pages/AgentsPage";
 import AgentDetailPage from "./pages/AgentDetailPage";
 import DeployPage from "./pages/DeployPage";
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/account/password" element={<ChangePasswordPage />} />
         {admin && <Route path="/admin/users" element={<UsersPage />} />}
         {admin && <Route path="/admin/audit" element={<AuditPage />} />}
+        {admin && <Route path="/admin/notifications" element={<NotificationsPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

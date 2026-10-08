@@ -23,6 +23,9 @@ type fakeArchive struct {
 	members     map[string]urd.Membership
 }
 
+func (f *fakeArchive) ManifestHashes(context.Context, []int64) (map[int64]string, error) {
+	return map[int64]string{}, f.err
+}
 func (f *fakeArchive) GroupMembership(context.Context) (map[string]urd.Membership, error) {
 	return f.members, f.err
 }

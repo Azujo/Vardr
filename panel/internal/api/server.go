@@ -74,6 +74,8 @@ type Server struct {
 	Archive ArchiveReader
 	// ExportDir: katalog paczek eksportu (tylko odczyt); "" = bez pobierania.
 	ExportDir string
+	// Notify (opcjonalne) – kanały powiadomień (Discord, webhook).
+	Notify *Notifications
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -155,6 +157,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/archive/policy/changes/{id}/cancel", s.authed(roleAdmin, 0, s.cancelArchivePolicyChange))
 	mux.Handle("GET /api/v1/archive/replays", s.authed(roleAdmin, 0, s.listReplays))
 	mux.Handle("POST /api/v1/archive/replays", s.authed(roleAdmin, 0, s.createReplay))
+
+	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))
+	mux.Handle("POST /api/v1/notify/channels", s.authed(roleAdmin, 0, s.createChannel))
+	mux.Handle("PATCH /api/v1/notify/channels/{id}", s.authed(roleAdmin, 0, s.updateChannel))
+	mux.Handle("POST /api/v1/notify/channels/{id}/delete", s.authed(roleAdmin, 0, s.deleteChannel))
+	mux.Handle("POST /api/v1/notify/channels/{id}/test", s.authed(roleAdmin, 0, s.testChannel))
+	mux.Handle("POST /api/v1/notify/anchor", s.authed(roleAdmin, 0, s.sendAnchor))
 
 	mux.Handle("GET /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.listTokens))
 	mux.Handle("POST /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.createToken))

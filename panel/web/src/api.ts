@@ -627,3 +627,63 @@ export const replayStatusLabels: Record<ReplayStatus, { label: string; color: st
   done: { label: "zakończone", color: "green" },
   failed: { label: "nieudane", color: "red" },
 };
+
+// ---- Powiadomienia (kanały: Discord, webhook) ----
+
+export type NotifyEvent = "health" | "anchor";
+
+export interface NotifyChannel {
+  id: number;
+  name: string;
+  kind: "discord" | "webhook";
+  url_hint: string;
+  events: NotifyEvent[];
+  enabled: boolean;
+  created_at: string;
+  created_by: string;
+  updated_at: string;
+  last_ok_at?: string;
+  last_error?: string;
+  last_error_at?: string;
+}
+
+export interface NotifyLogEntry {
+  id: number;
+  at: string;
+  channel: string;
+  event: string;
+  title: string;
+  ok: boolean;
+  error?: string;
+  anchor_seq?: number;
+  anchor_sha256?: string;
+  anchor_match?: boolean;
+}
+
+export interface ChannelRequest {
+  name: string;
+  kind?: "discord" | "webhook";
+  url?: string;
+  events: NotifyEvent[];
+  enabled?: boolean;
+  password?: string;
+}
+
+export const notifyApi = {
+  list: () =>
+    request<{ channels: NotifyChannel[]; log: NotifyLogEntry[]; anchor_hour: number; relay_configured: boolean }>(
+      "GET",
+      "/api/v1/notify/channels",
+    ),
+  create: (c: ChannelRequest) => request<{ channel: NotifyChannel }>("POST", "/api/v1/notify/channels", c),
+  update: (id: number, c: ChannelRequest) => request<{ channel: NotifyChannel }>("PATCH", `/api/v1/notify/channels/${id}`, c),
+  remove: (id: number, password: string) => request<void>("POST", `/api/v1/notify/channels/${id}/delete`, { password }),
+  test: (id: number) => request<{ message: string }>("POST", `/api/v1/notify/channels/${id}/test`),
+  sendAnchor: () => request<{ message: string }>("POST", "/api/v1/notify/anchor"),
+};
+
+export const notifyEventLabels: Record<string, string> = {
+  health: "alerty zdrowia systemu",
+  anchor: "kotwica archiwum (codziennie)",
+  test: "test",
+};

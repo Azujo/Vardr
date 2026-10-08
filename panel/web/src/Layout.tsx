@@ -19,6 +19,7 @@ import {
   IconAdjustments,
   IconAlertTriangle,
   IconArchive,
+  IconBell,
   IconBolt,
   IconChevronDown,
   IconDatabaseSearch,
@@ -58,6 +59,7 @@ const main: Item[] = [
 const admin: Item[] = [
   { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} /> },
   { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} /> },
+  { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} /> },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {

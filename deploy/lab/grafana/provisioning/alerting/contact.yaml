@@ -1,0 +1,23 @@
+# Dokąd Grafana wysyła alerty: do siem-api (wewnętrzny adres w sieci stosu,
+# z tokenem), który przekazuje je na kanały powiadomień ustawione w panelu
+# (Powiadomienia: Discord, webhook). Adres Discorda zna więc tylko panel.
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: Heimdall – kanały panelu
+    receivers:
+      - uid: heimdall-panel-relay
+        type: webhook
+        settings:
+          url: http://api:8081/internal/grafana-alerts
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: $SIEM_ALERT_RELAY_TOKEN
+        disableResolveMessage: false
+policies:
+  - orgId: 1
+    receiver: Heimdall – kanały panelu
+    group_by: ["alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
