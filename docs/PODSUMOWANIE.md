@@ -147,9 +147,9 @@ Priorytety: **W** = ważne (bezpieczeństwo lub poprawność), **Ś** = średnie
 | 4 | W | Kopie zapasowe (z kluczem CA agentów i `.env`) leżą na tej samej VM | utrata VM = utrata kopii | **zrobione 08.10:** kopie szyfrowane hasłem administratora (gpg), codziennie na TrueNAS razem z przyrostami archiwum; `restore.sh` – do przećwiczenia na czystej VM |
 | 5 | Ś | Archiwum i paczki eksportu nie są szyfrowane (decyzja odłożona: eksport ma być łatwy do odczytu) | dane osobowe (konta, adresy IP) w jawnej postaci na dysku i w paczce przekazywanej na zewnątrz | LUKS na dysku archiwum (wymaga sformatowania; sudo); opcjonalne szyfrowanie paczki eksportu |
 | 6 | Ś | Brak laboratorium AD | etap 4 nie ma na czym sprawdzić scenariuszy detekcji | postawić DC + stację przed etapem 4 |
-| 7 | Ś | Etap 2 oznaczony jako zakończony mimo braku MSI i bufora dyskowego | roadmapa myląca | **poprawione 08.10** w roadmapie; MSI i bufor dyskowy (limit w grupie agentów) w agencie 0.6 |
+| 7 | Ś | Etap 2 oznaczony jako zakończony mimo braku MSI i bufora dyskowego | roadmapa myląca | **zrobione 08.10:** agent 0.6 – bufor dyskowy z limitem w grupie agentów i instalator MSI (do przetestowania na stacjach laboratorium) |
 | 8 | Ś | Minimalizacja danych w eksporcie z filtrem | organ dostaje w segmentach także dane innych źródeł | manifest v2 z indeksem rekordów pozwoli udowodnić pojedyncze paczki bez całego segmentu |
-| 9 | Ś | Agent nie raportuje synchronizacji zegara (roadmapa, sekcja 6) | błędny zegar komputera widać tylko po `time_quality` w normalizatorze | dodać stan synchronizacji czasu do heartbeatu |
+| 9 | Ś | Agent nie raportuje synchronizacji zegara (roadmapa, sekcja 6) | błędny zegar komputera widać tylko po `time_quality` w normalizatorze | **zrobione 08.10:** odchylenie zegara względem serwera (heartbeat) i stan usługi W32Time w panelu |
 | 10 | N | README: nieaktualna sekcja „Czego jeszcze nie ma” i lista alertów bez dwóch nowych reguł | dokumentacja | **zrobione 07.10** |
 | 11 | N | Decyzja o retencji surowego XML w ClickHouse (dziś 5 dni) | miejsce na dysku | **zrobione 08.10:** surowy XML 2 dni (oryginały w Urd) |
 | 12 | N | `odczytaj.exe` bez podpisu cyfrowego | ostrzeżenie SmartScreen u odbiorcy | certyfikat code signing, gdy projekt wyjdzie poza laboratorium |

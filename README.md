@@ -111,6 +111,18 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
 
 Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\ProgramData\SiemAgent\agent.log`.
 
+### Instalator MSI (od wersji 0.6)
+
+`deploy.sh agent` buduje na serwerze `heimdall-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji), a panel dołącza go do paczki tokenu (Bifröst) razem z `install-msi.cmd`. Wdrożenie przez Intune, SCCM albo skrypt GPO, jako SYSTEM lub administrator:
+
+```powershell
+msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…   # instalacja i rejestracja tokenem
+msiexec /i heimdall-agent.msi /qn                                    # aktualizacja do nowszej wersji (rejestracja zostaje)
+msiexec /x heimdall-agent.msi /qn                                    # odinstalowanie (dane i certyfikaty zostają)
+```
+
+MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `siem_agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
+
 ## Odporność na usunięcie stanu
 
 Pozycje odczytu są zapisywane w `<state_dir>\state.json` oraz (co 30 s) w kopii
@@ -220,9 +232,19 @@ Advanced Audit Policy Configuration*):
 - PowerShell: *Turn on PowerShell Script Block Logging* = Enabled
 - Sysmon: instalacja z konfiguracją bazową (osobno)
 
-## Rozmiar dzienników Windows (bufor agenta)
+## Bufor dyskowy agenta (od wersji 0.6)
 
-Dziennik Windows jest jedynym buforem agenta. Gdy serwer jest niedostępny, niewysłane zdarzenia czekają w dzienniku, a po jego zapełnieniu Windows nadpisuje najstarsze. Domyślne 20 MB to przy typowym ruchu:
+Paczka, której nie udało się wysłać od razu (brak sieci, serwer przeciążony), trafia do `C:\ProgramData\SiemAgent\buffer` (zapis z `fsync`), a agent zapisuje pozycję odczytu i czyta dalej. Osobny wątek dosyła paczki z dysku, najstarsze najpierw. Długa przerwa w łączności nie zależy więc już od rozmiaru dziennika Windows.
+
+- **Limit:** domyślnie 1024 MB (`buffer.max_mb` w `agent.yaml` albo „Bufor dyskowy” w grupie agentów w panelu; 0 = wyłączony). Bufor nigdy nie zabiera ostatniego 1 GB wolnego miejsca (`buffer.min_free_mb`).
+- **Po zapełnieniu** (`buffer.on_full` albo grupa w panelu): `pause` (domyślnie) – nowe zdarzenia czekają w dzienniku Windows jak bez bufora; `drop_oldest` – usuwane są najstarsze paczki z bufora, a liczba utraconych zdarzeń trafia do statusu i panelu.
+- Stan bufora widać w `siem_agent status` i w panelu (Huginn → agent). Panel zgłasza problem, gdy paczki czekają dłużej niż 5 minut, gdy bufor jest pełny i gdy coś utracono.
+
+**Zegar:** agent przy każdym heartbeacie mierzy odchylenie swojego zegara od serwera (nagłówek `X-Heimdall-Time`) i co 5 minut sprawdza usługę czasu Windows (W32Time). Panel zgłasza odchylenie ponad 60 s i zatrzymaną usługę czasu.
+
+## Rozmiar dzienników Windows
+
+Bez bufora dyskowego (agent starszy niż 0.6 albo bufor wyłączony lub pełny w trybie `pause`) buforem jest dziennik Windows. Gdy serwer jest niedostępny, niewysłane zdarzenia czekają w dzienniku, a po jego zapełnieniu Windows nadpisuje najstarsze. Domyślne 20 MB to przy typowym ruchu:
 
 - na stacji: kilka godzin zapasu;
 - na obciążonym serwerze lub kontrolerze domeny: kilkanaście sekund do kilku minut.
@@ -261,10 +283,8 @@ Wynik widać w zakładce *Actions* repozytorium.
 
 ## Czego jeszcze nie ma (kolejne etapy)
 
-- bufor dyskowy na wypadek nadpisania dziennika podczas długiej przerwy (etap 2)
-- instalator MSI (etap 2)
 - token deinstalacji i ochrona usługi (etap 8)
-- sprawdzanie polityki audytu i synchronizacji czasu (razem z heartbeatem)
+- sprawdzanie polityki audytu (razem z heartbeatem)
 - detekcja (etap 4), alerty i reguły w panelu (etap 5)
 
 Podsumowanie etapów i lista znanych luk: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
