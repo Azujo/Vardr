@@ -199,11 +199,32 @@ func Parse(data []byte, file string) (*Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("detection: %w", err)
 	}
+	r.Heimdall.Instructions = Unwrap(r.Heimdall.Instructions)
 	return &Rule{
-		ID: r.ID, Title: r.Title, Description: strings.TrimSpace(r.Description), Level: r.Level, Status: r.Status,
+		ID: r.ID, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file,
 		Source: string(data), Heimdall: r.Heimdall, match: and{ls, cond},
 	}, nil
+}
+
+// Unwrap łączy linie akapitu (bloki YAML „|” mają twarde końce linii, które
+// w panelu i na Discordzie łamałyby zdania); pusta linia oddziela akapity,
+// a linie zaczynające się od „-” albo „*” zostają osobno (listy).
+func Unwrap(text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	var b strings.Builder
+	for i, l := range lines {
+		l = strings.TrimSpace(l)
+		switch {
+		case i == 0:
+		case l == "" || strings.TrimSpace(lines[i-1]) == "" || strings.HasPrefix(l, "-") || strings.HasPrefix(l, "*"):
+			b.WriteString("\n")
+		default:
+			b.WriteString(" ")
+		}
+		b.WriteString(l)
+	}
+	return b.String()
 }
 
 // LoadError to błąd jednej reguły (pozostałe działają).

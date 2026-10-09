@@ -122,7 +122,7 @@ func TestThresholdDistinct(t *testing.T) {
 		t.Fatalf("spraying: %d trafień %+v", len(h), h)
 	}
 	if !strings.Contains(h[0].Summary, "5 różnych TargetUserName w 10 min") ||
-		!strings.Contains(h[0].Instructions, "na 5\nróżnych kont: jan, ewa, adam, ola, kasia") {
+		!strings.Contains(h[0].Instructions, "na 5 różnych kont: jan, ewa, adam, ola, kasia") {
 		t.Fatalf("opis: %q\n%q", h[0].Summary, h[0].Instructions)
 	}
 }

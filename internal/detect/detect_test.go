@@ -154,3 +154,11 @@ func TestRenderInstructions(t *testing.T) {
 		t.Fatalf("Render: %q", got)
 	}
 }
+
+func TestUnwrap(t *testing.T) {
+	in := "Zdekoduj parametr i oceń skrypt.\nUruchomienie z Office jest\nbardzo podejrzane.\n\nDrugi akapit:\n- punkt pierwszy\n- punkt drugi\n"
+	want := "Zdekoduj parametr i oceń skrypt. Uruchomienie z Office jest bardzo podejrzane.\n\nDrugi akapit:\n- punkt pierwszy\n- punkt drugi"
+	if got := Unwrap(in); got != want {
+		t.Fatalf("Unwrap:\n%q\n%q", got, want)
+	}
+}

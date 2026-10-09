@@ -144,14 +144,15 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **4e (09.10):** reguła wbudowana „Utrata łączności z agentem” (próg w grupie agentów, jedna przerwa = jeden alert, automatyczne zamknięcie po powrocie, pomijanie agentów wycofanych; detektor czyta tabele panelu przez osobne uprawnienia), reguły Sigma: wyczyszczenie innych dzienników (System 104) i zatrzymanie/awaria usługi agenta albo Sysmona (7036/7031/7034, tekst stanu po angielsku i polsku). Laboratorium: wyczyszczenie dziennika Security na stacji → alert 1102 w kilka sekund, agent czyta dziennik dalej; zatrzymanie agenta na DC → alert utraty łączności po progu, zdarzenia z czasu przerwy doczytane po starcie, alert zamknięty automatycznie; restart usługi → alert zatrzymania usługi. Grupa DC ma próg 15 min.
 - **Kryterium etapu (roadmapa):** scenariusze Windows z sekcji 11 wykrywane w obu silnikach (test zgodności w CI + próby w laboratorium), restart i ponowne dostarczenie nie dublują alertów (para reguła–zdarzenie raz; stan progów w Sadze). Poza zakresem do czasu integracji: VPN FortiGate i Entra ID (logowanie z nowego kraju).
 
-## Etap 5 – Panel MVP – w toku
+## Etap 5 – Panel MVP – zakończony
 
 - **Wcześniej (etapy 2–4):** logowanie i role, audyt, agenci i grupy, wdrażanie tokenem, wyszukiwarka zdarzeń, polityka archiwum, kanały powiadomień z filtrem alertów.
 - **5a (09.10):** praca z alertami – filtry i licznik, przypisanie analityka, oś czasu (`gjallarhorn.alert_activity`) z notatkami, akcje zbiorcze, powiązane alerty, przejście do zdarzeń z okolicy alertu w Mímirze; automatyczne zamknięcia (powrót agenta) też na osi czasu.
 - **5b (09.10):** burza alertów – limit osobnych powiadomień na regułę (5 w 10 min), nadwyżka wstrzymywana w outboxie i wysyłana jedną wiadomością zbiorczą; krytyczne i „rozwiązane” zawsze osobno.
 - **5c (09.10):** reguły w panelu – historia wersji (`gjallarhorn.rule_versions`, różnice między wersjami), włączanie/wyłączanie z panelu (`rule_overrides`; wyłączenie z powodem i hasłem, detektor stosuje w 30 s), test reguły na zdarzeniach z ClickHouse z alertami, które by powstały (na danych laboratorium: spraying 1 alert / 35 zdarzeń, brute force 2 alerty – zgodnie z alertami #8–#10). Pakiety `detect` i `model` przeniesione do wspólnego `internal/`, semantyka progów w `detect` (jeden kod dla obu silników i testu).
 - **5d (09.10):** Himinbjörg – strona „Stan systemu” (23 kontrole z Prometheusa z progami jak w Grafanie i podpowiedziami) oraz karty alertów i stanu systemu na stronie startowej.
-- **Dalej:** 5e (scenariusz od ataku do zamknięcia).
+- **5e (09.10) – kryterium etapu spełnione:** atak w laboratorium AD (password spraying i brute force ze stacji, PowerShell z zakodowanym poleceniem, nowe konto dodane do Backup Operators na DC i usunięte) → 6 alertów w kilka sekund (#16–#21) → powiadomienia na Discordzie zgodnie z filtrem kanału (od „średniego” – nowe konto jako „niskie” tylko w panelu) → analiza w panelu (powiązane alerty, Mímir, przypisanie, „w analizie”) → zamknięcie z powodem; całość na osi czasu alertów i w audycie. Poprawka po ćwiczeniu: instrukcje i opisy reguł składane w ciągłe akapity (bloki YAML łamały zdania na Discordzie).
+- **Przesunięte:** tokeny deinstalacji agenta – do etapu 8 (ochrona agenta).
 
 ## Przegląd etapu 4 (09.10.2026) – błędy i luki
 
