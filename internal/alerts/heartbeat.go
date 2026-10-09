@@ -60,6 +60,11 @@ func (p *PG) CloseOpen(ctx context.Context, rule, groupKey, reason string, notif
 			return err
 		}
 		n = int64(len(ids))
+		for _, id := range ids {
+			if err := addActivity(ctx, tx, id, now, "system", "status", reason, map[string]any{"to": "closed"}); err != nil {
+				return err
+			}
+		}
 		if notify {
 			for _, id := range ids {
 				if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.outbox (alert_id, kind) VALUES ($1, 'resolved')`, id); err != nil {

@@ -164,6 +164,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/alerts/summary", s.authed(roleViewer, 0, s.alertsSummary))
 	mux.Handle("GET /api/v1/alerts/{id}", s.authed(roleViewer, 0, s.getAlert))
 	mux.Handle("POST /api/v1/alerts/{id}/status", s.authed(roleAnalyst, 0, s.setAlertStatus))
+	mux.Handle("POST /api/v1/alerts/bulk-status", s.authed(roleAnalyst, 0, s.bulkAlertStatus))
+	mux.Handle("POST /api/v1/alerts/{id}/assign", s.authed(roleAnalyst, 0, s.assignAlert))
+	mux.Handle("POST /api/v1/alerts/{id}/notes", s.authed(roleAnalyst, 0, s.addAlertNote))
+	mux.Handle("GET /api/v1/alert-assignees", s.authed(roleViewer, 0, s.listAssignees))
 	mux.Handle("GET /api/v1/rules", s.authed(roleViewer, 0, s.listRules))
 
 	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))

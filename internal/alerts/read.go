@@ -34,17 +34,18 @@ type Alert struct {
 	ClosedAt     *time.Time        `json:"closed_at,omitempty"`
 	ClosedBy     string            `json:"closed_by,omitempty"`
 	CloseReason  string            `json:"close_reason,omitempty"`
+	Assignee     string            `json:"assignee,omitempty"`
 }
 
 const alertCols = `id, rule_id, rule_title, level, engine, group_key, group_fields, status, hits, first_seen, last_seen,
 	created_at, updated_at, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, closed_at,
-	coalesce(closed_by, ''), coalesce(close_reason, '')`
+	coalesce(closed_by, ''), coalesce(close_reason, ''), assignee`
 
 func scanAlert(r pgx.Row) (Alert, error) {
 	var a Alert
 	err := r.Scan(&a.ID, &a.RuleID, &a.RuleTitle, &a.Level, &a.Engine, &a.GroupKey, &a.GroupFields, &a.Status, &a.Hits,
 		&a.FirstSeen, &a.LastSeen, &a.CreatedAt, &a.UpdatedAt, &a.AgentID, &a.HostName, &a.UserName, &a.SourceIP,
-		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason)
+		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason, &a.Assignee)
 	if a.GroupFields == nil {
 		a.GroupFields = map[string]string{}
 	}
@@ -53,25 +54,60 @@ func scanAlert(r pgx.Row) (Alert, error) {
 
 // Filter to filtr listy alertów.
 type Filter struct {
-	Status string // "" = wszystkie, open = otwarte i potwierdzone
-	Level  string
-	RuleID string
-	Limit  int
-	Before int64 // stronicowanie: id < Before
+	Status   string // "" = wszystkie, open = otwarte i potwierdzone
+	Level    string // najniższy poziom („high” = wysokie i krytyczne)
+	RuleID   string
+	Host     string // komputer (bez wielkości liter, fragment)
+	User     string // konto (bez wielkości liter, fragment)
+	Assignee string // login; "-" = bez przypisania
+	Engine   string
+	Text     string // fragment reguły, opisu, komputera albo konta
+	Since    *time.Time
+	Limit    int
+	Before   int64 // stronicowanie: id < Before
 }
 
-// Alerts zwraca alerty (najnowsze pierwsze).
-func (p *PG) Alerts(ctx context.Context, f Filter) ([]Alert, error) {
+var levelRank = `array_position(ARRAY['informational','low','medium','high','critical'], level)`
+
+func (f Filter) where() (string, []any) {
+	like := func(s string) string {
+		r := []rune{}
+		for _, c := range s {
+			if c == '%' || c == '_' || c == '\\' {
+				r = append(r, '\\')
+			}
+			r = append(r, c)
+		}
+		return "%" + string(r) + "%"
+	}
+	args := []any{f.Status, f.Level, f.RuleID, like(f.Host), like(f.User), f.Assignee, f.Engine, like(f.Text), f.Since}
+	return `($1 = '' OR ($1 = 'open' AND status <> 'closed') OR status = $1)
+		AND ($2 = '' OR ` + levelRank + ` >= array_position(ARRAY['informational','low','medium','high','critical'], $2))
+		AND ($3 = '' OR rule_id = $3)
+		AND ($4 = '%%' OR host_name ILIKE $4) AND ($5 = '%%' OR user_name ILIKE $5)
+		AND ($6 = '' OR assignee = CASE WHEN $6 = '-' THEN '' ELSE $6 END)
+		AND ($7 = '' OR engine = $7)
+		AND ($8 = '%%' OR rule_title ILIKE $8 OR summary ILIKE $8 OR host_name ILIKE $8 OR user_name ILIKE $8)
+		AND ($9::timestamptz IS NULL OR last_seen >= $9)`, args
+}
+
+// Alerts zwraca alerty (najnowsze pierwsze) i liczbę wszystkich pasujących.
+func (p *PG) Alerts(ctx context.Context, f Filter) ([]Alert, int, error) {
 	if f.Limit <= 0 || f.Limit > 500 {
 		f.Limit = 100
 	}
-	q := `SELECT ` + alertCols + ` FROM gjallarhorn.alerts WHERE ($1 = '' OR ($1 = 'open' AND status <> 'closed') OR status = $1)
-		AND ($2 = '' OR level = $2) AND ($3 = '' OR rule_id = $3) AND ($4 = 0 OR id < $4) ORDER BY id DESC LIMIT $5`
-	rows, err := p.pool.Query(ctx, q, f.Status, f.Level, f.RuleID, f.Before, f.Limit)
-	if err != nil {
-		return nil, notConfigured(err)
+	where, args := f.where()
+	var total int
+	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM gjallarhorn.alerts WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, notConfigured(err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Alert, error) { return scanAlert(r) })
+	q := `SELECT ` + alertCols + ` FROM gjallarhorn.alerts WHERE ` + where + ` AND ($10 = 0 OR id < $10) ORDER BY id DESC LIMIT $11`
+	rows, err := p.pool.Query(ctx, q, append(args, f.Before, f.Limit)...)
+	if err != nil {
+		return nil, 0, notConfigured(err)
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Alert, error) { return scanAlert(r) })
+	return list, total, err
 }
 
 // Alert zwraca alert.
@@ -176,21 +212,6 @@ func (p *PG) Rule(ctx context.Context, id string) (RuleInfo, error) {
 		return x, ErrNotFound
 	}
 	return x, notConfigured(err)
-}
-
-// SetStatus zmienia stan alertu (panel): acknowledged albo closed (z powodem).
-func (p *PG) SetStatus(ctx context.Context, id int64, status, by, reason string, now time.Time) (Alert, error) {
-	var closedAt *time.Time
-	var closedBy, closeReason *string
-	if status == "closed" {
-		closedAt, closedBy, closeReason = &now, &by, &reason
-	}
-	a, err := scanAlert(p.pool.QueryRow(ctx, `UPDATE gjallarhorn.alerts SET status = $2, closed_at = $3, closed_by = $4,
-		close_reason = $5, updated_at = $6 WHERE id = $1 RETURNING `+alertCols, id, status, closedAt, closedBy, closeReason, now))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return a, ErrNotFound
-	}
-	return a, notConfigured(err)
 }
 
 // Pending to powiadomienie czekające w outboxie.

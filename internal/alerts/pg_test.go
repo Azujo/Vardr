@@ -53,9 +53,9 @@ func TestPostgresAlerts(t *testing.T) {
 	if res.NewAlerts != 1 {
 		t.Fatalf("poza oknem: %+v", res)
 	}
-	list, err := db.Alerts(ctx, Filter{Status: "open"})
-	if err != nil || len(list) != 3 {
-		t.Fatalf("lista: %d %v", len(list), err)
+	list, total, err := db.Alerts(ctx, Filter{Status: "open"})
+	if err != nil || len(list) != 3 || total != 3 {
+		t.Fatalf("lista: %d/%d %v", len(list), total, err)
 	}
 	var ps Alert
 	for _, a := range list {
@@ -111,6 +111,46 @@ func TestPostgresAlerts(t *testing.T) {
 	}
 	if strings.Join(kinds, ",") != "new,resolved" {
 		t.Fatalf("outbox alertu i rozwiązania: %v", kinds)
+	}
+	// Triage: przypisanie, notatka, zamknięcie wielu naraz, oś czasu, filtry, powiązane.
+	if a, err := db.Assign(ctx, ps.ID, "ewa", "adam", now); err != nil || a.Assignee != "ewa" {
+		t.Fatalf("przypisanie: %+v %v", a, err)
+	}
+	if err := db.AddNote(ctx, ps.ID, "ewa", "sprawdzone z użytkownikiem", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AddNote(ctx, 999999, "ewa", "x", now); err != ErrNotFound {
+		t.Fatalf("notatka do nieistniejącego alertu: %v", err)
+	}
+	mine, n, _ := db.Alerts(ctx, Filter{Assignee: "ewa"})
+	if n != 1 || len(mine) != 1 || mine[0].ID != ps.ID {
+		t.Fatalf("filtr przypisania: %d %+v", n, mine)
+	}
+	if _, n, _ := db.Alerts(ctx, Filter{Text: "PowerSh", Level: "medium"}); n < 1 {
+		t.Fatalf("filtr tekstu i poziomu: %d", n)
+	}
+	if _, n, _ := db.Alerts(ctx, Filter{Level: "critical"}); n != 0 {
+		t.Fatalf("filtr poziomu od krytycznego: %d", n)
+	}
+	open, _, _ := db.Alerts(ctx, Filter{Status: "open"})
+	var ids []int64
+	for _, a := range open {
+		ids = append(ids, a.ID)
+	}
+	changed, err := db.SetStatusMany(ctx, append(ids, 999999), "acknowledged", "adam", "", now)
+	if err != nil || len(changed) == 0 {
+		t.Fatalf("zmiana wielu: %d %v", len(changed), err)
+	}
+	if again, _ := db.SetStatusMany(ctx, ids, "acknowledged", "adam", "", now); len(again) != 0 {
+		t.Fatalf("ponowna zmiana na ten sam stan: %d", len(again))
+	}
+	act, err := db.Activity(ctx, ps.ID)
+	if err != nil || len(act) < 3 || act[0].Kind != "status" || act[1].Kind != "assign" || act[2].Kind != "note" {
+		t.Fatalf("oś czasu: %+v %v", act, err)
+	}
+	rel, err := db.Related(ctx, Alert{ID: -1, HostName: "dc01", FirstSeen: t0, LastSeen: t0}, 24*time.Hour, 10)
+	if err != nil || len(rel) == 0 {
+		t.Fatalf("powiązane: %d %v", len(rel), err)
 	}
 	// Punkt kontrolny silnika zapytań: tylko w przód.
 	if _, err := db.RecordIndex(ctx, nil, t0.Add(time.Hour)); err != nil {

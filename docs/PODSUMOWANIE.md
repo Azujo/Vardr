@@ -144,6 +144,12 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **4e (09.10):** reguła wbudowana „Utrata łączności z agentem” (próg w grupie agentów, jedna przerwa = jeden alert, automatyczne zamknięcie po powrocie, pomijanie agentów wycofanych; detektor czyta tabele panelu przez osobne uprawnienia), reguły Sigma: wyczyszczenie innych dzienników (System 104) i zatrzymanie/awaria usługi agenta albo Sysmona (7036/7031/7034, tekst stanu po angielsku i polsku). Laboratorium: wyczyszczenie dziennika Security na stacji → alert 1102 w kilka sekund, agent czyta dziennik dalej; zatrzymanie agenta na DC → alert utraty łączności po progu, zdarzenia z czasu przerwy doczytane po starcie, alert zamknięty automatycznie; restart usługi → alert zatrzymania usługi. Grupa DC ma próg 15 min.
 - **Kryterium etapu (roadmapa):** scenariusze Windows z sekcji 11 wykrywane w obu silnikach (test zgodności w CI + próby w laboratorium), restart i ponowne dostarczenie nie dublują alertów (para reguła–zdarzenie raz; stan progów w Sadze). Poza zakresem do czasu integracji: VPN FortiGate i Entra ID (logowanie z nowego kraju).
 
+## Etap 5 – Panel MVP – w toku
+
+- **Wcześniej (etapy 2–4):** logowanie i role, audyt, agenci i grupy, wdrażanie tokenem, wyszukiwarka zdarzeń, polityka archiwum, kanały powiadomień z filtrem alertów.
+- **5a (09.10):** praca z alertami – filtry i licznik, przypisanie analityka, oś czasu (`gjallarhorn.alert_activity`) z notatkami, akcje zbiorcze, powiązane alerty, przejście do zdarzeń z okolicy alertu w Mímirze; automatyczne zamknięcia (powrót agenta) też na osi czasu.
+- **Dalej:** 5b (burza alertów – wiadomości zbiorcze i limit na regułę), 5c (reguły w panelu: wersje, włączanie, test), 5d (stan systemu), 5e (scenariusz od ataku do zamknięcia).
+
 ## Przegląd etapu 4 (09.10.2026) – błędy i luki
 
 Priorytety jak niżej: **W** – ważne, **Ś** – średnie, **N** – niskie.

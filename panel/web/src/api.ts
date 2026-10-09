@@ -749,6 +749,29 @@ export interface Alert {
   closed_at?: string;
   closed_by?: string;
   close_reason?: string;
+  assignee?: string;
+}
+
+export interface AlertActivity {
+  id: number;
+  at: string;
+  actor: string;
+  kind: "note" | "status" | "assign";
+  text?: string;
+  details?: { from?: string; to?: string };
+}
+
+export interface AlertListFilter {
+  status?: string;
+  level?: string;
+  rule?: string;
+  host?: string;
+  user?: string;
+  assignee?: string;
+  engine?: string;
+  q?: string;
+  since?: string;
+  before?: number;
 }
 
 export interface RuleInfo {
@@ -779,16 +802,29 @@ export interface AlertsSummary {
 }
 
 export const alertsApi = {
-  list: (p: { status?: string; level?: string; rule?: string; before?: number }) =>
-    request<{ alerts: Alert[]; configured: boolean }>(
+  list: (p: AlertListFilter) =>
+    request<{ alerts: Alert[]; total: number; configured: boolean }>(
       "GET",
-      `/api/v1/alerts?${qs({ status: p.status, level: p.level, rule: p.rule, before: p.before ? String(p.before) : undefined })}`,
+      `/api/v1/alerts?${qs({ ...p, before: p.before ? String(p.before) : undefined })}`,
     ),
   summary: () => request<{ configured: boolean; summary?: AlertsSummary }>("GET", "/api/v1/alerts/summary"),
   get: (id: number) =>
-    request<{ alert: Alert; events: { event_id: string; event_time: string }[]; rule?: RuleInfo }>("GET", `/api/v1/alerts/${id}`),
+    request<{
+      alert: Alert;
+      events: { event_id: string; event_time: string }[];
+      rule?: RuleInfo;
+      activity: AlertActivity[];
+      related: Alert[];
+    }>("GET", `/api/v1/alerts/${id}`),
   setStatus: (id: number, status: AlertStatus, reason?: string) =>
     request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),
+  bulkStatus: (ids: number[], status: AlertStatus, reason?: string) =>
+    request<{ changed: number; ids: number[] }>("POST", "/api/v1/alerts/bulk-status", { ids, status, reason: reason ?? "" }),
+  assign: (id: number, assignee: string) => request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/assign`, { assignee }),
+  addNote: (id: number, text: string) =>
+    request<{ activity: AlertActivity[] }>("POST", `/api/v1/alerts/${id}/notes`, { text }),
+  assignees: () =>
+    request<{ assignees: { username: string; display_name: string }[] }>("GET", "/api/v1/alert-assignees"),
   rules: () => request<{ rules: RuleInfo[]; errors: { file: string; error: string; seen_at: string }[]; configured: boolean }>("GET", "/api/v1/rules"),
 };
 

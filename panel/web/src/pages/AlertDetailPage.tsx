@@ -9,7 +9,9 @@ import {
   Code,
   Group,
   Modal,
+  Select,
   SimpleGrid,
+  Timeline,
   Stack,
   Table,
   Text,
@@ -17,15 +19,17 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowLeft } from "@tabler/icons-react";
+import { IconArrowLeft, IconMessage, IconSearch, IconUserCheck, IconArrowsExchange } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 import {
+  ago,
   alertStatusLabels,
   alertsApi,
   eventsApi,
   formatDate,
   levelLabels,
   type Alert,
+  type AlertActivity,
   type AlertStatus,
   type EventDetail,
   type RuleInfo,
@@ -123,6 +127,10 @@ export default function AlertDetailPage() {
   const [closing, setClosing] = useState(false);
   const [reason, setReason] = useState("");
   const [firstEvent, setFirstEvent] = useState<EventDetail | null>(null);
+  const [activity, setActivity] = useState<AlertActivity[]>([]);
+  const [related, setRelated] = useState<Alert[]>([]);
+  const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
+  const [note, setNote] = useState("");
 
   const load = useCallback(() => {
     alertsApi
@@ -131,10 +139,37 @@ export default function AlertDetailPage() {
         setAlert(r.alert);
         setEvents(r.events);
         setRule(r.rule);
+        setActivity(r.activity);
+        setRelated(r.related);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
   useEffect(() => load(), [load]);
+  useEffect(() => {
+    alertsApi
+      .assignees()
+      .then((r) => setAssignees(r.assignees.map((a) => ({ value: a.username, label: a.display_name || a.username }))))
+      .catch(() => setAssignees([]));
+  }, []);
+
+  const fail = (e: unknown) => notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+  const assign = async (who: string) => {
+    try {
+      await alertsApi.assign(Number(id), who);
+      load();
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const addNote = async () => {
+    try {
+      const r = await alertsApi.addNote(Number(id), note.trim());
+      setActivity(r.activity);
+      setNote("");
+    } catch (e) {
+      fail(e);
+    }
+  };
 
   // Starsze alerty nie mają gotowej instrukcji – pierwsze zdarzenie do uzupełnienia zmiennych.
   const needsRender = !!alert && !alert.instructions && !!rule?.instructions?.includes("{{");
@@ -149,10 +184,10 @@ export default function AlertDetailPage() {
 
   const setStatus = async (s: AlertStatus, why?: string) => {
     try {
-      const r = await alertsApi.setStatus(Number(id), s, why);
-      setAlert(r.alert);
+      await alertsApi.setStatus(Number(id), s, why);
       setClosing(false);
       setReason("");
+      load();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
     }
@@ -162,6 +197,15 @@ export default function AlertDetailPage() {
   if (!alert) return null;
   const canEdit = user?.role === "admin" || user?.role === "analyst";
   const lv = levelLabels[alert.level];
+  // Zdarzenia z okolicy alertu w Mímirze: komputer, ±15 min od pierwszego i ostatniego zdarzenia.
+  const around = alert.host_name
+    ? `/events?${new URLSearchParams({
+        q: `host:${alert.host_name}`,
+        range: "custom",
+        from: new Date(new Date(alert.first_seen).getTime() - 15 * 60000).toISOString(),
+        to: new Date(new Date(alert.last_seen).getTime() + 15 * 60000).toISOString(),
+      }).toString()}`
+    : "";
 
   return (
     <Stack>
@@ -189,7 +233,26 @@ export default function AlertDetailPage() {
         </div>
         {canEdit && (
           <Group>
-            {alert.status === "open" && <Button onClick={() => void setStatus("acknowledged")}>Biorę do analizy</Button>}
+            <Select
+              w={190}
+              placeholder="nieprzypisany"
+              clearable
+              aria-label="przypisany analityk"
+              leftSection={<IconUserCheck size={14} />}
+              data={assignees}
+              value={alert.assignee || null}
+              onChange={(v) => void assign(v ?? "")}
+            />
+            {alert.status === "open" && (
+              <Button
+                onClick={async () => {
+                  if (!alert.assignee && user) await assign(user.username);
+                  await setStatus("acknowledged");
+                }}
+              >
+                Biorę do analizy
+              </Button>
+            )}
             {alert.status !== "closed" && (
               <Button color="gray" variant="light" onClick={() => setClosing(true)}>
                 Zamknij
@@ -232,6 +295,24 @@ export default function AlertDetailPage() {
         )}
       </Card>
 
+      <Group gap="xs">
+        {around && (
+          <Button component={Link} to={around} variant="light" size="xs" leftSection={<IconSearch size={14} />}>
+            Zdarzenia z tego komputera ±15 min (Mímir)
+          </Button>
+        )}
+        {alert.host_name && (
+          <Button component={Link} to={`/alerts?status=all&host=${encodeURIComponent(alert.host_name)}`} variant="subtle" size="xs">
+            Wszystkie alerty komputera
+          </Button>
+        )}
+        {alert.user_name && (
+          <Button component={Link} to={`/alerts?status=all&user=${encodeURIComponent(alert.user_name)}`} variant="subtle" size="xs">
+            Wszystkie alerty konta
+          </Button>
+        )}
+      </Group>
+
       {rule && (
         <Card withBorder>
           <Title order={4}>Reguła</Title>
@@ -256,6 +337,106 @@ export default function AlertDetailPage() {
           </Group>
         </Card>
       )}
+
+      <SimpleGrid cols={{ base: 1, lg: 2 }}>
+        <Card withBorder>
+          <Title order={4} mb="sm">
+            Przebieg i notatki
+          </Title>
+          <Timeline bulletSize={22} lineWidth={2}>
+            <Timeline.Item bullet={<IconArrowsExchange size={12} />} title="Alert utworzony">
+              <Text size="xs" c="dimmed">
+                {formatDate(alert.created_at)} · silnik: {alert.engine}
+              </Text>
+            </Timeline.Item>
+            {activity.map((a) => (
+              <Timeline.Item
+                key={a.id}
+                bullet={a.kind === "note" ? <IconMessage size={12} /> : a.kind === "assign" ? <IconUserCheck size={12} /> : <IconArrowsExchange size={12} />}
+                title={
+                  a.kind === "note"
+                    ? `Notatka – ${a.actor}`
+                    : a.kind === "assign"
+                      ? a.details?.to
+                        ? `${a.actor} przypisał(a) do ${a.details.to}`
+                        : `${a.actor} usunął(ęła) przypisanie`
+                      : `${a.actor}: ${a.details?.to ? alertStatusLabels[a.details.to as AlertStatus]?.label ?? a.details.to : ""}`
+                }
+              >
+                {a.text && (
+                  <Text size="sm" style={{ whiteSpace: "pre-line" }}>
+                    {a.text}
+                  </Text>
+                )}
+                <Text size="xs" c="dimmed">
+                  {formatDate(a.at)}
+                </Text>
+              </Timeline.Item>
+            ))}
+          </Timeline>
+          {canEdit && (
+            <Stack gap="xs" mt="md">
+              <Textarea
+                placeholder="Notatka: co sprawdzono, z kim rozmawiano, numer zgłoszenia…"
+                autosize
+                minRows={2}
+                maxLength={4000}
+                value={note}
+                onChange={(e) => setNote(e.currentTarget.value)}
+              />
+              <Group justify="flex-end">
+                <Button size="xs" disabled={!note.trim()} onClick={() => void addNote()}>
+                  Dodaj notatkę
+                </Button>
+              </Group>
+            </Stack>
+          )}
+        </Card>
+        <Card withBorder>
+          <Title order={4} mb="xs">
+            Powiązane alerty ({related.length})
+          </Title>
+          <Text size="xs" c="dimmed" mb="xs">
+            Ten sam komputer albo konto, ±24 h od zdarzeń tego alertu.
+          </Text>
+          {related.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Brak.
+            </Text>
+          ) : (
+            <Table verticalSpacing={4} fz="sm" highlightOnHover>
+              <Table.Tbody>
+                {related.map((r) => (
+                  <Table.Tr key={r.id}>
+                    <Table.Td>
+                      <Badge size="sm" color={levelLabels[r.level].color}>
+                        {levelLabels[r.level].label}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Anchor component={Link} to={`/alerts/${r.id}`} size="sm">
+                        #{r.id} {r.rule_title}
+                      </Anchor>
+                      <Text size="xs" c="dimmed">
+                        {r.host_name}
+                        {r.user_name ? ` · ${r.user_name}` : ""}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ whiteSpace: "nowrap" }} title={formatDate(r.first_seen)}>
+                      {ago(r.first_seen)}
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge size="sm" variant="light" color={alertStatusLabels[r.status].color}>
+                        {alertStatusLabels[r.status].label}
+                      </Badge>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+        </Card>
+      </SimpleGrid>
 
       <Card withBorder>
         <Title order={4} mb="xs">
