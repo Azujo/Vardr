@@ -1,8 +1,8 @@
 # Heimdall – podsumowanie etapów
 
-Stan na 07.10.2026 (wersja `2e26bff`). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
+Stan na 09.10.2026 (etap 6). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
 
-Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etap 3. Detekcja (etap 4) jest następna.
+Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3, 4, 5 i 6. Następny według roadmapy: etap 7.
 
 ---
 
@@ -153,6 +153,15 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **5d (09.10):** Himinbjörg – strona „Stan systemu” (23 kontrole z Prometheusa z progami jak w Grafanie i podpowiedziami) oraz karty alertów i stanu systemu na stronie startowej.
 - **5e (09.10) – kryterium etapu spełnione:** atak w laboratorium AD (password spraying i brute force ze stacji, PowerShell z zakodowanym poleceniem, nowe konto dodane do Backup Operators na DC i usunięte) → 6 alertów w kilka sekund (#16–#21) → powiadomienia na Discordzie zgodnie z filtrem kanału (od „średniego” – nowe konto jako „niskie” tylko w panelu) → analiza w panelu (powiązane alerty, Mímir, przypisanie, „w analizie”) → zamknięcie z powodem; całość na osi czasu alertów i w audycie. Poprawka po ćwiczeniu: instrukcje i opisy reguł składane w ciągłe akapity (bloki YAML łamały zdania na Discordzie).
 - **Przesunięte:** tokeny deinstalacji agenta – do etapu 8 (ochrona agenta).
+
+## Etap 6 – Kolektor syslog i dekodery – zakończony
+
+- **6a (09.10):** `siem-collector` – agent w trybie kolektora (Linux, kontener na VM): syslog UDP/TCP z adresem nadawcy, ten sam bufor dyskowy, ponowienia, mTLS i heartbeat co agent Windows; rejestracja jednorazowym tokenem tworzonym na VM (`collector-enroll.sh`).
+- **6b (09.10):** dekodery YAML (`internal/decode`): nagłówki RFC 3164 / 5424 / sam `<PRI>`, warunki `match` (w tym `host` i alternatywy `any`), parsery kv / json / csv / regex, mapowanie na pola ECS, wynik i czas zdarzenia, próbki. Wbudowane: FortiGate i MikroTik (RouterOS 6 i 7). Reguły Sigma z `product: fortigate` / `mikrotik`. Prawdziwy router użytkownika: RouterOS 7 nie wysyła tematów w nagłówku – dekoder poprawiony (rozpoznanie po tożsamości i treści, MAC adres nie jest już brany za nazwę programu), 10 nieudanych logowań przez Winbox → alert #27.
+- **6c (09.10):** edytor dekoderów w panelu: lista w kolejności sprawdzania, test na wklejonych próbkach albo ostatnich nierozpoznanych wiadomościach (w pełnym zestawie – widać przesłonięcia), zapis z historią rewizji, wyłączenie / usunięcie z powodem i hasłem. Dostarczanie do normalizatorów przez NATS KV (`SIEM_DECODERS`) bez restartu, panel wyrównuje magazyn do bazy. Przy okazji: rezerwacje kolejek zajmowały cały `max_file_store` NATS – żaden nowy magazyn nie mógł powstać (limit podniesiony do 21 GB).
+- **6d (09.10):** kwarantanna w panelu (grupy według źródła i powodu, oryginały) i ponowne przetwarzanie: panel → normalizator (NATS request-reply) → odzyskane zdarzenia w `SIEM_EVENTS` (zapis i detekcja, bez duplikatów w archiwum NIS2), wynik każdego wpisu w Sadze. Kwarantanna zapamiętuje adres nadawcy syslog.
+- **6e (09.10):** symulator FortiGate (`tools/cmd/fortisim`) i reguły progowe: seria nieudanych logowań do VPN FortiGate, do panelu FortiGate i do routera MikroTik. Laboratorium: symulowane ataki → alerty #22–#26 w obu silnikach; test zgodności silników z korpusem syslog (155/155 trafień). Przerwa łączności kolektor–serwer: 50 wiadomości z bufora dotarło po przywróceniu `siem-ingest`.
+- **Kryterium etapu (roadmapa):** logi FortiGate znormalizowane (symulator, wszystkie scenariusze), nowy dekoder utworzony w panelu przechodzi test na próbce. IIS (W3C) – parser `csv` z separatorem spacją go rozbiera, ale odczyt plików dziennika przez agenta to osobne źródło – przesunięte (razem z syslog po TLS).
 
 ## Przegląd etapu 5 (09.10.2026) – błędy i luki
 

@@ -289,7 +289,8 @@ Wynik widać w zakładce *Actions* repozytorium.
 
 - token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu (razem z heartbeatem)
-- detekcja (etap 4), alerty i reguły w panelu (etap 5)
+- odczyt plików dziennika przez agenta (np. IIS W3C – dekoder `csv` już je rozbiera) i syslog po TLS w kolektorze
+- integracje chmurowe (Entra ID, M365)
 
 Podsumowanie etapów i lista znanych luk: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
 
@@ -485,7 +486,116 @@ Reguły w formacie **Sigma (YAML)** leżą w repozytorium w katalogu [rules/](ru
 - **Rozszerzenia Heimdalla** (klucz `heimdall:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie i na Discordzie; zmienne `{{Pole}}`, np. `{{SubjectUserName}}`, `{{Computer}}`, są zastępowane wartościami ze zdarzenia przy tworzeniu alertu), `enabled`, `threshold`.
 - **Reguły progowe** (`heimdall.threshold`: `count`, `window`, opcjonalnie `distinct`): alert powstaje, gdy w dowolnym oknie `window` (liczonym po czasie zdarzenia, więc spóźnione zdarzenia z bufora agenta też się liczą) jest co najmniej `count` pasujących zdarzeń – albo `count` różnych wartości pola `distinct` – z tym samym kluczem `group_by`. Do alertu trafiają wszystkie zdarzenia z tego okna oraz – łańcuchowo – kolejne (i wcześniejsze) zdarzenia tego klucza, dopóki przerwa nie przekroczy `suppress` (co najmniej długość okna); zdarzenia już będące w alercie przedłużają łańcuch, nawet gdy samo okno wypadło z pamięci. W instrukcji działają dodatkowo `{{count}}`, `{{window}}` i `{{values}}` (lista różnych wartości). Stan progów jest zapisywany razem z alertami (`gjallarhorn.threshold_events`), więc restart detektora nie zeruje liczników. Silnik w locie trzyma zdarzenia klucza z okna + max(`suppress`, 1 h); zdarzenie spóźnione bardziej liczy się tylko z tym, co zostało w pamięci – takie przypadki nadrabia silnik zapytań. Przykłady: [brute force](rules/windows/security_brute_force_logon.yml), [password spraying](rules/windows/security_password_spraying.yml).
 - **Utrata łączności z agentem** (reguła wbudowana, nie Sigma): detektor co 30 s porównuje ostatni heartbeat agentów z progiem ich grupy – panel → *Grupy agentów* → „Alarm po utracie łączności” (5–10 080 min; puste = bez alarmu, np. stacje wyłączane na noc). Jedna przerwa = jeden alert (`engine = system`); gdy agent wróci, alert zamyka się sam z adnotacją. Agenci wycofani (wszystkie certyfikaty unieważnione) są pomijani. Uzupełnia ją reguła Sigma na zatrzymanie usługi agenta albo Sysmona (System 7036/7031/7034) – zdarzenie dociera po ponownym starcie agenta i mówi, kiedy dokładnie usługę zatrzymano.
-- **Reguły w repozytorium (scenariusze z roadmapy, sekcja 11):** brute force (4625, Kerberos 4771), password spraying, dodanie do grupy uprzywilejowanej, wyczyszczenie dziennika Security (1102) i innych dzienników (System 104), PowerShell z zakodowanym poleceniem i podejrzane skrypty (4104), usługa z podejrzanej lokalizacji (7045), nowe konto (4720), zatrzymanie usług bezpieczeństwa, utrata łączności z agentem. Scenariusze FortiGate (VPN) i Entra ID czekają na te integracje.
+- **Reguły w repozytorium (scenariusze z roadmapy, sekcja 11):** brute force (4625, Kerberos 4771), password spraying, dodanie do grupy uprzywilejowanej, wyczyszczenie dziennika Security (1102) i innych dzienników (System 104), PowerShell z zakodowanym poleceniem i podejrzane skrypty (4104), usługa z podejrzanej lokalizacji (7045), nowe konto (4720), zatrzymanie usług bezpieczeństwa, utrata łączności z agentem. Urządzenia sieciowe (etap 6): seria nieudanych logowań do VPN i panelu FortiGate oraz do routera MikroTik – opis w sekcji „Kolektor syslog i dekodery”. Entra ID czeka na integrację.
+
+### Kolektor syslog i dekodery (etap 6)
+
+```
+FortiGate, MikroTik, NAS… ──syslog UDP/TCP 514──► siem-collector ──mTLS:8443──► siem-ingest ──► (dalej jak zdarzenia agentów)
+                                                  (bufor dyskowy, ponowienia)
+siem-normalizer: nagłówek syslog (RFC 3164 / 5424 / sam <PRI>) → pierwszy pasujący dekoder → pola zdarzenia
+```
+
+**Kolektor** (`siem-collector`) to ten sam kod co agent Windows: bufor dyskowy, ponawianie, certyfikat klienta, heartbeat, odnawianie certyfikatu. Działa na Linuksie (w laboratorium jako kontener na VM) i przyjmuje syslog po UDP i TCP (ramki z długością albo zakończone nową linią). Nadawca (`syslog.peer`) jest zapamiętywany przy zdarzeniu. Przerwa łączności z serwerem nie gubi logów w granicach bufora (sprawdzone: 50 wiadomości przy zatrzymanym `siem-ingest` dotarło po jego starcie).
+
+- Wdrożenie: `deploy/lab/deploy.sh collector`, a potem raz `deploy/lab/collector-enroll.sh [grupa]`. Skrypt tworzy na VM jednorazowy token (w bazie tylko skrót, wpis w audycie), rejestruje kolektor i uruchamia usługę.
+- Konfiguracja: `collector/collector.yaml`. Najważniejsze pola to `syslog.udp` / `syslog.tcp` (adresy nasłuchu), `syslog.allow` (dozwolone sieci nadawców), `buffer.max_mb` i `buffer.on_full` (`drop_oldest` albo `pause`).
+- Strefa czasu nagłówków bez strefy (RFC 3164): `SIEM_SYSLOG_TZ` (domyślnie Europe/Warsaw) w normalizatorze i panelu.
+
+**Konfiguracja urządzeń**
+
+MikroTik RouterOS 7 (od 7.17; starsze wersje: `bsd-syslog=yes` zamiast `remote-log-format`):
+
+```
+/system logging action add name=heimdall target=remote remote=<adres kolektora> remote-port=514 remote-log-format=syslog syslog-time-format=bsd-syslog syslog-facility=local0
+/system logging add topics=info action=heimdall
+/system logging add topics=warning action=heimdall
+/system logging add topics=error action=heimdall
+/system logging add topics=critical action=heimdall
+/system logging add topics=account action=heimdall
+```
+
+FortiGate (FortiOS 7):
+
+```
+config log syslogd setting
+    set status enable
+    set server "<adres kolektora>"
+    set port 514
+    set format default
+end
+```
+
+**Dekodery** to definicje YAML. Wbudowane leżą w [internal/decode/builtin](internal/decode/builtin), własne tworzy się w panelu.
+
+- `match`: kiedy dekoder pasuje. Wszystkie podane warunki muszą być spełnione, a z listy `any` co najmniej jedna alternatywa. Dostępne warunki:
+  - `peer` (sieci nadawców),
+  - `host`,
+  - `app` / `app_regex` (program z nagłówka),
+  - `contains`,
+  - `regex` (treść).
+- `parser`: `kv`, `json`, `csv` (z `separator` i `columns`; spacja pasuje też do logów W3C/IIS), `regex` (lista wzorców z grupami nazwanymi i stałymi `set`) albo `none`.
+- `fields`: przypisanie pól treści do pól zdarzenia:
+  - `user.name`, `source.ip`, `host.name`, `event.action`, `event.outcome`, `event.code`, `process.name`, `message`…;
+  - pierwsze niepuste z listy wygrywa.
+- `outcome`: `failure` / `success` z wartości pola.
+- `time`: czas zdarzenia z pól treści.
+- `samples`: przykładowe wiadomości. Są wymagane przy zapisie w panelu i muszą się dekodować.
+- Dekodery sprawdzane są po kolei: wyższy `priority` pierwszy. Wiadomość bez dekodera trafia jako `syslog.generic` z nagłówkiem i treścią. Treść niepasująca do parsera (np. zepsuty JSON) trafia do kwarantanny.
+- Wbudowane:
+  - **FortiGate**: ruch, zdarzenia, VPN, UTM, czas z `date`/`time`/`tz`.
+  - **MikroTik RouterOS 6 i 7**: logowania udane i nieudane, zmiany konfiguracji, DHCP, zapora, Wi-Fi, zmiany czasu, interfejsy. RouterOS 7 nie wysyła tematów w nagłówku, więc router jest rozpoznawany po tożsamości `MikroTik` albo po treści. Router o innej tożsamości dopisz w `match.any` jako `peer`.
+- Reguły detekcji dla urządzeń: `logsource.product: fortigate` / `mikrotik` (zbiory `fortinet.fortigate`, `mikrotik.routeros`) i pola ECS (`event.action`, `event.outcome`, `source.ip`, `user.name`…). Reguły w repozytorium:
+  - [MikroTik – seria nieudanych logowań](rules/network/mikrotik_login_brute_force.yml),
+  - [FortiGate – seria nieudanych logowań do VPN](rules/network/fortigate_vpn_brute_force.yml),
+  - [FortiGate – nieudane logowania administratora](rules/network/fortigate_admin_login_failures.yml).
+
+**Panel → Dekodery** pokazuje działający zestaw w kolejności sprawdzania.
+
+- **Test** dekoduje próbki:
+  - wklejone albo wczytane z bazy („Nierozpoznane” to ostatnie `syslog.generic`, „Obsłużone przez ten” to wiadomości danego dekodera);
+  - zestawem, w którym edytowana definicja zastępuje swój odpowiednik, więc widać też przesłonięcie przez dekoder o wyższym priorytecie;
+  - wynik pokazuje nagłówek, pola zdarzenia, wszystkie pola treści, wiadomości bez pasującego wzorca i trafiające do kwarantanny.
+- **Zapis** (administrator) tworzy nową rewizję z historią i różnicami.
+- Własna definicja o id wbudowanego zastępuje go. „Przywróć wersję wbudowaną” cofa tę zmianę.
+- Wyłączenie dekodera albo usunięcie własnego wymaga powodu i hasła, bo reguły danego produktu przestają widzieć te wiadomości.
+- Zmiany trafiają do normalizatorów przez magazyn NATS KV `SIEM_DECODERS` w ciągu kilku sekund, bez restartu. Panel wyrównuje magazyn do bazy przy starcie i co 5 min.
+- Zdarzenia już zapisane się nie zmieniają.
+
+**Panel → Kwarantanna** pokazuje zdarzenia, których nie udało się znormalizować albo zapisać: grupy według źródła i powodu oraz najnowsze wpisy z oryginałem.
+
+- Po poprawce dekodera albo programu administrator zleca **ponowne przetworzenie** grupy albo wszystkiego z filtra (do 10 000 wpisów w zleceniu).
+- Panel wysyła wpisy częściami do normalizatora (NATS request-reply, `siem.reprocess`). Normalizator dekoduje je bieżącym kodem i publikuje odzyskane zdarzenia w `SIEM_EVENTS`, więc trafiają do bazy i do detekcji jak nowe:
+  - czas przyjęcia to chwila ponownego przetworzenia;
+  - pierwotny czas jest w `siem.quarantined_at`, a numer zlecenia w `siem.reprocess_job`.
+- Oryginały nie wracają do `SIEM_RAW`, więc archiwum NIS2 nie dostaje duplikatów.
+- Wynik każdego wpisu (odzyskany albo nadal błędny, z nowym powodem) i postęp zlecenia są zapisywane w Sadze. Kolejne zlecenia pomijają wpisy już odzyskane.
+- Wpisy odrzucone przy zapisie do ClickHouse i ze ścieżki odtwarzania nie są przetwarzane ponownie.
+
+**Instalacje sprzed etapu 6** wymagają jednorazowo dwóch zmian:
+
+- Kolumny kwarantanny (przed wdrożeniem nowego `siem-writer`):
+
+  ```
+  docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS peer String DEFAULT ''"
+  docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS truncated Bool DEFAULT false"
+  ```
+
+- NATS: `max_file_store` musi być większy od sumy rezerwacji kolejek (`SIEM_QUEUE_*_MAX_MB` i kopie dla odtwarzania). Bez zapasu JetStream odmawia utworzenia magazynu dekoderów, z błędem „insufficient storage resources”. W laboratorium jest 21 GB, czyli 20 GB kolejek i 1 GB zapasu. Zmiana limitu wymaga `docker compose restart nats`, bo HUP go nie przeładowuje.
+
+**Symulator FortiGate:** `go run ./tools/cmd/fortisim -target <kolektor>:514 -scenario mix` wysyła logi w formacie FortiOS.
+
+- Scenariusze:
+  - `traffic` – ruch,
+  - `vpn-ok`, `vpn-brute`, `vpn-spray` – logowania do VPN,
+  - `admin-brute` – logowania administratora,
+  - `utm` – IPS i antywirus,
+  - `mix` – wszystko po trochu.
+- Opcje:
+  - `-proto tcp`,
+  - `-header rfc5424` albo `rfc3164`,
+  - `-attacker <adres>`,
+  - `-dry` (tylko wypisanie).
 
 ### Archiwum NIS2 – Urd (siem-archiver)
 
