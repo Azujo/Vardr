@@ -1,0 +1,32 @@
+title: FortiGate – seria nieudanych logowań administratora
+id: 2e43f8f5-104d-4f1f-8523-bf57f16a3d1b
+status: stable
+description: |
+  Co najmniej 5 nieudanych logowań do panelu administracyjnego FortiGate
+  (HTTPS, SSH, konsola) z jednego adresu w ciągu 5 minut.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: fortigate
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+  condition: selection
+falsepositives:
+  - Administrator, który pomylił hasło
+level: high
+heimdall:
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 5
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań administratora do {{host.name}} z adresu
+    {{source.ip}} w {{window}} (ostatnio konto {{user.name}}). Panel
+    administracyjny nie powinien być dostępny z internetu – ogranicz go
+    do zaufanych adresów (trusthost administratorów, interfejs bez HTTPS/SSH
+    na WAN). Sprawdź, czy po serii nie było udanego logowania z tego adresu.

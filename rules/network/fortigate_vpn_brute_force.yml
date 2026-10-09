@@ -1,0 +1,38 @@
+title: FortiGate – seria nieudanych logowań do VPN
+id: fe9a7cec-b4c5-4314-b533-580e364ba472
+status: stable
+description: |
+  Co najmniej 10 nieudanych logowań do SSL VPN FortiGate z jednego adresu
+  w ciągu 5 minut, na dowolne konta. Zgadywanie haseł (brute force) albo
+  sprawdzanie wykradzionych par login–hasło (credential stuffing) – portal
+  VPN jest jednym z najczęściej atakowanych celów z internetu.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110
+  - attack.initial_access
+  - attack.t1133
+logsource:
+  product: fortigate
+detection:
+  selection:
+    event.action: ssl-login-fail
+  condition: selection
+falsepositives:
+  - Użytkownik z wygasłym hasłem, którego klient FortiClient ponawia połączenie
+  - Kilku użytkowników za jednym adresem NAT (np. biuro partnera) z błędnymi hasłami
+level: high
+heimdall:
+  group_by: [source.ip]
+  threshold:
+    count: 10
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań do SSL VPN z adresu {{source.ip}} w {{window}}
+    (ostatnio konto {{user.name}} na {{host.name}}). Sprawdź w zdarzeniach
+    alertu, ile różnych kont próbowano – wiele kont to credential stuffing,
+    jedno konto to zgadywanie hasła. Zablokuj adres (lista adresów w polityce
+    local-in albo grupa zablokowanych), sprawdź, czy z tego adresu nie było
+    udanego logowania (action=tunnel-up albo ssl-login) i czy portal VPN
+    wymaga MFA. Po skutecznym logowaniu – wyłącz konto i zmień hasło.

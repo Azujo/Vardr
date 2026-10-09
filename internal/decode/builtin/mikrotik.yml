@@ -1,15 +1,22 @@
 id: mikrotik
 title: MikroTik RouterOS – logowania, DHCP, zapora, interfejsy
 description: |
-  Dziennik RouterOS wysyłany przez syslog z bsd-syslog=yes. Nazwa programu
-  w nagłówku to „tematy” RouterOS (np. system,info,account). Rozpoznaje
-  logowania (udane i nieudane), zmiany konfiguracji, DHCP, wpisy zapory
-  (reguły z log=yes) i stan interfejsów; resztę zapisuje jako tekst.
-version: 1
+  Dziennik RouterOS wysyłany przez syslog. RouterOS 6 (bsd-syslog=yes) podaje
+  w nagłówku „tematy” (np. system,info,account), RouterOS 7
+  (remote-log-format=syslog) ich nie wysyła – wtedy dekoder rozpoznaje router
+  po nazwie hosta (domyślna tożsamość MikroTik) albo po charakterystycznej
+  treści (logowania, zmiany konfiguracji). Router o innej tożsamości: dopisz
+  jego adres w match.any jako peer. Rozpoznaje logowania (udane i nieudane),
+  zmiany konfiguracji, DHCP, zaporę (reguły z log=yes), Wi-Fi, zmiany czasu
+  i stan interfejsów; resztę zapisuje jako tekst.
+version: 2
 priority: 50
 dataset: mikrotik.routeros
 match:
-  app_regex: '^(system|firewall|dhcp|wireless|interface|account|critical|info|warning|error|ppp|pppoe|ovpn|l2tp|sstp|ipsec|script|dns|bridge|ssh|web-proxy|hotspot|route|ntp|certificate|health|e-mail|caps|wireguard|lte|dot1x|radius|manager|backup|upnp)(,[a-z0-9-]+)*$'
+  any:
+    - app_regex: '^(system|firewall|dhcp|wireless|interface|account|critical|info|warning|error|ppp|pppoe|ovpn|l2tp|sstp|ipsec|script|dns|bridge|ssh|web-proxy|hotspot|route|ntp|certificate|health|e-mail|caps|wireguard|lte|dot1x|radius|manager|backup|upnp|wifi)(,[a-z0-9-]+)*$'
+    - host: [MikroTik]
+    - regex: '^(login failure for user \S+ from [0-9a-fA-F.:]+ via \S+$|user \S+ logged (in|out) from [0-9a-fA-F.:]+ via \S+$|.+ (added|changed|removed|moved) by \S+:[^@\s]+@[0-9a-fA-F.:]+)'
 parser:
   type: regex
   patterns:
@@ -25,6 +32,10 @@ parser:
       set: {event.action: dhcp-lease}
     - regex: '^(?:(?P<fw_prefix>\S+) )?(?P<fw_chain>input|forward|output|prerouting|postrouting|srcnat|dstnat): in:(?P<in_if>\S+) out:(?P<out_if>.+?), .*?proto (?P<proto>\S+)(?: \([^)]*\))?, (?P<src_ip>[0-9a-fA-F.:]+?):(?P<src_port>\d+)->(?P<dst_ip>[0-9a-fA-F.:]+?):(?P<dst_port>\d+)'
       set: {event.action: firewall}
+    - regex: '^(?P<client_mac>[0-9A-Fa-f:]{17})@(?P<interface>[^(\s]+)(?:\((?P<ssid>[^)]*)\))? (?P<wifi_action>connected|disconnected|reconnecting|roamed)'
+      set: {event.action: wifi-association}
+    - regex: '^(?P<time_source>\S+) change time (?P<time_old>.+?) => (?P<time_new>.+)$'
+      set: {event.action: clock-change}
     - regex: '^(?P<interface>\S+) link (?P<link>up|down)'
       set: {event.action: link-change}
 fields:
@@ -37,3 +48,9 @@ samples:
   - '<30>Oct  9 13:26:11 MikroTik dhcp,info defconf assigned 192.168.88.254 for 8C:85:90:12:34:56 iPhone'
   - '<30>Oct  9 13:27:40 MikroTik firewall,info DROP-WAN input: in:ether1 out:(unknown 0), connection-state:new src-mac 00:11:22:33:44:55, proto TCP (SYN), 203.0.113.9:44321->192.168.88.1:22, len 60'
   - '<30>Oct  9 13:28:02 MikroTik system,info filter rule added by winbox-3.41/tcp-msg(winbox):admin@192.168.88.10 (*12 = /ip firewall filter add chain=input action=drop)'
+  # RouterOS 7 (remote-log-format=syslog): bez tematów w nagłówku.
+  - '<131>Oct  9 20:54:15 MikroTik login failure for user admin from 192.168.88.10 via winbox'
+  - '<134>Oct  9 20:54:19 MikroTik user admin logged in from 192.168.88.10 via winbox'
+  - '<134>Oct  9 20:38:25 MikroTik 8C:85:90:12:34:56@wifi3(MikroTik-Guest) connected, signal strength -55'
+  - '<130>Oct  9 17:27:10 MikroTik cloud change time Oct/09/2026 17:30:34 => Oct/09/2026 17:27:10'
+  - '<134>Oct  9 20:50:04 MikroTik ether4 link down'

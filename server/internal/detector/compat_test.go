@@ -14,6 +14,8 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 
 	"siem/internal/alerts"
+	"siem/internal/contract"
+	"siem/internal/decode"
 	"siem/internal/detect"
 	"siem/internal/model"
 	"siem/server/internal/chwriter"
@@ -179,7 +181,61 @@ func buildCorpus() []model.Event {
 	e.Raw = "<Event><Data>privilege::debug sekurlsa::logonpasswords</Data></Event>"
 	e = c.add(sec, 4688, "pc01", time.Hour, 0, map[string]string{"CommandLine": "y.exe"})
 	e.Message = "Uruchomiono MimiKatz"
+	c.network()
 	return c.events
+}
+
+// network dodaje zdarzenia urządzeń sieciowych przez prawdziwe dekodery
+// syslog (pola docelowe, zbiór danych, czas z treści albo nagłówka).
+func (c *corpus) network() {
+	loc, _ := time.LoadLocation("Europe/Warsaw")
+	ds, err := decode.Builtin(loc)
+	if err != nil {
+		panic(err)
+	}
+	set := decode.NewSet(ds)
+	add := func(at, late time.Duration, line string) {
+		c.n++
+		ts := compatT0.Add(at).In(loc)
+		raw := strings.NewReplacer("{bsd}", ts.Format(time.Stamp), "{date}", ts.Format("2006-01-02"),
+			"{time}", ts.Format("15:04:05")).Replace(line)
+		e, err := decode.Event(contract.Event{ID: fmt.Sprintf("collector:syslog:g0:%d", c.n), Raw: raw, Peer: "192.168.88.1"},
+			"agt-collector", compatT0.Add(at+late+2*time.Second), set, loc)
+		if err != nil {
+			panic(err)
+		}
+		c.events = append(c.events, e)
+	}
+	mt := func(at, late time.Duration, msg string) { add(at, late, "<131>{bsd} MikroTik "+msg) }
+	// MikroTik: 6 nieudanych z jednego adresu w 2 min (część z opóźnieniem), 4 z innego (poniżej progu),
+	// udane logowania się nie liczą; RouterOS 6 z tematami w nagłówku.
+	for i := range 6 {
+		mt(5*time.Hour+time.Duration(i)*20*time.Second, time.Duration(i%2)*10*time.Minute,
+			"login failure for user admin from 203.0.113.9 via winbox")
+	}
+	for i := range 4 {
+		mt(5*time.Hour+time.Duration(i)*time.Minute, 0, "login failure for user admin from 192.168.88.50 via ssh")
+	}
+	for i := range 5 {
+		mt(5*time.Hour+time.Duration(i)*time.Second, 0, "user admin logged in from 192.168.88.10 via winbox")
+	}
+	for i := range 5 {
+		add(6*time.Hour+time.Duration(i)*30*time.Second, 0,
+			"<86>{bsd} gw-old system,error,critical login failure for user root from 198.51.100.3 via ssh")
+	}
+	// FortiGate: VPN 11 prób z jednego adresu (różne konta), 9 z innego; administrator 5 prób.
+	vpn := `<189>date={date} time={time} devname="FGT-HQ" tz="+0200" logid="0101039426" type="event" subtype="vpn" ` +
+		`action="ssl-login-fail" remip=%s user="%s" reason="sslvpn_login_permission_denied" msg="SSL user failed to logged in"`
+	for i := range 11 {
+		add(7*time.Hour+time.Duration(i)*15*time.Second, 0, fmt.Sprintf(vpn, "203.0.113.45", []string{"jan", "ewa", "adam"}[i%3]))
+	}
+	for i := range 9 {
+		add(7*time.Hour+time.Duration(i)*15*time.Second, 0, fmt.Sprintf(vpn, "203.0.113.46", "jan"))
+	}
+	for i := range 5 {
+		add(8*time.Hour+time.Duration(i)*time.Minute, 0, `<185>date={date} time={time} devname="FGT-HQ" tz="+0200" `+
+			`logid="0100032002" type="event" subtype="system" user="admin" srcip=198.51.100.7 action="login" status="failed"`)
+	}
 }
 
 type hitKey struct{ rule, event, group string }

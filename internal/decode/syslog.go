@@ -161,15 +161,23 @@ func bsdTime(s string, loc *time.Location, now time.Time) (time.Time, string, bo
 	return ts, strings.TrimPrefix(rest, " "), true
 }
 
-// tag rozbiera „TAG[PID]: wiadomość”. Bez dwukropka (np. MikroTik:
-// „system,info,account user admin logged in”) TAG to pierwsze słowo,
-// o ile wygląda na nazwę (litery, cyfry, - _ . , /).
+// tag rozbiera „TAG[PID]: wiadomość”. Bez dwukropka TAG to pierwsze słowo
+// tylko wtedy, gdy jest listą tematów RouterOS 6 („system,info,account user
+// admin logged in”) – RouterOS 7 nie wysyła tematów i treść zaczyna się
+// od razu po nazwie hosta („user admin logged in …”).
 func tag(s string) (app, pid, msg string) {
 	end := strings.IndexAny(s, ": ")
 	if end <= 0 {
 		return "", "", s
 	}
 	word := s[:end]
+	if s[end] == ' ' && !strings.Contains(word, ",") {
+		return "", "", s
+	}
+	// „TAG:” kończy dwukropek ze spacją – nie adres MAC („8C:85:…@wifi3”) ani czas.
+	if s[end] == ':' && end+1 < len(s) && s[end+1] != ' ' {
+		return "", "", s
+	}
 	if i := strings.IndexByte(word, '['); i > 0 && strings.HasSuffix(word, "]") {
 		app, pid = word[:i], word[i+1:len(word)-1]
 	} else {

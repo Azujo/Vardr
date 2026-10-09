@@ -34,13 +34,17 @@ type Def struct {
 	Samples     []string          `yaml:"samples" json:"samples,omitempty"` // przykłady (test i dokumentacja)
 }
 
-// MatchDef: wszystkie podane warunki muszą być spełnione.
+// MatchDef: wszystkie podane warunki muszą być spełnione; Any – dodatkowo
+// co najmniej jedna z alternatyw (np. tematy RouterOS w nagłówku albo nazwa
+// hosta albo charakterystyczna treść).
 type MatchDef struct {
-	Peer     []string `yaml:"peer" json:"peer,omitempty"`           // sieci nadawców (CIDR)
-	App      []string `yaml:"app" json:"app,omitempty"`             // nazwa programu z nagłówka (bez wielkości liter)
-	AppRegex string   `yaml:"app_regex" json:"app_regex,omitempty"` // RE2 na nazwie programu
-	Contains []string `yaml:"contains" json:"contains,omitempty"`   // fragmenty treści (wszystkie)
-	Regex    string   `yaml:"regex" json:"regex,omitempty"`         // RE2 na treści
+	Peer     []string   `yaml:"peer" json:"peer,omitempty"`           // sieci nadawców (CIDR)
+	Host     []string   `yaml:"host" json:"host,omitempty"`           // nazwa hosta z nagłówka (bez wielkości liter)
+	App      []string   `yaml:"app" json:"app,omitempty"`             // nazwa programu z nagłówka (bez wielkości liter)
+	AppRegex string     `yaml:"app_regex" json:"app_regex,omitempty"` // RE2 na nazwie programu
+	Contains []string   `yaml:"contains" json:"contains,omitempty"`   // fragmenty treści (wszystkie)
+	Regex    string     `yaml:"regex" json:"regex,omitempty"`         // RE2 na treści
+	Any      []MatchDef `yaml:"any" json:"any,omitempty"`             // alternatywy (bez zagnieżdżania)
 }
 
 // ParserDef to sposób rozbioru treści.
@@ -91,12 +95,20 @@ func (s *StrSet) UnmarshalYAML(n *yaml.Node) error {
 // Decoder to skompilowany dekoder.
 type Decoder struct {
 	Def
+	match    matcher
+	any      []matcher
+	patterns []*regexp.Regexp
+	loc      *time.Location
+}
+
+// matcher to skompilowany MatchDef (bez Any).
+type matcher struct {
 	peers    []netip.Prefix
+	hosts    map[string]bool
 	apps     map[string]bool
 	re       *regexp.Regexp
 	appRe    *regexp.Regexp
-	patterns []*regexp.Regexp
-	loc      *time.Location
+	contains []string
 }
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
@@ -108,7 +120,7 @@ var Targets = []string{"host.name", "user.name", "user.domain", "source.ip", "pr
 
 // Compile sprawdza i kompiluje definicję.
 func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
-	dec := &Decoder{Def: d, apps: map[string]bool{}, loc: defaultLoc}
+	dec := &Decoder{Def: d, loc: defaultLoc}
 	switch {
 	case !idRe.MatchString(d.ID):
 		return nil, errors.New("id: 2–64 znaki: małe litery, cyfry, . _ -")
@@ -117,36 +129,26 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 	case d.Dataset == "" || strings.ContainsAny(d.Dataset, " \t"):
 		return nil, errors.New("dataset: np. fortinet.fortigate (bez spacji)")
 	}
-	for _, p := range d.Match.Peer {
-		pfx, err := netip.ParsePrefix(p)
-		if err != nil {
-			if a, err2 := netip.ParseAddr(p); err2 == nil {
-				pfx = netip.PrefixFrom(a, a.BitLen())
-			} else {
-				return nil, fmt.Errorf("match.peer %q: %w", p, err)
-			}
+	m, err := compileMatch(d.Match, "match")
+	if err != nil {
+		return nil, err
+	}
+	dec.match = m
+	for i, alt := range d.Match.Any {
+		if len(alt.Any) > 0 {
+			return nil, fmt.Errorf("match.any[%d]: bez zagnieżdżonego any", i)
 		}
-		dec.peers = append(dec.peers, pfx.Masked())
-	}
-	for _, a := range d.Match.App {
-		dec.apps[strings.ToLower(a)] = true
-	}
-	if d.Match.Regex != "" {
-		re, err := regexp.Compile(d.Match.Regex)
+		am, err := compileMatch(alt, fmt.Sprintf("match.any[%d]", i))
 		if err != nil {
-			return nil, fmt.Errorf("match.regex: %w", err)
+			return nil, err
 		}
-		dec.re = re
-	}
-	if d.Match.AppRegex != "" {
-		re, err := regexp.Compile(d.Match.AppRegex)
-		if err != nil {
-			return nil, fmt.Errorf("match.app_regex: %w", err)
+		if am.empty() {
+			return nil, fmt.Errorf("match.any[%d]: pusta alternatywa", i)
 		}
-		dec.appRe = re
+		dec.any = append(dec.any, am)
 	}
-	if len(d.Match.Peer) == 0 && len(d.Match.App) == 0 && len(d.Match.Contains) == 0 && d.Match.Regex == "" && d.Match.AppRegex == "" {
-		return nil, errors.New("match: podaj co najmniej jeden warunek (peer, app, contains, regex)")
+	if m.empty() && len(dec.any) == 0 {
+		return nil, errors.New("match: podaj co najmniej jeden warunek (peer, host, app, contains, regex, any)")
 	}
 	switch d.Parser.Type {
 	case "kv", "json", "none":
@@ -200,11 +202,47 @@ func Parse(data []byte, defaultLoc *time.Location) (*Decoder, error) {
 	return Compile(d, defaultLoc)
 }
 
-// Matches mówi, czy dekoder pasuje do wiadomości.
-func (d *Decoder) Matches(h Header, peer netip.Addr) bool {
-	if len(d.peers) > 0 {
+func compileMatch(md MatchDef, name string) (matcher, error) {
+	m := matcher{hosts: map[string]bool{}, apps: map[string]bool{}, contains: md.Contains}
+	for _, p := range md.Peer {
+		pfx, err := netip.ParsePrefix(p)
+		if err != nil {
+			if a, err2 := netip.ParseAddr(p); err2 == nil {
+				pfx = netip.PrefixFrom(a, a.BitLen())
+			} else {
+				return m, fmt.Errorf("%s.peer %q: %w", name, p, err)
+			}
+		}
+		m.peers = append(m.peers, pfx.Masked())
+	}
+	for _, h := range md.Host {
+		m.hosts[strings.ToLower(h)] = true
+	}
+	for _, a := range md.App {
+		m.apps[strings.ToLower(a)] = true
+	}
+	var err error
+	if md.Regex != "" {
+		if m.re, err = regexp.Compile(md.Regex); err != nil {
+			return m, fmt.Errorf("%s.regex: %w", name, err)
+		}
+	}
+	if md.AppRegex != "" {
+		if m.appRe, err = regexp.Compile(md.AppRegex); err != nil {
+			return m, fmt.Errorf("%s.app_regex: %w", name, err)
+		}
+	}
+	return m, nil
+}
+
+func (m *matcher) empty() bool {
+	return len(m.peers) == 0 && len(m.hosts) == 0 && len(m.apps) == 0 && len(m.contains) == 0 && m.re == nil && m.appRe == nil
+}
+
+func (m *matcher) matches(h Header, peer netip.Addr) bool {
+	if len(m.peers) > 0 {
 		ok := false
-		for _, p := range d.peers {
+		for _, p := range m.peers {
 			if peer.IsValid() && p.Contains(peer.Unmap()) {
 				ok = true
 				break
@@ -214,18 +252,37 @@ func (d *Decoder) Matches(h Header, peer netip.Addr) bool {
 			return false
 		}
 	}
-	if len(d.apps) > 0 && !d.apps[strings.ToLower(h.App)] {
+	if len(m.hosts) > 0 && !m.hosts[strings.ToLower(h.Host)] {
 		return false
 	}
-	if d.appRe != nil && !d.appRe.MatchString(h.App) {
+	if len(m.apps) > 0 && !m.apps[strings.ToLower(h.App)] {
 		return false
 	}
-	for _, c := range d.Match.Contains {
+	if m.appRe != nil && !m.appRe.MatchString(h.App) {
+		return false
+	}
+	for _, c := range m.contains {
 		if !strings.Contains(h.Message, c) {
 			return false
 		}
 	}
-	return d.re == nil || d.re.MatchString(h.Message)
+	return m.re == nil || m.re.MatchString(h.Message)
+}
+
+// Matches mówi, czy dekoder pasuje do wiadomości.
+func (d *Decoder) Matches(h Header, peer netip.Addr) bool {
+	if !d.match.matches(h, peer) {
+		return false
+	}
+	if len(d.any) == 0 {
+		return true
+	}
+	for i := range d.any {
+		if d.any[i].matches(h, peer) {
+			return true
+		}
+	}
+	return false
 }
 
 // Result to wynik dekodowania: pola docelowe i wszystkie pola treści.

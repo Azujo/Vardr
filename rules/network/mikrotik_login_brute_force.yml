@@ -1,0 +1,35 @@
+title: MikroTik – seria nieudanych logowań do routera
+id: cb8df317-c73f-45ef-ae1f-22758105458c
+status: stable
+description: |
+  Co najmniej 5 nieudanych logowań do RouterOS (Winbox, SSH, WebFig, API,
+  Telnet) z jednego adresu w ciągu 5 minut. Typowe dla zgadywania hasła
+  administratora, zwłaszcza gdy usługi zarządzania są dostępne z internetu.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: mikrotik
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+  condition: selection
+falsepositives:
+  - Administrator, który pomylił hasło albo ma zapamiętane stare w Winboxie
+  - Skrypt albo system monitoringu ze starym hasłem (stały adres, równe odstępy)
+level: medium
+heimdall:
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 5
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań do routera {{host.name}} z adresu {{source.ip}}
+    w {{window}} (ostatnio konto {{user.name}} przez {{process.name}}). Adres
+    z internetu – ogranicz dostęp do usług zarządzania (/ip service: address,
+    reguła zapory na łańcuchu input) i wyłącz nieużywane (telnet, ftp, www,
+    api). Adres z sieci lokalnej – ustal, czyj to komputer. Sprawdź, czy po
+    serii nie było udanego logowania z tego adresu („logged in from”).

@@ -113,6 +113,12 @@ func TestMikroTik(t *testing.T) {
 		{"action": "dhcp-lease", "client_ip": "192.168.88.254", "client_host": "iPhone"},
 		{"action": "firewall", "ip": "203.0.113.9", "dst_port": "22", "fw_prefix": "DROP-WAN"},
 		{"action": "config-change", "user": "admin", "ip": "192.168.88.10", "change": "added"},
+		// RouterOS 7: bez tematów w nagłówku.
+		{"action": "login", "outcome": "failure", "user": "admin", "ip": "192.168.88.10", "proc": "winbox"},
+		{"action": "login", "outcome": "success", "user": "admin", "ip": "192.168.88.10", "proc": "winbox"},
+		{"action": "wifi-association", "client_mac": "8C:85:90:12:34:56", "interface": "wifi3", "ssid": "MikroTik-Guest", "wifi_action": "connected"},
+		{"action": "clock-change", "time_source": "cloud"},
+		{"action": "link-change", "interface": "ether4", "link": "down"},
 	} {
 		e, err := Event(contract.Event{ID: "c:syslog:g0:1", Raw: builtin(t, "mikrotik", i), Peer: "192.168.88.1"}, "c", ingested, set, warsaw)
 		if err != nil {
@@ -132,6 +138,26 @@ func TestMikroTik(t *testing.T) {
 		if e.HostName != "mikrotik" || e.Dataset != "mikrotik.routeros" {
 			t.Errorf("MikroTik %d: host %q dataset %q", i, e.HostName, e.Dataset)
 		}
+	}
+}
+
+// Router o zmienionej tożsamości (RouterOS 7, bez tematów): logowania
+// rozpoznane po treści, reszta – ogólny syslog; inne urządzenia bez zmian.
+func TestMikroTikRenamed(t *testing.T) {
+	set := builtinSet(t)
+	for raw, want := range map[string]string{
+		"<131>Oct  9 20:54:15 gw-hq login failure for user admin from 10.1.1.5 via ssh": "mikrotik.routeros",
+		"<134>Oct  9 20:54:15 gw-hq user jan logged out from 10.1.1.5 via winbox":       "mikrotik.routeros",
+		"<134>Oct  9 20:50:04 gw-hq ether4 link down":                                   "syslog.generic",
+		"<13>Oct  9 20:50:04 nas01 user jan logged in":                                  "syslog.generic",
+	} {
+		e, err := Event(contract.Event{ID: "x", Raw: raw, Peer: "10.1.1.1"}, "c", ingested, set, warsaw)
+		if err != nil || e.Dataset != want {
+			t.Errorf("%q: %s, oczekiwano %s (%v)", raw, e.Dataset, want, err)
+		}
+	}
+	if h := ParseHeader("<134>Oct  9 20:54:15 gw-hq user jan logged out", warsaw, ingested); h.App != "" || h.Message != "user jan logged out" {
+		t.Errorf("znacznik bez dwukropka i przecinka: %+v", h)
 	}
 }
 
