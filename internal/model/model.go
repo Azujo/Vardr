@@ -43,6 +43,10 @@ type Quarantined struct {
 	Source   string    `json:"source"`
 	Reason   string    `json:"reason"`
 	Raw      string    `json:"raw"`
+	// Peer: adres nadawcy syslog, Truncated: treść przycięta przez agenta –
+	// potrzebne do ponownego przetworzenia z kwarantanny.
+	Peer      string `json:"peer,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 // Batch to wynik normalizacji jednej paczki agenta (jedna wiadomość

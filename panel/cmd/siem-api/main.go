@@ -32,6 +32,7 @@ import (
 	"siem/internal/decode"
 	"siem/internal/decodekv"
 	"siem/internal/fleet"
+	"siem/internal/reprocess"
 	"siem/internal/svc"
 	"siem/internal/urd"
 	"siem/panel/internal/api"
@@ -146,6 +147,13 @@ func serve(log *slog.Logger) error {
 	}
 	decoders := &api.Decoders{Store: db, Loc: syslogLoc}
 	apiServer.Decoders = decoders
+	quarantine := &api.Quarantine{Store: db, Log: log}
+	apiServer.Quarantine = quarantine
+	if n, err := db.AbortRunningQuarantineJobs(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		log.Warn("zlecenia ponownego przetwarzania kwarantanny przerwane restartem panelu", "jobs", n)
+	}
 
 	// Mímir: wyszukiwarka zdarzeń (ClickHouse, konto tylko do odczytu).
 	if chUser := os.Getenv("SIEM_CLICKHOUSE_USER"); chUser != "" {
@@ -160,6 +168,7 @@ func serve(log *slog.Logger) error {
 		apiServer.Events = searcher
 		apiServer.RuleTester = searcher
 		decoders.Samples = searcher
+		quarantine.Source = searcher
 		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
 	} else {
 		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
@@ -289,6 +298,14 @@ func serve(log *slog.Logger) error {
 				}
 			}
 			return nil
+		}
+		// Kwarantanna: części zleceń do normalizatora (request-reply).
+		quarantine.Request = func(ctx context.Context, data []byte) ([]byte, error) {
+			m, err := nc.RequestWithContext(ctx, reprocess.Subject, data)
+			if err != nil {
+				return nil, err
+			}
+			return m.Data, nil
 		}
 		// Dekodery z panelu: zmiana od razu do NATS KV (czytają ją normalizatory),
 		// a co 5 minut i przy starcie – wyrównanie magazynu do bazy.

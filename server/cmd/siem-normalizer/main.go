@@ -5,11 +5,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -20,6 +22,8 @@ import (
 
 	"siem/internal/decode"
 	"siem/internal/decodekv"
+	"siem/internal/model"
+	"siem/internal/reprocess"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
 	"siem/server/internal/ingest"
@@ -85,6 +89,22 @@ func run(log *slog.Logger) error {
 			})
 		})
 	}()
+
+	// Ponowne przetwarzanie kwarantanny na zlecenie panelu – tylko ścieżka live.
+	if pl.Name == bus.Live.Name {
+		sub, err := nc.QueueSubscribe(reprocess.Subject, "normalizer", func(m *nats.Msg) {
+			rep := handleReprocess(ctx, js, pl, m.Data)
+			if rep.Error != "" {
+				log.Warn("ponowne przetworzenie kwarantanny nieudane", "err", rep.Error)
+			}
+			b, _ := json.Marshal(rep)
+			_ = m.Respond(b)
+		})
+		if err != nil {
+			return err
+		}
+		defer func() { _ = sub.Drain() }()
+	}
 
 	var batches, events, quarantined atomic.Int64
 	statsTick := time.NewTicker(time.Minute)
@@ -192,4 +212,42 @@ func process(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, msg j
 		return 0, 0, err
 	}
 	return len(nb.Events), len(nb.Quarantine), nil
+}
+
+// handleReprocess normalizuje część zlecenia ponownego przetworzenia
+// kwarantanny i publikuje odzyskane zdarzenia (paczka na agenta; ten sam
+// identyfikator przy ponowieniu części – duplikat odrzucany przez JetStream).
+func handleReprocess(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, data []byte) reprocess.Reply {
+	var req reprocess.Request
+	if err := json.Unmarshal(data, &req); err != nil {
+		return reprocess.Reply{Error: "nieczytelne żądanie: " + err.Error()}
+	}
+	evs, rep := normalize.Reprocess(req, time.Now())
+	agents := make([]string, 0, len(evs))
+	for a := range evs {
+		agents = append(agents, a)
+	}
+	sort.Strings(agents)
+	for _, agentID := range agents {
+		nb := model.Batch{BatchID: fmt.Sprintf("reprocess-%d-%d-%s", req.Job, req.Chunk, agentID), AgentID: agentID, Events: evs[agentID]}
+		raw, err := json.Marshal(nb)
+		if err != nil {
+			return reprocess.Reply{Error: err.Error()}
+		}
+		gz, err := bus.Gzip(raw)
+		if err != nil {
+			return reprocess.Reply{Error: err.Error()}
+		}
+		pub := &nats.Msg{Subject: pl.EventsSubject(agentID), Data: gz, Header: nats.Header{}}
+		pub.Header.Set(bus.HdrAgent, agentID)
+		pub.Header.Set(bus.HdrBatch, nb.BatchID)
+		pub.Header.Set(bus.HdrEncoding, "gzip")
+		pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		_, err = js.PublishMsg(pctx, pub, jetstream.WithMsgID(nb.BatchID))
+		cancel()
+		if err != nil {
+			return reprocess.Reply{Error: "publikacja zdarzeń: " + err.Error()}
+		}
+	}
+	return rep
 }

@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconActivityHeartbeat,
+  IconAlertOctagon,
   IconAdjustments,
   IconAlertTriangle,
   IconArchive,
@@ -57,6 +58,7 @@ const main: Item[] = [
   { to: "/alerts", label: "Gjallarhorn", hint: "alerty", icon: <IconAlertTriangle size={18} /> },
   { to: "/rules", label: "Reguły detekcji", hint: "Sigma", icon: <IconListCheck size={18} /> },
   { to: "/decoders", label: "Dekodery", hint: "syslog: FortiGate, MikroTik…", icon: <IconCode size={18} /> },
+  { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} /> },
   { to: "/deploy", label: "Bifröst", hint: "wdrażanie agentów", icon: <IconBolt size={18} /> },
   { to: "/archive", label: "Urd", hint: "archiwum NIS2", icon: <IconArchive size={18} /> },
   { to: "/system", label: "Himinbjörg", hint: "stan systemu", icon: <IconActivityHeartbeat size={18} /> },

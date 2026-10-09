@@ -58,6 +58,7 @@ func (r Rejected) Quarantined() model.Quarantined {
 	return model.Quarantined{
 		Ingested: r.Event.Ingested, AgentID: r.Event.AgentID, EventID: r.Event.ID,
 		Source: r.Event.Dataset, Reason: "zapis do ClickHouse odrzucony: " + r.Err.Error(), Raw: r.Event.Raw,
+		Peer: r.Event.Fields["syslog.peer"], Truncated: r.Event.Truncated,
 	}
 }
 

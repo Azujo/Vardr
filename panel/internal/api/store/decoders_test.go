@@ -53,3 +53,48 @@ func TestPostgresDecoders(t *testing.T) {
 		t.Fatalf("lista: %+v %v", list, err)
 	}
 }
+
+func TestPostgresQuarantineJobs(t *testing.T) {
+	url := os.Getenv("SIEM_TEST_PG_URL")
+	if url == "" {
+		t.Skip("brak SIEM_TEST_PG_URL – pomijam test na PostgreSQL")
+	}
+	ctx := context.Background()
+	db, err := Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.pool.Exec(ctx, "TRUNCATE quarantine_jobs CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	j, err := db.CreateQuarantineJob(ctx, "adam", map[string]any{"source": "syslog"}, 3)
+	if err != nil || j.ID == 0 {
+		t.Fatalf("zlecenie: %+v %v", j, err)
+	}
+	if err := db.RecordQuarantineOutcomes(ctx, j.ID, []string{"a", "b"}, map[string]string{"c": "zły JSON"}); err != nil {
+		t.Fatal(err)
+	}
+	// Drugie zlecenie odzyskuje c.
+	j2, _ := db.CreateQuarantineJob(ctx, "adam", nil, 1)
+	if err := db.RecordQuarantineOutcomes(ctx, j2.ID, []string{"c"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.FinishQuarantineJob(ctx, j.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := db.AbortRunningQuarantineJobs(ctx); err != nil || n != 1 {
+		t.Fatalf("przerwane: %d %v", n, err)
+	}
+	jobs, err := db.ListQuarantineJobs(ctx, 10)
+	if err != nil || len(jobs) != 2 || jobs[1].Status != "done" || jobs[1].Recovered != 2 || jobs[1].Failed != 1 || jobs[0].Status != "failed" {
+		t.Fatalf("zlecenia: %+v %v", jobs, err)
+	}
+	out, err := db.QuarantineOutcomes(ctx, []string{"a", "c", "x"})
+	if err != nil || len(out) != 2 || !out["c"].Recovered || out["c"].JobID != j2.ID || !out["a"].Recovered {
+		t.Fatalf("wyniki: %+v %v", out, err)
+	}
+}

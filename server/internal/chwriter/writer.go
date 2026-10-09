@@ -24,7 +24,7 @@ const insertReplayEvents = `INSERT INTO siem.events_replay (timestamp, ingested,
 	event_provider, event_action, event_outcome, host_name, user_name, user_domain, source_ip, process_name,
 	process_command_line, message, fields, raw, truncated, parser_version, time_quality, replay_id)`
 
-const insertQuarantine = `INSERT INTO siem.quarantine (ingested, agent_id, event_id, source, reason, raw)`
+const insertQuarantine = `INSERT INTO siem.quarantine (ingested, agent_id, event_id, source, reason, raw, peer, truncated)`
 
 // Writer zapisuje wiersze do ClickHouse.
 type Writer struct {
@@ -93,7 +93,7 @@ func (w *Writer) InsertQuarantine(ctx context.Context, quarantine []model.Quaran
 		return err
 	}
 	for _, q := range quarantine {
-		if err := b.Append(q.Ingested, q.AgentID, q.EventID, q.Source, q.Reason, q.Raw); err != nil {
+		if err := b.Append(q.Ingested, q.AgentID, q.EventID, q.Source, q.Reason, q.Raw, q.Peer, q.Truncated); err != nil {
 			_ = b.Abort()
 			return err
 		}

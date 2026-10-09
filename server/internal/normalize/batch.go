@@ -17,7 +17,7 @@ func Batch(b contract.Batch, agentID string, ingested time.Time) model.Batch {
 		if err != nil {
 			out.Quarantine = append(out.Quarantine, model.Quarantined{
 				Ingested: ingested.UTC(), AgentID: agentID, EventID: ev.ID,
-				Source: ev.Source, Reason: err.Error(), Raw: ev.Raw,
+				Source: ev.Source, Reason: err.Error(), Raw: ev.Raw, Peer: ev.Peer, Truncated: ev.Truncated,
 			})
 			continue
 		}

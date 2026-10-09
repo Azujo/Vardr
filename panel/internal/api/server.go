@@ -86,6 +86,8 @@ type Server struct {
 	Status StatusReporter
 	// Decoders (opcjonalne) – dekodery syslog i ich edytor.
 	Decoders *Decoders
+	// Quarantine (opcjonalne) – kwarantanna i jej ponowne przetwarzanie.
+	Quarantine *Quarantine
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -189,6 +191,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/v1/decoders/{id}", s.authed(roleAdmin, 0, s.saveDecoder))
 	mux.Handle("POST /api/v1/decoders/{id}/enabled", s.authed(roleAdmin, 0, s.setDecoderEnabled))
 	mux.Handle("POST /api/v1/decoders/{id}/revert", s.authed(roleAdmin, 0, s.revertDecoder))
+
+	mux.Handle("GET /api/v1/quarantine", s.authed(roleViewer, 0, s.listQuarantine))
+	mux.Handle("POST /api/v1/quarantine/reprocess", s.authed(roleAdmin, 0, s.reprocessQuarantine))
 
 	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))
 	mux.Handle("POST /api/v1/notify/channels", s.authed(roleAdmin, 0, s.createChannel))

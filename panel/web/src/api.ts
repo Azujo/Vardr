@@ -992,3 +992,68 @@ export const decodersApi = {
       password: password ?? "",
     }),
 };
+
+// ---- Kwarantanna ----
+
+export interface QuarantineGroup {
+  source: string;
+  reason: string;
+  count: number;
+  agents: number;
+  first: string;
+  last: string;
+  example_event_id: string;
+}
+
+export interface QuarantineEntry {
+  ingested: string;
+  agent_id: string;
+  event_id: string;
+  source: string;
+  reason: string;
+  peer?: string;
+  raw: string;
+  raw_bytes: number;
+  truncated?: boolean;
+  supported: boolean;
+  outcome?: { job_id: number; recovered: boolean; reason?: string; at: string };
+}
+
+export interface QuarantineJob {
+  id: number;
+  created_at: string;
+  created_by: string;
+  filter: { source?: string; reason?: string; agent?: string; event_ids?: string[]; from?: string };
+  status: "running" | "done" | "failed";
+  total: number;
+  recovered: number;
+  failed: number;
+  finished_at?: string;
+  error?: string;
+}
+
+export interface QuarantineFilterParams {
+  hours: number;
+  source?: string;
+  reason?: string;
+  agent?: string;
+}
+
+export const quarantineApi = {
+  list: (f: QuarantineFilterParams) => {
+    const q = new URLSearchParams({ hours: String(f.hours) });
+    if (f.source) q.set("source", f.source);
+    if (f.reason) q.set("reason", f.reason);
+    if (f.agent) q.set("agent", f.agent);
+    return request<{
+      groups: QuarantineGroup[];
+      entries: QuarantineEntry[];
+      total: number;
+      jobs: QuarantineJob[];
+      reprocess: boolean;
+      running: boolean;
+    }>("GET", `/api/v1/quarantine?${q}`);
+  },
+  reprocess: (f: QuarantineFilterParams & { event_ids?: string[] }) =>
+    request<{ job: QuarantineJob; limited: boolean }>("POST", "/api/v1/quarantine/reprocess", f),
+};

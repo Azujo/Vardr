@@ -59,13 +59,20 @@ CREATE TABLE IF NOT EXISTS siem.quarantine
     event_id String,
     source   LowCardinality(String),
     reason   String,
-    raw      String CODEC(ZSTD(3))
+    raw      String CODEC(ZSTD(3)),
+    peer      String DEFAULT '',
+    truncated Bool DEFAULT false
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(ingested)
 ORDER BY (ingested, agent_id)
 TTL toDateTime(ingested) + INTERVAL ${SIEM_EVENTS_TTL_DAYS} DAY
 SETTINGS ttl_only_drop_parts = 1;
+-- Etap 6d: adres nadawcy syslog i przycięcie – do ponownego przetworzenia
+-- kwarantanny (instalacje sprzed etapu 6: ponowne uruchomienie skryptu,
+-- patrz README, „Kwarantanna”).
+ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS peer String DEFAULT '';
+ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS truncated Bool DEFAULT false;
 
 -- Konta: zapis (siem-writer) i odczyt (Grafana).
 CREATE USER IF NOT EXISTS siem_writer IDENTIFIED WITH sha256_password BY '${SIEM_WRITER_PASSWORD}';
