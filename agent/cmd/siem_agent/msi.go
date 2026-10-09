@@ -40,6 +40,15 @@ func msiLog() (io.Writer, func()) {
 	return f, func() { f.Close() }
 }
 
+// logResult zapisuje wynik w msi.log – okno MSI pokazuje tylko kod błędu.
+func logResult(w io.Writer, err error) {
+	if err != nil {
+		fmt.Fprintf(w, "BŁĄD: %v\n", err)
+	} else {
+		fmt.Fprintln(w, "OK")
+	}
+}
+
 // redirect kieruje wyjście poleceń instalacji do pliku dziennika MSI.
 func redirect(w io.Writer) func() {
 	f, ok := w.(*os.File)
@@ -63,10 +72,11 @@ func enrolledAlready() bool {
 	return err == nil
 }
 
-func msiInstall(server, token string) error {
+func msiInstall(server, token string) (err error) {
 	logw, closeLog := msiLog()
 	defer closeLog()
 	defer redirect(logw)()
+	defer func() { logResult(logw, err) }()
 
 	if enrolledAlready() {
 		fmt.Println("Agent już zarejestrowany – aktualizacja/naprawa: rejestracja usługi z istniejącą konfiguracją.")
@@ -117,10 +127,11 @@ func restartOrStart() error {
 
 // msiUninstall usuwa usługę, źródło zdarzeń i wpis w PATH; dane,
 // konfiguracja i certyfikaty zostają (pliki programu usuwa MSI).
-func msiUninstall() error {
+func msiUninstall() (err error) {
 	logw, closeLog := msiLog()
 	defer closeLog()
 	defer redirect(logw)()
+	defer func() { logResult(logw, err) }()
 	if err := deleteService(); err != nil && !errors.Is(err, errNotInstalled) {
 		return err
 	}
