@@ -163,6 +163,26 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **6e (09.10):** symulator FortiGate (`tools/cmd/fortisim`) i reguły progowe: seria nieudanych logowań do VPN FortiGate, do panelu FortiGate i do routera MikroTik. Laboratorium: symulowane ataki → alerty #22–#26 w obu silnikach; test zgodności silników z korpusem syslog (155/155 trafień). Przerwa łączności kolektor–serwer: 50 wiadomości z bufora dotarło po przywróceniu `siem-ingest`.
 - **Kryterium etapu (roadmapa):** logi FortiGate znormalizowane (symulator, wszystkie scenariusze), nowy dekoder utworzony w panelu przechodzi test na próbce. IIS (W3C) – parser `csv` z separatorem spacją go rozbiera, ale odczyt plików dziennika przez agenta to osobne źródło – przesunięte (razem z syslog po TLS).
 
+## Przegląd etapu 6 (09.10.2026) – błędy i luki
+
+| # | Pr. | Problem | Skutek | Stan |
+|---|---|---|---|---|
+| 1 | średni | Eksport NIS2: czytnik `odczytaj.exe` pokazywał tylko dane z XML Windows; eksport gubił adres nadawcy syslog; archiwizator nie znał dekoderów z panelu | Audytor widział zdarzenia z urządzeń jako „bez rozpoznanego kodu”, bez treści i nadawcy; czytelna część eksportu inna niż w bazie | Naprawione: raport pokazuje treść, nadawcę, zbiór danych i akcję, nieudane logowania z urządzeń w „wymagających uwagi”; `log.source.address` w NDJSON i kolumny w CSV; archiwizator obserwuje dekodery (NATS KV) |
+| 2 | średni | Kolektor: długość ramki TCP („octet counting”) czytana bez limitu | Strumień samych cyfr zajmował coraz więcej pamięci kolektora | Naprawione: najwyżej 7 cyfr, inaczej rozłączenie (test) |
+| 3 | średni | Kolektor domyślnie przyjmuje syslog od wszystkich (syslog nie ma uwierzytelnienia) | Każdy w sieci mógł podsunąć wiadomości „z routera” | Laboratorium: lista dozwolonych sieci ustawiona; szablon konfiguracji zaleca `allow`. Uwierzytelnienie – syslog po TLS (później) |
+| 4 | niski | Przycięte wiadomości syslog bez znacznika `truncated` (źródło i rdzeń agenta miały ten sam limit) | Nie było widać, że treść jest niepełna | Naprawione: znacznik i rozmiar oryginału z kolektora (także ramki TCP ponad limit) |
+| 5 | niski | Pole `peer` w paczce bez walidacji | Dowolny tekst jako nadawca i nazwa hosta | Naprawione: ingest przyjmuje tylko adres IP |
+| 6 | niski | `product` w regułach: silnik w locie porównywał zbiór danych bez wielkości liter, SQL – z; prefiks bez granicy (`fortinet.fortigatex`) | Możliwa rozbieżność silników przy własnych dekoderach | Naprawione: zbiory danych tylko małymi literami (walidacja dekodera), dopasowanie zbioru i jego podzbiorów w obu silnikach (test zgodności 155/155) |
+| 7 | niski | Dekoder mógł użyć zbioru `windows.*` / `syslog.generic` i nadpisać pola systemowe (`syslog.*`, `decoder.*`, `siem.*`) – także z treści wiadomości | Zdarzenia syslog mogły uruchamiać reguły Windows albo podszyć się pod znacznik ponownego przetworzenia | Naprawione: zbiory zarezerwowane, pola systemowe chronione (test) |
+| 8 | niski | Synchronizacja NATS KV co 5 min zapisywała wszystkie dekodery | Normalizatory przeładowywały dekodery co 5 min | Naprawione: zapis tylko zmienionych |
+| 9 | niski | Nagłówek RFC 3164 bez nazwy hosta („sshd[812]: …”) – znacznik brany za host | Zły `host.name`, brak nazwy programu | Naprawione (test) |
+| 10 | niski | Test dekodera z próbkami z bazy używał jednego adresu nadawcy | Dekodery z warunkiem `peer` wyglądały na niepasujące | Naprawione: adres uzupełniany, gdy próbki są od jednego nadawcy; ostrzeżenie przy wielu |
+| 11 | niski | Zapytania kwarantanny bez testu na ClickHouse (filtr wskazanych wpisów nieużywany w UI) | Ryzyko błędu dopiero w produkcji | Naprawione: test na danych laboratorium |
+| 12 | uwaga | Grupy kwarantanny liczą także wpisy odzyskane | Licznik nie maleje po ponownym przetworzeniu | Opisane w nagłówku kolumny; stan wpisów na liście i w zleceniach |
+| 13 | uwaga | Licznik `{{count}}` w instrukcji alertu progowego z chwili przekroczenia progu (#27: „5” przy 10 zdarzeniach) | Instrukcja zaniża skalę trwającej serii | Bez zmian (od etapu 4) – liczba zdarzeń jest w alercie |
+| 14 | uwaga | Każdy zarejestrowany agent może wysłać zdarzenia „syslog:” (jak dowolny XML Windows) | Przejęta stacja może fałszować logi urządzeń | Do etapu 8 (ograniczenie źródeł do typu agenta) |
+| 15 | uwaga | Utrata kolektora albo cisza urządzenia nie wywołuje alertu, gdy kolektor jest w grupie bez progu utraty łączności | Logi z sieci mogą przestać płynąć niezauważone | Zalecenie: osobna grupa „Kolektory” z alarmem po utracie łączności; reguła „cisza źródła” – później |
+
 ## Przegląd etapu 5 (09.10.2026) – błędy i luki
 
 | # | Pr. | Problem | Skutek | Stan |

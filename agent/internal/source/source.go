@@ -20,6 +20,9 @@ type Record struct {
 	Source string
 	// Peer: adres nadawcy (syslog).
 	Peer string
+	// Truncated: źródło przycięło treść (OriginalSize – rozmiar przed przycięciem).
+	Truncated    bool
+	OriginalSize int
 }
 
 // Position wskazuje ostatni rekord, po którym należy wznowić odczyt.

@@ -211,6 +211,11 @@ function DecoderEditor({
       const r = await decodersApi.samples({ decoder: own ? decoder?.id : undefined, peer: peer.trim(), hours: Number(hours) || 24 });
       if (r.samples.length === 0) notifications.show({ color: "gray", message: "Brak wiadomości w wybranym okresie" });
       setSamples(r.samples.map((s) => s.raw).join("\n"));
+      // Test używa jednego adresu nadawcy: próbki od jednego urządzenia – jego adres (warunek peer).
+      const peers = new Set(r.samples.map((s) => s.peer));
+      if (!peer.trim() && peers.size === 1) setPeer([...peers][0]);
+      else if (!peer.trim() && peers.size > 1)
+        notifications.show({ color: "yellow", message: "Próbki od różnych nadawców – dekodery z warunkiem peer sprawdź z filtrem nadawcy" });
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
     } finally {

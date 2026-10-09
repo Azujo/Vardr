@@ -1,11 +1,17 @@
 package normalize
 
 import (
+	"context"
+	"log/slog"
 	"os"
 	"sync/atomic"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"siem/internal/decode"
+	"siem/internal/decodekv"
+	"siem/internal/svc"
 )
 
 // Decoders to bieżący zestaw dekoderów syslog (podmieniany przy zmianie
@@ -43,4 +49,23 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// WatchDecoders obserwuje dekodery z panelu (NATS KV) i podmienia zestaw do
+// zakończenia ctx – normalizator i archiwizator (czytelna część eksportu
+// dekodowana tak jak zdarzenia w bazie). Do czasu wczytania: wbudowane.
+func WatchDecoders(ctx context.Context, js jetstream.JetStream, log *slog.Logger) {
+	_ = svc.Retry(ctx, log, "dekodery z panelu", func() error {
+		kv, err := decodekv.Ensure(ctx, js)
+		if err != nil {
+			return err
+		}
+		return decodekv.Watch(ctx, kv, log, func(custom map[string]decode.Custom) {
+			n, errs := SetCustom(custom)
+			for _, err := range errs {
+				log.Error("dekoder z panelu pominięty", "err", err)
+			}
+			log.Info("dekodery syslog wczytane", "decoders", n, "changed_in_panel", len(custom))
+		})
+	})
 }

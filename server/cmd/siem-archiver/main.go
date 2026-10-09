@@ -31,6 +31,7 @@ import (
 	"siem/server/internal/archiver"
 	"siem/server/internal/bus"
 	"siem/server/internal/metrics"
+	"siem/server/internal/normalize"
 	"siem/server/internal/queue"
 )
 
@@ -232,6 +233,8 @@ func serve(log *slog.Logger) error {
 		return err
 	}
 	defer nc.Close()
+	// Czytelna część eksportu: syslog dekodowany tak jak w bazie (z dekoderami z panelu).
+	go normalize.WatchDecoders(ctx, js, log)
 	var cons jetstream.Consumer
 	if err := svc.Retry(ctx, log, "konsument archiwum", func() error {
 		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {

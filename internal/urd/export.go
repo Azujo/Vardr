@@ -773,7 +773,9 @@ nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
         event.action        opis czynności, event.outcome – success/failure
         user.name, user.domain, source.ip, process.name, winlog.channel
         agent.id, event.ingested   agent i czas przyjęcia przez serwer
-        event.original      PEŁNY oryginalny zapis zdarzenia (XML Windows)
+        event.original      PEŁNY oryginalny zapis zdarzenia (XML Windows
+                            albo wiadomość syslog z urządzenia)
+        log.source.address  adres urządzenia, które wysłało syslog (kolektor)
         heimdall.batch_sha256      suma paczki agenta, z której pochodzi zdarzenie
       Odczyt: zcat plik.ndjson.gz | less, jq, 7-Zip; import do Elastic,
       Splunk, OpenSearch, Sentinel itp. jako NDJSON/JSON lines.

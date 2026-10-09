@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -89,7 +88,9 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 	var last atomic.Uint64
 	last.Store(start.RecordID)
 
-	emit := func(msg []byte, peer netip.Addr, proto string) bool {
+	// size: rozmiar wiadomości przed odcięciem przy odczycie (ramka TCP dłuższa
+	// niż limit jest czytana tylko do limitu) – do znacznika przycięcia.
+	emit := func(msg []byte, size int, peer netip.Addr, proto string) bool {
 		if !s.allowed(peer) {
 			s.Stats.Denied.Add(1)
 			return true
@@ -98,13 +99,15 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 		if m == "" {
 			return true
 		}
-		if len(m) > s.Cfg.MaxMessage {
+		rec := source.Record{Channel: s.Channel(), ReadAt: s.now().UTC(), Source: "syslog:" + proto, Peer: peer.Unmap().String()}
+		if size > s.Cfg.MaxMessage || len(m) > s.Cfg.MaxMessage {
+			rec.Truncated, rec.OriginalSize = true, max(size, len(m))
 			m = truncate(m, s.Cfg.MaxMessage)
 			s.Stats.Truncated.Add(1)
 		}
+		rec.Raw = m
 		id := seq.Add(1)
-		rec := source.Record{Channel: s.Channel(), RecordID: id, Raw: m, ReadAt: s.now().UTC(),
-			Source: "syslog:" + proto, Peer: peer.Unmap().String()}
+		rec.RecordID = id
 		select {
 		case out <- rec:
 			s.Stats.Received.Add(1)
@@ -160,7 +163,7 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 	return pos, err
 }
 
-func (s *Source) serveUDP(ctx context.Context, pc net.PacketConn, emit func([]byte, netip.Addr, string) bool) error {
+func (s *Source) serveUDP(ctx context.Context, pc net.PacketConn, emit func([]byte, int, netip.Addr, string) bool) error {
 	go func() {
 		<-ctx.Done()
 		_ = pc.Close()
@@ -179,13 +182,13 @@ func (s *Source) serveUDP(ctx context.Context, pc net.PacketConn, emit func([]by
 			continue
 		}
 		ip, _ := netip.AddrFromSlice(ap.IP)
-		if !emit(buf[:n], ip, "udp") {
+		if !emit(buf[:n], n, ip, "udp") {
 			return nil
 		}
 	}
 }
 
-func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte, netip.Addr, string) bool) error {
+func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte, int, netip.Addr, string) bool) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
@@ -235,7 +238,7 @@ func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte
 
 // readStream czyta wiadomości z połączenia TCP: „octet counting” (długość,
 // spacja, wiadomość) albo wiadomości zakończone znakiem nowej linii.
-func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, netip.Addr, string) bool) {
+func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, int, netip.Addr, string) bool) {
 	r := bufio.NewReaderSize(c, 64<<10)
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(s.Cfg.IdleTCP))
@@ -244,8 +247,10 @@ func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, netip.A
 			return
 		}
 		var msg []byte
+		size := 0
 		if b[0] >= '1' && b[0] <= '9' {
 			n, err := readLength(r)
+			size = n
 			if err != nil || n > 1<<20 {
 				return // zła ramka – rozłączamy
 			}
@@ -273,22 +278,29 @@ func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, netip.A
 				msg = append([]byte(nil), line...)
 			}
 		}
-		if !emit(msg, ip, "tcp") {
+		if !emit(msg, max(size, len(msg)), ip, "tcp") {
 			return
 		}
 	}
 }
 
+// readLength czyta długość ramki „octet counting” – najwyżej 7 cyfr i spacja
+// (bez limitu strumień samych cyfr zajmowałby coraz więcej pamięci).
 func readLength(r *bufio.Reader) (int, error) {
-	s, err := r.ReadString(' ')
-	if err != nil {
-		return 0, err
+	n := 0
+	for i := 0; ; i++ {
+		c, err := r.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		if c == ' ' && i > 0 {
+			return n, nil
+		}
+		if c < '0' || c > '9' || i >= 7 {
+			return 0, fmt.Errorf("zła długość ramki")
+		}
+		n = n*10 + int(c-'0')
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("zła długość ramki %q", s)
-	}
-	return n, nil
 }
 
 func truncate(s string, n int) string {

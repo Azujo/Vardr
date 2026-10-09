@@ -20,9 +20,15 @@ const xml4625 = `<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/e
 
 func batch(t *testing.T, id string, minute int) []byte {
 	t.Helper()
-	b := contract.Batch{Schema: "heimdall.batch/1", BatchID: id, AgentID: "agt-dc01", Events: []contract.Event{
+	return pack(contract.Batch{Schema: "heimdall.batch/1", BatchID: id, AgentID: "agt-dc01", Events: []contract.Event{
 		{ID: "agt-dc01:Security:g1:" + id, Source: "Security", Raw: fmt.Sprintf(xml4625, minute)},
-	}}
+	}})
+}
+
+// syslogRaw: wiadomość z routera przez kolektor (zdarzenie bez XML).
+const syslogRaw = "<131>Oct  7 12:00:30 MikroTik login failure for user admin from 203.0.113.9 via ssh"
+
+func pack(b contract.Batch) []byte {
 	data, _ := json.Marshal(b)
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
@@ -33,6 +39,11 @@ func batch(t *testing.T, id string, minute int) []byte {
 
 // enrich udaje normalizator serwera (pola ECS).
 func enrich(ev contract.Event, _ string, _ time.Time, r *urd.Readable) {
+	if strings.HasPrefix(ev.Source, "syslog:") {
+		r.Dataset, r.Action, r.Outcome, r.UserName, r.SourceIP, r.HostName = "mikrotik.routeros", "login", "failure", "admin", "203.0.113.9", "mikrotik"
+		r.Timestamp = time.Date(2026, 10, 7, 10, 0, 30, 0, time.UTC).Format(time.RFC3339Nano)
+		return
+	}
 	r.Code, r.HostName, r.UserName, r.UserDomain, r.SourceIP, r.Outcome = 4625, "dc01.lab.local", "jkowalski", "LAB", "10.0.5.23", "failure"
 	r.Timestamp = time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
 }
@@ -51,6 +62,8 @@ func buildPackage(t *testing.T) string {
 	for i := range 3 {
 		_ = w.Add(urd.RecordMeta{Agent: "agt-dc01", Batch: fmt.Sprintf("b%d", i), ReceivedAt: now}, batch(t, fmt.Sprintf("b%d", i), i))
 	}
+	_ = w.Add(urd.RecordMeta{Agent: "agt-col", Batch: "s1", ReceivedAt: now}, pack(contract.Batch{Schema: "heimdall.batch/1",
+		BatchID: "s1", AgentID: "agt-col", Events: []contract.Event{{ID: "agt-col:syslog:g0:1", Source: "syslog:udp", Peer: "192.168.88.1", Raw: syslogRaw}}}))
 	if _, err := w.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +101,7 @@ func TestReaderProducesReport(t *testing.T) {
 	}
 	rep, _ := os.ReadFile(report)
 	for _, want := range []string{"ZGODNE", "incydent INC-1", "Nieudane logowanie", "3 × LAB\\jkowalski", "10.0.5.23",
-		"ODCZYT\\zdarzenia\\2026-10-07.txt   – 3 zdarzeń"} {
+		"ODCZYT\\zdarzenia\\2026-10-07.txt   – 4 zdarzeń", "1 × admin  (mikrotik)", "1 × 203.0.113.9", "1 × syslog  mikrotik.routeros  login"} {
 		if !strings.Contains(string(rep), want) {
 			t.Errorf("raport bez %q:\n%s", want, rep)
 		}
@@ -98,7 +111,8 @@ func TestReaderProducesReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"12:00:00 (czas polski)", "4625  Nieudane logowanie  [porażka]", "TargetUserName", "= jkowalski", "= 3 (sieciowe – np. udział, zasób)",
-		"LogonType", "\r\n"} {
+		"LogonType", "\r\n", "syslog  mikrotik.routeros  login  [porażka]", "Nadawca:        192.168.88.1   (syslog:udp, zbiór danych: mikrotik.routeros)",
+		"Treść:          " + syslogRaw} {
 		if !strings.Contains(string(day), want) {
 			t.Errorf("plik dzienny bez %q", want)
 		}

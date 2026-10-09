@@ -39,6 +39,7 @@ type Readable struct {
 	ProcessName string `json:"process.name,omitempty"`
 	CommandLine string `json:"process.command_line,omitempty"`
 	Channel     string `json:"winlog.channel,omitempty"`
+	Peer        string `json:"log.source.address,omitempty"` // nadawca syslog (kolektor)
 	AgentID     string `json:"agent.id"`
 	Ingested    string `json:"event.ingested"`
 	EventID     string `json:"heimdall.event_id"`
@@ -86,7 +87,7 @@ func readableEvents(meta RecordMeta, payload []byte, enrich Enricher) []Readable
 	for _, ev := range b.Events {
 		r := Readable{AgentID: meta.Agent, Ingested: meta.ReceivedAt.UTC().Format(time.RFC3339Nano),
 			EventID: ev.ID, BatchID: meta.Batch, BatchSHA256: sum, Channel: ev.Source, Truncated: ev.Truncated,
-			Original: ev.Raw}
+			Original: ev.Raw, Peer: ev.Peer}
 		if enrich != nil {
 			enrich(ev, meta.Agent, meta.ReceivedAt, &r)
 		}
@@ -118,7 +119,7 @@ func (d *eventDigest) add(batchSHA, eventID, raw string) {
 
 // csvHeader to kolumny pliku zdarzenia/zdarzenia.csv (dla arkusza kalkulacyjnego).
 var csvHeader = []string{"czas_zdarzenia_utc", "komputer", "kod", "kanal", "akcja", "wynik", "uzytkownik", "domena",
-	"ip_zrodlowe", "proces", "agent", "przyjeto_na_serwerze_utc", "id_zdarzenia"}
+	"ip_zrodlowe", "proces", "agent", "przyjeto_na_serwerze_utc", "id_zdarzenia", "zbior_danych", "nadawca_syslog"}
 
 // csvMaxRows: Excel otwiera najwyżej 1 048 576 wierszy.
 const csvMaxRows = 1_000_000
@@ -152,7 +153,7 @@ func (c *csvSink) add(r Readable) error {
 		code = strconv.FormatUint(uint64(r.Code), 10)
 	}
 	return c.w.Write([]string{r.Timestamp, r.HostName, code, r.Channel, r.Action, r.Outcome, r.UserName, r.UserDomain,
-		r.SourceIP, r.ProcessName, r.AgentID, r.Ingested, r.EventID})
+		r.SourceIP, r.ProcessName, r.AgentID, r.Ingested, r.EventID, r.Dataset, r.Peer})
 }
 
 func (c *csvSink) close() error {

@@ -226,6 +226,27 @@ func orDash(s string) string {
 	return s
 }
 
+// isSyslog: zdarzenie z kolektora syslog (urządzenia sieciowe, serwery).
+func isSyslog(r urd.Readable) bool { return strings.HasPrefix(r.Channel, "syslog:") }
+
+// kindOf opisuje rodzaj zdarzenia syslog: zbiór danych i akcja z dekodera.
+func kindOf(r urd.Readable) string {
+	s := "syslog  " + orDash(r.Dataset)
+	if r.Action != "" {
+		s += "  " + r.Action
+	}
+	return s
+}
+
+// clip skraca tekst do n znaków (z informacją o reszcie).
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + fmt.Sprintf(" … (+%d znaków – pełna treść w event.original)", len(r)-n)
+}
+
 func describe(code uint32) string {
 	if d := windesc.Describe(code); d != "" {
 		return d
@@ -288,7 +309,9 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 		cur.line("%s", rule)
 		cur.line("%s (czas polski)   |   %s UTC", plTime(e.t), e.t.UTC().Format("2006-01-02 15:04:05"))
 		head := fmt.Sprintf("%d  %s", r.Code, describe(r.Code))
-		if r.Code == 0 {
+		if isSyslog(r) {
+			head = kindOf(r)
+		} else if r.Code == 0 {
 			head = "(zdarzenie bez rozpoznanego kodu)"
 		}
 		if r.Outcome != "" {
@@ -304,11 +327,19 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 		if r.CommandLine != "" {
 			cur.line("  Polecenie:      %s", r.CommandLine)
 		}
-		cur.line("  Dziennik:       %s   (źródło: %s)", orDash(strings.TrimPrefix(r.Channel, "wineventlog:")), orDash(r.Provider))
+		if isSyslog(r) {
+			cur.line("  Nadawca:        %s   (%s, zbiór danych: %s)", orDash(r.Peer), r.Channel, orDash(r.Dataset))
+		} else {
+			cur.line("  Dziennik:       %s   (źródło: %s)", orDash(strings.TrimPrefix(r.Channel, "wineventlog:")), orDash(r.Provider))
+		}
 		cur.line("  Agent:          %s   przyjęto: %s (czas polski)", r.AgentID, plTimeStr(r.Ingested))
 		cur.line("  Identyfikator:  %s", r.EventID)
 		if r.Truncated {
 			cur.line("  UWAGA: zdarzenie zostało przycięte przez agenta (bardzo długi zapis).")
+		}
+		if isSyslog(r) {
+			// Syslog nie ma struktury XML – pokazujemy oryginalną wiadomość.
+			cur.line("  Treść:          %s", clip(r.Original, 2000))
 		}
 		if len(e.data) > 0 {
 			cur.line("  Dane zdarzenia:")
@@ -418,6 +449,14 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	byCat := map[string][]event{}
 	failedUsers, failedIPs := map[string]int{}, map[string]int{}
 	for _, e := range l.events {
+		if isSyslog(e.r) {
+			// Kody urządzeń (np. logid FortiGate) to nie identyfikatory zdarzeń Windows.
+			if e.r.Outcome == "failure" && strings.Contains(e.r.Action, "login") {
+				failedUsers[userOf(e.r)+"  ("+orDash(e.r.HostName)+")"]++
+				failedIPs[orDash(e.r.SourceIP)]++
+			}
+			continue
+		}
 		if a := windesc.Attention(e.r.Code); a != "" {
 			byCat[a] = append(byCat[a], e)
 		}
@@ -474,6 +513,10 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	t.line("%s", rule)
 	codes := map[string]int{}
 	for _, e := range l.events {
+		if isSyslog(e.r) {
+			codes[kindOf(e.r)]++
+			continue
+		}
 		codes[fmt.Sprintf("%-6d %s", e.r.Code, describe(e.r.Code))]++
 	}
 	t.line("   Rodzaje zdarzeń (najczęstsze):")

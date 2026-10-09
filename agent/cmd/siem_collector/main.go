@@ -213,7 +213,9 @@ syslog:
   udp: ":514"
   tcp: ":514"
   max_message_kb: 64
-  # allow: ["192.168.88.0/24"]   # tylko te sieci (puste = wszyscy)
+  # Zalecane: tylko sieci urządzeń (syslog nie ma uwierzytelnienia – bez listy
+  # każdy w sieci może podsunąć wiadomości). Puste = wszyscy.
+  # allow: ["192.168.88.0/24"]
 buffer:
   max_mb: 2048
   on_full: drop_oldest

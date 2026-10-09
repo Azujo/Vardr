@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 )
@@ -95,6 +96,8 @@ func (b *Batch) Validate() error {
 			return fmt.Errorf("zdarzenie %d: brak source", i)
 		case e.Raw == "":
 			return fmt.Errorf("zdarzenie %d: puste raw", i)
+		case e.Peer != "" && !validPeer(e.Peer):
+			return fmt.Errorf("zdarzenie %d: peer %.64q to nie adres IP", i, e.Peer)
 		}
 	}
 	return nil
@@ -112,4 +115,11 @@ func NewBatchID() string {
 	u[8] = (u[8] & 0x3f) | 0x80 // wariant RFC 4122
 	h := hex.EncodeToString(u[:])
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
+// validPeer: adres nadawcy syslog to adres IP (trafia do pól zdarzenia
+// i zastępuje nazwę hosta, gdy wiadomość jej nie ma).
+func validPeer(p string) bool {
+	_, err := netip.ParseAddr(p)
+	return err == nil && len(p) <= 64
 }

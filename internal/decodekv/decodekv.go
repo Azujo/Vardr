@@ -6,6 +6,7 @@
 package decodekv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,11 +43,19 @@ func Put(ctx context.Context, kv jetstream.KeyValue, id string, c decode.Custom)
 	return err
 }
 
-// Sync wyrównuje magazyn do stanu z bazy: zapisuje wszystkie wpisy, usuwa
-// klucze, których w bazie nie ma.
+// Sync wyrównuje magazyn do stanu z bazy: zapisuje wpisy różne od
+// zapisanych (bez zmian – bez zapisu, więc normalizatory nie przeładowują
+// dekoderów co synchronizację), usuwa klucze, których w bazie nie ma.
 func Sync(ctx context.Context, kv jetstream.KeyValue, all map[string]decode.Custom) error {
 	for id, c := range all {
-		if err := Put(ctx, kv, id, c); err != nil {
+		b, err := json.Marshal(c)
+		if err != nil {
+			return err
+		}
+		if e, err := kv.Get(ctx, id); err == nil && bytes.Equal(e.Value(), b) {
+			continue
+		}
+		if _, err := kv.Put(ctx, id, b); err != nil {
 			return err
 		}
 	}

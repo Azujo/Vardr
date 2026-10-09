@@ -64,15 +64,16 @@ func TestSyslogUDPAndTCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	fmt.Fprint(uc, "<134>Oct  9 12:00:00 fw01 date=2026-10-09 type=traffic\n")
-	fmt.Fprint(uc, "<30>1 2026-10-09T12:00:01Z router1 system - - - "+strings.Repeat("x", 100))
+	m2 := "<30>1 2026-10-09T12:00:01Z router1 system - - - " + strings.Repeat("x", 100)
+	fmt.Fprint(uc, m2)
 	uc.Close()
 	got := collect(t, out, 2)
 	if got[0].Source != "syslog:udp" || got[0].Peer != "127.0.0.1" || !strings.HasPrefix(got[0].Raw, "<134>Oct") ||
 		strings.HasSuffix(got[0].Raw, "\n") {
 		t.Fatalf("UDP: %+v", got[0])
 	}
-	if len(got[1].Raw) != 60 || s.Stats.Truncated.Load() != 1 {
-		t.Fatalf("przycięcie do 60 bajtów: %d %q", len(got[1].Raw), got[1].Raw)
+	if len(got[1].Raw) != 60 || s.Stats.Truncated.Load() != 1 || !got[1].Truncated || got[1].OriginalSize != len(m2) || got[0].Truncated {
+		t.Fatalf("przycięcie do 60 bajtów: %d %q %v %d", len(got[1].Raw), got[1].Raw, got[1].Truncated, got[1].OriginalSize)
 	}
 	if got[1].RecordID <= got[0].RecordID || got[0].Channel != "syslog" {
 		t.Fatalf("numeracja: %d %d", got[0].RecordID, got[1].RecordID)
@@ -85,13 +86,30 @@ func TestSyslogUDPAndTCP(t *testing.T) {
 	m1 := "<134>1 2026-10-09T12:00:02Z fw01 - - - - pierwsza"
 	fmt.Fprintf(tc, "%d %s", len(m1), m1)                               // octet counting
 	fmt.Fprint(tc, "<134>Oct  9 12:00:03 fw01 druga\r\n<134>trzecia\n") // koniec linii
+	long := "<134>" + strings.Repeat("y", 200)
+	fmt.Fprintf(tc, "%d %s", len(long), long) // ramka ponad limit – przycięta, ze znacznikiem
 	tc.Close()
-	got = collect(t, out, 3)
+	got = collect(t, out, 4)
 	if got[0].Raw != m1 || got[1].Raw != "<134>Oct  9 12:00:03 fw01 druga" || got[2].Raw != "<134>trzecia" || got[0].Source != "syslog:tcp" {
 		t.Fatalf("TCP: %q %q %q", got[0].Raw, got[1].Raw, got[2].Raw)
 	}
+	if len(got[3].Raw) != 60 || !got[3].Truncated || got[3].OriginalSize != 205 {
+		t.Fatalf("ramka TCP ponad limit: %d %v %d", len(got[3].Raw), got[3].Truncated, got[3].OriginalSize)
+	}
+
+	// Strumień samych cyfr (bez spacji) – rozłączenie zamiast rosnącego bufora.
+	tc, err = net.Dial("tcp", tcp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = tc.Write([]byte(strings.Repeat("9", 4096)))
+	_ = tc.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := tc.Read(make([]byte, 1)); err == nil || strings.Contains(err.Error(), "timeout") {
+		t.Fatalf("połączenie z błędną ramką powinno zostać zamknięte: %v", err)
+	}
+	tc.Close()
 	cancel()
-	if pos := <-done; !pos.Valid || pos.RecordID != got[2].RecordID {
+	if pos := <-done; !pos.Valid || pos.RecordID != got[3].RecordID {
 		t.Fatalf("pozycja po zatrzymaniu: %+v", pos)
 	}
 }

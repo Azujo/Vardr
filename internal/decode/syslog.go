@@ -68,8 +68,10 @@ func ParseHeader(raw string, loc *time.Location, now time.Time) Header {
 		h.Format = "rfc3164"
 		h.Time = t
 		s = rest
-		// HOST TAG: wiadomość – host to pierwsze słowo, o ile po nim jest kolejne.
-		if host, after, found := strings.Cut(s, " "); found && host != "" && !strings.Contains(host, "=") {
+		// HOST TAG: wiadomość – host to pierwsze słowo, o ile po nim jest kolejne
+		// i nie jest samym znacznikiem („sshd[812]: …” – nagłówek bez hosta).
+		if host, after, found := strings.Cut(s, " "); found && host != "" && !strings.ContainsAny(host, "=[") &&
+			!strings.HasSuffix(host, ":") {
 			h.Host = host
 			s = after
 		}

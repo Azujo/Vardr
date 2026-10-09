@@ -162,3 +162,17 @@ func TestUnwrap(t *testing.T) {
 		t.Fatalf("Unwrap:\n%q\n%q", got, want)
 	}
 }
+
+// Produkt → zbiór danych: rodzina zbioru, bez sklejania nazw (przegląd etapu 6).
+func TestProductDataset(t *testing.T) {
+	r := mustRule(t, "title: t\nid: test-rule\nlevel: low\nlogsource:\n  product: fortigate\ndetection:\n  s:\n    event.action: x\n  condition: s\n")
+	for ds, want := range map[string]bool{"fortinet.fortigate": true, "fortinet.fortigate.vpn": true, "fortinet.fortigatex": false, "windows.security": false} {
+		e := Event{&model.Event{Dataset: ds, Action: "x"}}
+		if r.Match(e) != want {
+			t.Errorf("%s: oczekiwano %v", ds, want)
+		}
+	}
+	if sql := r.SQL(); !strings.Contains(sql, "event_dataset = 'fortinet.fortigate'") || !strings.Contains(sql, "startsWith(event_dataset, 'fortinet.fortigate.')") {
+		t.Fatalf("SQL: %s", sql)
+	}
+}

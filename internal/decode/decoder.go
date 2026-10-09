@@ -111,7 +111,10 @@ type matcher struct {
 	contains []string
 }
 
-var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
+var (
+	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,63}$`)
+	datasetRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{1,99}$`)
+)
 
 // Targets: pola zdarzenia, do których dekoder może przypisać wartość
 // (pozostałe nazwy trafiają do mapy pól pod tą nazwą).
@@ -126,8 +129,12 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 		return nil, errors.New("id: 2–64 znaki: małe litery, cyfry, . _ -")
 	case d.Title == "":
 		return nil, errors.New("brak title")
-	case d.Dataset == "" || strings.ContainsAny(d.Dataset, " \t"):
-		return nil, errors.New("dataset: np. fortinet.fortigate (bez spacji)")
+	case !datasetRe.MatchString(d.Dataset):
+		return nil, errors.New("dataset: małe litery, cyfry, . _ - (np. fortinet.fortigate)")
+	case strings.HasPrefix(d.Dataset, "windows.") || d.Dataset == "syslog.generic":
+		// Reguły Windows działają na windows.*; zdarzenia z syslog nie mogą
+		// się pod nie podszyć (ani pod zdarzenia bez dekodera).
+		return nil, errors.New("dataset: windows.* i syslog.generic są zarezerwowane")
 	}
 	m, err := compileMatch(d.Match, "match")
 	if err != nil {

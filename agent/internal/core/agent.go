@@ -265,6 +265,10 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	if ev.Source == "" {
 		ev.Source = "wineventlog:" + rec.Channel
 	}
+	if rec.Truncated {
+		ev.Truncated, ev.OriginalSize = true, rec.OriginalSize
+		a.truncated.Add(1)
+	}
 	if limit := a.opts.MaxEventBytes; limit > 0 && len(ev.Raw) > limit {
 		ev.Raw, ev.Truncated, ev.OriginalSize = truncateUTF8(ev.Raw, limit), true, len(rec.Raw)
 		a.truncated.Add(1)

@@ -259,7 +259,7 @@ export default function QuarantinePage() {
               <Table.Tr>
                 <Table.Th>Źródło</Table.Th>
                 <Table.Th>Powód (przykład)</Table.Th>
-                <Table.Th>Wpisów</Table.Th>
+                <Table.Th>Wpisów (także odzyskane)</Table.Th>
                 <Table.Th>Agentów</Table.Th>
                 <Table.Th>Ostatni</Table.Th>
                 <Table.Th />

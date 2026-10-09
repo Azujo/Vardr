@@ -80,7 +80,7 @@ func Event(ev contract.Event, agentID string, ingested time.Time, set *Set, loc 
 		}
 		e.Dataset = d.Dataset
 		for k, v := range res.Fields {
-			if _, taken := e.Fields[k]; !taken {
+			if _, taken := e.Fields[k]; !taken && !reserved(k) {
 				e.Fields[k] = v
 			}
 		}
@@ -135,9 +135,18 @@ func apply(e *model.Event, t map[string]string) {
 				e.Code = uint32(n)
 			}
 		default:
-			e.Fields[k] = v
+			if !reserved(k) {
+				e.Fields[k] = v
+			}
 		}
 	}
+}
+
+// reserved: pola ustawiane przez Heimdalla (nagłówek syslog, dekoder,
+// ponowne przetworzenie) – treść wiadomości ani definicja dekodera ich nie
+// nadpisze.
+func reserved(k string) bool {
+	return strings.HasPrefix(k, "syslog.") || strings.HasPrefix(k, "decoder.") || strings.HasPrefix(k, "siem.")
 }
 
 func quality(t, ingested time.Time) (time.Time, string) {

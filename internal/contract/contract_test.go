@@ -35,6 +35,10 @@ func TestValidate(t *testing.T) {
 	if err := b.Validate(); err != nil {
 		t.Fatalf("poprawna paczka odrzucona: %v", err)
 	}
+	b.Events[0].Peer = "fd00::1"
+	if err := b.Validate(); err != nil {
+		t.Fatalf("peer IPv6 odrzucony: %v", err)
+	}
 
 	cases := map[string]func(*Batch){
 		"zły schemat":     func(b *Batch) { b.Schema = "x" },
@@ -44,6 +48,7 @@ func TestValidate(t *testing.T) {
 		"puste raw":       func(b *Batch) { b.Events[0].Raw = "" },
 		"brak source":     func(b *Batch) { b.Events[0].Source = "" },
 		"za dużo zdarzeń": func(b *Batch) { b.Events = make([]Event, MaxEventsPerBatch+1) },
+		"peer nie IP":     func(b *Batch) { b.Events[0].Peer = "fw01; DROP" },
 	}
 	for name, mutate := range cases {
 		b := valid()

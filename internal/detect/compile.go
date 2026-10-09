@@ -92,15 +92,27 @@ var products = map[string]string{
 	"routeros":  "mikrotik.routeros",
 }
 
-// datasetIs: event.dataset zaczyna się od prefiksu (bez wielkości liter).
+// datasetIs: event.dataset z rodziny produktu – prefiks zakończony kropką
+// („windows.”) albo nazwa zbioru i jego podzbiory („fortinet.fortigate”,
+// „fortinet.fortigate.vpn”, ale nie „fortinet.fortigatex”). Zbiory danych
+// są pisane małymi literami (normalizator, dekodery), więc porównanie jest
+// dokładne w obu silnikach.
 type datasetIs string
 
 func (d datasetIs) Eval(e Event) bool {
-	return strings.HasPrefix(strings.ToLower(e.Dataset), string(d))
+	p := string(d)
+	if strings.HasSuffix(p, ".") {
+		return strings.HasPrefix(e.Dataset, p)
+	}
+	return e.Dataset == p || strings.HasPrefix(e.Dataset, p+".")
 }
 
 func (d datasetIs) sql() string {
-	return fmt.Sprintf("startsWith(event_dataset, %s)", Quote(string(d)))
+	p := string(d)
+	if strings.HasSuffix(p, ".") {
+		return fmt.Sprintf("startsWith(event_dataset, %s)", Quote(p))
+	}
+	return fmt.Sprintf("(event_dataset = %s OR startsWith(event_dataset, %s))", Quote(p), Quote(p+"."))
 }
 
 func compileLogsource(l logsource) (Node, error) {
