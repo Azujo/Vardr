@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  Checkbox,
   ActionIcon,
   Alert,
   Badge,
@@ -46,6 +47,7 @@ export function limitsSummary(l: AgentLimits): string {
   if (l.max_eps !== undefined) parts.push(l.max_eps ? `≤ ${l.max_eps} zdarzeń/s` : "zdarzenia bez limitu");
   if (l.max_send_kbps !== undefined) parts.push(l.max_send_kbps ? `łącze ≤ ${l.max_send_kbps} KiB/s` : "łącze bez limitu");
   if (l.buffer_max_mb !== undefined) parts.push(l.buffer_max_mb ? `bufor ${l.buffer_max_mb} MB` : "bez bufora dyskowego");
+  if (l.require_sysmon) parts.push("wymagany Sysmon");
   if (l.priority) parts.push(`priorytet ${priorityLabels[l.priority]}`);
   return parts.length ? parts.join(" · ") : "domyślne agenta";
 }
@@ -321,6 +323,12 @@ export default function GroupsPage() {
                   onChange={(v) => setLimit("buffer_on_full", (v ?? undefined) as AgentLimits["buffer_on_full"])}
                 />
               </SimpleGrid>
+              <Checkbox
+                label="Wymagany Sysmon"
+                description="Panel zgłasza komputery bez Sysmona, z zatrzymanym Sysmonem albo z inną konfiguracją niż większość grupy. Agent go nie instaluje – wdrożenie: deploy/windows/sysmon.ps1 (GPO)."
+                checked={!!edit.form.limits.require_sysmon}
+                onChange={(e) => setLimit("require_sysmon", e.currentTarget.checked || undefined)}
+              />
               <Button type="submit" loading={busy}>
                 Zapisz
               </Button>

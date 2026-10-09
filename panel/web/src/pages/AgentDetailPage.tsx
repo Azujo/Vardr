@@ -323,7 +323,7 @@ Powód:`,
         </Card>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Zegar
+            Zegar i Sysmon
           </Title>
           {!status.clock?.measured_at && !status.clock?.time_service ? (
             <Text size="sm" c="dimmed">
@@ -337,6 +337,22 @@ Powód:`,
                   : "—"}
               </Field>
               <Field label="Pomiar">{ago(status.clock?.measured_at)}</Field>
+              <Field label="Sysmon">
+                {!status.sysmon ? (
+                  "—"
+                ) : !status.sysmon.installed ? (
+                  <Badge color={agent.sysmon_required ? "red" : "gray"} variant="light">brak</Badge>
+                ) : (
+                  <Badge color={status.sysmon.running ? "green" : "red"} variant="light">
+                    {status.sysmon.running ? "działa" : "zatrzymany"} {status.sysmon.version}
+                  </Badge>
+                )}
+              </Field>
+              <Field label="Konfiguracja Sysmona">
+                <Text size="sm" ff="monospace">
+                  {status.sysmon?.config_hash || "—"}
+                </Text>
+              </Field>
               <Field label="Usługa czasu Windows">
                 {status.clock?.time_service === "running" ? (
                   <Badge color="green" variant="light">działa</Badge>

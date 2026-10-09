@@ -35,6 +35,9 @@ type AgentLimits struct {
 	// Bufor dyskowy agenta (MB, 0 = wyłączony) i zachowanie po zapełnieniu.
 	BufferMaxMB  *int    `json:"buffer_max_mb,omitempty"`
 	BufferOnFull *string `json:"buffer_on_full,omitempty"` // pause | drop_oldest
+	// RequireSysmon: grupa wymaga Sysmona – panel zgłasza komputery bez niego
+	// albo z inną konfiguracją niż większość grupy (agent go nie instaluje).
+	RequireSysmon *bool `json:"require_sysmon,omitempty"`
 }
 
 // ValidProfiles to profile zdarzeń znane agentowi.

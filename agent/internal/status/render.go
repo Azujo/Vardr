@@ -118,6 +118,17 @@ func Render(w io.Writer, s Status, now time.Time) {
 		fmt.Fprintln(w, line)
 	}
 
+	if m := s.Sysmon; m != nil {
+		switch {
+		case !m.Installed:
+			fmt.Fprintln(w, "Sysmon:   nie zainstalowany")
+		case !m.Running:
+			fmt.Fprintf(w, "Sysmon:   ZATRZYMANY (%s %s)\n", m.Service, m.Version)
+		default:
+			fmt.Fprintf(w, "Sysmon:   działa (%s %s, konfiguracja %s)\n", m.Service, m.Version, m.ConfigHash)
+		}
+	}
+
 	for _, warn := range s.Warnings {
 		fmt.Fprintf(w, "UWAGA: %s\n", warn)
 	}

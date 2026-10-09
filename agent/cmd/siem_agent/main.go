@@ -36,13 +36,14 @@ import (
 	"siem/agent/internal/spool"
 	"siem/agent/internal/state"
 	"siem/agent/internal/status"
+	"siem/agent/internal/sysmon"
 	"siem/agent/internal/timesync"
 	"siem/agent/internal/winevt"
 	"siem/internal/contract"
 	"siem/internal/throttle"
 )
 
-const version = "0.6.1"
+const version = "0.6.2"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -356,12 +357,14 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 			LastError: b.LastError, LastErrorTime: b.LastErrorTime}
 	})
 
-	// Zegar: usługa czasu Windows (co 5 min) i odchylenie względem serwera (heartbeat).
+	// Zegar i Sysmon (co 5 min): usługa czasu Windows, stan Sysmona; odchylenie
+	// zegara względem serwera mierzy heartbeat.
 	go func() {
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for {
 			tracker.SetTimeService(timesync.ServiceState())
+			tracker.SetSysmon(sysmon.Check())
 			select {
 			case <-bgCtx.Done():
 				return

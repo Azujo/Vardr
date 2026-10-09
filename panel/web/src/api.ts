@@ -131,6 +131,10 @@ export interface AgentView {
   last_warning?: string;
   channels_ok: number;
   channels_total: number;
+  sysmon?: "running" | "stopped" | "missing" | "unknown";
+  sysmon_version?: string;
+  sysmon_config?: string;
+  sysmon_required?: boolean;
   problems: string[];
   group_id: number;
   group: string;
@@ -171,6 +175,7 @@ export interface AgentStatusDoc {
     last_error?: string;
   };
   clock?: { offset_ms: number; uncertainty_ms: number; measured_at?: string; time_service?: string };
+  sysmon?: { installed: boolean; service?: string; running: boolean; version?: string; config_hash?: string };
   warnings?: string[];
 }
 
@@ -315,6 +320,7 @@ export interface AgentLimits {
   max_send_kbps?: number;
   buffer_max_mb?: number;
   buffer_on_full?: "pause" | "drop_oldest";
+  require_sysmon?: boolean;
 }
 
 export interface AgentGroup {

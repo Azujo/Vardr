@@ -13,6 +13,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"siem/agent/internal/sysmon"
 )
 
 // Stany kanału.
@@ -41,6 +43,7 @@ type Status struct {
 	Config   ConfigStatus    `json:"config"`
 	Buffer   *BufferStatus   `json:"buffer,omitempty"`
 	Clock    ClockStatus     `json:"clock"`
+	Sysmon   *sysmon.State   `json:"sysmon,omitempty"`
 	Warnings []string        `json:"warnings,omitempty"`
 }
 
@@ -349,4 +352,14 @@ func (t *Tracker) SetTimeService(state string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.s.Clock.TimeService = state
+}
+
+// SetSysmon zapisuje stan Sysmona.
+func (t *Tracker) SetSysmon(st sysmon.State) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Sysmon = &st
 }

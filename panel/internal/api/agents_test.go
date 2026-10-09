@@ -111,3 +111,16 @@ func toStrings(v any) []string {
 	}
 	return out
 }
+
+func TestSysmonBaseline(t *testing.T) {
+	views := []agentView{
+		{ID: "a", GroupID: 1, SysmonRequired: true, SysmonConfig: "aaa"},
+		{ID: "b", GroupID: 1, SysmonRequired: true, SysmonConfig: "aaa"},
+		{ID: "c", GroupID: 1, SysmonRequired: true, SysmonConfig: "bbb"},
+		{ID: "d", GroupID: 2, SysmonRequired: false, SysmonConfig: "zzz"},
+	}
+	applySysmonBaseline(views)
+	if len(views[0].Problems)+len(views[1].Problems)+len(views[3].Problems) != 0 || len(views[2].Problems) != 1 {
+		t.Fatalf("tylko agent c ma inną konfigurację niż większość: %+v", views)
+	}
+}

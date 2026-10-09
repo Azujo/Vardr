@@ -48,6 +48,12 @@ type agentStatus struct {
 		Dropped  int64     `json:"dropped_events"`
 		Full     bool      `json:"full"`
 	} `json:"buffer"`
+	Sysmon *struct {
+		Installed  bool   `json:"installed"`
+		Running    bool   `json:"running"`
+		Version    string `json:"version"`
+		ConfigHash string `json:"config_hash"`
+	} `json:"sysmon"`
 	Clock struct {
 		OffsetMs      int64     `json:"offset_ms"`
 		UncertaintyMs int64     `json:"uncertainty_ms"`
@@ -89,6 +95,11 @@ type agentView struct {
 	ConfigExpected string `json:"config_expected"`
 	ConfigApplied  string `json:"config_applied,omitempty"`
 	ConfigState    string `json:"config_state"` // applied | pending | unknown
+	// Sysmon: running | stopped | missing | unknown (agent starszy niż 0.6.2).
+	Sysmon         string `json:"sysmon"`
+	SysmonVersion  string `json:"sysmon_version,omitempty"`
+	SysmonConfig   string `json:"sysmon_config,omitempty"`
+	SysmonRequired bool   `json:"sysmon_required"`
 	// Problems to czytelne opisy problemów (pusta lista = wszystko w porządku).
 	Problems []string `json:"problems"`
 }
@@ -100,6 +111,8 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		FirstSeen: a.FirstSeen, LastSeen: a.LastSeen, StartedAt: a.StartedAt, CertNotAfter: a.CertNotAfter,
 		State: "online", Problems: []string{},
 	}
+	v.SysmonRequired = g.Limits.RequireSysmon != nil && *g.Limits.RequireSysmon
+
 	v.ConfigApplied, v.ConfigState = agentConfigState(a.Status, v.ConfigExpected)
 	if now.Sub(a.LastSeen) > offlineAfter {
 		v.State = "offline"
@@ -153,6 +166,28 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		}
 		if b.Dropped > 0 {
 			v.Problems = append(v.Problems, fmt.Sprintf("utracono %d zdarzeń z pełnego bufora dyskowego", b.Dropped))
+		}
+	}
+	v.Sysmon = "unknown"
+	if m := st.Sysmon; m != nil {
+		v.SysmonVersion, v.SysmonConfig = m.Version, m.ConfigHash
+		switch {
+		case !m.Installed:
+			v.Sysmon = "missing"
+		case m.Running:
+			v.Sysmon = "running"
+		default:
+			v.Sysmon = "stopped"
+		}
+	}
+	if v.SysmonRequired {
+		switch v.Sysmon {
+		case "missing":
+			v.Problems = append(v.Problems, "Sysmon wymagany w grupie – nie jest zainstalowany")
+		case "stopped":
+			v.Problems = append(v.Problems, "Sysmon zainstalowany, ale zatrzymany")
+		case "unknown":
+			v.Problems = append(v.Problems, "Sysmon wymagany w grupie – agent nie raportuje jego stanu (zaktualizuj do 0.6.2+)")
 		}
 	}
 	c := st.Clock
@@ -219,10 +254,12 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.now()
 	views := make([]agentView, 0, len(agents))
-	var sum agentsSummary
 	for _, a := range agents {
-		v := viewAgent(a, groupOf(a.ID), now)
-		views = append(views, v)
+		views = append(views, viewAgent(a, groupOf(a.ID), now))
+	}
+	applySysmonBaseline(views)
+	var sum agentsSummary
+	for _, v := range views {
 		sum.Total++
 		if v.State == "online" {
 			sum.Online++
@@ -264,7 +301,24 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"agent": viewAgent(a, g, s.now()), "status": a.Status})
+	v := viewAgent(a, g, s.now())
+	if v.SysmonRequired && v.SysmonConfig != "" {
+		// Wzorzec konfiguracji Sysmona: większość agentów tej samej grupy.
+		if all, err := s.Store.ListAgents(r.Context()); err == nil {
+			if groupOf, err := s.groupResolver(r); err == nil {
+				views := []agentView{}
+				for _, x := range all {
+					if gx := groupOf(x.ID); gx.ID == g.ID && x.ID != a.ID {
+						views = append(views, viewAgent(x, gx, s.now()))
+					}
+				}
+				views = append(views, v)
+				applySysmonBaseline(views)
+				v = views[len(views)-1]
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"agent": v, "status": a.Status})
 }
 
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
@@ -312,4 +366,34 @@ func (s *Server) groupResolver(r *http.Request) (func(agentID string) store.Agen
 		}
 		return def
 	}, nil
+}
+
+// applySysmonBaseline: w grupach wymagających Sysmona konfiguracja każdego
+// komputera powinna być taka jak u większości grupy (ta sama wersja reguł).
+func applySysmonBaseline(views []agentView) {
+	counts := map[int64]map[string]int{}
+	for _, v := range views {
+		if v.SysmonRequired && v.SysmonConfig != "" {
+			if counts[v.GroupID] == nil {
+				counts[v.GroupID] = map[string]int{}
+			}
+			counts[v.GroupID][v.SysmonConfig]++
+		}
+	}
+	for i := range views {
+		v := &views[i]
+		c := counts[v.GroupID]
+		if !v.SysmonRequired || v.SysmonConfig == "" || len(c) < 2 {
+			continue
+		}
+		best, n := "", 0
+		for h, k := range c {
+			if k > n || (k == n && h < best) {
+				best, n = h, k
+			}
+		}
+		if v.SysmonConfig != best {
+			v.Problems = append(v.Problems, fmt.Sprintf("konfiguracja Sysmona (%s) inna niż u większości grupy (%s)", v.SysmonConfig, best))
+		}
+	}
 }
