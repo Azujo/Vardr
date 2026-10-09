@@ -224,7 +224,7 @@ var defs = []def{
 	{group: "Potok", name: "Kwarantanna (ostatnia godzina)", query: `sum(increase(siem_normalizer_quarantined_total[1h])) + sum(increase(siem_writer_quarantined_total[1h]))`,
 		hint: "Zdarzenia, których nie udało się znormalizować albo zapisać – są w siem.quarantine.",
 		eval: thresholdHigh(0, 1000, func(v float64) string { return fmt.Sprintf("%.0f zdarzeń", v) })},
-	{group: "Detekcja", name: "Reguły w locie", query: `max(siem_detector_rules)`,
+	{group: "Detekcja", name: "Włączone reguły", query: `max(siem_detector_rules) > 0 or max(siem_detector_index_rules)`,
 		eval: func(s []sample) (string, string) {
 			v, ok := one(s)
 			if !ok {

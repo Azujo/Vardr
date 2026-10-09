@@ -253,6 +253,21 @@ func TestPostgresAlerts(t *testing.T) {
 	if ok, err := db.ClearOverride(ctx, "r-ps"); !ok || err != nil {
 		t.Fatalf("usunięcie ustawienia: %v %v", ok, err)
 	}
+	// Retencja: zamknięte alerty (z oś czasu i zdarzeniami) znikają, otwarte zostają.
+	_, openBefore, _ := db.Alerts(ctx, Filter{Status: "open"})
+	pr, err := db.Prune(ctx, now.Add(24*time.Hour), now.Add(24*time.Hour), 2)
+	if err != nil || pr.Alerts == 0 || pr.Outbox == 0 {
+		t.Fatalf("retencja: %+v %v", pr, err)
+	}
+	if _, n, _ := db.Alerts(ctx, Filter{Status: "closed"}); n != 0 {
+		t.Fatalf("po retencji zostały zamknięte alerty: %d", n)
+	}
+	if _, n, _ := db.Alerts(ctx, Filter{Status: "open"}); n != openBefore {
+		t.Fatalf("retencja usunęła otwarte alerty: %d → %d", openBefore, n)
+	}
+	if act, _ := db.Activity(ctx, ps.ID); len(act) != 0 {
+		t.Fatalf("oś czasu usuniętego alertu: %d", len(act))
+	}
 }
 
 func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {

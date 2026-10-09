@@ -24,6 +24,10 @@ type RuleAdmin interface {
 	ClearOverride(ctx context.Context, rule string) (bool, error)
 }
 
+// ruleTestSlots: najwyżej dwa testy reguł naraz (każdy to pełne zapytanie do
+// ClickHouse, nawet za 7 dni – bez limitu panel mógłby zagłodzić bazę).
+var ruleTestSlots = make(chan struct{}, 2)
+
 // testRule sprawdza i wykonuje regułę (YAML) na zdarzeniach z ostatnich
 // godzin – bez wdrażania. Pokazuje dopasowania i alerty, które by powstały.
 func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +50,13 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.RuleTester == nil {
 		writeError(w, http.StatusServiceUnavailable, "events_disabled", "wyszukiwarka zdarzeń wyłączona – test reguły niedostępny")
+		return
+	}
+	select {
+	case ruleTestSlots <- struct{}{}:
+		defer func() { <-ruleTestSlots }()
+	default:
+		writeError(w, http.StatusTooManyRequests, "busy", "trwają inne testy reguł – spróbuj za chwilę")
 		return
 	}
 	// Ten sam limit co wyszukiwarka – sterownik zamienia go na max_execution_time,

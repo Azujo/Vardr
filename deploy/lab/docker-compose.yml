@@ -203,6 +203,7 @@ services:
       SIEM_DETECTOR_DB_URL: postgres://siem_detector:${SAGA_DETECTOR_PASSWORD}@saga:5432/saga?sslmode=disable
       SIEM_RULES_DIR: /rules/current
       SIEM_DETECTION_MODE: ${SIEM_DETECTION_MODE:-both}
+      SIEM_ALERT_RETENTION_DAYS: ${SIEM_ALERT_RETENTION_DAYS:-365}
       SIEM_DETECTOR_CH_ADDR: clickhouse:9000
       SIEM_DETECTOR_CH_USER: siem_detector
       SIEM_DETECTOR_CH_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}

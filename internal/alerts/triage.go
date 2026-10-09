@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Activity to wpis osi czasu alertu.
@@ -49,7 +50,7 @@ func (p *PG) SetStatusMany(ctx context.Context, ids []int64, status, by, reason 
 		closedAt, closedBy, closeReason = &now, &by, &reason
 	}
 	var out []Alert
-	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+	err := p.retryTx(ctx, func(tx pgx.Tx) error {
 		out = nil
 		for _, id := range ids {
 			var prev string
@@ -81,7 +82,7 @@ func (p *PG) SetStatusMany(ctx context.Context, ids []int64, status, by, reason 
 // Assign przypisuje alert analitykowi (pusty = bez przypisania).
 func (p *PG) Assign(ctx context.Context, id int64, assignee, by string, now time.Time) (Alert, error) {
 	var a Alert
-	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+	err := p.retryTx(ctx, func(tx pgx.Tx) error {
 		var prev string
 		err := tx.QueryRow(ctx, `SELECT assignee FROM gjallarhorn.alerts WHERE id = $1 FOR UPDATE`, id).Scan(&prev)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -98,6 +99,21 @@ func (p *PG) Assign(ctx context.Context, id int64, assignee, by string, now time
 		return addActivity(ctx, tx, id, now, by, "assign", "", map[string]any{"from": prev, "to": assignee})
 	})
 	return a, notConfigured(err)
+}
+
+// retryTx wykonuje transakcję, ponawiając ją (do 3 razy) po zakleszczeniu
+// z równoległym zapisem detektora (dopisanie trafień do tego samego alertu).
+func (p *PG) retryTx(ctx context.Context, fn func(pgx.Tx) error) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = pgx.BeginFunc(ctx, p.pool, fn)
+		var pg *pgconn.PgError
+		if !errors.As(err, &pg) || (pg.Code != "40P01" && pg.Code != "40001") {
+			return err
+		}
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	return err
 }
 
 // AddNote dopisuje notatkę analityka do osi czasu alertu.

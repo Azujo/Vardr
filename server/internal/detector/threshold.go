@@ -294,6 +294,11 @@ func hitOf(base alerts.Hit, e *entry, summary, instr string) alerts.Hit {
 	h.EventID, h.EventTime, h.AgentID, h.HostName, h.UserName, h.SourceIP =
 		e.EventID, e.EventTime, e.AgentID, e.HostName, e.UserName, e.SourceIP
 	h.Summary, h.Instructions = summary, instr
+	if e.Value != "" {
+		// Próg „różnych wartości” (np. password spraying): alert dotyczy wielu
+		// kont – konto pierwszego zdarzenia byłoby mylące (lista jest w opisie).
+		h.UserName = ""
+	}
 	return h
 }
 

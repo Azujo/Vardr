@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert as MAlert,
   Badge,
@@ -63,6 +63,9 @@ export default function AlertsPage() {
   const [search, setSearch] = useState(get("q"));
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const navigate = useNavigate();
+  // Po doładowaniu starszych alertów automatyczne odświeżanie wstrzymane –
+  // inaczej lista wracałaby do pierwszych 100 i gubiła zaznaczenia.
+  const paged = useRef(false);
 
   useEffect(() => {
     alertsApi
@@ -77,6 +80,7 @@ export default function AlertsPage() {
         .list({ ...(JSON.parse(key) as AlertListFilter), before })
         .then((r) => {
           setConfigured(r.configured);
+          paged.current = !!before;
           setItems((cur) => (before ? [...cur, ...r.alerts] : r.alerts));
           setTotal(r.total);
           setMore(r.alerts.length === 100);
@@ -89,7 +93,9 @@ export default function AlertsPage() {
   useEffect(() => {
     load();
     setSelected(new Set());
-    const t = setInterval(() => load(), 15000);
+    const t = setInterval(() => {
+      if (!paged.current) load();
+    }, 15000);
     return () => clearInterval(t);
   }, [load]);
 

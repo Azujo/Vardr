@@ -154,6 +154,22 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **5e (09.10) – kryterium etapu spełnione:** atak w laboratorium AD (password spraying i brute force ze stacji, PowerShell z zakodowanym poleceniem, nowe konto dodane do Backup Operators na DC i usunięte) → 6 alertów w kilka sekund (#16–#21) → powiadomienia na Discordzie zgodnie z filtrem kanału (od „średniego” – nowe konto jako „niskie” tylko w panelu) → analiza w panelu (powiązane alerty, Mímir, przypisanie, „w analizie”) → zamknięcie z powodem; całość na osi czasu alertów i w audycie. Poprawka po ćwiczeniu: instrukcje i opisy reguł składane w ciągłe akapity (bloki YAML łamały zdania na Discordzie).
 - **Przesunięte:** tokeny deinstalacji agenta – do etapu 8 (ochrona agenta).
 
+## Przegląd etapu 5 (09.10.2026) – błędy i luki
+
+| # | Pr. | Problem | Skutek | Stan |
+|---|---|---|---|---|
+| 1 | Ś | Brak retencji alertów: `alert_events` ma wiersz na każde trafienie, outbox i oś czasu rosną bez końca | przy zalewie zdarzeń (np. 100 nieudanych logowań/s) setki tysięcy wierszy na jeden alert; baza Saga rośnie bez limitu | **naprawione:** detektor co 6 h usuwa alerty zamknięte dawniej niż `SIEM_ALERT_RETENTION_DAYS` (domyślnie 365, 0 = bez usuwania) razem z ich zdarzeniami i osią czasu, oraz wysłane powiadomienia starsze niż 30 dni; paczkami, otwarte alerty zostają zawsze |
+| 2 | Ś | Zamknięcie wielu alertów naraz mogło się zakleszczyć z detektorem dopisującym trafienia do tych samych alertów | PostgreSQL przerywa jedną transakcję – w panelu „błąd wewnętrzny” | **naprawione:** transakcje triage ponawiane do 3 razy po zakleszczeniu |
+| 3 | Ś | Test reguły bez limitu | analityk klikający „Przetestuj” (zapytanie nawet za 7 dni) mógł obciążyć ClickHouse | **naprawione:** najwyżej 2 testy naraz, nadmiar – „spróbuj za chwilę” |
+| 4 | N | Alert password spraying pokazywał konto z pierwszego zdarzenia („anna.kowalska”) | mylące – alert dotyczy wielu kont | **naprawione:** alerty progu „różnych wartości” bez konta (lista kont w opisie) |
+| 5 | N | Stan systemu: przy samym silniku zapytań „0 reguł w locie” jako ostrzeżenie | fałszywe ostrzeżenie | **naprawione:** „Włączone reguły” z obu silników |
+| 6 | N | Lista alertów: odświeżanie co 15 s wracało do pierwszych 100 | doładowane starsze alerty i zaznaczenia znikały | **naprawione:** po doładowaniu starszych odświeżanie wstrzymane |
+| 7 | N | Instrukcje reguł łamały się w środku zdania (bloki YAML) | nieczytelne wiadomości na Discordzie | **naprawione w 5e** |
+| 8 | N | Bardzo hałaśliwa reguła nadal daje 5 osobnych wiadomości co 10 min + wiadomość zbiorczą | przy wielogodzinnej burzy – kilkadziesiąt wiadomości na godzinę | do decyzji: wyciszenie reguły w panelu albo dłuższe okno (`SIEM_ALERT_NOTIFY_WINDOW`) |
+| 9 | N | Alert przypisany do konta, które potem usunięto | przypisanie wskazuje nieistniejącego analityka | do poprawy przy zarządzaniu kontami (np. zdjęcie przypisań przy usuwaniu konta) |
+
+**Sprawdzone i w porządku:** uprawnienia nowych akcji (przypisanie, notatki, akcje zbiorcze – analityk; wyłączenie reguły – administrator, powód i hasło; stan systemu i wersje – podgląd), ochrona CSRF i ścisłe dekodowanie żądań, kompilacja reguł z panelu do SQL (escapowanie literałów, limity konta `siem_panel`), kolejność i jednokrotność powiadomień (rezerwacja w outboxie, sortowanie), samokontrola detektora (zwolnienie blokady przy wyjściu procesu).
+
 ## Przegląd etapu 4 (09.10.2026) – błędy i luki
 
 Priorytety jak niżej: **W** – ważne, **Ś** – średnie, **N** – niskie.

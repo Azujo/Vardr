@@ -187,6 +187,7 @@ func serve(log *slog.Logger) error {
 	// (SELECT … FOR UPDATE) nie widzi alertu tworzonego równolegle.
 	var recordMu sync.Mutex
 	go runHeartbeat(ctx, log, store, &recordMu, m)
+	go runRetention(ctx, log, store, m)
 	if indexOn {
 		idx, err := openIndex(ctx, log, store)
 		if err != nil {
@@ -520,6 +521,40 @@ func watchdog(ctx context.Context, log *slog.Logger, what string, beat *atomic.I
 		if idle := time.Since(time.Unix(0, beat.Load())); idle > limit {
 			log.Error("brak postępu – kończę proces, Docker uruchomi detektor ponownie", "loop", what, "idle", idle.Round(time.Second))
 			os.Exit(3)
+		}
+	}
+}
+
+// runRetention: co 6 h usuwa alerty zamknięte dawniej niż
+// SIEM_ALERT_RETENTION_DAYS (domyślnie 365; 0 = bez usuwania) i wysłane
+// powiadomienia starsze niż 30 dni. Otwarte alerty zostają zawsze.
+func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metrics.Detector) {
+	days, err := svc.EnvInt("SIEM_ALERT_RETENTION_DAYS", 365)
+	if err != nil {
+		log.Error("SIEM_ALERT_RETENTION_DAYS – zostaje 365", "err", err)
+		days = 365
+	}
+	wait := 5 * time.Minute
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = 6 * time.Hour
+		now := time.Now().UTC()
+		closedBefore := time.Time{} // 0 dni = alerty zostają
+		if days > 0 {
+			closedBefore = now.AddDate(0, 0, -days)
+		}
+		res, err := store.Prune(ctx, closedBefore, now.AddDate(0, 0, -30), 5000)
+		if err != nil {
+			m.Errors.WithLabelValues("retention").Inc()
+			log.Warn("sprzątanie alertów nieudane", "err", err)
+			continue
+		}
+		if res.Alerts > 0 || res.Outbox > 0 {
+			log.Info("sprzątanie alertów", "closed_alerts", res.Alerts, "outbox", res.Outbox, "retention_days", days)
 		}
 	}
 }
