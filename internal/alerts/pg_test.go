@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,6 +94,24 @@ func TestPostgresAlerts(t *testing.T) {
 	if k, err := db.KnownEvents(ctx, "r-ps", []string{"p1", "p2", "brak"}); err != nil || len(k) != 2 || !k["p1"] {
 		t.Fatalf("zdarzenia w alertach: %v %v", k, err)
 	}
+	// Zamknięcie po rozwiązaniu (np. powrót agenta) z powiadomieniem w outboxie.
+	hb := Hit{RuleID: "hb", RuleTitle: "Utrata łączności", Level: "high", Engine: "system", GroupKey: "agt-1@1",
+		EventID: "heartbeat:agt-1:1", EventTime: t0, AgentID: "agt-1"}
+	if _, err := db.Record(ctx, []Hit{hb}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := db.CloseOpen(ctx, "hb", "agt-1@", "Agent wrócił", true, now); err != nil || n != 1 {
+		t.Fatalf("zamknięcie: %d %v", n, err)
+	}
+	var kinds []string
+	for _, p := range mustClaim(t, db, now.Add(time.Hour)) {
+		if p.Alert.RuleID == "hb" {
+			kinds = append(kinds, p.Kind)
+		}
+	}
+	if strings.Join(kinds, ",") != "new,resolved" {
+		t.Fatalf("outbox alertu i rozwiązania: %v", kinds)
+	}
 	// Punkt kontrolny silnika zapytań: tylko w przód.
 	if _, err := db.RecordIndex(ctx, nil, t0.Add(time.Hour)); err != nil {
 		t.Fatal(err)
@@ -131,3 +150,14 @@ func TestPostgresAlerts(t *testing.T) {
 		t.Fatalf("próg reguły: %+v %v", r.Threshold, err)
 	}
 }
+
+func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {
+	t.Helper()
+	p, err := db.ClaimOutbox(ctx0, now, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+var ctx0 = context.Background()

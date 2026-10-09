@@ -66,6 +66,9 @@ func (a *AlertSender) tick(ctx context.Context) error {
 	}
 	for _, p := range pending {
 		m := a.Message(p.Alert)
+		if p.Kind == "resolved" {
+			m = a.Resolved(p.Alert)
+		}
 		_, err := a.Svc.Send(ctx, m)
 		if err == nil {
 			// Brak kanałów subskrybujących alerty też kończy wpis (nie ma dokąd wysłać).
@@ -106,6 +109,35 @@ var levelSeverity = map[string]string{"critical": SevCritical, "high": SevCritic
 
 var levelLabel = map[string]string{"critical": "KRYTYCZNY", "high": "WYSOKI", "medium": "ŚREDNI", "low": "NISKI", "informational": "INFO"}
 
+// Resolved buduje wiadomość o rozwiązaniu alertu (np. agent znów
+// w kontakcie). Filtr kanału jak dla samego alertu (poziom, reguła).
+func (a *AlertSender) Resolved(al alerts.Alert) Message {
+	m := Message{
+		Event: EventAlert, Severity: SevOK, Level: al.Level, RuleID: al.RuleID,
+		Title: "[ROZWIĄZANY] " + al.RuleTitle, Text: al.CloseReason, At: a.Svc.now(), Untrusted: true,
+	}
+	if al.ClosedAt != nil {
+		m.At = *al.ClosedAt
+		m.Fields = append(m.Fields, Field{Name: "Przerwa", Trusted: true, Inline: true,
+			Value: humanDuration(al.ClosedAt.Sub(al.FirstSeen))})
+	}
+	if al.HostName != "" {
+		m.Fields = append(m.Fields, Field{Name: "Komputer", Value: al.HostName, Inline: true})
+	}
+	if a.PanelURL != "" {
+		m.Fields = append(m.Fields, Field{Name: "Panel", Trusted: true, Value: a.PanelURL + "/alerts/" + strconv.FormatInt(al.ID, 10)})
+	}
+	return m
+}
+
+func humanDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	if d < time.Hour {
+		return fmt.Sprintf("%d min", int(d.Minutes()))
+	}
+	return fmt.Sprintf("%d h %d min", int(d.Hours()), int(d.Minutes())%60)
+}
+
 // Message buduje wiadomość o alercie.
 func (a *AlertSender) Message(al alerts.Alert) Message {
 	m := Message{
@@ -114,6 +146,8 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		Title:    fmt.Sprintf("[%s] %s", levelLabel[al.Level], al.RuleTitle),
 		Text:     al.Summary,
 		At:       al.CreatedAt,
+		Level:    al.Level,
+		RuleID:   al.RuleID,
 		// Opis, konto, klucz i instrukcja zawierają wartości ze zdarzeń.
 		Untrusted: true,
 	}

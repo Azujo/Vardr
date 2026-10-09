@@ -216,3 +216,33 @@ func TestDiscordAlertPayloadIsSafe(t *testing.T) {
 		t.Fatalf("link do panelu %q (ma zostać bez zmian), konto %q", panel, user)
 	}
 }
+
+func TestAlertFilter(t *testing.T) {
+	alert := func(level, rule string) Message { return Message{Event: EventAlert, Level: level, RuleID: rule} }
+	cases := []struct {
+		f    store.AlertFilter
+		m    Message
+		want bool
+	}{
+		{store.AlertFilter{}, alert("low", "r1"), true},
+		{store.AlertFilter{MinLevel: "high"}, alert("medium", "r1"), false},
+		{store.AlertFilter{MinLevel: "high"}, alert("critical", "r1"), true},
+		{store.AlertFilter{RulesMode: "only", Rules: []string{"r2"}}, alert("high", "r1"), false},
+		{store.AlertFilter{RulesMode: "only", Rules: []string{"r2"}}, alert("high", "r2"), true},
+		{store.AlertFilter{RulesMode: "except", Rules: []string{"r2"}}, alert("high", "r2"), false},
+		// Filtr dotyczy tylko alertów detekcji.
+		{store.AlertFilter{MinLevel: "critical"}, Message{Event: EventHealth}, true},
+	}
+	for i, c := range cases {
+		if got := Accepts(c.f, c.m); got != c.want {
+			t.Errorf("przypadek %d: %v, oczekiwano %v", i, got, c.want)
+		}
+	}
+	closed := time.Date(2026, 10, 9, 12, 30, 0, 0, time.UTC)
+	m := (&AlertSender{Svc: &Service{}, PanelURL: "https://siem"}).Resolved(alerts.Alert{ID: 3, RuleID: "hb", Level: "high",
+		RuleTitle: "Utrata łączności z agentem", HostName: "dc01", FirstSeen: closed.Add(-75 * time.Minute), ClosedAt: &closed,
+		CloseReason: "Agent znów wysyła heartbeat"})
+	if m.Severity != SevOK || m.RuleID != "hb" || !strings.HasPrefix(m.Title, "[ROZWIĄZANY]") || m.Fields[0].Value != "1 h 15 min" {
+		t.Fatalf("wiadomość o rozwiązaniu: %+v", m)
+	}
+}

@@ -48,7 +48,8 @@ export function limitsSummary(l: AgentLimits): string {
   if (l.max_send_kbps !== undefined) parts.push(l.max_send_kbps ? `łącze ≤ ${l.max_send_kbps} KiB/s` : "łącze bez limitu");
   if (l.buffer_max_mb !== undefined) parts.push(l.buffer_max_mb ? `bufor ${l.buffer_max_mb} MB` : "bez bufora dyskowego");
   if (l.require_sysmon) parts.push("wymagany Sysmon");
-  if (l.heartbeat_alert_min) parts.push(`alarm po ${l.heartbeat_alert_min} min bez łączności`);
+  if (l.heartbeat_alert_min)
+    parts.push(`alarm po ${l.heartbeat_alert_min} min bez łączności${l.heartbeat_notify_return ? " (i o powrocie)" : ""}`);
   if (l.priority) parts.push(`priorytet ${priorityLabels[l.priority]}`);
   return parts.length ? parts.join(" · ") : "domyślne agenta";
 }
@@ -337,6 +338,13 @@ export default function GroupsPage() {
                 description="Panel zgłasza komputery bez Sysmona, z zatrzymanym Sysmonem albo z inną konfiguracją niż większość grupy. Agent go nie instaluje – wdrożenie: deploy/windows/sysmon.ps1 (GPO)."
                 checked={!!edit.form.limits.require_sysmon}
                 onChange={(e) => setLimit("require_sysmon", e.currentTarget.checked || undefined)}
+              />
+              <Checkbox
+                label="Powiadamiaj także o powrocie agenta"
+                description="Gdy agent z tej grupy znów wyśle heartbeat, alert utraty łączności zamyka się sam, a na kanały powiadomień idzie wiadomość „rozwiązany” z długością przerwy. Wymaga ustawionego alarmu po utracie łączności."
+                disabled={!edit.form.limits.heartbeat_alert_min}
+                checked={!!edit.form.limits.heartbeat_notify_return}
+                onChange={(e) => setLimit("heartbeat_notify_return", e.currentTarget.checked || undefined)}
               />
               <Button type="submit" loading={busy}>
                 Zapisz

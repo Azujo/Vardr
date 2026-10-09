@@ -7,6 +7,8 @@ import {
   Checkbox,
   Group,
   Modal,
+  MultiSelect,
+  Select,
   PasswordInput,
   SegmentedControl,
   Stack,
@@ -21,9 +23,13 @@ import { notifications } from "@mantine/notifications";
 import { IconAnchor, IconBell, IconPlus, IconSend, IconTrash } from "@tabler/icons-react";
 import {
   ApiError,
+  alertsApi,
   formatDate,
+  levelLabels,
   notifyApi,
   notifyEventLabels,
+  type AlertFilter,
+  type AlertLevel,
   type ChannelRequest,
   type NotifyChannel,
   type NotifyEvent,
@@ -34,6 +40,69 @@ const allEvents: NotifyEvent[] = ["alert", "health", "anchor"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
+}
+
+const levels: AlertLevel[] = ["informational", "low", "medium", "high", "critical"];
+
+// Filtr alertów detekcji na kanale: od poziomu i wybór reguł.
+function AlertFilterEditor({
+  value,
+  rules,
+  onSave,
+}: {
+  value: AlertFilter;
+  rules: { value: string; label: string }[];
+  onSave: (f: AlertFilter) => void;
+}) {
+  const [f, setF] = useState<AlertFilter>(value);
+  useEffect(() => setF(value), [value]);
+  const mode = f.rules_mode ?? "all";
+  const changed = JSON.stringify(f) !== JSON.stringify(value);
+  return (
+    <Group gap="xs" align="flex-end" wrap="wrap">
+      <Select
+        size="xs"
+        w={170}
+        label="Alerty od poziomu"
+        allowDeselect={false}
+        data={levels.map((l) => ({ value: l, label: levelLabels[l].label }))}
+        value={f.min_level ?? "informational"}
+        onChange={(v) => setF({ ...f, min_level: v === "informational" ? undefined : (v as AlertLevel) })}
+      />
+      <Select
+        size="xs"
+        w={200}
+        label="Reguły"
+        allowDeselect={false}
+        data={[
+          { value: "all", label: "wszystkie" },
+          { value: "only", label: "tylko wybrane" },
+          { value: "except", label: "wszystkie poza wybranymi" },
+        ]}
+        value={mode}
+        onChange={(v) =>
+          setF(v === "all" ? { min_level: f.min_level } : { ...f, rules_mode: v as "only" | "except", rules: f.rules ?? [] })
+        }
+      />
+      {mode !== "all" && (
+        <MultiSelect
+          size="xs"
+          miw={260}
+          maw={520}
+          label={mode === "only" ? "Wysyłaj tylko z reguł" : "Nie wysyłaj z reguł"}
+          searchable
+          data={rules}
+          value={f.rules ?? []}
+          onChange={(v) => setF({ ...f, rules: v })}
+        />
+      )}
+      {changed && (
+        <Button size="xs" disabled={mode !== "all" && !(f.rules ?? []).length} onClick={() => onSave(f)}>
+          Zapisz filtr
+        </Button>
+      )}
+    </Group>
+  );
 }
 
 // Kanały powiadomień: dokąd Heimdall wysyła wiadomości poza system.
@@ -54,6 +123,13 @@ export default function NotificationsPage() {
   const [pending, setPending] = useState<{ label: string; run: (pw: string) => Promise<void> } | null>(null);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ruleOptions, setRuleOptions] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    alertsApi
+      .rules()
+      .then((r) => setRuleOptions(r.rules.map((x) => ({ value: x.id, label: x.title }))))
+      .catch(() => setRuleOptions([]));
+  }, []);
 
   const load = useCallback(() => {
     notifyApi
@@ -91,7 +167,7 @@ export default function NotificationsPage() {
 
   // Zmiana kanału; gdy serwer zażąda hasła – okno z hasłem i ponowienie.
   const update = async (c: NotifyChannel, patch: Partial<ChannelRequest>, label: string) => {
-    const req: ChannelRequest = { name: c.name, events: c.events, enabled: c.enabled, ...patch };
+    const req: ChannelRequest = { name: c.name, events: c.events, alert_filter: c.alert_filter, enabled: c.enabled, ...patch };
     try {
       await notifyApi.update(c.id, req);
       load();
@@ -162,6 +238,12 @@ export default function NotificationsPage() {
           Alerty z Grafany nie są przekazywane – siem-api nie ma SIEM_ALERT_RELAY_TOKEN (README, sekcja Alerty).
         </Alert>
       )}
+      {channels.length > 0 && !channels.some((c) => c.enabled && c.events.includes("alert")) && (
+        <Alert color="orange" icon={<IconBell />}>
+          Żaden włączony kanał nie odbiera alertów detekcji (Gjallarhorn) – alerty są tylko w panelu. Zaznacz „
+          {notifyEventLabels.alert}” przy kanale, który ma je dostawać.
+        </Alert>
+      )}
       {channels.length === 0 && (
         <Alert color="gray" icon={<IconBell />}>
           Nie ma jeszcze kanałów – alerty i kotwica nigdzie nie wychodzą. Dodaj np. webhook kanału Discorda (Ustawienia
@@ -194,6 +276,13 @@ export default function NotificationsPage() {
                   />
                 ))}
               </Group>
+              {c.events.includes("alert") && (
+                <AlertFilterEditor
+                  value={c.alert_filter ?? {}}
+                  rules={ruleOptions}
+                  onSave={(f) => void update(c, { alert_filter: f }, "zawężenie alertów wysyłanych na kanał")}
+                />
+              )}
               <Text size="xs" c={c.last_error && (!c.last_ok_at || c.last_error_at! > c.last_ok_at) ? "red" : "dimmed"}>
                 {c.last_ok_at ? `ostatnia udana wysyłka ${formatDate(c.last_ok_at)}` : "jeszcze nic nie wysłano"}
                 {c.last_error && c.last_error_at && ` • ostatni błąd ${formatDate(c.last_error_at)}: ${c.last_error}`}

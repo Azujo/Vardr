@@ -102,12 +102,56 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 type channelRequest struct {
-	Name     string   `json:"name"`
-	Kind     string   `json:"kind"`
-	URL      string   `json:"url"`
-	Events   []string `json:"events"`
-	Enabled  *bool    `json:"enabled"`
-	Password string   `json:"password"`
+	Name        string            `json:"name"`
+	Kind        string            `json:"kind"`
+	URL         string            `json:"url"`
+	Events      []string          `json:"events"`
+	AlertFilter store.AlertFilter `json:"alert_filter"`
+	Enabled     *bool             `json:"enabled"`
+	Password    string            `json:"password"`
+}
+
+// cleanFilter sprawdza filtr alertów kanału.
+func cleanFilter(f store.AlertFilter) (store.AlertFilter, bool) {
+	if f.MinLevel != "" && !slices.Contains(notify.Levels, f.MinLevel) {
+		return f, false
+	}
+	if f.MinLevel == "informational" {
+		f.MinLevel = ""
+	}
+	switch f.RulesMode {
+	case "", "all":
+		f.RulesMode, f.Rules = "", nil
+	case "only", "except":
+		if len(f.Rules) == 0 || len(f.Rules) > 500 {
+			return f, false
+		}
+		var rules []string
+		for _, r := range f.Rules {
+			if r == "" || len(r) > 128 {
+				return f, false
+			}
+			if !slices.Contains(rules, r) {
+				rules = append(rules, r)
+			}
+		}
+		slices.Sort(rules)
+		f.Rules = rules
+	default:
+		return f, false
+	}
+	return f, true
+}
+
+// narrows: nowy filtr może przepuścić mniej alertów niż stary (osłabienie).
+func narrows(old, upd store.AlertFilter) bool {
+	if slices.Index(notify.Levels, upd.MinLevel) > slices.Index(notify.Levels, old.MinLevel) {
+		return true
+	}
+	if upd.RulesMode == old.RulesMode && slices.Equal(upd.Rules, old.Rules) {
+		return false
+	}
+	return upd.RulesMode != ""
 }
 
 func cleanEvents(in []string) ([]string, bool) {
@@ -135,7 +179,11 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name, req.URL = strings.TrimSpace(req.Name), strings.TrimSpace(req.URL)
 	events, ok := cleanEvents(req.Events)
+	filter, okF := cleanFilter(req.AlertFilter)
 	switch {
+	case !okF:
+		writeError(w, http.StatusBadRequest, "bad_filter", "filtr alertów: poziom z listy, reguły – od 1 do 500 identyfikatorów")
+		return
 	case req.Name == "" || len([]rune(req.Name)) > 100:
 		writeError(w, http.StatusBadRequest, "bad_name", "podaj nazwę kanału (do 100 znaków)")
 		return
@@ -151,7 +199,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.Notify.Store.CreateChannel(r.Context(), store.Channel{Name: req.Name, Kind: req.Kind, URL: req.URL,
-		Events: events, Enabled: req.Enabled == nil || *req.Enabled, CreatedBy: a.user.Username})
+		Events: events, AlertFilter: filter, Enabled: req.Enabled == nil || *req.Enabled, CreatedBy: a.user.Username})
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "name_taken", "kanał o tej nazwie już istnieje")
 		return
@@ -160,7 +208,8 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.audit(r, &a.user, "notify_channel_created", c.Name, map[string]any{"kind": c.Kind, "events": c.Events, "url": notify.Hint(c.URL)})
+	s.audit(r, &a.user, "notify_channel_created", c.Name, map[string]any{"kind": c.Kind, "events": c.Events,
+		"alert_filter": c.AlertFilter, "url": notify.Hint(c.URL)})
 	writeJSON(w, http.StatusCreated, map[string]any{"channel": channelView{Channel: c, URLHint: notify.Hint(c.URL)}})
 }
 
@@ -182,8 +231,9 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Name, req.URL = strings.TrimSpace(req.Name), strings.TrimSpace(req.URL)
 	events, okEv := cleanEvents(req.Events)
-	if req.Name == "" || len([]rune(req.Name)) > 100 || !okEv {
-		writeError(w, http.StatusBadRequest, "bad_request", "podaj nazwę (do 100 znaków) i poprawne rodzaje powiadomień")
+	filter, okF := cleanFilter(req.AlertFilter)
+	if req.Name == "" || len([]rune(req.Name)) > 100 || !okEv || !okF {
+		writeError(w, http.StatusBadRequest, "bad_request", "podaj nazwę (do 100 znaków), poprawne rodzaje powiadomień i filtr alertów")
 		return
 	}
 	if req.URL != "" {
@@ -197,11 +247,13 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		enabled = *req.Enabled
 	}
 	weakening := (c.Enabled && !enabled) || (req.URL != "" && req.URL != c.URL) ||
-		slices.ContainsFunc(c.Events, func(e string) bool { return !slices.Contains(events, e) })
+		slices.ContainsFunc(c.Events, func(e string) bool { return !slices.Contains(events, e) }) ||
+		narrows(c.AlertFilter, filter)
 	if weakening && !s.reauth(w, r, req.Password, "notify_channel_change") {
 		return
 	}
-	upd, err := s.Notify.Store.UpdateChannel(r.Context(), store.Channel{ID: c.ID, Name: req.Name, Events: events, Enabled: enabled, URL: req.URL})
+	upd, err := s.Notify.Store.UpdateChannel(r.Context(), store.Channel{ID: c.ID, Name: req.Name, Events: events,
+		AlertFilter: filter, Enabled: enabled, URL: req.URL})
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "name_taken", "kanał o tej nazwie już istnieje")
 		return
@@ -211,7 +263,8 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "notify_channel_changed", upd.Name, map[string]any{"events": upd.Events, "enabled": upd.Enabled,
-		"url_changed": req.URL != "" && req.URL != c.URL, "previous": map[string]any{"name": c.Name, "events": c.Events, "enabled": c.Enabled}})
+		"alert_filter": upd.AlertFilter, "url_changed": req.URL != "" && req.URL != c.URL,
+		"previous": map[string]any{"name": c.Name, "events": c.Events, "enabled": c.Enabled, "alert_filter": c.AlertFilter}})
 	writeJSON(w, http.StatusOK, map[string]any{"channel": channelView{Channel: upd, URLHint: notify.Hint(upd.URL)}})
 }
 

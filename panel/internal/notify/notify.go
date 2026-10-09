@@ -66,6 +66,9 @@ type Message struct {
 	// Kotwica archiwum (dla dziennika wysyłek).
 	AnchorSeq    *int64
 	AnchorSHA256 string
+	// Level i RuleID: alert detekcji – do filtru kanału (AlertFilter).
+	Level  string
+	RuleID string
 	// Untrusted: treść i pola (poza Trusted) pochodzą ze zdarzeń, czyli
 	// potencjalnie od atakującego – w Discordzie Markdown jest escapowany
 	// (np. ukryty link „[panel](https://zly.adres)” w poleceniu procesu).
@@ -110,7 +113,7 @@ func (s *Service) Send(ctx context.Context, m Message) (int, error) {
 	ok, tried := 0, 0
 	var errs []error
 	for _, c := range chans {
-		if !c.Enabled || !slices.Contains(c.Events, m.Event) {
+		if !c.Enabled || !slices.Contains(c.Events, m.Event) || !Accepts(c.AlertFilter, m) {
 			continue
 		}
 		tried++
@@ -124,6 +127,27 @@ func (s *Service) Send(ctx context.Context, m Message) (int, error) {
 		return 0, errors.Join(errs...)
 	}
 	return ok, nil
+}
+
+// Levels: poziomy alertów od najniższego.
+var Levels = []string{"informational", "low", "medium", "high", "critical"}
+
+// Accepts mówi, czy filtr kanału przepuszcza wiadomość (dotyczy tylko
+// alertów detekcji; inne rodzaje wiadomości przechodzą zawsze).
+func Accepts(f store.AlertFilter, m Message) bool {
+	if m.Event != EventAlert {
+		return true
+	}
+	if f.MinLevel != "" && slices.Index(Levels, m.Level) < slices.Index(Levels, f.MinLevel) {
+		return false
+	}
+	switch f.RulesMode {
+	case "only":
+		return slices.Contains(f.Rules, m.RuleID)
+	case "except":
+		return !slices.Contains(f.Rules, m.RuleID)
+	}
+	return true
 }
 
 // HasSubscribers mówi, czy jakiś włączony kanał subskrybuje zdarzenie.

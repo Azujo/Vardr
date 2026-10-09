@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -228,7 +229,11 @@ func serve(log *slog.Logger) error {
 
 	log.Info("detektor uruchomiony", "rules_dir", dir, "mode", mode)
 	lastReload := time.Now()
+	var beat atomic.Int64
+	beat.Store(time.Now().UnixNano())
+	go watchdog(ctx, log, "pętla detekcji w locie", &beat, 3*time.Minute)
 	for ctx.Err() == nil {
+		beat.Store(time.Now().UnixNano())
 		if time.Since(lastReload) > 30*time.Second {
 			reload()
 			lastReload = time.Now()
@@ -340,6 +345,9 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 	const step = 6 * time.Hour
 	log.Info("silnik zapytań uruchomiony", "interval", interval, "delay", delay, "overlap", overlap)
 	wait := 10 * time.Second
+	var beat atomic.Int64
+	beat.Store(time.Now().UnixNano())
+	go watchdog(ctx, log, "silnik zapytań", &beat, max(15*time.Minute, 3*interval))
 	var resume *detector.Cursor // dalszy ciąg przebiegu przerwanego limitem wierszy
 	var resumeTo time.Time
 	failing := map[string]bool{}
@@ -349,6 +357,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 			return
 		case <-time.After(wait):
 		}
+		beat.Store(time.Now().UnixNano())
 		wait = interval
 		rules := eng.IndexRules()
 		m.IndexRules.Set(float64(len(rules)))
@@ -475,11 +484,31 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *s
 				continue
 			}
 			reason := "Agent znów wysyła heartbeat (" + now.Format("2006-01-02 15:04") + " UTC) – zamknięte automatycznie."
-			if n, err := store.CloseOpen(ctx, detector.HeartbeatRuleID, detector.HeartbeatKey(b.ID), reason, now); err != nil {
+			if n, err := store.CloseOpen(ctx, detector.HeartbeatRuleID, detector.HeartbeatKey(b.ID), reason, b.NotifyReturn, now); err != nil {
 				log.Warn("zamknięcie alertu utraty łączności nieudane", "agent", b.ID, "err", err)
 			} else if n > 0 {
 				log.Info("agent wrócił – alert zamknięty", "agent", b.ID)
 			}
+		}
+	}
+}
+
+// watchdog kończy proces, gdy pętla nie robi postępu dłużej niż limit
+// (zawieszony zapis, zablokowane połączenie). Docker uruchamia detektor
+// ponownie (restart: unless-stopped), a stan progów wraca z Sagi – lepsze
+// niż detektor, który żyje, ale niczego nie wykrywa.
+func watchdog(ctx context.Context, log *slog.Logger, what string, beat *atomic.Int64, limit time.Duration) {
+	t := time.NewTicker(limit / 6)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if idle := time.Since(time.Unix(0, beat.Load())); idle > limit {
+			log.Error("brak postępu – kończę proces, Docker uruchomi detektor ponownie", "loop", what, "idle", idle.Round(time.Second))
+			os.Exit(3)
 		}
 	}
 }

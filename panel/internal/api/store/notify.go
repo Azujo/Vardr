@@ -10,18 +10,28 @@ import (
 
 // Channel to kanał powiadomień. URL jest sekretem – nie trafia do JSON.
 type Channel struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Kind        string     `json:"kind"`
-	URL         string     `json:"-"`
-	Events      []string   `json:"events"`
-	Enabled     bool       `json:"enabled"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CreatedBy   string     `json:"created_by"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	LastOKAt    *time.Time `json:"last_ok_at,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
-	LastErrorAt *time.Time `json:"last_error_at,omitempty"`
+	ID          int64       `json:"id"`
+	Name        string      `json:"name"`
+	Kind        string      `json:"kind"`
+	URL         string      `json:"-"`
+	Events      []string    `json:"events"`
+	AlertFilter AlertFilter `json:"alert_filter"`
+	Enabled     bool        `json:"enabled"`
+	CreatedAt   time.Time   `json:"created_at"`
+	CreatedBy   string      `json:"created_by"`
+	UpdatedAt   time.Time   `json:"updated_at"`
+	LastOKAt    *time.Time  `json:"last_ok_at,omitempty"`
+	LastError   string      `json:"last_error,omitempty"`
+	LastErrorAt *time.Time  `json:"last_error_at,omitempty"`
+}
+
+// AlertFilter wybiera alerty detekcji wysyłane na kanał.
+type AlertFilter struct {
+	// MinLevel: najniższy poziom (informational … critical); puste = wszystkie.
+	MinLevel string `json:"min_level,omitempty"`
+	// RulesMode: all (domyślnie) | only – tylko Rules | except – bez Rules.
+	RulesMode string   `json:"rules_mode,omitempty"`
+	Rules     []string `json:"rules,omitempty"`
 }
 
 // NotifyLogEntry to wpis dziennika wysyłek.
@@ -38,11 +48,12 @@ type NotifyLogEntry struct {
 	AnchorSHA256 string    `json:"anchor_sha256,omitempty"`
 }
 
-const channelCols = `id, name, kind, url, events, enabled, created_at, created_by, updated_at, last_ok_at, last_error, last_error_at`
+const channelCols = `id, name, kind, url, events, alert_filter, enabled, created_at, created_by, updated_at, last_ok_at,
+	last_error, last_error_at`
 
 func scanChannel(r pgx.Row) (Channel, error) {
 	var c Channel
-	err := r.Scan(&c.ID, &c.Name, &c.Kind, &c.URL, &c.Events, &c.Enabled, &c.CreatedAt, &c.CreatedBy, &c.UpdatedAt,
+	err := r.Scan(&c.ID, &c.Name, &c.Kind, &c.URL, &c.Events, &c.AlertFilter, &c.Enabled, &c.CreatedAt, &c.CreatedBy, &c.UpdatedAt,
 		&c.LastOKAt, &c.LastError, &c.LastErrorAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
@@ -69,8 +80,9 @@ func (s *PG) ChannelByID(ctx context.Context, id int64) (Channel, error) {
 
 // CreateChannel dodaje kanał.
 func (s *PG) CreateChannel(ctx context.Context, c Channel) (Channel, error) {
-	out, err := scanChannel(s.pool.QueryRow(ctx, `INSERT INTO notify_channels (name, kind, url, events, enabled, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+channelCols, c.Name, c.Kind, c.URL, c.Events, c.Enabled, c.CreatedBy))
+	out, err := scanChannel(s.pool.QueryRow(ctx, `INSERT INTO notify_channels (name, kind, url, events, alert_filter, enabled,
+		created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+channelCols, c.Name, c.Kind, c.URL, c.Events, c.AlertFilter,
+		c.Enabled, c.CreatedBy))
 	if isUniqueViolation(err) {
 		return out, ErrConflict
 	}
@@ -80,8 +92,8 @@ func (s *PG) CreateChannel(ctx context.Context, c Channel) (Channel, error) {
 // UpdateChannel zmienia nazwę, zdarzenia, włączenie i (gdy url != "") adres.
 func (s *PG) UpdateChannel(ctx context.Context, c Channel) (Channel, error) {
 	out, err := scanChannel(s.pool.QueryRow(ctx, `UPDATE notify_channels SET name = $2, events = $3, enabled = $4,
-		url = CASE WHEN $5 = '' THEN url ELSE $5 END, updated_at = now() WHERE id = $1 RETURNING `+channelCols,
-		c.ID, c.Name, c.Events, c.Enabled, c.URL))
+		url = CASE WHEN $5 = '' THEN url ELSE $5 END, alert_filter = $6, updated_at = now() WHERE id = $1 RETURNING `+channelCols,
+		c.ID, c.Name, c.Events, c.Enabled, c.URL, c.AlertFilter))
 	if isUniqueViolation(err) {
 		return out, ErrConflict
 	}

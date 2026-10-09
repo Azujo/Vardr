@@ -42,6 +42,9 @@ type AgentLimits struct {
 	// nie wysłał heartbeatu przez tyle minut (nil/0 = bez alertu – np. stacje
 	// wyłączane na noc). Agent go nie używa.
 	HeartbeatAlertMin *int `json:"heartbeat_alert_min,omitempty"`
+	// HeartbeatNotifyReturn: także powiadomienie, gdy agent wróci (alert
+	// utraty łączności zamyka się wtedy sam). Agent go nie używa.
+	HeartbeatNotifyReturn *bool `json:"heartbeat_notify_return,omitempty"`
 }
 
 // ValidProfiles to profile zdarzeń znane agentowi.

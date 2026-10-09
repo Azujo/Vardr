@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -197,6 +198,7 @@ type Pending struct {
 	OutboxID int64
 	Attempts int
 	Alert    Alert
+	Kind     string // new | resolved
 }
 
 // ClaimOutbox bierze do wysyłki powiadomienia, których termin minął.
@@ -205,7 +207,7 @@ func (p *PG) ClaimOutbox(ctx context.Context, now time.Time, limit int) ([]Pendi
 	rows, err := p.pool.Query(ctx, `UPDATE gjallarhorn.outbox o SET next_attempt_at = $1 + interval '2 minutes'
 		WHERE o.id IN (SELECT id FROM gjallarhorn.outbox WHERE sent_at IS NULL AND next_attempt_at <= $1
 			ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED)
-		RETURNING o.id, o.attempts, o.alert_id`, now, limit)
+		RETURNING o.id, o.attempts, o.alert_id, o.kind`, now, limit)
 	if err != nil {
 		return nil, notConfigured(err)
 	}
@@ -213,22 +215,26 @@ func (p *PG) ClaimOutbox(ctx context.Context, now time.Time, limit int) ([]Pendi
 		id       int64
 		attempts int
 		alert    int64
+		kind     string
 	}
 	claimed, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (row, error) {
 		var x row
-		err := r.Scan(&x.id, &x.attempts, &x.alert)
+		err := r.Scan(&x.id, &x.attempts, &x.alert, &x.kind)
 		return x, err
 	})
 	if err != nil {
 		return nil, err
 	}
+	// UPDATE … RETURNING nie gwarantuje kolejności – wysyłka w kolejności
+	// outboxa (np. alert przed wiadomością o jego rozwiązaniu).
+	sort.Slice(claimed, func(i, j int) bool { return claimed[i].id < claimed[j].id })
 	out := make([]Pending, 0, len(claimed))
 	for _, c := range claimed {
 		a, err := p.Alert(ctx, c.alert)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Pending{OutboxID: c.id, Attempts: c.attempts, Alert: a})
+		out = append(out, Pending{OutboxID: c.id, Attempts: c.attempts, Alert: a, Kind: c.kind})
 	}
 	return out, nil
 }

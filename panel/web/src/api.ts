@@ -322,6 +322,7 @@ export interface AgentLimits {
   buffer_on_full?: "pause" | "drop_oldest";
   require_sysmon?: boolean;
   heartbeat_alert_min?: number;
+  heartbeat_notify_return?: boolean;
 }
 
 export interface AgentGroup {
@@ -654,12 +655,19 @@ export const replayStatusLabels: Record<ReplayStatus, { label: string; color: st
 
 export type NotifyEvent = "alert" | "health" | "anchor";
 
+export interface AlertFilter {
+  min_level?: AlertLevel;
+  rules_mode?: "only" | "except";
+  rules?: string[];
+}
+
 export interface NotifyChannel {
   id: number;
   name: string;
   kind: "discord" | "webhook";
   url_hint: string;
   events: NotifyEvent[];
+  alert_filter: AlertFilter;
   enabled: boolean;
   created_at: string;
   created_by: string;
@@ -687,6 +695,7 @@ export interface ChannelRequest {
   kind?: "discord" | "webhook";
   url?: string;
   events: NotifyEvent[];
+  alert_filter?: AlertFilter;
   enabled?: boolean;
   password?: string;
 }
