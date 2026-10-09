@@ -880,3 +880,23 @@ export const alertStatusLabels: Record<AlertStatus, { label: string; color: stri
   acknowledged: { label: "w analizie", color: "yellow" },
   closed: { label: "zamknięty", color: "gray" },
 };
+
+// ---- Himinbjörg: stan systemu ----
+
+export interface SystemCheck {
+  group: string;
+  name: string;
+  status: "ok" | "warn" | "crit" | "unknown" | "off";
+  value: string;
+  hint?: string;
+}
+
+export interface SystemReport {
+  overall: SystemCheck["status"];
+  checks: SystemCheck[];
+  generated_at: string;
+}
+
+export const systemApi = {
+  get: () => request<{ configured: boolean; report?: SystemReport }>("GET", "/api/v1/system"),
+};

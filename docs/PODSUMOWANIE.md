@@ -150,7 +150,8 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **5a (09.10):** praca z alertami – filtry i licznik, przypisanie analityka, oś czasu (`gjallarhorn.alert_activity`) z notatkami, akcje zbiorcze, powiązane alerty, przejście do zdarzeń z okolicy alertu w Mímirze; automatyczne zamknięcia (powrót agenta) też na osi czasu.
 - **5b (09.10):** burza alertów – limit osobnych powiadomień na regułę (5 w 10 min), nadwyżka wstrzymywana w outboxie i wysyłana jedną wiadomością zbiorczą; krytyczne i „rozwiązane” zawsze osobno.
 - **5c (09.10):** reguły w panelu – historia wersji (`gjallarhorn.rule_versions`, różnice między wersjami), włączanie/wyłączanie z panelu (`rule_overrides`; wyłączenie z powodem i hasłem, detektor stosuje w 30 s), test reguły na zdarzeniach z ClickHouse z alertami, które by powstały (na danych laboratorium: spraying 1 alert / 35 zdarzeń, brute force 2 alerty – zgodnie z alertami #8–#10). Pakiety `detect` i `model` przeniesione do wspólnego `internal/`, semantyka progów w `detect` (jeden kod dla obu silników i testu).
-- **Dalej:** 5d (stan systemu), 5e (scenariusz od ataku do zamknięcia).
+- **5d (09.10):** Himinbjörg – strona „Stan systemu” (23 kontrole z Prometheusa z progami jak w Grafanie i podpowiedziami) oraz karty alertów i stanu systemu na stronie startowej.
+- **Dalej:** 5e (scenariusz od ataku do zamknięcia).
 
 ## Przegląd etapu 4 (09.10.2026) – błędy i luki
 

@@ -39,6 +39,7 @@ import (
 	"siem/panel/internal/events"
 	"siem/panel/internal/fleetsync"
 	"siem/panel/internal/notify"
+	"siem/panel/internal/status"
 	"siem/panel/web"
 )
 
@@ -186,6 +187,9 @@ func serve(log *slog.Logger) error {
 		return err
 	}
 	defer alertStore.Close()
+	if u := svc.Env("SIEM_PROMETHEUS_URL", ""); u != "" {
+		apiServer.Status = &status.Prometheus{URL: u}
+	}
 	apiServer.Alerts = alertStore
 	apiServer.RuleAdmin = alertStore
 	panelLink := ""

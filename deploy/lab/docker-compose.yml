@@ -260,6 +260,8 @@ services:
       SIEM_ALERT_NOTIFY_PER_RULE: ${SIEM_ALERT_NOTIFY_PER_RULE:-5}
       SIEM_ALERT_NOTIFY_WINDOW: ${SIEM_ALERT_NOTIFY_WINDOW:-10m}
       SIEM_ANCHOR_HOUR: ${SIEM_ANCHOR_HOUR:-7}
+      # Himinbjörg (stan systemu w panelu): metryki z Prometheusa.
+      SIEM_PROMETHEUS_URL: http://prometheus:9090
     volumes:
       - ./certs:/certs:ro
       - ./agent-dist:/agent-dist:ro   # siem_agent.exe do paczek instalacyjnych

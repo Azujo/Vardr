@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
 import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
-import { IconArchive, IconBolt, IconDatabaseSearch, IconDeviceDesktop, IconServer } from "@tabler/icons-react";
+import { IconActivityHeartbeat, IconAlertTriangle, IconArchive, IconBolt, IconDatabaseSearch, IconDeviceDesktop } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { agentsApi, api, archiveApi, complianceLabels, type AgentsSummary, type ArchiveOverview } from "../api";
+import {
+  agentsApi,
+  alertsApi,
+  api,
+  archiveApi,
+  complianceLabels,
+  levelLabels,
+  systemApi,
+  type AgentsSummary,
+  type AlertLevel,
+  type AlertsSummary,
+  type ArchiveOverview,
+  type SystemReport,
+} from "../api";
+import { statusLabels } from "./SystemPage";
 import { useAuth } from "../auth";
 
 export default function HomePage() {
@@ -10,6 +24,8 @@ export default function HomePage() {
   const [db, setDb] = useState<string>("…");
   const [fleet, setFleet] = useState<AgentsSummary | null>(null);
   const [archive, setArchive] = useState<ArchiveOverview | null>(null);
+  const [alertSum, setAlertSum] = useState<AlertsSummary | null>(null);
+  const [system, setSystem] = useState<SystemReport | null>(null);
 
   useEffect(() => {
     api
@@ -24,7 +40,16 @@ export default function HomePage() {
       .overview()
       .then(setArchive)
       .catch(() => setArchive(null));
+    alertsApi
+      .summary()
+      .then((r) => setAlertSum(r.summary ?? null))
+      .catch(() => setAlertSum(null));
+    systemApi
+      .get()
+      .then((r) => setSystem(r.report ?? null))
+      .catch(() => setSystem(null));
   }, []);
+  const problems = system?.checks.filter((c) => c.status === "warn" || c.status === "crit").length ?? 0;
 
   return (
     <Stack>
@@ -33,7 +58,33 @@ export default function HomePage() {
         <Text c="dimmed">Heimdall strzeże mostu – tu widać, co dzieje się w sieci.</Text>
       </div>
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }}>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
+        <Card withBorder component={Link} to="/alerts">
+          <Group mb="xs">
+            <ThemeIcon variant="light" size="lg" color={alertSum && alertSum.open > 0 ? "orange" : undefined}>
+              <IconAlertTriangle size={20} />
+            </ThemeIcon>
+            <Text fw={600}>Gjallarhorn – otwarte alerty</Text>
+          </Group>
+          {alertSum ? (
+            <Group gap="xs">
+              <Badge variant="light" color={alertSum.open > 0 ? "orange" : "green"}>
+                otwarte: {alertSum.open}
+              </Badge>
+              {(["critical", "high", "medium", "low", "informational"] as AlertLevel[])
+                .filter((l) => alertSum.open_by_level[l])
+                .map((l) => (
+                  <Badge key={l} color={levelLabels[l].color} variant="light">
+                    {levelLabels[l].label}: {alertSum.open_by_level[l]}
+                  </Badge>
+                ))}
+            </Group>
+          ) : (
+            <Text size="sm" c="dimmed">
+              brak danych
+            </Text>
+          )}
+        </Card>
         <Card withBorder component={Link} to="/agents">
           <Group mb="xs">
             <ThemeIcon variant="light" size="lg">
@@ -76,19 +127,25 @@ export default function HomePage() {
             </Text>
           )}
         </Card>
-        <Card withBorder>
+        <Card withBorder component={Link} to="/system">
           <Group mb="xs">
-            <ThemeIcon variant="light" size="lg">
-              <IconServer size={20} />
+            <ThemeIcon variant="light" size="lg" color={system ? statusLabels[system.overall].color : undefined}>
+              <IconActivityHeartbeat size={20} />
             </ThemeIcon>
-            <Text fw={600}>Stan panelu</Text>
+            <Text fw={600}>Himinbjörg – stan systemu</Text>
           </Group>
           <Group gap="xs">
-            <Text size="sm" c="dimmed">
-              Baza Saga:
-            </Text>
+            {system ? (
+              <Badge color={statusLabels[system.overall].color} variant="light">
+                {system.overall === "ok" ? "wszystko działa" : `wymaga uwagi: ${problems}`}
+              </Badge>
+            ) : (
+              <Badge color="gray" variant="light">
+                brak danych
+              </Badge>
+            )}
             <Badge color={db === "ok" ? "green" : "red"} variant="light">
-              {db}
+              baza Saga: {db}
             </Badge>
           </Group>
         </Card>
