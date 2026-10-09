@@ -71,7 +71,8 @@ func TestPostgresAlerts(t *testing.T) {
 		t.Fatalf("zdarzenia alertu: %+v", evs)
 	}
 	// Outbox: po jednym wpisie na nowy alert; rezerwacja nie wydaje ich drugi raz.
-	now := t0.Add(4 * time.Hour)
+	// „Teraz” z prawdziwego zegara: baza ustawia termin wysyłki w outboxie na now().
+	now := time.Now().UTC().Add(4 * time.Hour)
 	p, err := db.ClaimOutbox(ctx, now, 10)
 	if err != nil || len(p) != 3 {
 		t.Fatalf("outbox: %d %v", len(p), err)
