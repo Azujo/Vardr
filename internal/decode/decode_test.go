@@ -2,6 +2,7 @@ package decode
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -216,3 +217,34 @@ func builtin(t *testing.T, id string, i int) string {
 }
 
 func itoa(n uint32) string { return strconv.FormatUint(uint64(n), 10) }
+
+func TestMerge(t *testing.T) {
+	ds, _ := Builtin(warsaw)
+	fg := BuiltinSources()["fortigate"]
+	mine := strings.Replace(fg, "dataset: fortinet.fortigate", "dataset: fortinet.custom", 1)
+	set, errs := Merge(ds, map[string]Custom{
+		"fortigate": {Source: mine, Enabled: true},                                                // zastąpiony
+		"mikrotik":  {Enabled: false},                                                             // wyłączony
+		"zly":       {Source: "id: zly\n", Enabled: true},                                         // błąd – pominięty
+		"inny-id":   {Source: strings.Replace(mine, "id: fortigate", "id: x1", 1), Enabled: true}, // id ≠ klucz
+	}, warsaw)
+	if len(errs) != 2 {
+		t.Fatalf("błędy: %v", errs)
+	}
+	var ids []string
+	for _, d := range set.List() {
+		ids = append(ids, d.ID+"="+d.Dataset)
+	}
+	if strings.Join(ids, ",") != "fortigate=fortinet.custom" {
+		t.Fatalf("zestaw: %v", ids)
+	}
+	for _, d := range ds {
+		if err := d.CheckSamples(ingested); err != nil {
+			t.Errorf("%s: %v", d.ID, err)
+		}
+	}
+	peerOnly, err := Parse([]byte("id: p1\ntitle: t\ndataset: d.x\nmatch:\n  peer: [10.9.0.0/16]\nparser:\n  type: kv\nsamples:\n  - '<13>a=1'\n"), warsaw)
+	if err != nil || peerOnly.CheckSamples(ingested) != nil {
+		t.Fatalf("próbka dekodera z warunkiem peer: %v %v", err, peerOnly.CheckSamples(ingested))
+	}
+}

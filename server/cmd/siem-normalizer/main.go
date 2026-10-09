@@ -18,6 +18,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"siem/internal/decode"
+	"siem/internal/decodekv"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
 	"siem/server/internal/ingest"
@@ -65,6 +67,24 @@ func run(log *slog.Logger) error {
 	}); err != nil {
 		return err
 	}
+
+	// Dekodery syslog zmienione w panelu (NATS KV) – podmiana bez restartu;
+	// do czasu wczytania działają wbudowane.
+	go func() {
+		_ = svc.Retry(ctx, log, "dekodery z panelu", func() error {
+			kv, err := decodekv.Ensure(ctx, js)
+			if err != nil {
+				return err
+			}
+			return decodekv.Watch(ctx, kv, log, func(custom map[string]decode.Custom) {
+				n, errs := normalize.SetCustom(custom)
+				for _, err := range errs {
+					log.Error("dekoder z panelu pominięty", "err", err)
+				}
+				log.Info("dekodery syslog wczytane", "decoders", n, "changed_in_panel", len(custom))
+			})
+		})
+	}()
 
 	var batches, events, quarantined atomic.Int64
 	statsTick := time.NewTicker(time.Minute)

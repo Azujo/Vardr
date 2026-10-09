@@ -84,6 +84,8 @@ type Server struct {
 	RuleTester RuleTester
 	// Status (opcjonalne) – stan systemu z metryk Prometheusa.
 	Status StatusReporter
+	// Decoders (opcjonalne) – dekodery syslog i ich edytor.
+	Decoders *Decoders
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -179,6 +181,14 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/rules/test", s.authed(roleAnalyst, 0, s.testRule))
 	mux.Handle("GET /api/v1/rules/{id}/versions", s.authed(roleViewer, 0, s.ruleVersions))
 	mux.Handle("POST /api/v1/rules/{id}/enabled", s.authed(roleAdmin, 0, s.setRuleEnabled))
+
+	mux.Handle("GET /api/v1/decoders", s.authed(roleViewer, 0, s.listDecoders))
+	mux.Handle("GET /api/v1/decoders/samples", s.authed(roleAnalyst, 0, s.decoderSamples))
+	mux.Handle("POST /api/v1/decoders/test", s.authed(roleAnalyst, 0, s.testDecoder))
+	mux.Handle("GET /api/v1/decoders/{id}/versions", s.authed(roleViewer, 0, s.decoderVersions))
+	mux.Handle("PUT /api/v1/decoders/{id}", s.authed(roleAdmin, 0, s.saveDecoder))
+	mux.Handle("POST /api/v1/decoders/{id}/enabled", s.authed(roleAdmin, 0, s.setDecoderEnabled))
+	mux.Handle("POST /api/v1/decoders/{id}/revert", s.authed(roleAdmin, 0, s.revertDecoder))
 
 	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))
 	mux.Handle("POST /api/v1/notify/channels", s.authed(roleAdmin, 0, s.createChannel))

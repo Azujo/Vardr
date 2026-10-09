@@ -29,6 +29,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/alerts"
+	"siem/internal/decode"
+	"siem/internal/decodekv"
 	"siem/internal/fleet"
 	"siem/internal/svc"
 	"siem/internal/urd"
@@ -137,6 +139,14 @@ func serve(log *slog.Logger) error {
 	}
 	apiServer := &api.Server{Store: db, Log: log, UI: ui, Enroll: enrollment}
 
+	// Dekodery syslog (strefa nagłówków bez strefy jak w normalizatorze).
+	syslogLoc, err := time.LoadLocation(svc.Env("SIEM_SYSLOG_TZ", "Europe/Warsaw"))
+	if err != nil {
+		return fmt.Errorf("SIEM_SYSLOG_TZ: %w", err)
+	}
+	decoders := &api.Decoders{Store: db, Loc: syslogLoc}
+	apiServer.Decoders = decoders
+
 	// Mímir: wyszukiwarka zdarzeń (ClickHouse, konto tylko do odczytu).
 	if chUser := os.Getenv("SIEM_CLICKHOUSE_USER"); chUser != "" {
 		var searcher *events.Searcher
@@ -149,6 +159,7 @@ func serve(log *slog.Logger) error {
 		}
 		apiServer.Events = searcher
 		apiServer.RuleTester = searcher
+		decoders.Samples = searcher
 		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
 	} else {
 		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
@@ -279,6 +290,49 @@ func serve(log *slog.Logger) error {
 			}
 			return nil
 		}
+		// Dekodery z panelu: zmiana od razu do NATS KV (czytają ją normalizatory),
+		// a co 5 minut i przy starcie – wyrównanie magazynu do bazy.
+		decoders.Publish = func(ctx context.Context, id string, c *decode.Custom) error {
+			kv, err := decodekv.Ensure(ctx, js)
+			if err != nil {
+				return err
+			}
+			if c == nil {
+				if err := kv.Delete(ctx, id); err != nil && !errors.Is(err, jetstream.ErrKeyNotFound) {
+					return err
+				}
+				return nil
+			}
+			return decodekv.Put(ctx, kv, id, *c)
+		}
+		go func() {
+			sync := func() error {
+				all, err := decoders.All(ctx)
+				if err != nil {
+					return err
+				}
+				kv, err := decodekv.Ensure(ctx, js)
+				if err != nil {
+					return err
+				}
+				return decodekv.Sync(ctx, kv, all)
+			}
+			if svc.Retry(ctx, log, "synchronizacja dekoderów", sync) != nil {
+				return
+			}
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if err := sync(); err != nil {
+						log.Warn("synchronizacja dekoderów z NATS nieudana", "err", err)
+					}
+				}
+			}
+		}()
 		go func() {
 			_ = svc.Retry(ctx, log, "synchronizacja unieważnień", func() error {
 				serials, err := db.RevokedSerials(ctx, time.Now())

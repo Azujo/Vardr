@@ -23,7 +23,8 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"agent_assignments", "agent_certs", "enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
+	for _, tbl := range []string{"syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
 		}

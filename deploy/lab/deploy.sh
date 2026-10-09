@@ -55,6 +55,8 @@ for t in "${targets[@]}"; do
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
     remote "docker compose ps -q prometheus | grep -q . && docker compose kill -s HUP prometheus >/dev/null" &&
       echo "   Prometheus przeładował konfigurację" || true
+    remote "docker compose ps -q nats | grep -q . && docker compose kill -s HUP nats >/dev/null" &&
+      echo "   NATS przeładował konfigurację (zmiana limitów JetStream wymaga: docker compose restart nats)" || true
     ;;
   rules)
     echo "== reguły detekcji (rules/ -> rules/ na VM; detektor przeładuje je w ciągu 30 s)"

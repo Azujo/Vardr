@@ -900,3 +900,95 @@ export interface SystemReport {
 export const systemApi = {
   get: () => request<{ configured: boolean; report?: SystemReport }>("GET", "/api/v1/system"),
 };
+
+// ---- Dekodery syslog ----
+
+export interface DecoderInfo {
+  id: string;
+  title: string;
+  description?: string;
+  dataset: string;
+  priority: number;
+  version: number;
+  origin: "builtin" | "custom";
+  modified: boolean;
+  enabled: boolean;
+  order: number;
+  source: string;
+  builtin_source?: string;
+  samples: number;
+  revision?: number;
+  updated_at?: string;
+  updated_by?: string;
+  error?: string;
+}
+
+export interface DecoderVersion {
+  id: number;
+  decoder_id: string;
+  revision: number;
+  action: "saved" | "enabled" | "disabled" | "reverted";
+  source: string;
+  enabled: boolean;
+  note?: string;
+  changed_at: string;
+  changed_by: string;
+}
+
+export interface DecodeResult {
+  raw: string;
+  header: { format: string; host?: string; app?: string; pid?: string; severity?: string; facility?: number; time?: string; message: string };
+  candidate: boolean;
+  decoder: string;
+  dataset: string;
+  pattern: boolean;
+  event: Record<string, string>;
+  fields: Record<string, string>;
+  error?: string;
+}
+
+export interface DecoderTestResponse {
+  ok: boolean;
+  error?: string;
+  decoder?: { id: string; title: string; dataset: string; priority: number };
+  results?: DecodeResult[];
+  summary?: Record<"total" | "candidate" | "other" | "generic" | "errors" | "no_pattern", number>;
+}
+
+export interface SyslogSample {
+  timestamp: string;
+  peer: string;
+  host: string;
+  dataset: string;
+  decoder?: string;
+  raw: string;
+}
+
+export const decodersApi = {
+  list: () =>
+    request<{ decoders: DecoderInfo[]; delivery: boolean; samples: boolean; targets: string[] }>("GET", "/api/v1/decoders"),
+  test: (source: string, samples: string[], peer: string) =>
+    request<DecoderTestResponse>("POST", "/api/v1/decoders/test", { source, samples, peer }),
+  samples: (p: { decoder?: string; peer?: string; hours?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (p.decoder) q.set("decoder", p.decoder);
+    if (p.peer) q.set("peer", p.peer);
+    q.set("hours", String(p.hours ?? 24));
+    q.set("limit", String(p.limit ?? 50));
+    return request<{ samples: SyslogSample[] }>("GET", `/api/v1/decoders/samples?${q}`);
+  },
+  versions: (id: string) => request<{ versions: DecoderVersion[] }>("GET", `/api/v1/decoders/${encodeURIComponent(id)}/versions`),
+  save: (id: string, source: string, note: string) =>
+    request<{ ok: boolean; revision: number; message: string }>("PUT", `/api/v1/decoders/${encodeURIComponent(id)}`, { source, note }),
+  setEnabled: (id: string, enabled: boolean, reason: string, password?: string) =>
+    request<{ ok: boolean; message: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/enabled`, {
+      enabled,
+      reason,
+      password: password ?? "",
+    }),
+  revert: (id: string, reason: string, password?: string) =>
+    request<{ ok: boolean; message: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/revert`, {
+      reason,
+      password: password ?? "",
+    }),
+};

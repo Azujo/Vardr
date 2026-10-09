@@ -58,7 +58,8 @@ type Limits struct {
 	MaxAge time.Duration
 }
 
-// DefaultLimits pasuje do laboratorium (max_file_store 20 GB w nats.conf).
+// DefaultLimits pasuje do laboratorium (max_file_store 21 GB w nats.conf:
+// kolejki i ich kopie dla odtwarzania 20 GB + zapas na małe magazyny).
 var DefaultLimits = Limits{RawMaxBytes: 8 << 30, EventsMaxBytes: 8 << 30}
 
 // RawSubject / EventsSubject budują temat dla agenta.

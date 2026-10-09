@@ -153,3 +153,20 @@ func quality(t, ingested time.Time) (time.Time, string) {
 	}
 	return t, ""
 }
+
+// BuiltinSources zwraca definicje YAML dekoderów wbudowanych (id → treść)
+// – panel pokazuje je jako punkt wyjścia do własnej wersji.
+func BuiltinSources() map[string]string {
+	out := map[string]string{}
+	ents, _ := fs.ReadDir(builtinFS, "builtin")
+	for _, e := range ents {
+		data, err := fs.ReadFile(builtinFS, "builtin/"+e.Name())
+		if err != nil {
+			continue
+		}
+		if d, err := Parse(data, time.UTC); err == nil {
+			out[d.ID] = string(data)
+		}
+	}
+	return out
+}
