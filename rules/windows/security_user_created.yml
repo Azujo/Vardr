@@ -21,4 +21,5 @@ falsepositives:
 level: low
 heimdall:
   instructions: |
-    Sprawdź, kto założył konto (SubjectUserName) i czy było zgłoszenie.
+    Konto {{TargetUserName}} (domena {{TargetDomainName}}) założył
+    {{SubjectDomainName}}\{{SubjectUserName}}. Sprawdź, czy było zgłoszenie.

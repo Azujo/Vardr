@@ -36,6 +36,7 @@ falsepositives:
 level: high
 heimdall:
   instructions: |
-    Sprawdź, kto dodał konto (SubjectUserName) i czy zmiana była zgłoszona.
-    Jeśli nie – usuń konto z grupy, zresetuj jego hasło i przejrzyj logowania
-    tego konta oraz konta, które dokonało zmiany.
+    {{SubjectDomainName}}\{{SubjectUserName}} dodał {{MemberName}} do grupy
+    {{TargetUserName}}. Sprawdź, czy zmiana była zgłoszona. Jeśli nie – usuń
+    konto z grupy, zresetuj jego hasło i przejrzyj logowania tego konta oraz
+    konta, które dokonało zmiany.

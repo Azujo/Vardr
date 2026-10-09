@@ -226,3 +226,17 @@ func (r *Rule) GroupKey(e Event) []string {
 	}
 	return out
 }
+
+var placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.]+)\s*\}\}`)
+
+// Render podstawia w tekście (np. instrukcji reguły) zmienne {{Pole}}
+// wartościami ze zdarzenia; brak pola – „(brak)”.
+func Render(text string, e Event) string {
+	return placeholderRe.ReplaceAllStringFunc(text, func(m string) string {
+		name := placeholderRe.FindStringSubmatch(m)[1]
+		if v, ok := e.Get(name); ok && v != "" && v != "-" {
+			return v
+		}
+		return "(brak)"
+	})
+}

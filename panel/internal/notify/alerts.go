@@ -129,6 +129,7 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		add("Klucz alertu", strings.Join(parts, "\n"), false)
 	}
 	add("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
+	add("Co zrobić", strings.TrimSpace(al.Instructions), false)
 	if a.PanelURL != "" {
 		add("Panel", a.PanelURL+"/alerts/"+strconv.FormatInt(al.ID, 10), false)
 	}

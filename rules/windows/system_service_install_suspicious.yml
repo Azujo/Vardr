@@ -32,6 +32,6 @@ falsepositives:
 level: high
 heimdall:
   instructions: |
-    Sprawdź ścieżkę programu (ImagePath) i konto (AccountName). Jeśli usługa
-    nie jest znana – zatrzymaj ją, zabezpiecz plik do analizy i sprawdź, skąd
-    trafił na komputer.
+    Usługa {{ServiceName}} na {{Computer}} uruchamia {{ImagePath}} (konto
+    {{AccountName}}). Jeśli usługa nie jest znana – zatrzymaj ją, zabezpiecz
+    plik do analizy i sprawdź, skąd trafił na komputer.

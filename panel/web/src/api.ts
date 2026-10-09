@@ -735,6 +735,7 @@ export interface Alert {
   source_ip: string;
   first_event_id: string;
   summary: string;
+  instructions: string;
   closed_at?: string;
   closed_by?: string;
   close_reason?: string;

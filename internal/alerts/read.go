@@ -29,20 +29,21 @@ type Alert struct {
 	SourceIP     string            `json:"source_ip"`
 	FirstEventID string            `json:"first_event_id"`
 	Summary      string            `json:"summary"`
+	Instructions string            `json:"instructions"`
 	ClosedAt     *time.Time        `json:"closed_at,omitempty"`
 	ClosedBy     string            `json:"closed_by,omitempty"`
 	CloseReason  string            `json:"close_reason,omitempty"`
 }
 
 const alertCols = `id, rule_id, rule_title, level, engine, group_key, group_fields, status, hits, first_seen, last_seen,
-	created_at, updated_at, agent_id, host_name, user_name, source_ip, first_event_id, summary, closed_at,
+	created_at, updated_at, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, closed_at,
 	coalesce(closed_by, ''), coalesce(close_reason, '')`
 
 func scanAlert(r pgx.Row) (Alert, error) {
 	var a Alert
 	err := r.Scan(&a.ID, &a.RuleID, &a.RuleTitle, &a.Level, &a.Engine, &a.GroupKey, &a.GroupFields, &a.Status, &a.Hits,
 		&a.FirstSeen, &a.LastSeen, &a.CreatedAt, &a.UpdatedAt, &a.AgentID, &a.HostName, &a.UserName, &a.SourceIP,
-		&a.FirstEventID, &a.Summary, &a.ClosedAt, &a.ClosedBy, &a.CloseReason)
+		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason)
 	if a.GroupFields == nil {
 		a.GroupFields = map[string]string{}
 	}

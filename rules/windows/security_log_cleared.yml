@@ -21,5 +21,6 @@ falsepositives:
 level: high
 heimdall:
   instructions: |
-    Ustal konto (SubjectUserName) i czy czyszczenie było planowane. Przejrzyj
-    w Mímirze zdarzenia z tego komputera z okresu przed wyczyszczeniem.
+    Dziennik wyczyścił {{SubjectDomainName}}\{{SubjectUserName}} na komputerze
+    {{Computer}}. Ustal, czy czyszczenie było planowane, i przejrzyj w Mímirze
+    zdarzenia z tego komputera z okresu przed wyczyszczeniem.

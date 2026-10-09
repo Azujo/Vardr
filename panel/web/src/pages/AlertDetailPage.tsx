@@ -193,10 +193,10 @@ export default function AlertDetailPage() {
               {rule.description}
             </Text>
           )}
-          {rule.instructions && (
+          {(alert.instructions || rule.instructions) && (
             <MAlert color="blue" mt="sm" title="Co zrobić">
               <Text size="sm" style={{ whiteSpace: "pre-line" }}>
-                {rule.instructions}
+                {alert.instructions || rule.instructions}
               </Text>
             </MAlert>
           )}

@@ -469,7 +469,7 @@ Reguły w formacie **Sigma (YAML)** leżą w repozytorium w katalogu [rules/](ru
 - **Powiadomienia:** alert i wpis w outboxie powstają w jednej transakcji; panel wysyła je na kanały z zaznaczonym „alerty detekcji” (Powiadomienia), z ponawianiem.
 - **Panel:** *Gjallarhorn* (lista, szczegóły z instrukcją reguły i zdarzeniami, „Biorę do analizy”, zamknięcie z powodem – w audycie) i *Reguły detekcji* (treść, otwarte alerty, błędy wczytania).
 - **Obsługiwany podzbiór Sigmy:** `logsource` Windows (service: security, system, application, sysmon, powershell…; category: process_creation – Sysmon 1 i Security 4688, ps_script, network_connection, file_event, dns_query, registry_set), selekcje (mapy, listy, słowa kluczowe), modyfikatory `contains`, `startswith`, `endswith`, `all`, `re`, `cidr`, `exists`, maski `*`/`?`, warunki `and/or/not`, `1 of`/`all of`. Reszta (agregacje `| count()`, `timeframe`, inne modyfikatory) jest jawnie odrzucana – progi dojdą jako rozszerzenie Heimdalla (etap 4c).
-- **Rozszerzenia Heimdalla** (klucz `heimdall:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie), `enabled`.
+- **Rozszerzenia Heimdalla** (klucz `heimdall:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie i na Discordzie; zmienne `{{Pole}}`, np. `{{SubjectUserName}}`, `{{Computer}}`, są zastępowane wartościami ze zdarzenia przy tworzeniu alertu), `enabled`.
 
 ### Archiwum NIS2 – Urd (siem-archiver)
 

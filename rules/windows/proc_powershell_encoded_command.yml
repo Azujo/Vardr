@@ -29,6 +29,6 @@ heimdall:
   group_by: [Computer, CommandLine]
   suppress: 1h
   instructions: |
-    Zdekoduj parametr (Base64, UTF-16LE) i oceń skrypt. Sprawdź proces
-    nadrzędny (ParentImage) – uruchomienie z dokumentu Office albo przeglądarki
-    jest bardzo podejrzane.
+    Zdekoduj parametr (Base64, UTF-16LE) i oceń skrypt. Proces nadrzędny:
+    {{ParentImage}} – uruchomienie z dokumentu Office albo przeglądarki jest
+    bardzo podejrzane.

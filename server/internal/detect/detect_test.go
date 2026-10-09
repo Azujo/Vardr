@@ -136,3 +136,11 @@ func TestRepositoryRules(t *testing.T) {
 		t.Fatalf("klucz alertu: %v", k)
 	}
 }
+
+func TestRenderInstructions(t *testing.T) {
+	e := ev("Security", 4720, map[string]string{"TargetUserName": "jan", "SubjectUserName": "admin", "SubjectDomainName": "LAB"})
+	got := Render(`{{SubjectDomainName}}\{{ SubjectUserName }} założył {{TargetUserName}} na {{Computer}}; {{Brak}}`, e)
+	if got != `LAB\admin założył jan na dc01.lab.local; (brak)` {
+		t.Fatalf("Render: %q", got)
+	}
+}

@@ -242,6 +242,8 @@ type Hit struct {
 	UserName    string
 	SourceIP    string
 	Summary     string
+	// Instructions: instrukcja reguły z podstawionymi wartościami zdarzenia.
+	Instructions string
 }
 
 // RecordResult mówi, co stało się z trafieniami.
@@ -292,10 +294,10 @@ func (p *PG) Record(ctx context.Context, hits []Hit) (RecordResult, error) {
 			} else {
 				gf, _ := json.Marshal(nonNilMap(h.GroupFields))
 				if err := tx.QueryRow(ctx, `INSERT INTO gjallarhorn.alerts (rule_id, rule_title, level, engine, group_key, group_fields,
-					first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary)
-					VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
+					first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
 					h.RuleID, h.RuleTitle, h.Level, h.Engine, h.GroupKey, gf, h.EventTime, h.AgentID, h.HostName, h.UserName,
-					h.SourceIP, h.EventID, h.Summary).Scan(&alertID); err != nil {
+					h.SourceIP, h.EventID, h.Summary, h.Instructions).Scan(&alertID); err != nil {
 					return err
 				}
 				if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.outbox (alert_id) VALUES ($1)`, alertID); err != nil {
