@@ -216,6 +216,8 @@ bez obciążenia ~1,4 s zamiast ~1,1 s.
 
 ## Polityka audytu (dla profilu z załącznika B)
 
+**Gotowy skrypt:** [deploy/windows/heimdall-gpo.ps1](deploy/windows/heimdall-gpo.ps1) – uruchomiony na kontrolerze domeny (administrator domeny) tworzy i podłącza GPO „Heimdall - polityka audytu” (cała domena: zaawansowana polityka inspekcji, linia poleceń w 4688, logowanie bloków PowerShell, dziennik Security 256 MB) oraz „Heimdall - dzienniki DC” (Security 1 GB na kontrolerach domeny). Można go uruchamiać wielokrotnie. Sprawdzony w laboratorium (Windows Server 2025, Windows 11): nieudane logowania (4625, 4776, 4768), zmiany kont i grup (4720, 4732, 4733, 4726), procesy z linią poleceń (4688) i PowerShell (4104) docierają do Mímira.
+
 Agent zbiera tylko to, co Windows zapisuje. Minimum w GPO
 (*Computer Configuration → Policies → Windows Settings → Security Settings →
 Advanced Audit Policy Configuration*):
