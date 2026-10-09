@@ -78,6 +78,28 @@ function EventPanel({ id, time }: { id: string; time: string }) {
   );
 }
 
+// Aliasy pól jak w detektorze (Sysmon 1 / Security 4688 i nazwy Sigmy).
+const aliases: Record<string, string[]> = {
+  Image: ["Image", "NewProcessName"],
+  ParentImage: ["ParentImage", "ParentProcessName"],
+  User: ["User", "SubjectUserName"],
+  ServiceFileName: ["ServiceFileName", "ImagePath"],
+};
+
+// renderInstructions: zmienne {{Pole}} z wartości zdarzenia (dla alertów
+// sprzed zapisywania gotowej instrukcji); bez zdarzenia – „(brak)”.
+function renderInstructions(text: string, ev: EventDetail | null): string {
+  return text.replace(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g, (_, name: string) => {
+    if (!ev) return "(brak)";
+    const special: Record<string, string> = { Computer: ev.host, Hostname: ev.host, EventID: String(ev.code) };
+    let v = special[name];
+    for (const n of aliases[name] ?? [name]) {
+      if (!v && ev.fields[n]) v = ev.fields[n];
+    }
+    return v && v !== "-" ? v : "(brak)";
+  });
+}
+
 export default function AlertDetailPage() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -87,6 +109,7 @@ export default function AlertDetailPage() {
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
   const [reason, setReason] = useState("");
+  const [firstEvent, setFirstEvent] = useState<EventDetail | null>(null);
 
   const load = useCallback(() => {
     alertsApi
@@ -99,6 +122,17 @@ export default function AlertDetailPage() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
   useEffect(() => load(), [load]);
+
+  // Starsze alerty nie mają gotowej instrukcji – pierwsze zdarzenie do uzupełnienia zmiennych.
+  const needsRender = !!alert && !alert.instructions && !!rule?.instructions?.includes("{{");
+  useEffect(() => {
+    if (!needsRender || events.length === 0) return;
+    const first = events[events.length - 1];
+    eventsApi
+      .get(first.event_id, first.event_time)
+      .then((r) => setFirstEvent(r.event))
+      .catch(() => setFirstEvent(null));
+  }, [needsRender, events]);
 
   const setStatus = async (s: AlertStatus, why?: string) => {
     try {
@@ -196,7 +230,7 @@ export default function AlertDetailPage() {
           {(alert.instructions || rule.instructions) && (
             <MAlert color="blue" mt="sm" title="Co zrobić">
               <Text size="sm" style={{ whiteSpace: "pre-line" }}>
-                {alert.instructions || rule.instructions}
+                {alert.instructions || renderInstructions(rule.instructions, firstEvent)}
               </Text>
             </MAlert>
           )}
