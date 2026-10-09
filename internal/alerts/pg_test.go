@@ -90,6 +90,17 @@ func TestPostgresAlerts(t *testing.T) {
 	if res.NewAlerts != 1 {
 		t.Fatalf("po zamknięciu: %+v", res)
 	}
+	if k, err := db.KnownEvents(ctx, "r-ps", []string{"p1", "p2", "brak"}); err != nil || len(k) != 2 || !k["p1"] {
+		t.Fatalf("zdarzenia w alertach: %v %v", k, err)
+	}
+	// Punkt kontrolny silnika zapytań: tylko w przód.
+	if _, err := db.RecordIndex(ctx, nil, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.RecordIndex(ctx, nil, t0)
+	if cp, ok, err := db.IndexCheckpoint(ctx); err != nil || !ok || !cp.Equal(t0.Add(time.Hour)) {
+		t.Fatalf("punkt kontrolny: %v %v %v", cp, ok, err)
+	}
 	// Stan progów: zapis z trafieniami, bez duplikatów, odczyt i czyszczenie.
 	obs := func(ev string, exp time.Time) Observation {
 		return Observation{RuleID: "r-bf", Sig: "10|5m0s||TargetUserName", GroupKey: "jan",

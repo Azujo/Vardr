@@ -269,6 +269,7 @@ type Observation struct {
 	UserName    string
 	SourceIP    string
 	ExpiresAt   time.Time
+	InAlert     bool // zdarzenie jest już w alercie (tylko odczyt stanu)
 }
 
 // RecordResult mówi, co stało się z trafieniami.
@@ -282,12 +283,42 @@ type RecordResult struct {
 // już przypisane do reguły jest pomijane, trafienie z kluczem łączy się
 // z otwartym alertem z okna Suppress, a nowy alert dostaje wpis w outboxie.
 func (p *PG) Record(ctx context.Context, hits []Hit, obs []Observation) (RecordResult, error) {
-	var res RecordResult
 	if len(hits) == 0 && len(obs) == 0 {
-		return res, nil
+		return RecordResult{}, nil
 	}
+	return p.record(ctx, hits, obs, nil)
+}
+
+// RecordIndex zapisuje trafienia silnika zapytań i jego punkt kontrolny
+// (zdarzenia przyjęte do checkpoint są ocenione) w jednej transakcji.
+func (p *PG) RecordIndex(ctx context.Context, hits []Hit, checkpoint time.Time) (RecordResult, error) {
+	return p.record(ctx, hits, nil, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.index_state (id, checkpoint, updated_at) VALUES (1, $1, now())
+			ON CONFLICT (id) DO UPDATE SET checkpoint = greatest(gjallarhorn.index_state.checkpoint, $1), updated_at = now()`,
+			checkpoint)
+		return err
+	})
+}
+
+// IndexCheckpoint zwraca punkt kontrolny silnika zapytań (ok=false – brak).
+func (p *PG) IndexCheckpoint(ctx context.Context) (time.Time, bool, error) {
+	var t time.Time
+	err := p.pool.QueryRow(ctx, `SELECT checkpoint FROM gjallarhorn.index_state WHERE id = 1`).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return t, false, nil
+	}
+	return t, err == nil, err
+}
+
+func (p *PG) record(ctx context.Context, hits []Hit, obs []Observation, extra func(pgx.Tx) error) (RecordResult, error) {
+	var res RecordResult
 	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
 		res = RecordResult{}
+		if extra != nil {
+			if err := extra(tx); err != nil {
+				return err
+			}
+		}
 		if len(obs) > 0 {
 			b := &pgx.Batch{}
 			for _, o := range obs {
@@ -363,16 +394,18 @@ func nonNilMap(m map[string]string) map[string]string {
 
 // Observations zwraca zapisany stan progów (bez przeterminowanych).
 func (p *PG) Observations(ctx context.Context, now time.Time) ([]Observation, error) {
-	rows, err := p.pool.Query(ctx, `SELECT rule_id, sig, group_key, group_fields, event_id, event_time, value, agent_id,
-		host_name, user_name, source_ip, expires_at FROM gjallarhorn.threshold_events WHERE expires_at > $1
-		ORDER BY event_time`, now)
+	rows, err := p.pool.Query(ctx, `SELECT t.rule_id, t.sig, t.group_key, t.group_fields, t.event_id, t.event_time, t.value,
+		t.agent_id, t.host_name, t.user_name, t.source_ip, t.expires_at,
+		EXISTS (SELECT 1 FROM gjallarhorn.alert_events a WHERE a.rule_id = t.rule_id AND a.event_id = t.event_id
+			AND a.alert_id IS NOT NULL)
+		FROM gjallarhorn.threshold_events t WHERE t.expires_at > $1 ORDER BY t.event_time`, now)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Observation, error) {
 		var o Observation
 		err := r.Scan(&o.RuleID, &o.Sig, &o.GroupKey, &o.GroupFields, &o.EventID, &o.EventTime, &o.Value, &o.AgentID,
-			&o.HostName, &o.UserName, &o.SourceIP, &o.ExpiresAt)
+			&o.HostName, &o.UserName, &o.SourceIP, &o.ExpiresAt, &o.InAlert)
 		return o, err
 	})
 }
@@ -381,4 +414,19 @@ func (p *PG) Observations(ctx context.Context, now time.Time) ([]Observation, er
 func (p *PG) PruneObservations(ctx context.Context, now time.Time) (int64, error) {
 	tag, err := p.pool.Exec(ctx, `DELETE FROM gjallarhorn.threshold_events WHERE expires_at <= $1`, now)
 	return tag.RowsAffected(), err
+}
+
+// KnownEvents zwraca te z podanych zdarzeń, które są już w alertach reguły.
+func (p *PG) KnownEvents(ctx context.Context, rule string, ids []string) (map[string]bool, error) {
+	rows, err := p.pool.Query(ctx, `SELECT event_id FROM gjallarhorn.alert_events
+		WHERE rule_id = $1 AND event_id = ANY($2) AND alert_id IS NOT NULL`, rule, ids)
+	if err != nil {
+		return nil, err
+	}
+	found, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	out := make(map[string]bool, len(found))
+	for _, id := range found {
+		out[id] = true
+	}
+	return out, err
 }

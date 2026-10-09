@@ -1,0 +1,16 @@
+title: Zgodność – wyrażenia regularne i adresy
+id: compat-re-cidr
+level: medium
+logsource:
+  product: windows
+  service: security
+detection:
+  sel_re:
+    TargetUserName|re: '(?i)^adm[0-9]+$'
+  sel_v4:
+    SourceIp|cidr:
+      - '10.0.0.0/24'
+      - '192.168.88.0/25'
+  sel_v6:
+    IpAddress|cidr: 'fd00::/8'
+  condition: sel_re or sel_v4 or sel_v6

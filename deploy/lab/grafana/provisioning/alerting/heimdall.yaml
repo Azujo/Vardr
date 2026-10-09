@@ -285,3 +285,72 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-detector-down
+        title: "Detektor (Gjallarhorn) nie działa"
+        condition: C
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: "Detektor (Gjallarhorn) nie działa"
+          description: "Prometheus nie widzi siem-detector. Reguły nie są wykonywane – ataki nie wywołają alertów; zdarzenia czekają w kolejce."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: '(1 - max(up{service="detector"})) or vector(1)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+      - uid: heimdall-detector-index-lag
+        title: "Silnik zapytań detekcji ma ponad 15 min zaległości"
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Silnik zapytań detekcji ma ponad 15 min zaległości"
+          description: "Punkt kontrolny silnika zapytań (ClickHouse) stoi. Sprawdź logi siem-detector i obciążenie ClickHouse."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'max(siem_detector_index_lag_seconds)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [900] }
+      - uid: heimdall-detector-rule-errors
+        title: "Reguły detekcji z błędami"
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels: { severity: warning }
+        annotations:
+          summary: "Reguły detekcji z błędami"
+          description: "Część plików reguł nie została wczytana – te reguły nie działają. Szczegóły: panel → Reguły detekcji."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus-siem
+            model: { refId: A, instant: true, expr: 'max(siem_detector_rule_errors)' }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }

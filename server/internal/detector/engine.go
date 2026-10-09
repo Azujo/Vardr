@@ -19,7 +19,8 @@ import (
 // Engine trzyma bieżący zestaw reguł (podmieniany przy przeładowaniu)
 // i stan reguł progowych.
 type Engine struct {
-	rules atomic.Pointer[[]*detect.Rule]
+	rules atomic.Pointer[[]*detect.Rule] // silnik w locie
+	all   atomic.Pointer[[]*detect.Rule] // wszystkie wczytane (silnik zapytań)
 	th    *Thresholds
 }
 
@@ -36,7 +37,16 @@ func (e *Engine) SetRules(all []*detect.Rule) int {
 	}
 	e.th.sync(active)
 	e.rules.Store(&active)
+	e.all.Store(&all)
 	return len(active)
+}
+
+// IndexRules zwraca reguły silnika zapytań (włączone, index_query albo both).
+func (e *Engine) IndexRules() []*detect.Rule {
+	if p := e.all.Load(); p != nil {
+		return IndexRules(*p)
+	}
+	return nil
 }
 
 func (e *Engine) active() []*detect.Rule {

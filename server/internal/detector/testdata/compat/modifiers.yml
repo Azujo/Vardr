@@ -1,0 +1,22 @@
+# Reguły testu zgodności silników – pokrywają wszystkie konstrukcje
+# obsługiwanego podzbioru Sigmy. Nie są wdrażane (testdata).
+title: Zgodność – maski, ukośniki i słowa w poleceniu
+id: compat-glob
+level: low
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  sel_glob:
+    CommandLine:
+      - '*/c who?mi*'
+      - '*lit\*eral*'
+  sel_end:
+    Image|endswith: '\cmd.exe'
+  sel_all:
+    CommandLine|contains|all: ['net', 'user', '/add']
+  filter_start:
+    ParentImage|startswith:
+      - 'c:\program files\'
+      - 'C:\Windows\explorer'
+  condition: (1 of sel_*) and not filter_start

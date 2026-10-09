@@ -1,0 +1,17 @@
+title: Zgodność – próg z kluczem z dwóch pól (tylko silnik zapytań)
+id: compat-threshold-multi
+level: medium
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4625
+  condition: selection
+heimdall:
+  mode: both
+  group_by: [Computer, TargetUserName]
+  threshold:
+    count: 3
+    window: 2m
+  suppress: 10m

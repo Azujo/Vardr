@@ -1,0 +1,17 @@
+title: Zgodność – null, exists i pola bez względu na wielkość liter
+id: compat-null-exists
+level: low
+logsource:
+  product: windows
+  service: security
+detection:
+  sel_null:
+    EventID: 4624
+    LogonProcessName: null
+  sel_exists:
+    EventID: 4624
+    WorkstationName|exists: true
+    ElevatedToken|exists: false
+  sel_case:
+    targetusername: 'łukasz'
+  condition: 1 of them

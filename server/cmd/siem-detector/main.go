@@ -1,6 +1,13 @@
 // Command siem-detector (Gjallarhorn) ocenia znormalizowane zdarzenia
-// regułami (Sigma, katalog SIEM_RULES_DIR) w locie i zapisuje alerty
-// w bazie Saga (schemat gjallarhorn). Powiadomienia wysyła panel (outbox).
+// regułami (Sigma, katalog SIEM_RULES_DIR) i zapisuje alerty w bazie Saga
+// (schemat gjallarhorn). Powiadomienia wysyła panel (outbox).
+//
+// SIEM_DETECTION_MODE wybiera silniki:
+//
+//	stream       w locie – odbiorca strumienia SIEM_EVENTS (profil wydajnościowy)
+//	index_query  zapytania na ClickHouse co SIEM_INDEX_INTERVAL (profil pełny)
+//	both         oba; para (reguła, zdarzenie) i tak trafia do alertu raz,
+//	             a silnik zapytań łapie zdarzenia spóźnione ponad pamięć progów
 //
 // Polecenia:
 //
@@ -10,12 +17,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/alerts"
@@ -90,6 +100,11 @@ func serve(log *slog.Logger) error {
 	defer stop()
 	dir := svc.Env("SIEM_RULES_DIR", "/rules")
 	dbURL := svc.MustEnv(log, "SIEM_DETECTOR_DB_URL")
+	mode := svc.Env("SIEM_DETECTION_MODE", "stream")
+	if mode != "stream" && mode != "index_query" && mode != "both" {
+		return fmt.Errorf("SIEM_DETECTION_MODE: stream, index_query albo both (jest %q)", mode)
+	}
+	streamOn, indexOn := mode != "index_query", mode != "stream"
 
 	var store *alerts.PG
 	if err := svc.Retry(ctx, log, "baza Saga", func() error {
@@ -155,6 +170,37 @@ func serve(log *slog.Logger) error {
 	}
 	reload()
 	restore()
+	// Oba silniki zapisują przez jedną blokadę – łączenie trafień w alert
+	// (SELECT … FOR UPDATE) nie widzi alertu tworzonego równolegle.
+	var recordMu sync.Mutex
+	if indexOn {
+		idx, err := openIndex(ctx, log, store)
+		if err != nil {
+			return err
+		}
+		go runIndex(ctx, log, idx, eng, store, &recordMu, m)
+	}
+	if !streamOn {
+		// Tylko zapytania: konsument strumienia nie może zostać, bo
+		// zatrzymywałby zdarzenia w kolejce (retencja „interest”).
+		nc, js, err := bus.Connect(svc.Env("SIEM_NATS_URL", "nats://nats:4222"), "siem-detector")
+		if err != nil {
+			return err
+		}
+		if err := bus.DisableDetector(ctx, js); err != nil {
+			log.Warn("usunięcie konsumenta detekcji w locie nieudane", "err", err)
+		}
+		nc.Close()
+		log.Info("detektor uruchomiony – tylko silnik zapytań", "rules_dir", dir)
+		for ctx.Err() == nil {
+			select {
+			case <-ctx.Done():
+			case <-time.After(30 * time.Second):
+				reload()
+			}
+		}
+		return nil
+	}
 
 	limits, err := queue.Limits()
 	if err != nil {
@@ -178,7 +224,7 @@ func serve(log *slog.Logger) error {
 	}
 	go queue.Watch(ctx, log, js, bus.StreamEvents, bus.ConsumerDetector, 0.5, 0.8, metrics.NewQueue())
 
-	log.Info("detektor uruchomiony", "rules_dir", dir)
+	log.Info("detektor uruchomiony", "rules_dir", dir, "mode", mode)
 	lastReload := time.Now()
 	for ctx.Err() == nil {
 		if time.Since(lastReload) > 30*time.Second {
@@ -232,7 +278,9 @@ func serve(log *slog.Logger) error {
 		if len(batch) == 0 {
 			continue
 		}
+		recordMu.Lock()
 		res, err := store.Record(ctx, hits, obs)
+		recordMu.Unlock()
 		if err != nil {
 			// Alerty nie zapisane – zdarzenia wrócą (zapis jest idempotentny),
 			// a stan progów wraca do ostatniej udanej transakcji.
@@ -257,4 +305,90 @@ func serve(log *slog.Logger) error {
 		}
 	}
 	return nil
+}
+
+func openIndex(ctx context.Context, log *slog.Logger, store *alerts.PG) (*detector.Index, error) {
+	conn, err := clickhouse.Open(&clickhouse.Options{
+		Addr: []string{svc.Env("SIEM_DETECTOR_CH_ADDR", "clickhouse:9000")},
+		Auth: clickhouse.Auth{Database: "siem", Username: svc.Env("SIEM_DETECTOR_CH_USER", "siem_detector"),
+			Password: svc.MustEnv(log, "SIEM_DETECTOR_CH_PASSWORD")},
+		Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := svc.Retry(ctx, log, "ClickHouse (silnik zapytań)", func() error { return conn.Ping(ctx) }); err != nil {
+		return nil, err
+	}
+	return &detector.Index{Conn: conn, Known: store.KnownEvents}, nil
+}
+
+// runIndex: przebiegi silnika zapytań. Każdy ocenia zdarzenia przyjęte od
+// punktu kontrolnego (z zakładką SIEM_INDEX_OVERLAP na zapis spóźniony
+// w ClickHouse) do teraz − SIEM_INDEX_DELAY; zaległość nadrabia krokami.
+func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *detector.Engine, store *alerts.PG,
+	mu *sync.Mutex, m *metrics.Detector) {
+	interval, _ := svc.EnvDuration("SIEM_INDEX_INTERVAL", time.Minute)
+	delay, _ := svc.EnvDuration("SIEM_INDEX_DELAY", 2*time.Minute)
+	overlap, _ := svc.EnvDuration("SIEM_INDEX_OVERLAP", 5*time.Minute)
+	lookback, _ := svc.EnvDuration("SIEM_INDEX_LOOKBACK", time.Hour)
+	const step = 6 * time.Hour
+	log.Info("silnik zapytań uruchomiony", "interval", interval, "delay", delay, "overlap", overlap)
+	wait := 10 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = interval
+		rules := eng.IndexRules()
+		m.IndexRules.Set(float64(len(rules)))
+		to := time.Now().UTC().Add(-delay).Truncate(time.Millisecond)
+		cp, ok, err := store.IndexCheckpoint(ctx)
+		if err != nil {
+			m.IndexRuns.WithLabelValues("error").Inc()
+			log.Warn("odczyt punktu kontrolnego nieudany", "err", err)
+			continue
+		}
+		from := to.Add(-lookback)
+		if ok {
+			from = cp.Add(-overlap)
+			m.IndexLag.Set(time.Since(cp).Seconds())
+		}
+		if to.Sub(from) > step+overlap {
+			to = from.Add(step + overlap) // zaległość – kolejny krok zaraz
+			wait = time.Second
+		}
+		t0 := time.Now()
+		res, err := idx.Run(ctx, rules, from, to)
+		m.IndexTime.Add(time.Since(t0).Seconds())
+		if err != nil {
+			m.IndexRuns.WithLabelValues("error").Inc()
+			log.Error("przebieg silnika zapytań nieudany", "from", from, "to", to, "err", err)
+			continue
+		}
+		mu.Lock()
+		rec, err := store.RecordIndex(ctx, res.Hits, res.Reached)
+		mu.Unlock()
+		if err != nil {
+			m.IndexRuns.WithLabelValues("error").Inc()
+			m.Errors.WithLabelValues("record").Inc()
+			log.Error("zapis alertów silnika zapytań nieudany", "hits", len(res.Hits), "err", err)
+			continue
+		}
+		if res.Reached.Before(to) {
+			wait = time.Second // limit wierszy – reszta w następnym przebiegu
+		}
+		m.IndexRuns.WithLabelValues("ok").Inc()
+		m.IndexRows.Add(float64(res.Rows))
+		m.IndexLag.Set(time.Since(res.Reached).Seconds())
+		m.Alerts.WithLabelValues("new").Add(float64(rec.NewAlerts))
+		m.Alerts.WithLabelValues("merged").Add(float64(rec.Merged))
+		m.Alerts.WithLabelValues("duplicate").Add(float64(rec.Duplicates))
+		if rec.NewAlerts > 0 {
+			log.Info("nowe alerty (silnik zapytań)", "count", rec.NewAlerts, "merged", rec.Merged)
+		}
+	}
 }

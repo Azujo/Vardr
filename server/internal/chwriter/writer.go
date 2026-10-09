@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -30,6 +31,8 @@ type Writer struct {
 	Conn driver.Conn
 	// Replay: zapis do siem.events_replay (ścieżka odtwarzania z archiwum).
 	Replay bool
+	// Table: inna tabela zdarzeń niż siem.events (testy zgodności detekcji).
+	Table string
 }
 
 // Open łączy się z ClickHouse (protokół natywny).
@@ -57,6 +60,9 @@ func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
 	query := insertEvents
 	if w.Replay {
 		query = insertReplayEvents
+	}
+	if w.Table != "" {
+		query = strings.Replace(query, "siem.events", w.Table, 1)
 	}
 	b, err := w.Conn.PrepareBatch(ctx, query)
 	if err != nil {

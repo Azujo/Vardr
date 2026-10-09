@@ -200,7 +200,7 @@ export default function AlertDetailPage() {
           <Field label="Pierwsze zdarzenie">{formatDate(alert.first_seen)}</Field>
           <Field label="Ostatnie zdarzenie">{formatDate(alert.last_seen)}</Field>
           <Field label="Trafienia">{String(alert.hits)}</Field>
-          <Field label="Silnik">{alert.engine}</Field>
+          <Field label="Silnik">{alert.engine === "index_query" ? "zapytania (ClickHouse)" : alert.engine === "stream" ? "w locie" : alert.engine}</Field>
         </SimpleGrid>
         {Object.keys(alert.group_fields).length > 0 && (
           <Text size="sm" mt="sm">

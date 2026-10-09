@@ -216,6 +216,12 @@ type Detector struct {
 	LastEvent  prometheus.Gauge
 	// ThresholdKeys: klucze reguł progowych w pamięci.
 	ThresholdKeys prometheus.Gauge
+	// Silnik zapytań (index_query).
+	IndexRuns  *prometheus.CounterVec // result: ok | error
+	IndexRows  prometheus.Counter
+	IndexLag   prometheus.Gauge
+	IndexRules prometheus.Gauge
+	IndexTime  prometheus.Counter
 }
 
 func NewDetector() *Detector {
@@ -238,5 +244,15 @@ func NewDetector() *Detector {
 			Help: "Czas przyjęcia ostatniego ocenionego zdarzenia."}),
 		ThresholdKeys: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "threshold_keys",
 			Help: "Klucze reguł progowych (group_by) trzymane w pamięci."}),
+		IndexRuns: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_runs_total",
+			Help: "Przebiegi silnika zapytań (ClickHouse)."}, []string{"result"}),
+		IndexRows: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_rows_total",
+			Help: "Zdarzenia pasujące do reguł w przebiegach silnika zapytań."}),
+		IndexLag: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_lag_seconds",
+			Help: "Opóźnienie punktu kontrolnego silnika zapytań względem bieżącego czasu."}),
+		IndexRules: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_rules",
+			Help: "Włączone reguły wykonywane przez silnik zapytań."}),
+		IndexTime: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_seconds_total",
+			Help: "Łączny czas przebiegów silnika zapytań."}),
 	}
 }

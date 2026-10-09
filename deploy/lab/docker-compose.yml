@@ -53,6 +53,7 @@ services:
       SIEM_WRITER_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
       SIEM_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
       SIEM_PANEL_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
+      SIEM_DETECTOR_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
       SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
       SIEM_RAW_TTL_DAYS: ${SIEM_RAW_TTL_DAYS:-2}
       SIEM_REPLAY_TTL_DAYS: ${SIEM_REPLAY_TTL_DAYS:-7}
@@ -186,10 +187,11 @@ services:
       saga: { condition: service_healthy }
     mem_limit: 384m
 
-  # Gjallarhorn – detekcja w locie: reguły Sigma z ./rules/current
-  # (deploy.sh rules – wersje w ./rules/v<czas>, dowiązanie przełączane atomowo),
-  # alerty w Sadze (schemat gjallarhorn, rola siem_detector); powiadomienia
-  # wysyła panel (outbox).
+  # Gjallarhorn – detekcja: reguły Sigma z ./rules/current (deploy.sh rules –
+  # wersje w ./rules/v<czas>, dowiązanie przełączane atomowo). Silniki
+  # (SIEM_DETECTION_MODE): w locie (strumień SIEM_EVENTS) i zapytań (ClickHouse,
+  # konto siem_detector tylko do odczytu); w laboratorium oba. Alerty w Sadze
+  # (schemat gjallarhorn, rola siem_detector); powiadomienia wysyła panel.
   detector:
     <<: *server
     build: { context: ., args: { BIN: siem-detector } }
@@ -200,10 +202,15 @@ services:
       <<: *server-env
       SIEM_DETECTOR_DB_URL: postgres://siem_detector:${SAGA_DETECTOR_PASSWORD}@saga:5432/saga?sslmode=disable
       SIEM_RULES_DIR: /rules/current
+      SIEM_DETECTION_MODE: ${SIEM_DETECTION_MODE:-both}
+      SIEM_DETECTOR_CH_ADDR: clickhouse:9000
+      SIEM_DETECTOR_CH_USER: siem_detector
+      SIEM_DETECTOR_CH_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
       GOMEMLIMIT: 200MiB
     depends_on:
       nats: { condition: service_healthy }
       saga: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
     mem_limit: 256m
 
   # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).

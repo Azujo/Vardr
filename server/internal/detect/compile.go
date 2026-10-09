@@ -12,9 +12,11 @@ import (
 	"strings"
 )
 
-// Node to węzeł drzewa warunków.
+// Node to węzeł drzewa warunków: ocena zdarzenia w Go (silnik w locie)
+// i warunek SQL (silnik zapytań, sql.go).
 type Node interface {
 	Eval(e Event) bool
+	sql() string
 }
 
 type and []Node
@@ -338,11 +340,7 @@ type fieldMatch struct {
 func (f fieldMatch) Eval(e Event) bool {
 	v, ok := e.Get(f.field)
 	for _, m := range f.m {
-		mv := v
-		if m.kind == "glob" {
-			mv = strings.ReplaceAll(v, "/", "\x00")
-		}
-		hit := m.match(mv, ok)
+		hit := m.match(v, ok)
 		if f.all && !hit {
 			return false
 		}

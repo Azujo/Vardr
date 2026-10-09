@@ -1,0 +1,16 @@
+title: Zgodność – słowa kluczowe i polskie znaki
+id: compat-keywords
+level: low
+logsource:
+  product: windows
+detection:
+  keywords:
+    - 'mimikatz'
+    - 'sekurlsa::*'
+  unicode:
+    TargetUserName|contains: 'żółw'
+  numbers:
+    EventID:
+      - 4740
+      - 4767
+  condition: keywords or unicode or numbers

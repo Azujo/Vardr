@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS siem.events
     INDEX idx_user    user_name TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_ip      source_ip TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_raw     raw       TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 4,
-    INDEX idx_message message   TYPE tokenbf_v1(8192, 3, 0) GRANULARITY 4
+    INDEX idx_message message   TYPE tokenbf_v1(8192, 3, 0) GRANULARITY 4,
+    -- Silnik zapytań detekcji czyta zdarzenia po czasie przyjęcia.
+    INDEX idx_ingested ingested TYPE minmax GRANULARITY 1
 )
 ENGINE = ReplacingMergeTree(ingested)
 PARTITION BY toYYYYMMDD(ingested)
@@ -80,4 +82,10 @@ CREATE USER IF NOT EXISTS siem_panel IDENTIFIED WITH sha256_password BY '${SIEM_
     SETTINGS readonly = 2, max_execution_time = 15 MAX 30, max_result_rows = 100000 MAX 100000,
              max_memory_usage = 1000000000 MAX 2000000000;
 GRANT SELECT ON siem.* TO siem_panel;
+
+-- Detektor (silnik zapytań, Gjallarhorn): tylko odczyt zdarzeń, z limitami –
+-- reguła nie może zagłodzić zapisu ani wyszukiwania.
+CREATE USER IF NOT EXISTS siem_detector IDENTIFIED WITH sha256_password BY '${SIEM_DETECTOR_PASSWORD}'
+    SETTINGS readonly = 2, max_execution_time = 60 MAX 120, max_memory_usage = 1000000000 MAX 2000000000;
+GRANT SELECT ON siem.events TO siem_detector;
 SQL

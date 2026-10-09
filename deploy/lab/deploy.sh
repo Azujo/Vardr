@@ -46,8 +46,13 @@ for t in "${targets[@]}"; do
     echo "== konfiguracja stosu"
     tar -C deploy/lab --exclude=./bin --exclude=./certs --exclude=./archive --exclude=./metrics \
       --exclude=./agent-dist --exclude=./export-tools --exclude=./.env --exclude='*.log' --exclude=./deploy.sh -cf - . |
-      ssh -i "$key" -o BatchMode=yes "$host" "mkdir -p $dir && tar -xf - -C $dir"
+      ssh -i "$key" -o BatchMode=yes "$host" "mkdir -p $dir && tar --overwrite -xf - -C $dir"
+    # --overwrite zapisuje pliki w miejscu (ten sam i-węzeł): kontenery montujące
+    # pojedynczy plik (prometheus.yml, nats.conf, siem.xml) widzą nową treść;
+    # podmiana pliku zostawiłaby im starą wersję.
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
+    remote "docker compose ps -q prometheus | grep -q . && docker compose kill -s HUP prometheus >/dev/null" &&
+      echo "   Prometheus przeładował konfigurację" || true
     ;;
   rules)
     echo "== reguły detekcji (rules/ -> rules/ na VM; detektor przeładuje je w ciągu 30 s)"
