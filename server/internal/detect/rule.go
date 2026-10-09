@@ -68,7 +68,25 @@ type Extensions struct {
 	Instructions string `json:"instructions,omitempty" yaml:"instructions"`
 	// Enabled: false wyłącza regułę bez usuwania pliku.
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled"`
+	// Threshold: reguła progowa – alert dopiero przy Count zdarzeniach
+	// (albo Count różnych wartości pola Distinct) z tym samym kluczem
+	// GroupBy w dowolnym oknie Window (czas zdarzenia).
+	Threshold *Threshold `json:"threshold,omitempty" yaml:"threshold"`
 }
+
+// Threshold to próg reguły (count / count distinct w oknie czasowym).
+type Threshold struct {
+	Count    int      `json:"count" yaml:"count"`
+	Window   Duration `json:"window" yaml:"window"`
+	Distinct string   `json:"distinct,omitempty" yaml:"distinct"`
+}
+
+// Limity progów: okno najwyżej doba, próg 2–10 000.
+const (
+	MinThresholdWindow = 10 * time.Second
+	MaxThresholdWindow = 24 * time.Hour
+	MaxThresholdCount  = 10000
+)
 
 // Duration to czas w YAML („15m”, „1h”).
 type Duration time.Duration
@@ -150,6 +168,21 @@ func Parse(data []byte, file string) (*Rule, error) {
 	default:
 		return nil, errors.New("heimdall.mode: stream, index_query albo both")
 	}
+	if t := r.Heimdall.Threshold; t != nil {
+		switch w := time.Duration(t.Window); {
+		case t.Count < 2 || t.Count > MaxThresholdCount:
+			return nil, fmt.Errorf("heimdall.threshold.count: od 2 do %d", MaxThresholdCount)
+		case w < MinThresholdWindow || w > MaxThresholdWindow:
+			return nil, errors.New("heimdall.threshold.window: od 10s do 24h")
+		}
+		// Łączenie trafień w alert co najmniej na długość okna progu.
+		if r.Heimdall.Suppress == 0 {
+			r.Heimdall.Suppress = Duration(time.Hour)
+		}
+		if r.Heimdall.Suppress < t.Window {
+			r.Heimdall.Suppress = t.Window
+		}
+	}
 	if len(r.Heimdall.GroupBy) > 0 && r.Heimdall.Suppress == 0 {
 		r.Heimdall.Suppress = Duration(time.Hour)
 	}
@@ -180,12 +213,17 @@ type LoadError struct {
 }
 
 // LoadDir wczytuje reguły (*.yml, *.yaml) z katalogu i podkatalogów.
-// Zwraca poprawne reguły i listę błędów; powtórzone id to błąd.
+// Zwraca poprawne reguły i listę błędów; powtórzone id to błąd. Katalog
+// może być dowiązaniem (wdrożenie podmienia rules/current atomowo).
 func LoadDir(dir string) ([]*Rule, []LoadError, error) {
+	dir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, nil, err
+	}
 	var rules []*Rule
 	var errs []LoadError
 	seen := map[string]string{}
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -217,6 +255,9 @@ func LoadDir(dir string) ([]*Rule, []LoadError, error) {
 	return rules, errs, err
 }
 
+// IsThreshold mówi, czy reguła jest progowa.
+func (r *Rule) IsThreshold() bool { return r.Heimdall.Threshold != nil }
+
 // GroupKey zwraca wartości pól klucza alertu (w kolejności GroupBy).
 func (r *Rule) GroupKey(e Event) []string {
 	out := make([]string, len(r.Heimdall.GroupBy))
@@ -231,9 +272,16 @@ var placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.]+)\s*\}\}`)
 
 // Render podstawia w tekście (np. instrukcji reguły) zmienne {{Pole}}
 // wartościami ze zdarzenia; brak pola – „(brak)”.
-func Render(text string, e Event) string {
+func Render(text string, e Event) string { return RenderWith(text, e, nil) }
+
+// RenderWith działa jak Render, ale najpierw sprawdza zmienne dodatkowe
+// (np. {{count}} i {{values}} reguły progowej).
+func RenderWith(text string, e Event, extra map[string]string) string {
 	return placeholderRe.ReplaceAllStringFunc(text, func(m string) string {
 		name := placeholderRe.FindStringSubmatch(m)[1]
+		if v, ok := extra[name]; ok {
+			return v
+		}
 		if v, ok := e.Get(name); ok && v != "" && v != "-" {
 			return v
 		}

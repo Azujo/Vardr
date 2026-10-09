@@ -1,0 +1,36 @@
+title: Seria błędnych haseł Kerberos na jedno konto
+id: 79d02b8e-de79-4317-8b3a-aa5bdeef3ed2
+status: stable
+description: |
+  Co najmniej 10 nieudanych wstępnych uwierzytelnień Kerberos z błędnym hasłem
+  (4771, kod 0x18) na to samo konto w ciągu 5 minut. Zdarzenie zapisuje
+  kontroler domeny – tak wygląda zgadywanie hasła narzędziami typu kerbrute,
+  które nie zostawiają 4625 na komputerach.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4771
+    Status: '0x18'
+  computer_account:
+    TargetUserName|endswith: '$'
+  condition: selection and not computer_account
+falsepositives:
+  - Urządzenie (telefon, drukarka) z zapamiętanym starym hasłem użytkownika
+level: medium
+heimdall:
+  group_by: [TargetUserName]
+  threshold:
+    count: 10
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} błędnych haseł Kerberos dla konta {{TargetUserName}} w {{window}}
+    (pierwsze z adresu {{IpAddress}}). Sprawdź adresy źródłowe w zdarzeniach
+    alertu: jedno urządzenie użytkownika – stare hasło; obce adresy – zablokuj
+    źródło i sprawdź, czy po serii nie było udanego logowania.

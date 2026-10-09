@@ -214,6 +214,8 @@ type Detector struct {
 	RuleErrors prometheus.Gauge
 	EvalTime   prometheus.Counter
 	LastEvent  prometheus.Gauge
+	// ThresholdKeys: klucze reguł progowych w pamięci.
+	ThresholdKeys prometheus.Gauge
 }
 
 func NewDetector() *Detector {
@@ -234,5 +236,7 @@ func NewDetector() *Detector {
 			Help: "Łączny czas oceny zdarzeń przez reguły."}),
 		LastEvent: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "last_event_timestamp_seconds",
 			Help: "Czas przyjęcia ostatniego ocenionego zdarzenia."}),
+		ThresholdKeys: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "threshold_keys",
+			Help: "Klucze reguł progowych (group_by) trzymane w pamięci."}),
 	}
 }

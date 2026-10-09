@@ -389,7 +389,7 @@ var condTokenRe = regexp.MustCompile(`\(|\)|\||[^\s()|]+`)
 func parseCondition(cond string, sel map[string]Node) (Node, error) {
 	p := &condParser{toks: condTokenRe.FindAllString(cond, -1), sel: sel}
 	if slices.Contains(p.toks, "|") {
-		return nil, errors.New("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez heimdall (etap 4c)")
+		return nil, errors.New("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez heimdall.threshold")
 	}
 	n, err := p.or()
 	if err != nil {

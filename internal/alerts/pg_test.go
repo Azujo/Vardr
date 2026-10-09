@@ -38,17 +38,17 @@ func TestPostgresAlerts(t *testing.T) {
 			GroupFields: map[string]string{"Computer": "pc1"}, GroupKey: "pc1", Suppress: time.Hour, EventID: ev, EventTime: at}
 	}
 
-	res, err := db.Record(ctx, []Hit{single("e1", t0), grouped("p1", t0), grouped("p2", t0.Add(10*time.Minute))})
+	res, err := db.Record(ctx, []Hit{single("e1", t0), grouped("p1", t0), grouped("p2", t0.Add(10*time.Minute))}, nil)
 	if err != nil || res.NewAlerts != 2 || res.Merged != 1 {
 		t.Fatalf("pierwszy zapis: %+v %v", res, err)
 	}
 	// Ponowne dostarczenie tych samych zdarzeń – bez zmian.
-	res, err = db.Record(ctx, []Hit{single("e1", t0), grouped("p1", t0)})
+	res, err = db.Record(ctx, []Hit{single("e1", t0), grouped("p1", t0)}, nil)
 	if err != nil || res.Duplicates != 2 || res.NewAlerts != 0 {
 		t.Fatalf("ponowne dostarczenie: %+v %v", res, err)
 	}
 	// Trafienie poza oknem łączenia – nowy alert.
-	res, _ = db.Record(ctx, []Hit{grouped("p3", t0.Add(3*time.Hour))})
+	res, _ = db.Record(ctx, []Hit{grouped("p3", t0.Add(3*time.Hour))}, nil)
 	if res.NewAlerts != 1 {
 		t.Fatalf("poza oknem: %+v", res)
 	}
@@ -86,16 +86,37 @@ func TestPostgresAlerts(t *testing.T) {
 	if _, err := db.SetStatus(ctx, ps.ID, "closed", "adam", "test", now); err != nil {
 		t.Fatal(err)
 	}
-	res, _ = db.Record(ctx, []Hit{grouped("p4", t0.Add(15*time.Minute))})
+	res, _ = db.Record(ctx, []Hit{grouped("p4", t0.Add(15*time.Minute))}, nil)
 	if res.NewAlerts != 1 {
 		t.Fatalf("po zamknięciu: %+v", res)
 	}
+	// Stan progów: zapis z trafieniami, bez duplikatów, odczyt i czyszczenie.
+	obs := func(ev string, exp time.Time) Observation {
+		return Observation{RuleID: "r-bf", Sig: "10|5m0s||TargetUserName", GroupKey: "jan",
+			GroupFields: map[string]string{"TargetUserName": "jan"}, EventID: ev, EventTime: t0, HostName: "dc01", ExpiresAt: exp}
+	}
+	if _, err := db.Record(ctx, nil, []Observation{obs("b1", now.Add(time.Hour)), obs("b2", now.Add(-time.Minute))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Record(ctx, nil, []Observation{obs("b1", now.Add(time.Hour))}); err != nil {
+		t.Fatal(err)
+	}
+	if o, err := db.Observations(ctx, now); err != nil || len(o) != 1 || o[0].GroupFields["TargetUserName"] != "jan" {
+		t.Fatalf("stan progów: %+v %v", o, err)
+	}
+	if n, err := db.PruneObservations(ctx, now); err != nil || n != 1 {
+		t.Fatalf("czyszczenie stanu progów: %d %v", n, err)
+	}
 	// Reguły i podsumowanie.
-	if err := db.SyncRules(ctx, []RuleInfo{{ID: "r-ps", Title: "PowerShell", Level: "medium", File: "a.yml", Source: "x", Mode: "both", Enabled: true}},
+	if err := db.SyncRules(ctx, []RuleInfo{{ID: "r-ps", Title: "PowerShell", Level: "medium", File: "a.yml", Source: "x", Mode: "both", Enabled: true,
+		Threshold: &Threshold{Count: 10, WindowS: 300}}},
 		[]RuleError{{File: "zla.yml", Error: "brak title"}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if s, err := db.Summarize(ctx, now); err != nil || s.Open != 3 || s.Rules != 1 || s.RuleErrs != 1 {
 		t.Fatalf("podsumowanie: %+v %v", s, err)
+	}
+	if r, err := db.Rule(ctx, "r-ps"); err != nil || r.Threshold == nil || r.Threshold.WindowS != 300 {
+		t.Fatalf("próg reguły: %+v %v", r.Threshold, err)
 	}
 }

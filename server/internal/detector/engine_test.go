@@ -14,7 +14,7 @@ func TestEngineHits(t *testing.T) {
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
 	}
-	e := &Engine{}
+	e := NewEngine()
 	if n := e.SetRules(rules); n != len(rules) {
 		t.Fatalf("reguły w locie: %d", n)
 	}
@@ -28,7 +28,7 @@ func TestEngineHits(t *testing.T) {
 				"CommandLine": "powershell -enc AAAA", "TargetUserName": "-"}},
 		{ID: "a:Security:g0:3", AgentID: "a", Code: 4624, Timestamp: ts, Fields: map[string]string{"winlog.channel": "Security"}},
 	}}
-	hits := e.Evaluate(b)
+	hits, _ := e.Evaluate(b)
 	if len(hits) != 2 {
 		t.Fatalf("trafienia: %+v", hits)
 	}

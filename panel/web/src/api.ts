@@ -754,6 +754,7 @@ export interface RuleInfo {
   group_by: string[];
   suppress_s: number;
   instructions: string;
+  threshold?: { count: number; window_s: number; distinct?: string };
   loaded_at: string;
   open_alerts: number;
 }

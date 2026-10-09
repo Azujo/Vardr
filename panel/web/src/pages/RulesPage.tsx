@@ -6,6 +6,12 @@ import { alertsApi, formatDate, levelLabels, type RuleInfo } from "../api";
 const modeLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", both: "oba silniki" };
 
 // Reguły detekcji wczytane przez detektor (pliki YAML z katalogu rules/).
+function fmtDuration(s: number): string {
+  if (s % 3600 === 0) return `${s / 3600} h`;
+  if (s % 60 === 0) return `${s / 60} min`;
+  return `${s} s`;
+}
+
 export default function RulesPage() {
   const [rules, setRules] = useState<RuleInfo[]>([]);
   const [errors, setErrors] = useState<{ file: string; error: string }[]>([]);
@@ -52,7 +58,7 @@ export default function RulesPage() {
                 <Table.Th>Poziom</Table.Th>
                 <Table.Th>Reguła</Table.Th>
                 <Table.Th>Silnik</Table.Th>
-                <Table.Th>Łączenie</Table.Th>
+                <Table.Th>Próg / łączenie</Table.Th>
                 <Table.Th>Otwarte alerty</Table.Th>
                 <Table.Th>Plik</Table.Th>
               </Table.Tr>
@@ -73,11 +79,17 @@ export default function RulesPage() {
                   </Table.Td>
                   <Table.Td>{modeLabels[r.mode] ?? r.mode}</Table.Td>
                   <Table.Td>
+                    {r.threshold && (
+                      <Text size="xs" fw={500}>
+                        próg: {r.threshold.count} {r.threshold.distinct ? `różnych ${r.threshold.distinct}` : "zdarzeń"} w{" "}
+                        {fmtDuration(r.threshold.window_s)}
+                      </Text>
+                    )}
                     {r.group_by.length ? (
                       <Text size="xs">
-                        {r.group_by.join(", ")} / {Math.round(r.suppress_s / 60)} min
+                        {r.group_by.join(", ")} / {fmtDuration(r.suppress_s)}
                       </Text>
-                    ) : (
+                    ) : r.threshold ? null : (
                       <Text size="xs" c="dimmed">
                         każde zdarzenie osobno
                       </Text>

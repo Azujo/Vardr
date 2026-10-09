@@ -173,9 +173,17 @@ type RuleInfo struct {
 	GroupBy      []string   `json:"group_by"`
 	SuppressS    int        `json:"suppress_s"`
 	Instructions string     `json:"instructions"`
+	Threshold    *Threshold `json:"threshold,omitempty"`
 	LoadedAt     time.Time  `json:"loaded_at"`
 	RemovedAt    *time.Time `json:"removed_at,omitempty"`
 	OpenAlerts   int        `json:"open_alerts"`
+}
+
+// Threshold to próg reguły progowej (opis dla panelu).
+type Threshold struct {
+	Count    int    `json:"count"`
+	WindowS  int    `json:"window_s"`
+	Distinct string `json:"distinct,omitempty"`
 }
 
 // RuleError to błąd wczytania pliku reguły.
@@ -192,12 +200,13 @@ func (p *PG) SyncRules(ctx context.Context, rules []RuleInfo, errs []RuleError, 
 		for _, r := range rules {
 			ids = append(ids, r.ID)
 			if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.rules (id, title, level, description, tags, file, source, mode,
-				enabled, group_by, suppress_s, instructions, loaded_at, removed_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NULL)
+				enabled, group_by, suppress_s, instructions, threshold, loaded_at, removed_at)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL)
 				ON CONFLICT (id) DO UPDATE SET title = $2, level = $3, description = $4, tags = $5, file = $6, source = $7,
-				mode = $8, enabled = $9, group_by = $10, suppress_s = $11, instructions = $12, loaded_at = $13, removed_at = NULL`,
+				mode = $8, enabled = $9, group_by = $10, suppress_s = $11, instructions = $12, threshold = $13, loaded_at = $14,
+				removed_at = NULL`,
 				r.ID, r.Title, r.Level, r.Description, nonNil(r.Tags), r.File, r.Source, r.Mode, r.Enabled, nonNil(r.GroupBy),
-				r.SuppressS, r.Instructions, now); err != nil {
+				r.SuppressS, r.Instructions, r.Threshold, now); err != nil {
 				return err
 			}
 		}
@@ -246,6 +255,22 @@ type Hit struct {
 	Instructions string
 }
 
+// Observation to zdarzenie pasujące do reguły progowej (stan progu).
+type Observation struct {
+	RuleID      string
+	Sig         string
+	GroupKey    string
+	GroupFields map[string]string
+	EventID     string
+	EventTime   time.Time
+	Value       string // wartość pola distinct
+	AgentID     string
+	HostName    string
+	UserName    string
+	SourceIP    string
+	ExpiresAt   time.Time
+}
+
 // RecordResult mówi, co stało się z trafieniami.
 type RecordResult struct {
 	NewAlerts  int
@@ -253,16 +278,30 @@ type RecordResult struct {
 	Duplicates int // zdarzenie już przypisane (ponowne dostarczenie)
 }
 
-// Record zapisuje trafienia w jednej transakcji: zdarzenie już przypisane
-// do reguły jest pomijane, trafienie z kluczem łączy się z otwartym alertem
-// z okna Suppress, a nowy alert dostaje wpis w outboxie.
-func (p *PG) Record(ctx context.Context, hits []Hit) (RecordResult, error) {
+// Record zapisuje trafienia i stan progów w jednej transakcji: zdarzenie
+// już przypisane do reguły jest pomijane, trafienie z kluczem łączy się
+// z otwartym alertem z okna Suppress, a nowy alert dostaje wpis w outboxie.
+func (p *PG) Record(ctx context.Context, hits []Hit, obs []Observation) (RecordResult, error) {
 	var res RecordResult
-	if len(hits) == 0 {
+	if len(hits) == 0 && len(obs) == 0 {
 		return res, nil
 	}
 	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
 		res = RecordResult{}
+		if len(obs) > 0 {
+			b := &pgx.Batch{}
+			for _, o := range obs {
+				gf, _ := json.Marshal(nonNilMap(o.GroupFields))
+				b.Queue(`INSERT INTO gjallarhorn.threshold_events (rule_id, event_id, sig, group_key, group_fields, event_time,
+					value, agent_id, host_name, user_name, source_ip, expires_at)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) ON CONFLICT DO NOTHING`,
+					o.RuleID, o.EventID, o.Sig, o.GroupKey, gf, o.EventTime, o.Value, o.AgentID, o.HostName, o.UserName,
+					o.SourceIP, o.ExpiresAt)
+			}
+			if err := tx.SendBatch(ctx, b).Close(); err != nil {
+				return err
+			}
+		}
 		for _, h := range hits {
 			// Najpierw rezerwacja (reguła, zdarzenie) – blokuje równoległy zapis tego samego zdarzenia.
 			tag, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)
@@ -320,4 +359,26 @@ func nonNilMap(m map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	return m
+}
+
+// Observations zwraca zapisany stan progów (bez przeterminowanych).
+func (p *PG) Observations(ctx context.Context, now time.Time) ([]Observation, error) {
+	rows, err := p.pool.Query(ctx, `SELECT rule_id, sig, group_key, group_fields, event_id, event_time, value, agent_id,
+		host_name, user_name, source_ip, expires_at FROM gjallarhorn.threshold_events WHERE expires_at > $1
+		ORDER BY event_time`, now)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Observation, error) {
+		var o Observation
+		err := r.Scan(&o.RuleID, &o.Sig, &o.GroupKey, &o.GroupFields, &o.EventID, &o.EventTime, &o.Value, &o.AgentID,
+			&o.HostName, &o.UserName, &o.SourceIP, &o.ExpiresAt)
+		return o, err
+	})
+}
+
+// PruneObservations usuwa przeterminowany stan progów.
+func (p *PG) PruneObservations(ctx context.Context, now time.Time) (int64, error) {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM gjallarhorn.threshold_events WHERE expires_at <= $1`, now)
+	return tag.RowsAffected(), err
 }

@@ -1,0 +1,41 @@
+title: Seria nieudanych logowań na jedno konto (brute force)
+id: 2feca112-9567-41b7-83de-92c2516f6cdc
+status: stable
+description: |
+  Co najmniej 10 nieudanych logowań (4625) na to samo konto w ciągu 5 minut,
+  z dowolnych komputerów. Typowe dla zgadywania hasła przez RDP, SMB, LDAP
+  albo formularze korzystające z uwierzytelniania Windows.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4625
+  computer_account:
+    TargetUserName|endswith: '$'
+  empty:
+    TargetUserName:
+      - ''
+      - '-'
+  condition: selection and not computer_account and not empty
+falsepositives:
+  - Program albo usługa z zapamiętanym starym hasłem (zwykle jeden komputer źródłowy)
+  - Użytkownik, który zapomniał hasła po jego zmianie
+level: medium
+heimdall:
+  group_by: [TargetUserName]
+  threshold:
+    count: 10
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań na konto {{TargetDomainName}}\{{TargetUserName}}
+    w {{window}}. Sprawdź w zdarzeniach alertu, skąd były próby (komputer,
+    adres IP, typ logowania). Jeden komputer z usługą – najpewniej zapamiętane
+    stare hasło. Wiele źródeł albo adres spoza sieci – zablokuj źródło,
+    sprawdź, czy konto nie zostało przejęte (udane logowanie 4624 po serii)
+    i rozważ wymuszenie zmiany hasła.

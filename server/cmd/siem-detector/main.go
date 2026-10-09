@@ -114,8 +114,19 @@ func serve(log *slog.Logger) error {
 
 	m := metrics.NewDetector()
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
-	eng := &detector.Engine{}
+	eng := detector.NewEngine()
 	fp := ""
+	// restore: stan progów z bazy (po starcie i po nieudanym zapisie alertów).
+	restore := func() {
+		obs, err := store.Observations(ctx, time.Now().UTC())
+		if err != nil {
+			m.Errors.WithLabelValues("thresholds").Inc()
+			log.Warn("odczyt stanu progów nieudany – liczniki od zera", "err", err)
+		}
+		if n := eng.RestoreThresholds(obs); n > 0 {
+			log.Info("stan progów odtworzony", "events", n)
+		}
+	}
 	reload := func() {
 		cur := detector.Fingerprint(dir)
 		if cur == fp {
@@ -143,6 +154,7 @@ func serve(log *slog.Logger) error {
 		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "errors", len(errs))
 	}
 	reload()
+	restore()
 
 	limits, err := queue.Limits()
 	if err != nil {
@@ -172,6 +184,15 @@ func serve(log *slog.Logger) error {
 		if time.Since(lastReload) > 30*time.Second {
 			reload()
 			lastReload = time.Now()
+			keys, dropped := eng.SweepThresholds()
+			m.ThresholdKeys.Set(float64(keys))
+			if dropped > 0 {
+				m.Errors.WithLabelValues("threshold_limit").Add(float64(dropped))
+				log.Warn("stan progów: zdarzenia pominięte przez limit kluczy", "dropped", dropped)
+			}
+			if _, err := store.PruneObservations(ctx, time.Now().UTC()); err != nil {
+				log.Warn("czyszczenie stanu progów nieudane", "err", err)
+			}
 		}
 		msgs, err := cons.Fetch(256, jetstream.FetchMaxWait(time.Second))
 		if err != nil {
@@ -181,6 +202,7 @@ func serve(log *slog.Logger) error {
 		}
 		var batch []jetstream.Msg
 		var hits []alerts.Hit
+		var obs []alerts.Observation
 		for msg := range msgs.Messages() {
 			data, err := bus.Gunzip(msg.Data(), 256<<20)
 			var b model.Batch
@@ -194,7 +216,8 @@ func serve(log *slog.Logger) error {
 				continue
 			}
 			t0 := time.Now()
-			h := eng.Evaluate(&b)
+			h, o := eng.Evaluate(&b)
+			obs = append(obs, o...)
 			m.EvalTime.Add(time.Since(t0).Seconds())
 			m.Events.Add(float64(len(b.Events)))
 			if n := len(b.Events); n > 0 {
@@ -209,13 +232,17 @@ func serve(log *slog.Logger) error {
 		if len(batch) == 0 {
 			continue
 		}
-		res, err := store.Record(ctx, hits)
+		res, err := store.Record(ctx, hits, obs)
 		if err != nil {
-			// Alerty nie zapisane – zdarzenia wrócą (zapis jest idempotentny).
+			// Alerty nie zapisane – zdarzenia wrócą (zapis jest idempotentny),
+			// a stan progów wraca do ostatniej udanej transakcji.
 			m.Errors.WithLabelValues("record").Inc()
 			log.Error("zapis alertów nieudany – paczki wrócą z kolejki", "hits", len(hits), "err", err)
 			for _, msg := range batch {
 				_ = msg.NakWithDelay(5 * time.Second)
+			}
+			if len(obs) > 0 {
+				restore()
 			}
 			continue
 		}

@@ -135,6 +135,13 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 
 ---
 
+## Etap 4 – Detekcja (Gjallarhorn) – w toku
+
+- **4a (09.10):** kompilator podzbioru Sigmy w Go (`server/internal/detect`) – selekcje, modyfikatory, maski, warunki, aliasy pól (Sysmon 1 ↔ Security 4688); rozszerzenia Heimdalla (`mode`, `group_by`, `suppress`, `instructions` ze zmiennymi `{{Pole}}`, `enabled`); reguły w repozytorium (`rules/`), nieobsługiwane konstrukcje jawnie odrzucane.
+- **4b (09.10):** `siem-detector` – osobny odbiorca `SIEM_EVENTS`, alerty w Sadze (schemat `gjallarhorn`, rola `siem_detector`), para (reguła, zdarzenie) najwyżej raz, łączenie trafień w oknie, outbox → kanały powiadomień, moduł Gjallarhorn i „Reguły detekcji” w panelu. Sprawdzone w laboratorium AD (PowerShell -EncodedCommand, podejrzany skrypt, usługa z katalogu użytkownika, Backup Operators, nowe konto).
+- **4c (09.10):** reguły progowe `heimdall.threshold` (`count` / `distinct` w oknie po czasie zdarzenia, klucz `group_by`). Stan progów zapisywany w tej samej transakcji co alerty (`gjallarhorn.threshold_events`) i odtwarzany po restarcie albo nieudanym zapisie. Reguły: brute force (4625), brute force Kerberos (4771/0x18), password spraying (≥ 5 różnych kont z jednego adresu). Sprawdzone w laboratorium: 12 błędnych logowań LDAP → alert brute force, 6 kont z jednej stacji → alert password spraying, restart detektora odtworzył stan. Przy okazji: `deploy.sh rules` przełącza wersje reguł atomowo (dowiązanie `rules/current`) – wcześniej podmiana katalogu odcinała go działającemu detektorowi.
+- **Dalej:** 4d – silnik zapytań na ClickHouse i testy zgodności obu silników w CI; 4e – utrata heartbeatu agenta, scenariusz 1102 i pozostałe scenariusze z sekcji 11.
+
 ## Przegląd z lotu ptaka (07.10.2026) – niedociągnięcia i luki
 
 Priorytety: **W** = ważne (bezpieczeństwo lub poprawność), **Ś** = średnie, **N** = niskie lub porządkowe.

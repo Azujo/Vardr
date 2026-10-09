@@ -186,7 +186,8 @@ services:
       saga: { condition: service_healthy }
     mem_limit: 384m
 
-  # Gjallarhorn – detekcja w locie: reguły Sigma z ./rules (deploy.sh rules),
+  # Gjallarhorn – detekcja w locie: reguły Sigma z ./rules/current
+  # (deploy.sh rules – wersje w ./rules/v<czas>, dowiązanie przełączane atomowo),
   # alerty w Sadze (schemat gjallarhorn, rola siem_detector); powiadomienia
   # wysyła panel (outbox).
   detector:
@@ -198,7 +199,7 @@ services:
     environment:
       <<: *server-env
       SIEM_DETECTOR_DB_URL: postgres://siem_detector:${SAGA_DETECTOR_PASSWORD}@saga:5432/saga?sslmode=disable
-      SIEM_RULES_DIR: /rules
+      SIEM_RULES_DIR: /rules/current
       GOMEMLIMIT: 200MiB
     depends_on:
       nats: { condition: service_healthy }

@@ -52,7 +52,13 @@ for t in "${targets[@]}"; do
   rules)
     echo "== reguły detekcji (rules/ -> rules/ na VM; detektor przeładuje je w ciągu 30 s)"
     GOOS= go run ./server/cmd/siem-detector check rules >/dev/null || { echo "reguły z błędami – popraw przed wdrożeniem" >&2; exit 1; }
-    tar -C rules -cf - . | ssh -i "$key" -o BatchMode=yes "$host" "rm -rf $dir/rules.new && mkdir -p $dir/rules.new && tar -xf - -C $dir/rules.new && rm -rf $dir/rules && mv $dir/rules.new $dir/rules"
+    # Każde wdrożenie to nowy katalog rules/v<czas>; dowiązanie rules/current
+    # przełączane atomowo (detektor montuje rules/ i nigdy nie widzi połowy
+    # zestawu ani pustego katalogu). Starsze wersje i dawny układ są usuwane.
+    ver="v$(date +%Y%m%d%H%M%S)"
+    tar -C rules -cf - . | ssh -i "$key" -o BatchMode=yes "$host" "set -e; cd $dir; mkdir -p rules/$ver; tar -xf - -C rules/$ver
+      ln -sfn $ver rules/current.tmp && mv -T rules/current.tmp rules/current
+      find rules -mindepth 1 -maxdepth 1 ! -name $ver ! -name current -exec rm -rf {} +"
     ;;
   web)
     echo "== frontend panelu (Node na VM)"

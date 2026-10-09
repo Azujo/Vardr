@@ -141,7 +141,7 @@ func (p *PG) Summarize(ctx context.Context, now time.Time) (Summary, error) {
 // Rules zwraca reguły (bez usuniętych) z liczbą otwartych alertów.
 func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 	rows, err := p.pool.Query(ctx, `SELECT r.id, r.title, r.level, r.description, r.tags, r.file, r.source, r.mode, r.enabled,
-		r.group_by, r.suppress_s, r.instructions, r.loaded_at, r.removed_at,
+		r.group_by, r.suppress_s, r.instructions, r.threshold, r.loaded_at, r.removed_at,
 		(SELECT count(*) FROM gjallarhorn.alerts a WHERE a.rule_id = r.id AND a.status <> 'closed')
 		FROM gjallarhorn.rules r WHERE r.removed_at IS NULL ORDER BY r.level DESC, r.title`)
 	if err != nil {
@@ -150,7 +150,7 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 	rules, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (RuleInfo, error) {
 		var x RuleInfo
 		err := r.Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled,
-			&x.GroupBy, &x.SuppressS, &x.Instructions, &x.LoadedAt, &x.RemovedAt, &x.OpenAlerts)
+			&x.GroupBy, &x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.OpenAlerts)
 		return x, err
 	})
 	if err != nil {
@@ -168,9 +168,9 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 func (p *PG) Rule(ctx context.Context, id string) (RuleInfo, error) {
 	var x RuleInfo
 	err := p.pool.QueryRow(ctx, `SELECT id, title, level, description, tags, file, source, mode, enabled, group_by,
-		suppress_s, instructions, loaded_at, removed_at FROM gjallarhorn.rules WHERE id = $1`, id).
+		suppress_s, instructions, threshold, loaded_at, removed_at FROM gjallarhorn.rules WHERE id = $1`, id).
 		Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled, &x.GroupBy,
-			&x.SuppressS, &x.Instructions, &x.LoadedAt, &x.RemovedAt)
+			&x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return x, ErrNotFound
 	}

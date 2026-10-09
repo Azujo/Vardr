@@ -16,10 +16,15 @@ import (
 	"siem/server/internal/model"
 )
 
-// Engine trzyma bieżący zestaw reguł (podmieniany przy przeładowaniu).
+// Engine trzyma bieżący zestaw reguł (podmieniany przy przeładowaniu)
+// i stan reguł progowych.
 type Engine struct {
 	rules atomic.Pointer[[]*detect.Rule]
+	th    *Thresholds
 }
+
+// NewEngine tworzy silnik bez reguł.
+func NewEngine() *Engine { return &Engine{th: NewThresholds()} }
 
 // SetRules podmienia reguły (tylko włączone, z trybem stream albo both).
 func (e *Engine) SetRules(all []*detect.Rule) int {
@@ -29,26 +34,61 @@ func (e *Engine) SetRules(all []*detect.Rule) int {
 			active = append(active, r)
 		}
 	}
+	e.th.sync(active)
 	e.rules.Store(&active)
 	return len(active)
 }
 
-// Evaluate ocenia paczkę zdarzeń i zwraca trafienia.
-func (e *Engine) Evaluate(b *model.Batch) []alerts.Hit {
-	rp := e.rules.Load()
-	if rp == nil {
-		return nil
+func (e *Engine) active() []*detect.Rule {
+	if rp := e.rules.Load(); rp != nil {
+		return *rp
 	}
-	var hits []alerts.Hit
-	for i := range b.Events {
-		ev := detect.Event{Event: &b.Events[i]}
-		for _, r := range *rp {
-			if r.Match(ev) {
-				hits = append(hits, hitFor(r, ev))
-			}
+	return nil
+}
+
+// RestoreThresholds odtwarza stan progów z bazy (start detektora albo
+// wycofanie po nieudanym zapisie). Zwraca liczbę wczytanych zdarzeń.
+func (e *Engine) RestoreThresholds(obs []alerts.Observation) int {
+	return e.th.Restore(e.active(), obs)
+}
+
+// SweepThresholds usuwa nieaktywne klucze progów; zwraca liczbę kluczy
+// i zdarzeń odrzuconych przez limity pamięci od ostatniego wywołania.
+func (e *Engine) SweepThresholds() (keys, dropped int) {
+	var th []*detect.Rule
+	for _, r := range e.active() {
+		if r.IsThreshold() {
+			th = append(th, r)
 		}
 	}
-	return hits
+	return e.th.Sweep(th)
+}
+
+// Evaluate ocenia paczkę zdarzeń: zwraca trafienia oraz obserwacje reguł
+// progowych (do zapisu razem z alertami).
+func (e *Engine) Evaluate(b *model.Batch) ([]alerts.Hit, []alerts.Observation) {
+	rules := e.active()
+	var hits []alerts.Hit
+	var obs []alerts.Observation
+	for i := range b.Events {
+		ev := detect.Event{Event: &b.Events[i]}
+		for _, r := range rules {
+			if !r.Match(ev) {
+				continue
+			}
+			h := hitFor(r, ev)
+			if !r.IsThreshold() {
+				hits = append(hits, h)
+				continue
+			}
+			o, th := e.th.observe(r, ev, h)
+			if o != nil {
+				obs = append(obs, *o)
+			}
+			hits = append(hits, th...)
+		}
+	}
+	return hits, obs
 }
 
 func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
@@ -61,7 +101,7 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 	if h.EventTime.IsZero() {
 		h.EventTime = ev.Ingested
 	}
-	if len(r.Heimdall.GroupBy) > 0 {
+	if len(r.Heimdall.GroupBy) > 0 || r.IsThreshold() {
 		h.GroupFields = map[string]string{}
 		for _, f := range r.Heimdall.GroupBy {
 			v, _ := ev.Get(f)
@@ -120,6 +160,9 @@ func summary(r *detect.Rule, ev detect.Event) string {
 // Fingerprint opisuje stan katalogu reguł (zmiana = przeładowanie).
 func Fingerprint(dir string) string {
 	var b strings.Builder
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
@@ -136,7 +179,11 @@ func Fingerprint(dir string) string {
 func Infos(rules []*detect.Rule) []alerts.RuleInfo {
 	out := make([]alerts.RuleInfo, 0, len(rules))
 	for _, r := range rules {
-		out = append(out, alerts.RuleInfo{ID: r.ID, Title: r.Title, Level: r.Level, Description: r.Description, Tags: r.Tags,
+		var th *alerts.Threshold
+		if t := r.Heimdall.Threshold; t != nil {
+			th = &alerts.Threshold{Count: t.Count, WindowS: int(time.Duration(t.Window) / time.Second), Distinct: t.Distinct}
+		}
+		out = append(out, alerts.RuleInfo{Threshold: th, ID: r.ID, Title: r.Title, Level: r.Level, Description: r.Description, Tags: r.Tags,
 			File: r.File, Source: r.Source, Mode: r.Heimdall.Mode, Enabled: r.Enabled(), GroupBy: r.Heimdall.GroupBy,
 			SuppressS: int(time.Duration(r.Heimdall.Suppress) / time.Second), Instructions: r.Heimdall.Instructions})
 	}
