@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"siem/internal/alerts"
 	"time"
 
 	"siem/internal/urd"
@@ -177,5 +179,40 @@ func TestAnchorScheduleAndMessage(t *testing.T) {
 	if err != nil || *m.AnchorSeq != 40 || m.AnchorSHA256 != strings.Repeat("a", 64) || m.Event != EventAnchor ||
 		!strings.Contains(m.Fields[3].Value, strings.Repeat("a", 64)) || !strings.Contains(m.Fields[2].Value, "zgodne") {
 		t.Fatalf("kotwica: %+v %v", m, err)
+	}
+}
+
+// Wartości ze zdarzeń (polecenie procesu, konto) mogą pochodzić od
+// atakującego: w Discordzie nie mogą stać się linkiem ani formatowaniem.
+// Wiadomość musi się zmieścić w limicie embedu (6000 znaków).
+func TestDiscordAlertPayloadIsSafe(t *testing.T) {
+	a := &AlertSender{PanelURL: "https://siem:8444"}
+	al := alerts.Alert{ID: 7, RuleTitle: "PowerShell", Level: "high", HostName: "pc1",
+		Summary:      "polecenie: powershell [Otwórz alert w panelu](https://zly.example/x) **pilne**",
+		UserName:     "jan_kowalski",
+		GroupFields:  map[string]string{"CommandLine": strings.Repeat("A", 3000)},
+		Instructions: strings.Repeat("Sprawdź ", 400)}
+	p := discordPayload(a.Message(al))
+	embed := p["embeds"].([]any)[0].(map[string]any)
+	desc := embed["description"].(string)
+	if strings.Contains(desc, "](https") || strings.Contains(desc, "**") || !strings.Contains(desc, `\[Otwórz`) {
+		t.Fatalf("Markdown nie został zneutralizowany: %q", desc)
+	}
+	total := len([]rune(embed["title"].(string))) + len([]rune(desc))
+	var panel, user string
+	for _, f := range embed["fields"].([]map[string]any) {
+		total += len([]rune(f["name"].(string))) + len([]rune(f["value"].(string)))
+		switch f["name"] {
+		case "Panel":
+			panel = f["value"].(string)
+		case "Konto":
+			user = f["value"].(string)
+		}
+	}
+	if total > 6000 {
+		t.Fatalf("embed ma %d znaków (limit Discorda 6000)", total)
+	}
+	if panel != "https://siem:8444/alerts/7" || user != `jan\_kowalski` {
+		t.Fatalf("link do panelu %q (ma zostać bez zmian), konto %q", panel, user)
 	}
 }

@@ -144,6 +144,33 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **4e (09.10):** reguła wbudowana „Utrata łączności z agentem” (próg w grupie agentów, jedna przerwa = jeden alert, automatyczne zamknięcie po powrocie, pomijanie agentów wycofanych; detektor czyta tabele panelu przez osobne uprawnienia), reguły Sigma: wyczyszczenie innych dzienników (System 104) i zatrzymanie/awaria usługi agenta albo Sysmona (7036/7031/7034, tekst stanu po angielsku i polsku). Laboratorium: wyczyszczenie dziennika Security na stacji → alert 1102 w kilka sekund, agent czyta dziennik dalej; zatrzymanie agenta na DC → alert utraty łączności po progu, zdarzenia z czasu przerwy doczytane po starcie, alert zamknięty automatycznie; restart usługi → alert zatrzymania usługi. Grupa DC ma próg 15 min.
 - **Kryterium etapu (roadmapa):** scenariusze Windows z sekcji 11 wykrywane w obu silnikach (test zgodności w CI + próby w laboratorium), restart i ponowne dostarczenie nie dublują alertów (para reguła–zdarzenie raz; stan progów w Sadze). Poza zakresem do czasu integracji: VPN FortiGate i Entra ID (logowanie z nowego kraju).
 
+## Przegląd etapu 4 (09.10.2026) – błędy i luki
+
+Priorytety jak niżej: **W** – ważne, **Ś** – średnie, **N** – niskie.
+
+| # | Pr. | Problem | Skutek | Stan |
+|---|---|---|---|---|
+| 1 | W | Zalew nieudanych logowań na jedno konto: silnik w locie przeliczał wszystkie okna klucza przy każdym zdarzeniu (0,3 ms i 126 KB na zdarzenie przy 8 tys. w pamięci) | atakujący mógł zapchać detekcję własnym brute force – kolejka rośnie, ingest zaczyna odmawiać | **naprawione:** szybka ścieżka dla zdarzeń przedłużających trwający alert – 9 µs i 5 KB (32× szybciej) |
+| 2 | W | Brak globalnego limitu pamięci stanu progów (detektor ma 256 MB) | po braku pamięci detektor odtwarzał ten sam stan z bazy – pętla restartów, detekcja wyłączona | **naprawione:** limit 200 tys. zdarzeń w pamięci, nadmiar liczony w metryce (silnik zapytań go nadrabia) |
+| 3 | W | Silnik zapytań: ponad 50 tys. pasujących zdarzeń w 5-minutowej zakładce | punkt kontrolny staje, przebieg co sekundę czyta te same wiersze | **naprawione:** kursor (czas przyjęcia, id zdarzenia), dalszy ciąg bez zakładki; test z limitem 7 wierszy |
+| 4 | W | Silnik zapytań: kontekst progów dla tysięcy kluczy w jednym zapytaniu | przekroczony limit rozmiaru SQL – silnik stoi do ręcznej interwencji | **naprawione:** paczki po 500 kluczy |
+| 5 | W | Discord: wartości ze zdarzeń (polecenie, konto) trafiały do wiadomości jako Markdown | atakujący może podsunąć w kanale SOC link „[Otwórz alert w panelu](https://…)” | **naprawione:** escapowanie Markdownu w danych ze zdarzeń; link do panelu i czas bez zmian; test |
+| 6 | Ś | Jedna reguła z SQL odrzuconym przez ClickHouse wywraca zapytanie łączne | silnik zapytań przestaje działać dla wszystkich reguł | **naprawione:** reguła izolowana i pomijana, metryka + alert Grafany (ClickHouse 25.8 przyjmuje wszystkie składnie regexów Go, które sprawdziłem – ryzyko małe) |
+| 7 | Ś | Discord odrzuca embed > 6000 znaków, a powiadomienie było ponawiane w nieskończoność | alert bez powiadomienia, wpis w outboxie co godzinę na zawsze | **naprawione:** łączny limit (skracanie najdłuższych pól), porzucenie po 30 próbach (ok. doby) z logiem |
+| 8 | Ś | Silnik zapytań co minutę zapisywał od nowa trafienia z zakładki | tysiące zbędnych zapisów w Sadze przy aktywnej regule | **naprawione:** jedno zapytanie odsiewa pary (reguła, zdarzenie) już będące w alertach |
+| 9 | W | (4c/4d) `deploy.sh rules` odcinał katalog reguł działającemu detektorowi; Prometheus nie zbierał metryk detektora od 4b; maski z „/” nigdy nie pasowały | reguły nie przeładowywały się; brak metryk i alertów zdrowia detekcji | **naprawione wcześniej** (atomowe dowiązanie `rules/current`, `tar --overwrite` + przeładowanie Prometheusa) |
+| 10 | Ś | Burza alertów: każdy alert to osobna wiadomość (Discord przyjmuje ok. 30/min) | przy hałaśliwej regule kanał zalany, ważne alerty giną w tłumie | **otwarte** – zbiorcze powiadomienia i limit na regułę (etap 5) |
+| 11 | Ś | Lista alertów w panelu: najnowsze 100, bez stronicowania | starsze otwarte alerty widać tylko filtrami | **otwarte** – etap 5 |
+| 12 | Ś | Jeden detektor (blokada w Sadze) – brak drugiej kopii w gotowości | restart/awaria = przerwa w detekcji (zdarzenia czekają w kolejce, nic nie ginie; alert Grafany po 3 min) | świadoma decyzja MVP; druga kopia czekająca na blokadę – później |
+| 13 | N | Powrót agenta zamyka alert utraty łączności bez powiadomienia | analityk nie wie z Discorda, że problem minął | do decyzji: wiadomość „agent wrócił” |
+| 14 | N | W tabeli agentów jest 50 nieaktywnych wpisów (symulacje z etapu 2) | po ustawieniu progu w grupie domyślnej każdy da alert utraty łączności | do wycofania w panelu (unieważnienie certyfikatów) albo usunięcia |
+| 15 | N | Zamknięcie alertu progowego w trakcie trwającego ataku | kolejne próby otwierają nowy alert (od 1 trafienia, z opisem progu) | zachowanie zamierzone – zamknięcie oznacza „obsłużone”; opisane tutaj |
+| 16 | N | Reguła zatrzymania usługi alarmuje także przy aktualizacji agenta (MSI) | fałszywy alert przy każdej aktualizacji | wyciszenie po korelacji z instalatorem (MsiInstaller) – v1 |
+| 17 | N | Pole `Channel` z danych zdarzenia 104 (nazwa wyczyszczonego dziennika) zasłania nazwa Sigmy `Channel` (kanał zdarzenia) | instrukcja alertu nie podaje nazwy dziennika (jest w polach zdarzenia) | do poprawy przy mapowaniu pól UserData |
+| 18 | N | Słowa kluczowe w silniku zapytań po 2 dniach przeszukują tylko opis (retencja surowego XML) | starsze zdarzenia mogą nie pasować do reguł ze słowami kluczowymi | udokumentowane (README) |
+
+**Co sprawdzono i jest w porządku:** uprawnienia API alertów (odczyt – viewer, zmiana stanu – analityk, powód zamknięcia, audyt); outbox z `FOR UPDATE SKIP LOCKED` (dwie kopie panelu nie wyślą tego samego); blokada wzmianek w Discordzie (`@everyone` nie działa); kompilator SQL – literały escapowane, zgodność z Go potwierdzona na wszystkich modyfikatorach; idempotencja zapisu (para reguła–zdarzenie raz) przy restartach, ponownym dostarczeniu i obu silnikach naraz; agent po wyczyszczeniu dziennika Security czyta dalej; zdarzenia z czasu zatrzymania agenta są doczytywane.
+
 ## Przegląd z lotu ptaka (07.10.2026) – niedociągnięcia i luki
 
 Priorytety: **W** = ważne (bezpieczeństwo lub poprawność), **Ś** = średnie, **N** = niskie lub porządkowe.

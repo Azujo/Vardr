@@ -36,10 +36,13 @@ import (
 // (spóźnione zdarzenia, np. z bufora agenta po przerwie w łączności).
 const ThresholdLateness = time.Hour
 
-// Limity pamięci stanu progów.
+// Limity pamięci stanu progów (detektor ma ok. 200 MiB; wpis to ok. 0,5 KB).
+// Po przekroczeniu nowe zdarzenia nie są liczone (metryka, log) – lepiej
+// niż pętla restartów po braku pamięci; silnik zapytań je nadrobi.
 const (
 	maxEntriesPerKey = 20000
 	maxKeysPerRule   = 50000
+	maxEntriesTotal  = 200000
 )
 
 type entry struct {
@@ -142,6 +145,8 @@ type keyState struct {
 	ids     map[string]bool
 	fields  map[string]string
 	seen    time.Time // zegar ścienny – do usuwania nieaktywnych kluczy
+	// Opis i instrukcja ostatniego alertu klucza (szybka ścieżka).
+	summary, instr string
 }
 
 type ruleState struct {
@@ -155,6 +160,7 @@ type Thresholds struct {
 	rules   map[string]*ruleState
 	now     func() time.Time
 	dropped int // zdarzenia odrzucone przez limity pamięci
+	total   int // zdarzenia w pamięci (wszystkie reguły)
 }
 
 // NewThresholds tworzy pusty stan.
@@ -198,6 +204,12 @@ func (t *Thresholds) sync(rules []*detect.Rule) {
 			delete(t.rules, id)
 		}
 	}
+	t.total = 0
+	for _, rs := range t.rules {
+		for _, ks := range rs.keys {
+			t.total += len(ks.entries)
+		}
+	}
 }
 
 // Restore wczytuje stan zapisany w bazie (po starcie albo po nieudanym
@@ -215,11 +227,16 @@ func (t *Thresholds) Restore(rules []*detect.Rule, obs []alerts.Observation) int
 		if rs == nil || rs.sig != o.Sig {
 			continue
 		}
+		if t.total >= maxEntriesTotal {
+			t.dropped++
+			continue
+		}
 		ks := rs.key(o.GroupKey, o.GroupFields, t.now())
 		if ks.ids[o.EventID] {
 			continue
 		}
 		ks.insert(&entry{Observation: o, emitted: o.InAlert})
+		t.total++
 		n++
 	}
 	return n
@@ -235,19 +252,42 @@ func (rs *ruleState) key(k string, fields map[string]string, now time.Time) *key
 	return ks
 }
 
-func (ks *keyState) insert(e *entry) {
-	ks.entries = insertSorted(ks.entries, e)
-	ks.ids[e.EventID] = true
-}
-
-// insertSorted wstawia zdarzenie po czasie (przy równym czasie – po id,
-// żeby kolejność nie zależała od kolejności napływu).
-func insertSorted(es []*entry, e *entry) []*entry {
+// insert wstawia zdarzenie po czasie (przy równym czasie – po id, żeby
+// kolejność nie zależała od kolejności napływu); zwraca jego pozycję.
+func (ks *keyState) insert(e *entry) int {
+	es := ks.entries
 	i := sort.Search(len(es), func(i int) bool { return entryLess(e, es[i]) })
 	es = append(es, nil)
 	copy(es[i+1:], es[i:])
 	es[i] = e
-	return es
+	ks.entries = es
+	ks.ids[e.EventID] = true
+	return i
+}
+
+// extendsAlert: zdarzenie na pozycji i tylko przedłuża trwający alert –
+// sąsiad w odległości ≤ suppress już do niego należy, a żaden sąsiad
+// w tej odległości nie czeka na zaznaczenie. Wtedy łańcuch (punkt 2
+// semantyki) obejmuje tylko to zdarzenie, a okna nie zmieniają wyniku
+// (Window ≤ Suppress) – bez przeliczania całego klucza.
+func extendsAlert(es []*entry, i int, suppress time.Duration) bool {
+	t := es[i].EventTime
+	near := func(j int) (in, block bool) {
+		if j < 0 || j >= len(es) {
+			return false, false
+		}
+		d := t.Sub(es[j].EventTime)
+		if d < 0 {
+			d = -d
+		}
+		if d > suppress {
+			return false, false
+		}
+		return es[j].emitted, !es[j].emitted
+	}
+	pin, pblock := near(i - 1)
+	nin, nblock := near(i + 1)
+	return (pin || nin) && !pblock && !nblock
 }
 
 func entryLess(a, b *entry) bool {
@@ -257,20 +297,25 @@ func entryLess(a, b *entry) bool {
 	return a.EventID < b.EventID
 }
 
-// prune usuwa zdarzenia starsze niż najnowsze − keep i najstarsze ponad limit.
-func (ks *keyState) prune(keep time.Duration) {
+// prune usuwa zdarzenia starsze niż najnowsze − keep i najstarsze ponad
+// limit; zwraca liczbę usuniętych.
+func (ks *keyState) prune(keep time.Duration) int {
 	if len(ks.entries) == 0 {
-		return
+		return 0
 	}
 	cut := ks.entries[len(ks.entries)-1].EventTime.Add(-keep)
 	n := sort.Search(len(ks.entries), func(i int) bool { return !ks.entries[i].EventTime.Before(cut) })
 	if over := len(ks.entries) - maxEntriesPerKey; over > n {
 		n = over
 	}
+	if n == 0 {
+		return 0
+	}
 	for _, e := range ks.entries[:n] {
 		delete(ks.ids, e.EventID)
 	}
 	ks.entries = append(ks.entries[:0:0], ks.entries[n:]...)
+	return n
 }
 
 // distinctValue: wartość pola Distinct zdarzenia (puste – „(brak)”).
@@ -300,14 +345,38 @@ func (t *Thresholds) observe(r *detect.Rule, ev detect.Event, base alerts.Hit) (
 		t.dropped++
 		return nil, nil
 	}
+	if t.total >= maxEntriesTotal {
+		t.dropped++
+		return nil, nil
+	}
 	ks := rs.key(base.GroupKey, base.GroupFields, t.now())
 	if ks.ids[base.EventID] {
 		return nil, nil
 	}
 	o := observation(r, ev, base, rs.sig, t.now())
-	ks.insert(&entry{Observation: o})
-	ks.prune(keep(r))
-	return &o, emit(r, ev, base, ks.entries, nil)
+	e := &entry{Observation: o}
+	i := ks.insert(e)
+	t.total++
+	var hits []alerts.Hit
+	if ks.summary != "" && extendsAlert(ks.entries, i, time.Duration(r.Heimdall.Suppress)) {
+		e.emitted = true
+		hits = []alerts.Hit{hitOf(base, e, ks.summary, ks.instr)}
+	} else {
+		hits = emit(r, ev, base, ks.entries, nil)
+		if len(hits) > 0 {
+			ks.summary, ks.instr = hits[len(hits)-1].Summary, hits[len(hits)-1].Instructions
+		}
+	}
+	t.total -= ks.prune(keep(r))
+	return &o, hits
+}
+
+func hitOf(base alerts.Hit, e *entry, summary, instr string) alerts.Hit {
+	h := base
+	h.EventID, h.EventTime, h.AgentID, h.HostName, h.UserName, h.SourceIP =
+		e.EventID, e.EventTime, e.AgentID, e.HostName, e.UserName, e.SourceIP
+	h.Summary, h.Instructions = summary, instr
+	return h
 }
 
 func observation(r *detect.Rule, ev detect.Event, base alerts.Hit, sig string, now time.Time) alerts.Observation {
@@ -361,11 +430,7 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 		summary, instr := thresholdTexts(r, ev, win)
 		for _, e := range fresh {
 			e.emitted = true
-			h := base
-			h.EventID, h.EventTime, h.AgentID, h.HostName, h.UserName, h.SourceIP =
-				e.EventID, e.EventTime, e.AgentID, e.HostName, e.UserName, e.SourceIP
-			h.Summary, h.Instructions = summary, instr
-			hits = append(hits, h)
+			hits = append(hits, hitOf(base, e, summary, instr))
 		}
 	}
 	return hits
@@ -437,6 +502,7 @@ func (t *Thresholds) Sweep(rules []*detect.Rule) (keys, dropped int) {
 		idle := keep(r) + ThresholdLateness
 		for k, ks := range rs.keys {
 			if now.Sub(ks.seen) > idle {
+				t.total -= len(ks.entries)
 				delete(rs.keys, k)
 			}
 		}

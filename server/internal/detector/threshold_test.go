@@ -18,7 +18,7 @@ const (
 
 var t0 = time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 
-func repoEngine(t *testing.T) *Engine {
+func repoEngine(t testing.TB) *Engine {
 	t.Helper()
 	rules, errs, err := detect.LoadDir("../../../rules")
 	if err != nil || len(errs) > 0 {

@@ -50,6 +50,9 @@ type Field struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
 	Inline bool   `json:"inline,omitempty"`
+	// Trusted: wartość tworzy Heimdall (link do panelu, czas) – nie jest
+	// escapowana nawet w wiadomości z danymi ze zdarzeń (Untrusted).
+	Trusted bool `json:"-"`
 }
 
 // Message to wiadomość niezależna od kanału.
@@ -63,6 +66,10 @@ type Message struct {
 	// Kotwica archiwum (dla dziennika wysyłek).
 	AnchorSeq    *int64
 	AnchorSHA256 string
+	// Untrusted: treść i pola (poza Trusted) pochodzą ze zdarzeń, czyli
+	// potencjalnie od atakującego – w Discordzie Markdown jest escapowany
+	// (np. ukryty link „[panel](https://zly.adres)” w poleceniu procesu).
+	Untrusted bool
 }
 
 // Store to kanały i dziennik wysyłek (implementuje store.PG).
@@ -220,20 +227,67 @@ func clip(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
+// mdEscaper: znaki Markdownu Discorda poprzedzone ukośnikiem wstecznym.
+var mdEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "\\`", "|", `\|`,
+	"[", `\[`, "]", `\]`, "(", `\(`, ")", `\)`, "<", `\<`, ">", `\>`, "#", `\#`)
+
+// discordLimit: łączna długość tekstów embedu dopuszczana przez Discorda
+// (6000) z zapasem – dłuższa wiadomość jest odrzucana (HTTP 400).
+const discordLimit = 5800
+
 func discordPayload(m Message) map[string]any {
+	text := m.Text
+	type fv struct {
+		name, value string
+		inline      bool
+	}
+	var fs []fv
+	for i, f := range m.Fields {
+		if i == 25 {
+			break
+		}
+		v := f.Value
+		if m.Untrusted && !f.Trusted {
+			v = mdEscaper.Replace(v)
+		}
+		fs = append(fs, fv{clip(f.Name, 256), clip(v, 1024), f.Inline})
+	}
+	if m.Untrusted {
+		text = mdEscaper.Replace(text)
+	}
+	title := clip(m.Title, 256)
+	text = clip(text, 4000)
+	// Łączny limit: skracamy najdłuższy tekst, aż się zmieści.
+	for {
+		total := len([]rune(title)) + len([]rune(text)) + len("Heimdall SIEM")
+		longest, ln := -1, len([]rune(text))
+		for i, f := range fs {
+			n := len([]rune(f.value))
+			total += len([]rune(f.name)) + n
+			if n > ln {
+				longest, ln = i, n
+			}
+		}
+		if total <= discordLimit || ln < 40 {
+			break
+		}
+		cut := max(ln-(total-discordLimit), ln/2)
+		if longest < 0 {
+			text = clip(text, cut)
+		} else {
+			fs[longest].value = clip(fs[longest].value, cut)
+		}
+	}
 	embed := map[string]any{
-		"title":       clip(m.Title, 256),
-		"description": clip(m.Text, 4000),
+		"title":       title,
+		"description": text,
 		"color":       sevColor[m.Severity],
 		"timestamp":   m.At.UTC().Format(time.RFC3339),
 		"footer":      map[string]any{"text": "Heimdall SIEM"},
 	}
 	var fields []map[string]any
-	for i, f := range m.Fields {
-		if i == 25 {
-			break
-		}
-		fields = append(fields, map[string]any{"name": clip(f.Name, 256), "value": clip(f.Value, 1024), "inline": f.Inline})
+	for _, f := range fs {
+		fields = append(fields, map[string]any{"name": f.name, "value": f.value, "inline": f.inline})
 	}
 	if fields != nil {
 		embed["fields"] = fields

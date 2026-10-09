@@ -328,7 +328,9 @@ func openIndex(ctx context.Context, log *slog.Logger, store *alerts.PG) (*detect
 
 // runIndex: przebiegi silnika zapytań. Każdy ocenia zdarzenia przyjęte od
 // punktu kontrolnego (z zakładką SIEM_INDEX_OVERLAP na zapis spóźniony
-// w ClickHouse) do teraz − SIEM_INDEX_DELAY; zaległość nadrabia krokami.
+// w ClickHouse) do teraz − SIEM_INDEX_DELAY; zaległość nadrabia krokami,
+// a po limicie wierszy kolejny przebieg zaczyna dokładnie za ostatnim
+// wierszem (bez zakładki – inaczej duża zakładka blokowałaby postęp).
 func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *detector.Engine, store *alerts.PG,
 	mu *sync.Mutex, m *metrics.Detector) {
 	interval, _ := svc.EnvDuration("SIEM_INDEX_INTERVAL", time.Minute)
@@ -338,6 +340,9 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 	const step = 6 * time.Hour
 	log.Info("silnik zapytań uruchomiony", "interval", interval, "delay", delay, "overlap", overlap)
 	wait := 10 * time.Second
+	var resume *detector.Cursor // dalszy ciąg przebiegu przerwanego limitem wierszy
+	var resumeTo time.Time
+	failing := map[string]bool{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -347,41 +352,70 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		wait = interval
 		rules := eng.IndexRules()
 		m.IndexRules.Set(float64(len(rules)))
-		to := time.Now().UTC().Add(-delay).Truncate(time.Millisecond)
-		cp, ok, err := store.IndexCheckpoint(ctx)
-		if err != nil {
-			m.IndexRuns.WithLabelValues("error").Inc()
-			log.Warn("odczyt punktu kontrolnego nieudany", "err", err)
-			continue
-		}
-		from := to.Add(-lookback)
-		if ok {
-			from = cp.Add(-overlap)
-			m.IndexLag.Set(time.Since(cp).Seconds())
-		}
-		if to.Sub(from) > step+overlap {
-			to = from.Add(step + overlap) // zaległość – kolejny krok zaraz
-			wait = time.Second
+		var from detector.Cursor
+		var to time.Time
+		if resume != nil {
+			from, to = *resume, resumeTo
+		} else {
+			to = time.Now().UTC().Add(-delay).Truncate(time.Millisecond)
+			cp, ok, err := store.IndexCheckpoint(ctx)
+			if err != nil {
+				m.IndexRuns.WithLabelValues("error").Inc()
+				log.Warn("odczyt punktu kontrolnego nieudany", "err", err)
+				continue
+			}
+			from = detector.Cursor{Ingested: to.Add(-lookback)}
+			if ok {
+				from = detector.Cursor{Ingested: cp.Add(-overlap)}
+				m.IndexLag.Set(time.Since(cp).Seconds())
+			}
+			if to.Sub(from.Ingested) > step+overlap {
+				to = from.Ingested.Add(step + overlap) // zaległość – kolejny krok zaraz
+				wait = time.Second
+			}
 		}
 		t0 := time.Now()
 		res, err := idx.Run(ctx, rules, from, to)
 		m.IndexTime.Add(time.Since(t0).Seconds())
 		if err != nil {
 			m.IndexRuns.WithLabelValues("error").Inc()
-			log.Error("przebieg silnika zapytań nieudany", "from", from, "to", to, "err", err)
+			log.Error("przebieg silnika zapytań nieudany", "from", from.Ingested, "to", to, "err", err)
+			resume = nil
 			continue
 		}
+		// Reguły, których SQL nie przechodzi w ClickHouse – pominięte (metryka
+		// i log przy zmianie, alert Grafany „reguły detekcji z błędami”).
+		now := map[string]bool{}
+		for _, f := range res.Failed {
+			now[f.RuleID] = true
+			if !failing[f.RuleID] {
+				log.Error("reguła odrzucona przez ClickHouse – pominięta w silniku zapytań", "rule", f.RuleID, "err", f.Err)
+			}
+		}
+		failing = now
+		m.IndexRuleErrors.Set(float64(len(failing)))
+		hits := res.Hits
+		if len(hits) > 0 {
+			// Zakładka i praca silnika w locie: większość trafień już jest w alertach.
+			if fresh, err := store.FilterNew(ctx, hits); err == nil {
+				m.Alerts.WithLabelValues("duplicate").Add(float64(len(hits) - len(fresh)))
+				hits = fresh
+			}
+		}
 		mu.Lock()
-		rec, err := store.RecordIndex(ctx, res.Hits, res.Reached)
+		rec, err := store.RecordIndex(ctx, hits, res.Reached)
 		mu.Unlock()
 		if err != nil {
 			m.IndexRuns.WithLabelValues("error").Inc()
 			m.Errors.WithLabelValues("record").Inc()
-			log.Error("zapis alertów silnika zapytań nieudany", "hits", len(res.Hits), "err", err)
+			log.Error("zapis alertów silnika zapytań nieudany", "hits", len(hits), "err", err)
+			resume = nil
 			continue
 		}
-		if res.Reached.Before(to) {
-			wait = time.Second // limit wierszy – reszta w następnym przebiegu
+		resume = nil
+		if res.More {
+			next := res.Next
+			resume, resumeTo, wait = &next, to, time.Second
 		}
 		m.IndexRuns.WithLabelValues("ok").Inc()
 		m.IndexRows.Add(float64(res.Rows))

@@ -340,12 +340,12 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Reguły detekcji z błędami"
-          description: "Część plików reguł nie została wczytana – te reguły nie działają. Szczegóły: panel → Reguły detekcji."
+          description: "Część reguł nie działa: pliki z błędami (panel → Reguły detekcji) albo SQL odrzucony przez ClickHouse w silniku zapytań (logi siem-detector)."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: prometheus-siem
-            model: { refId: A, instant: true, expr: 'max(siem_detector_rule_errors)' }
+            model: { refId: A, instant: true, expr: 'max(siem_detector_rule_errors) + (max(siem_detector_index_rule_errors) or vector(0))' }
           - refId: C
             datasourceUid: __expr__
             model:

@@ -75,13 +75,23 @@ func (a *AlertSender) tick(ctx context.Context) error {
 			continue
 		}
 		next := now.Add(backoff(p.Attempts))
-		a.Log.Warn("powiadomienie o alercie nieudane – ponowię", "alert", p.Alert.ID, "attempt", p.Attempts+1, "next", next, "err", err)
+		if p.Attempts+1 >= maxAttempts {
+			// Odbiorca trwale odrzuca (np. usunięty webhook) – bez końca nie ponawiamy;
+			// alert jest w panelu, a błąd zostaje w outboxie.
+			next = now.AddDate(100, 0, 0)
+			a.Log.Error("powiadomienie o alercie porzucone po wielu próbach", "alert", p.Alert.ID, "attempts", p.Attempts+1, "err", err)
+		} else {
+			a.Log.Warn("powiadomienie o alercie nieudane – ponowię", "alert", p.Alert.ID, "attempt", p.Attempts+1, "next", next, "err", err)
+		}
 		if err := a.Store.MarkFailed(ctx, p.OutboxID, err.Error(), next); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// maxAttempts: po tylu nieudanych próbach (ok. doby) powiadomienie jest porzucane.
+const maxAttempts = 30
 
 // backoff: 30 s, 1, 2, 4… min, najwyżej godzina.
 func backoff(attempts int) time.Duration {
@@ -104,6 +114,8 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		Title:    fmt.Sprintf("[%s] %s", levelLabel[al.Level], al.RuleTitle),
 		Text:     al.Summary,
 		At:       al.CreatedAt,
+		// Opis, konto, klucz i instrukcja zawierają wartości ze zdarzeń.
+		Untrusted: true,
 	}
 	if m.Severity == "" {
 		m.Severity = SevWarning
@@ -112,6 +124,9 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		if val != "" {
 			m.Fields = append(m.Fields, Field{Name: name, Value: val, Inline: inline})
 		}
+	}
+	trusted := func(name, val string, inline bool) {
+		m.Fields = append(m.Fields, Field{Name: name, Value: val, Inline: inline, Trusted: true})
 	}
 	add("Komputer", al.HostName, true)
 	add("Konto", al.UserName, true)
@@ -128,10 +143,10 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		}
 		add("Klucz alertu", strings.Join(parts, "\n"), false)
 	}
-	add("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
+	trusted("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
 	add("Co zrobić", strings.TrimSpace(al.Instructions), false)
 	if a.PanelURL != "" {
-		add("Panel", a.PanelURL+"/alerts/"+strconv.FormatInt(al.ID, 10), false)
+		trusted("Panel", a.PanelURL+"/alerts/"+strconv.FormatInt(al.ID, 10), false)
 	}
 	return m
 }

@@ -313,7 +313,7 @@ func TestEngineCompatibility(t *testing.T) {
 		cuts := []time.Time{compatT0.Add(-time.Hour), compatT0.Add(90 * time.Minute), compatT0.Add(3 * time.Hour),
 			compatT0.Add(10 * time.Hour)}
 		for i := 0; i+1 < len(cuts); i++ {
-			res, err := idx.Run(ctx, IndexRules(rules), cuts[i], cuts[i+1])
+			res, err := idx.Run(ctx, IndexRules(rules), Cursor{Ingested: cuts[i]}, cuts[i+1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -324,6 +324,28 @@ func TestEngineCompatibility(t *testing.T) {
 				len(hitSet(stream)), len(hitSet(index)))
 		}
 		diffSets(t, fmt.Sprintf("kolejność %d", seed), hitSet(stream), hitSet(index))
+		if seed == 0 {
+			// Mały limit wierszy: przebieg kontynuowany kursorem (także w obrębie
+			// tej samej chwili przyjęcia) daje te same trafienia.
+			small := &Index{Conn: conn, Table: "compat_test.events", MaxRows: 7}
+			var paged []alerts.Hit
+			from, to := Cursor{Ingested: cuts[0]}, cuts[len(cuts)-1]
+			for runs := 0; ; runs++ {
+				res, err := small.Run(ctx, IndexRules(rules), from, to)
+				if err != nil {
+					t.Fatal(err)
+				}
+				paged = append(paged, res.Hits...)
+				if !res.More {
+					break
+				}
+				if runs > 1000 || !(res.Next.Ingested.After(from.Ingested) || res.Next.EventID > from.EventID) {
+					t.Fatalf("kursor nie posuwa się: %+v → %+v", from, res.Next)
+				}
+				from = res.Next
+			}
+			diffSets(t, "przebiegi z limitem wierszy", hitSet(stream), hitSet(paged))
+		}
 	}
 }
 

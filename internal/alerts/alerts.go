@@ -416,6 +416,42 @@ func (p *PG) PruneObservations(ctx context.Context, now time.Time) (int64, error
 	return tag.RowsAffected(), err
 }
 
+// FilterNew zwraca trafienia, których para (reguła, zdarzenie) nie jest
+// jeszcze w alertach (jedno zapytanie zamiast próby zapisu każdego).
+func (p *PG) FilterNew(ctx context.Context, hits []Hit) ([]Hit, error) {
+	rules := make([]string, len(hits))
+	events := make([]string, len(hits))
+	for i, h := range hits {
+		rules[i], events[i] = h.RuleID, h.EventID
+	}
+	rows, err := p.pool.Query(ctx, `SELECT a.rule_id, a.event_id FROM gjallarhorn.alert_events a
+		JOIN unnest($1::text[], $2::text[]) AS h(rule_id, event_id) USING (rule_id, event_id)
+		WHERE a.alert_id IS NOT NULL`, rules, events)
+	if err != nil {
+		return nil, err
+	}
+	known := map[[2]string]bool{}
+	for rows.Next() {
+		var r, e string
+		if err := rows.Scan(&r, &e); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		known[[2]string{r, e}] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]Hit, 0, len(hits))
+	for _, h := range hits {
+		if !known[[2]string{h.RuleID, h.EventID}] {
+			out = append(out, h)
+		}
+	}
+	return out, nil
+}
+
 // KnownEvents zwraca te z podanych zdarzeń, które są już w alertach reguły.
 func (p *PG) KnownEvents(ctx context.Context, rule string, ids []string) (map[string]bool, error) {
 	rows, err := p.pool.Query(ctx, `SELECT event_id FROM gjallarhorn.alert_events

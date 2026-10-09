@@ -222,6 +222,8 @@ type Detector struct {
 	IndexLag   prometheus.Gauge
 	IndexRules prometheus.Gauge
 	IndexTime  prometheus.Counter
+	// IndexRuleErrors: reguły, których SQL nie przechodzi w ClickHouse.
+	IndexRuleErrors prometheus.Gauge
 }
 
 func NewDetector() *Detector {
@@ -252,6 +254,8 @@ func NewDetector() *Detector {
 			Help: "Opóźnienie punktu kontrolnego silnika zapytań względem bieżącego czasu."}),
 		IndexRules: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_rules",
 			Help: "Włączone reguły wykonywane przez silnik zapytań."}),
+		IndexRuleErrors: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_rule_errors",
+			Help: "Reguły pominięte przez silnik zapytań (SQL odrzucony przez ClickHouse)."}),
 		IndexTime: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_seconds_total",
 			Help: "Łączny czas przebiegów silnika zapytań."}),
 	}
