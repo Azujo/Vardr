@@ -148,7 +148,8 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 
 - **Wcześniej (etapy 2–4):** logowanie i role, audyt, agenci i grupy, wdrażanie tokenem, wyszukiwarka zdarzeń, polityka archiwum, kanały powiadomień z filtrem alertów.
 - **5a (09.10):** praca z alertami – filtry i licznik, przypisanie analityka, oś czasu (`gjallarhorn.alert_activity`) z notatkami, akcje zbiorcze, powiązane alerty, przejście do zdarzeń z okolicy alertu w Mímirze; automatyczne zamknięcia (powrót agenta) też na osi czasu.
-- **Dalej:** 5b (burza alertów – wiadomości zbiorcze i limit na regułę), 5c (reguły w panelu: wersje, włączanie, test), 5d (stan systemu), 5e (scenariusz od ataku do zamknięcia).
+- **5b (09.10):** burza alertów – limit osobnych powiadomień na regułę (5 w 10 min), nadwyżka wstrzymywana w outboxie i wysyłana jedną wiadomością zbiorczą; krytyczne i „rozwiązane” zawsze osobno.
+- **Dalej:** 5c (reguły w panelu: wersje, włączanie, test), 5d (stan systemu), 5e (scenariusz od ataku do zamknięcia).
 
 ## Przegląd etapu 4 (09.10.2026) – błędy i luki
 
@@ -165,8 +166,8 @@ Priorytety jak niżej: **W** – ważne, **Ś** – średnie, **N** – niskie.
 | 7 | Ś | Discord odrzuca embed > 6000 znaków, a powiadomienie było ponawiane w nieskończoność | alert bez powiadomienia, wpis w outboxie co godzinę na zawsze | **naprawione:** łączny limit (skracanie najdłuższych pól), porzucenie po 30 próbach (ok. doby) z logiem |
 | 8 | Ś | Silnik zapytań co minutę zapisywał od nowa trafienia z zakładki | tysiące zbędnych zapisów w Sadze przy aktywnej regule | **naprawione:** jedno zapytanie odsiewa pary (reguła, zdarzenie) już będące w alertach |
 | 9 | W | (4c/4d) `deploy.sh rules` odcinał katalog reguł działającemu detektorowi; Prometheus nie zbierał metryk detektora od 4b; maski z „/” nigdy nie pasowały | reguły nie przeładowywały się; brak metryk i alertów zdrowia detekcji | **naprawione wcześniej** (atomowe dowiązanie `rules/current`, `tar --overwrite` + przeładowanie Prometheusa) |
-| 10 | Ś | Burza alertów: każdy alert to osobna wiadomość (Discord przyjmuje ok. 30/min) | przy hałaśliwej regule kanał zalany, ważne alerty giną w tłumie | **otwarte** – zbiorcze powiadomienia i limit na regułę (etap 5) |
-| 11 | Ś | Lista alertów w panelu: najnowsze 100, bez stronicowania | starsze otwarte alerty widać tylko filtrami | **otwarte** – etap 5 |
+| 10 | Ś | Burza alertów: każdy alert to osobna wiadomość (Discord przyjmuje ok. 30/min) | przy hałaśliwej regule kanał zalany, ważne alerty giną w tłumie | **zrobione 09.10 (5b):** limit na regułę i wiadomość zbiorcza |
+| 11 | Ś | Lista alertów w panelu: najnowsze 100, bez stronicowania | starsze otwarte alerty widać tylko filtrami | **nieaktualne** – lista ma doładowywanie starszych; w 5a doszły filtry i licznik |
 | 12 | Ś | Jeden detektor (blokada w Sadze) – brak drugiej kopii w gotowości | restart/awaria = przerwa w detekcji (zdarzenia czekają w kolejce, nic nie ginie; alert Grafany po 3 min) | **zrobione 09.10:** samokontrola – zawieszona pętla kończy proces, Docker go podnosi (stan z Sagi); druga kopia w gotowości ma sens dopiero na drugim hoście (mechanizm blokady już ją obsługuje) – przy skalowaniu |
 | 13 | N | Powrót agenta zamyka alert utraty łączności bez powiadomienia | analityk nie wie z Discorda, że problem minął | **zrobione 09.10:** opcja grupy „Powiadamiaj także o powrocie” – wiadomość „[ROZWIĄZANY]” z długością przerwy; do tego filtr alertów w każdym kanale (poziom, reguły) |
 | 14 | N | W tabeli agentów jest 50 nieaktywnych wpisów (symulacje z etapu 2) | po ustawieniu progu w grupie domyślnej każdy da alert utraty łączności | **zrobione 09.10:** 50 agentów `agt-load-*` usuniętych (wpisy w audycie) |

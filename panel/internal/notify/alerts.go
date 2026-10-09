@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +22,10 @@ type OutboxStore interface {
 	ClaimOutbox(ctx context.Context, now time.Time, limit int) ([]alerts.Pending, error)
 	MarkSent(ctx context.Context, id int64, now time.Time) error
 	MarkFailed(ctx context.Context, id int64, errMsg string, next time.Time) error
+	SentPerRule(ctx context.Context, since time.Time) (map[string]int, error)
+	Hold(ctx context.Context, outboxID int64, now time.Time) error
+	DueDigests(ctx context.Context, olderThan time.Time) ([]alerts.Digest, error)
+	MarkDigested(ctx context.Context, rule string, upto, now time.Time) error
 }
 
 // AlertSender wysyła nowe alerty z outboxa na kanały subskrybujące alerty.
@@ -31,6 +37,25 @@ type AlertSender struct {
 	Log      *slog.Logger
 	PanelURL string // np. https://192.168.88.98:8444 – link w wiadomości
 	Every    time.Duration
+	// Burza alertów: najwyżej PerRule osobnych powiadomień o nowych alertach
+	// jednej reguły w oknie Window (domyślnie 5 w 10 min); nadwyżka trafia do
+	// jednej wiadomości zbiorczej po Window. Alerty krytyczne i wiadomości
+	// o rozwiązaniu zawsze osobno. PerRule < 0 wyłącza limit.
+	PerRule int
+	Window  time.Duration
+
+	digestRetry time.Time // po nieudanej wiadomości zbiorczej – nie częściej niż co minutę
+}
+
+func (a *AlertSender) limits() (int, time.Duration) {
+	n, w := a.PerRule, a.Window
+	if n == 0 {
+		n = 5
+	}
+	if w <= 0 {
+		w = 10 * time.Minute
+	}
+	return n, w
 }
 
 // Run przegląda outbox co Every (domyślnie 5 s).
@@ -64,7 +89,22 @@ func (a *AlertSender) tick(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	perRule, window := a.limits()
+	var sent map[string]int
+	if len(pending) > 0 && perRule > 0 {
+		if sent, err = a.Store.SentPerRule(ctx, now.Add(-window)); err != nil {
+			return err
+		}
+	}
 	for _, p := range pending {
+		limited := perRule > 0 && p.Kind != "resolved" && p.Alert.Level != "critical"
+		if limited && sent[p.Alert.RuleID] >= perRule {
+			// Ponad limit – do wiadomości zbiorczej.
+			if err := a.Store.Hold(ctx, p.OutboxID, now); err != nil {
+				return err
+			}
+			continue
+		}
 		m := a.Message(p.Alert)
 		if p.Kind == "resolved" {
 			m = a.Resolved(p.Alert)
@@ -74,6 +114,9 @@ func (a *AlertSender) tick(ctx context.Context) error {
 			// Brak kanałów subskrybujących alerty też kończy wpis (nie ma dokąd wysłać).
 			if err := a.Store.MarkSent(ctx, p.OutboxID, now); err != nil {
 				return err
+			}
+			if limited {
+				sent[p.Alert.RuleID]++
 			}
 			continue
 		}
@@ -90,7 +133,73 @@ func (a *AlertSender) tick(ctx context.Context) error {
 			return err
 		}
 	}
+	return a.digests(ctx, now)
+}
+
+// digests wysyła wiadomości zbiorcze dla reguł, których wstrzymane alerty
+// czekają co najmniej okno limitu.
+func (a *AlertSender) digests(ctx context.Context, now time.Time) error {
+	if now.Before(a.digestRetry) {
+		return nil
+	}
+	_, window := a.limits()
+	due, err := a.Store.DueDigests(ctx, now.Add(-window))
+	if err != nil {
+		return err
+	}
+	for _, d := range due {
+		if _, err := a.Svc.Send(ctx, a.DigestMessage(d)); err != nil {
+			a.digestRetry = now.Add(time.Minute)
+			a.Log.Warn("wiadomość zbiorcza o alertach nieudana – ponowię", "rule", d.RuleID, "alerts", d.Count, "err", err)
+			return nil
+		}
+		if err := a.Store.MarkDigested(ctx, d.RuleID, d.Upto, now); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// DigestMessage buduje wiadomość zbiorczą dla reguły.
+func (a *AlertSender) DigestMessage(d alerts.Digest) Message {
+	top := ""
+	for _, l := range Levels {
+		if slices.Contains(d.Levels, l) {
+			top = l
+		}
+	}
+	perRule, window := a.limits()
+	m := Message{
+		Event: EventAlert, Level: top, RuleID: d.RuleID, Severity: levelSeverity[top], At: a.Svc.now(), Untrusted: true,
+		Title: fmt.Sprintf("[ZBIORCZO] %s – %d %s", d.RuleTitle, d.Count, plural(d.Count, "alert", "alerty", "alertów")),
+		Text: fmt.Sprintf("Reguła przekroczyła limit %d osobnych powiadomień w %s – kolejne alerty zebrane w tej wiadomości "+
+			"(pierwszy wstrzymany %s). Wszystkie są w panelu.", perRule, humanDuration(window), d.First.Local().Format("15:04")),
+	}
+	if m.Severity == "" {
+		m.Severity = SevWarning
+	}
+	if len(d.Hosts) > 0 {
+		hosts := strings.Join(d.Hosts, ", ")
+		if d.HostCount > len(d.Hosts) {
+			hosts += fmt.Sprintf(" … (łącznie %d)", d.HostCount)
+		}
+		m.Fields = append(m.Fields, Field{Name: "Komputery", Value: hosts})
+	}
+	if a.PanelURL != "" {
+		m.Fields = append(m.Fields, Field{Name: "Panel", Trusted: true,
+			Value: a.PanelURL + "/alerts?status=all&rule=" + url.QueryEscape(d.RuleID)})
+	}
+	return m
+}
+
+func plural(n int, one, few, many string) string {
+	switch {
+	case n == 1:
+		return one
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		return few
+	}
+	return many
 }
 
 // maxAttempts: po tylu nieudanych próbach (ok. doby) powiadomienie jest porzucane.

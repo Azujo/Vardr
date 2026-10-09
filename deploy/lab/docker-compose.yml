@@ -257,6 +257,8 @@ services:
       # Powiadomienia: przekaźnik alertów Grafany (:8081 tylko w sieci stosu)
       # i godzina codziennej kotwicy archiwum.
       SIEM_ALERT_RELAY_TOKEN: ${SIEM_ALERT_RELAY_TOKEN:-}
+      SIEM_ALERT_NOTIFY_PER_RULE: ${SIEM_ALERT_NOTIFY_PER_RULE:-5}
+      SIEM_ALERT_NOTIFY_WINDOW: ${SIEM_ALERT_NOTIFY_WINDOW:-10m}
       SIEM_ANCHOR_HOUR: ${SIEM_ANCHOR_HOUR:-7}
     volumes:
       - ./certs:/certs:ro

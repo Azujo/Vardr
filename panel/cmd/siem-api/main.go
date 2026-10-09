@@ -190,7 +190,20 @@ func serve(log *slog.Logger) error {
 	if ps := os.Getenv("SIEM_PUBLIC_SERVER"); ps != "" {
 		panelLink = "https://" + ps + ":8444"
 	}
-	go (&notify.AlertSender{Store: alertStore, Svc: notifySvc, Log: log, PanelURL: panelLink}).Run(ctx)
+	// Burza alertów: SIEM_ALERT_NOTIFY_PER_RULE osobnych powiadomień na regułę
+	// w SIEM_ALERT_NOTIFY_WINDOW (domyślnie 5 w 10 min, 0 = bez limitu); reszta zbiorczo.
+	perRule, err := svc.EnvInt("SIEM_ALERT_NOTIFY_PER_RULE", 5)
+	if err != nil {
+		return err
+	}
+	if perRule == 0 {
+		perRule = -1
+	}
+	window, err := svc.EnvDuration("SIEM_ALERT_NOTIFY_WINDOW", 10*time.Minute)
+	if err != nil {
+		return err
+	}
+	go (&notify.AlertSender{Store: alertStore, Svc: notifySvc, Log: log, PanelURL: panelLink, PerRule: perRule, Window: window}).Run(ctx)
 	go func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()

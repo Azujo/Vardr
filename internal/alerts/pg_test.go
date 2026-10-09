@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -152,6 +153,46 @@ func TestPostgresAlerts(t *testing.T) {
 	if err != nil || len(rel) == 0 {
 		t.Fatalf("powiązane: %d %v", len(rel), err)
 	}
+	// Burza alertów: wstrzymanie ponad limit i wiadomość zbiorcza.
+	var storm []Hit
+	for i := range 4 {
+		storm = append(storm, Hit{RuleID: "r-storm", RuleTitle: "Burza", Level: "medium", Engine: "stream",
+			GroupKey: fmt.Sprint("s", i), EventID: fmt.Sprint("s", i), EventTime: t0, HostName: fmt.Sprint("pc", i)})
+	}
+	if _, err := db.Record(ctx, storm, nil); err != nil {
+		t.Fatal(err)
+	}
+	var stormOut []Pending
+	for _, p := range mustClaim(t, db, now.Add(2*time.Hour)) {
+		if p.Alert.RuleID == "r-storm" {
+			stormOut = append(stormOut, p)
+		}
+	}
+	if len(stormOut) != 4 {
+		t.Fatalf("outbox burzy: %d", len(stormOut))
+	}
+	_ = db.MarkSent(ctx, stormOut[0].OutboxID, now)
+	for _, p := range stormOut[1:] {
+		if err := db.Hold(ctx, p.OutboxID, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if per, err := db.SentPerRule(ctx, now.Add(-time.Minute)); err != nil || per["r-storm"] != 1 {
+		t.Fatalf("wysłane na regułę: %v %v", per, err)
+	}
+	if d, _ := db.DueDigests(ctx, now.Add(-time.Minute)); len(d) != 0 {
+		t.Fatalf("zbiorcza przed czasem: %+v", d)
+	}
+	d, err := db.DueDigests(ctx, now)
+	if err != nil || len(d) != 1 || d[0].Count != 3 || d[0].HostCount != 3 || d[0].Levels[0] != "medium" {
+		t.Fatalf("zbiorcza: %+v %v", d, err)
+	}
+	if err := db.MarkDigested(ctx, "r-storm", d[0].Upto, now); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := db.DueDigests(ctx, now.Add(time.Hour)); len(d) != 0 {
+		t.Fatalf("zbiorcza po oznaczeniu: %+v", d)
+	}
 	// Punkt kontrolny silnika zapytań: tylko w przód.
 	if _, err := db.RecordIndex(ctx, nil, t0.Add(time.Hour)); err != nil {
 		t.Fatal(err)
@@ -183,7 +224,8 @@ func TestPostgresAlerts(t *testing.T) {
 		[]RuleError{{File: "zla.yml", Error: "brak title"}}, now); err != nil {
 		t.Fatal(err)
 	}
-	if s, err := db.Summarize(ctx, now); err != nil || s.Open != 3 || s.Rules != 1 || s.RuleErrs != 1 {
+	// 3 otwarte z początku testu + 4 z burzy alertów.
+	if s, err := db.Summarize(ctx, now); err != nil || s.Open != 7 || s.Rules != 1 || s.RuleErrs != 1 {
 		t.Fatalf("podsumowanie: %+v %v", s, err)
 	}
 	if r, err := db.Rule(ctx, "r-ps"); err != nil || r.Threshold == nil || r.Threshold.WindowS != 300 {
