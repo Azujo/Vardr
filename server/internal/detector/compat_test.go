@@ -14,9 +14,9 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 
 	"siem/internal/alerts"
+	"siem/internal/detect"
+	"siem/internal/model"
 	"siem/server/internal/chwriter"
-	"siem/server/internal/detect"
-	"siem/server/internal/model"
 )
 
 // Test zgodności silników (roadmapa, sekcja 19): ten sam zbiór zdarzeń
@@ -376,7 +376,7 @@ func TestThresholdMarksChain(t *testing.T) {
 	if want := []bool{true, true, true, true, true, false}; !slices.Equal(marks, want) || len(wins) != 1 {
 		t.Fatalf("znaczniki %v (okna %v), oczekiwano %v", marks, wins, want)
 	}
-	if c := components(es, marks, 10*time.Minute); len(c) != 1 || c[0] != (span{0, 5}) {
+	if c := components(es, marks, 10*time.Minute); len(c) != 1 || c[0] != (detect.Span{From: 0, To: 5}) {
 		t.Fatalf("serie: %v", c)
 	}
 	if marks, _, _ := thresholdMarks(at(0, 30, 61), th, 10*time.Minute); slices.Contains(marks, true) {

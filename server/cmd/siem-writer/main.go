@@ -15,11 +15,11 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"siem/internal/model"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
 	"siem/server/internal/chwriter"
 	"siem/server/internal/metrics"
-	"siem/server/internal/model"
 	"siem/server/internal/queue"
 )
 

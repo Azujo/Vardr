@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 // Bity słów kluczowych audytu Windows.

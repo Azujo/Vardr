@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"siem/internal/alerts"
-	"siem/server/internal/detect"
+	"siem/internal/detect"
 )
 
 // Reguły progowe (heimdall.threshold).
@@ -50,94 +50,22 @@ type entry struct {
 	emitted bool // zdarzenie dopisane już do alertu
 }
 
-// span to przedział indeksów [from, to) w posortowanych zdarzeniach.
-type span struct{ from, to int }
+// entries to zdarzenia klucza posortowane po czasie (detect.Series).
+type entries []*entry
 
-// thresholdMarks wyznacza zdarzenia należące do alertów (punkty 1–2
-// semantyki) i okna spełniające próg. Zdarzenia muszą być posortowane po
-// czasie; wartość pola Distinct w Value. Zwraca też, czy cokolwiek należy.
-func thresholdMarks(es []*entry, th *detect.Threshold, suppress time.Duration) ([]bool, []span, bool) {
-	n := len(es)
-	marks := make([]bool, n)
-	seeded := false
-	for i, e := range es {
-		if e.emitted {
-			marks[i], seeded = true, true
-		}
-	}
-	w := time.Duration(th.Window)
-	diff := make([]int, n+1)
-	var wins []span
-	counts := map[string]int{}
-	j, lastTo := 0, 0
-	for i := 0; i < n; i++ {
-		end := es[i].EventTime.Add(w)
-		for j < n && !es[j].EventTime.After(end) {
-			counts[es[j].Value]++
-			j++
-		}
-		if i > 0 {
-			if v := es[i-1].Value; counts[v] > 1 {
-				counts[v]--
-			} else {
-				delete(counts, v)
-			}
-		}
-		ok := j-i >= th.Count
-		if ok && th.Distinct != "" {
-			ok = len(counts) >= th.Count
-		}
-		if !ok {
-			continue
-		}
-		diff[i]++
-		diff[j]--
-		if j > lastTo { // okno nie zawiera się w poprzednim
-			wins = append(wins, span{i, j})
-			lastTo = j
-		}
-	}
-	if len(wins) == 0 && !seeded {
-		return marks, nil, false
-	}
-	run := 0
-	for i := 0; i < n; i++ {
-		run += diff[i]
-		marks[i] = marks[i] || run > 0
-	}
-	// Łańcuch: w przód i wstecz od zdarzeń należących do alertu.
-	var last time.Time
-	have := false
-	for i := 0; i < n; i++ {
-		t := es[i].EventTime
-		if marks[i] || (have && t.Sub(last) <= suppress) {
-			marks[i], last, have = true, t, true
-		}
-	}
-	have = false
-	for i := n - 1; i >= 0; i-- {
-		t := es[i].EventTime
-		if marks[i] || (have && last.Sub(t) <= suppress) {
-			marks[i], last, have = true, t, true
-		}
-	}
-	return marks, wins, true
+func (es entries) Len() int             { return len(es) }
+func (es entries) Time(i int) time.Time { return es[i].EventTime }
+func (es entries) Value(i int) string   { return es[i].Value }
+func (es entries) Seed(i int) bool      { return es[i].emitted }
+
+// thresholdMarks: semantyka progów (detect.ThresholdMarks) na zdarzeniach klucza.
+func thresholdMarks(es []*entry, th *detect.Threshold, suppress time.Duration) ([]bool, []detect.Span, bool) {
+	return detect.ThresholdMarks(entries(es), th, suppress)
 }
 
 // components dzieli zaznaczone zdarzenia na ciągłe serie (przyszłe alerty).
-func components(es []*entry, marks []bool, suppress time.Duration) []span {
-	var out []span
-	for i := 0; i < len(es); i++ {
-		if !marks[i] {
-			continue
-		}
-		if k := len(out) - 1; k >= 0 && out[k].to == i && es[i].EventTime.Sub(es[i-1].EventTime) <= suppress {
-			out[k].to = i + 1
-			continue
-		}
-		out = append(out, span{i, i + 1})
-	}
-	return out
+func components(es []*entry, marks []bool, suppress time.Duration) []detect.Span {
+	return detect.Components(entries(es), marks, suppress)
 }
 
 type keyState struct {
@@ -318,18 +246,8 @@ func (ks *keyState) prune(keep time.Duration) int {
 	return n
 }
 
-// distinctValue: wartość pola Distinct zdarzenia (puste – „(brak)”).
-func distinctValue(r *detect.Rule, ev detect.Event) string {
-	f := r.Heimdall.Threshold.Distinct
-	if f == "" {
-		return ""
-	}
-	v, _ := ev.Get(f)
-	if v = strings.ToLower(v); v == "" || v == "-" {
-		return "(brak)"
-	}
-	return v
-}
+// distinctValue: wartość pola Distinct zdarzenia (detect.Rule.DistinctValue).
+func distinctValue(r *detect.Rule, ev detect.Event) string { return r.DistinctValue(ev) }
 
 // observe przyjmuje pasujące zdarzenie reguły progowej. Zwraca obserwację
 // do zapisu (nil = zdarzenie już znane) i trafienia – zdarzenia, które
@@ -399,7 +317,7 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 	for _, c := range components(es, marks, suppress) {
 		if only != nil {
 			found := false
-			for _, e := range es[c.from:c.to] {
+			for _, e := range es[c.From:c.To] {
 				if only[e.EventID] {
 					found = true
 					break
@@ -410,7 +328,7 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 			}
 		}
 		var fresh []*entry
-		for _, e := range es[c.from:c.to] {
+		for _, e := range es[c.From:c.To] {
 			if !e.emitted {
 				fresh = append(fresh, e)
 			}
@@ -420,10 +338,10 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 		}
 		// Opis z pierwszego okna spełniającego próg w tej serii (albo z całej
 		// serii, gdy to dalszy ciąg alertu, którego okno już wypadło).
-		win := es[c.from:c.to]
+		win := es[c.From:c.To]
 		for _, w := range wins {
-			if w.from >= c.from && w.to <= c.to {
-				win = es[w.from:w.to]
+			if w.From >= c.From && w.To <= c.To {
+				win = es[w.From:w.To]
 				break
 			}
 		}

@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"siem/internal/alerts"
-	"siem/server/internal/detect"
-	"siem/server/internal/model"
+	"siem/internal/detect"
+	"siem/internal/model"
 )
 
 const (

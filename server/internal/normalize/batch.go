@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 // Batch normalizuje paczkę agenta. Zdarzenia, których nie da się

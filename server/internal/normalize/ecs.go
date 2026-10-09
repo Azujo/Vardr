@@ -3,7 +3,7 @@ package normalize
 import (
 	"strings"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 type rule struct {

@@ -179,15 +179,24 @@ func (p *PG) Summarize(ctx context.Context, now time.Time) (Summary, error) {
 func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 	rows, err := p.pool.Query(ctx, `SELECT r.id, r.title, r.level, r.description, r.tags, r.file, r.source, r.mode, r.enabled,
 		r.group_by, r.suppress_s, r.instructions, r.threshold, r.loaded_at, r.removed_at,
-		(SELECT count(*) FROM gjallarhorn.alerts a WHERE a.rule_id = r.id AND a.status <> 'closed')
-		FROM gjallarhorn.rules r WHERE r.removed_at IS NULL ORDER BY r.level DESC, r.title`)
+		(SELECT count(*) FROM gjallarhorn.alerts a WHERE a.rule_id = r.id AND a.status <> 'closed'),
+		r.file_enabled, r.version, o.enabled, o.reason, o.changed_by, o.changed_at
+		FROM gjallarhorn.rules r LEFT JOIN gjallarhorn.rule_overrides o ON o.rule_id = r.id
+		WHERE r.removed_at IS NULL ORDER BY r.level DESC, r.title`)
 	if err != nil {
 		return nil, nil, notConfigured(err)
 	}
 	rules, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (RuleInfo, error) {
 		var x RuleInfo
+		var oe *bool
+		var or_, ob *string
+		var oa *time.Time
 		err := r.Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled,
-			&x.GroupBy, &x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.OpenAlerts)
+			&x.GroupBy, &x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.OpenAlerts,
+			&x.FileEnabled, &x.Version, &oe, &or_, &ob, &oa)
+		if oe != nil {
+			x.Override = &Override{Enabled: *oe, Reason: *or_, ChangedBy: *ob, ChangedAt: *oa}
+		}
 		return x, err
 	})
 	if err != nil {
@@ -204,10 +213,19 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 // Rule zwraca regułę (także usuniętą – alerty mogą się do niej odwoływać).
 func (p *PG) Rule(ctx context.Context, id string) (RuleInfo, error) {
 	var x RuleInfo
-	err := p.pool.QueryRow(ctx, `SELECT id, title, level, description, tags, file, source, mode, enabled, group_by,
-		suppress_s, instructions, threshold, loaded_at, removed_at FROM gjallarhorn.rules WHERE id = $1`, id).
+	var oe *bool
+	var or_, ob *string
+	var oa *time.Time
+	err := p.pool.QueryRow(ctx, `SELECT r.id, r.title, r.level, r.description, r.tags, r.file, r.source, r.mode, r.enabled,
+		r.group_by, r.suppress_s, r.instructions, r.threshold, r.loaded_at, r.removed_at, r.file_enabled, r.version,
+		o.enabled, o.reason, o.changed_by, o.changed_at
+		FROM gjallarhorn.rules r LEFT JOIN gjallarhorn.rule_overrides o ON o.rule_id = r.id WHERE r.id = $1`, id).
 		Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled, &x.GroupBy,
-			&x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt)
+			&x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.FileEnabled, &x.Version,
+			&oe, &or_, &ob, &oa)
+	if oe != nil {
+		x.Override = &Override{Enabled: *oe, Reason: *or_, ChangedBy: *ob, ChangedAt: *oa}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return x, ErrNotFound
 	}

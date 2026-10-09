@@ -8,7 +8,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 func events(n int) []model.Event {

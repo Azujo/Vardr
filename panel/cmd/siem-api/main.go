@@ -147,6 +147,7 @@ func serve(log *slog.Logger) error {
 			return err
 		}
 		apiServer.Events = searcher
+		apiServer.RuleTester = searcher
 		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
 	} else {
 		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
@@ -186,6 +187,7 @@ func serve(log *slog.Logger) error {
 	}
 	defer alertStore.Close()
 	apiServer.Alerts = alertStore
+	apiServer.RuleAdmin = alertStore
 	panelLink := ""
 	if ps := os.Getenv("SIEM_PUBLIC_SERVER"); ps != "" {
 		panelLink = "https://" + ps + ":8444"

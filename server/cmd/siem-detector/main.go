@@ -30,12 +30,12 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/alerts"
+	"siem/internal/detect"
+	"siem/internal/model"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
-	"siem/server/internal/detect"
 	"siem/server/internal/detector"
 	"siem/server/internal/metrics"
-	"siem/server/internal/model"
 	"siem/server/internal/queue"
 )
 
@@ -144,7 +144,14 @@ func serve(log *slog.Logger) error {
 		}
 	}
 	reload := func() {
-		cur := detector.Fingerprint(dir)
+		// Ustawienia z panelu (włączenie/wyłączenie reguły) – ich zmiana też przeładowuje reguły.
+		ov, sig, err := store.RuleOverrides(ctx)
+		if err != nil {
+			m.Errors.WithLabelValues("rule_overrides").Inc()
+			log.Warn("odczyt ustawień reguł z panelu nieudany – zostają poprzednie", "err", err)
+			return
+		}
+		cur := detector.Fingerprint(dir) + "|" + sig
 		if cur == fp {
 			return
 		}
@@ -154,13 +161,17 @@ func serve(log *slog.Logger) error {
 			log.Error("odczyt katalogu reguł nieudany – zostają poprzednie", "dir", dir, "err", err)
 			return
 		}
+		fileEnabled := detector.ApplyOverrides(rules, ov)
+		for id, o := range ov {
+			log.Info("reguła ustawiona w panelu", "rule", id, "enabled", o.Enabled, "by", o.ChangedBy)
+		}
 		n := eng.SetRules(rules)
 		var rerrs []alerts.RuleError
 		for _, e := range errs {
 			rerrs = append(rerrs, alerts.RuleError{File: e.File, Error: e.Err})
 			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
 		}
-		infos := append(detector.Infos(rules), detector.HeartbeatRule())
+		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule())
 		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
 			log.Warn("zapis reguł w bazie nieudany", "err", err)

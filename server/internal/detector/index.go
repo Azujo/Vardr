@@ -10,8 +10,8 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
 	"siem/internal/alerts"
-	"siem/server/internal/detect"
-	"siem/server/internal/model"
+	"siem/internal/detect"
+	"siem/internal/model"
 )
 
 // Silnik zapytań (tryb index_query): reguły skompilowane do SQL wykonywane
@@ -74,16 +74,11 @@ type IndexResult struct {
 }
 
 // eventCols: kolumny zdarzenia w kolejności scanEvent.
-var eventCols = `timestamp, ingested, event_id, agent_id, event_dataset, event_code, event_provider, event_action,
-	event_outcome, host_name, user_name, user_domain, ` + detect.IPExpr + `, process_name, process_command_line,
-	message, fields, raw`
+const eventCols = detect.EventColumns
 
 func scanEvent(rows driver.Rows, extra ...any) (model.Event, error) {
 	var e model.Event
-	dest := []any{&e.Timestamp, &e.Ingested, &e.ID, &e.AgentID, &e.Dataset, &e.Code, &e.Provider, &e.Action,
-		&e.Outcome, &e.HostName, &e.UserName, &e.UserDomain, &e.SourceIP, &e.ProcessName, &e.CommandLine,
-		&e.Message, &e.Fields, &e.Raw}
-	err := rows.Scan(append(dest, extra...)...)
+	err := rows.Scan(append(detect.EventDest(&e), extra...)...)
 	e.Timestamp, e.Ingested = e.Timestamp.UTC(), e.Ingested.UTC()
 	return e, err
 }

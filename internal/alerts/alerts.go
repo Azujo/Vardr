@@ -169,7 +169,10 @@ type RuleInfo struct {
 	File         string     `json:"file"`
 	Source       string     `json:"source,omitempty"`
 	Mode         string     `json:"mode"`
-	Enabled      bool       `json:"enabled"`
+	Enabled      bool       `json:"enabled"`      // obowiązujące (plik albo panel)
+	FileEnabled  bool       `json:"file_enabled"` // ustawienie w pliku reguły
+	Override     *Override  `json:"override,omitempty"`
+	Version      int        `json:"version"`
 	GroupBy      []string   `json:"group_by"`
 	SuppressS    int        `json:"suppress_s"`
 	Instructions string     `json:"instructions"`
@@ -200,15 +203,18 @@ func (p *PG) SyncRules(ctx context.Context, rules []RuleInfo, errs []RuleError, 
 		for _, r := range rules {
 			ids = append(ids, r.ID)
 			if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.rules (id, title, level, description, tags, file, source, mode,
-				enabled, group_by, suppress_s, instructions, threshold, loaded_at, removed_at)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL)
+				enabled, group_by, suppress_s, instructions, threshold, loaded_at, removed_at, file_enabled)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL, $15)
 				ON CONFLICT (id) DO UPDATE SET title = $2, level = $3, description = $4, tags = $5, file = $6, source = $7,
 				mode = $8, enabled = $9, group_by = $10, suppress_s = $11, instructions = $12, threshold = $13, loaded_at = $14,
-				removed_at = NULL`,
+				removed_at = NULL, file_enabled = $15`,
 				r.ID, r.Title, r.Level, r.Description, nonNil(r.Tags), r.File, r.Source, r.Mode, r.Enabled, nonNil(r.GroupBy),
-				r.SuppressS, r.Instructions, r.Threshold, now); err != nil {
+				r.SuppressS, r.Instructions, r.Threshold, now, r.FileEnabled); err != nil {
 				return err
 			}
+		}
+		if err := recordVersions(ctx, tx, rules, now); err != nil {
+			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE gjallarhorn.rules SET removed_at = $2 WHERE removed_at IS NULL AND NOT (id = ANY($1))`,
 			ids, now); err != nil {

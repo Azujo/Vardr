@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 func ev(channel string, code uint32, fields map[string]string) Event {
@@ -96,7 +96,7 @@ func TestRejectsUnsupported(t *testing.T) {
 
 // Reguły z repozytorium (rules/) muszą się kompilować i wykrywać swoje scenariusze.
 func TestRepositoryRules(t *testing.T) {
-	rules, errs, err := LoadDir("../../../rules")
+	rules, errs, err := LoadDir("../../rules")
 	if err != nil || len(errs) > 0 {
 		t.Fatalf("reguły z repozytorium: %v %+v", err, errs)
 	}

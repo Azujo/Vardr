@@ -275,7 +275,7 @@ func (s *Server) cancelArchivePolicyChange(w http.ResponseWriter, r *http.Reques
 func (s *Server) reauth(w http.ResponseWriter, r *http.Request, password, op string) bool {
 	a := current(r)
 	if password == "" {
-		writeError(w, http.StatusForbidden, "reauth_required", "ta zmiana osłabia ochronę archiwum – potwierdź ją swoim hasłem")
+		writeError(w, http.StatusForbidden, "reauth_required", "ta zmiana osłabia ochronę – potwierdź ją swoim hasłem")
 		return false
 	}
 	now := s.now()

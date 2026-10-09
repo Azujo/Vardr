@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"siem/internal/alerts"
-	"siem/server/internal/detect"
-	"siem/server/internal/model"
+	"siem/internal/detect"
+	"siem/internal/model"
 )
 
 // Engine trzyma bieżący zestaw reguł (podmieniany przy przeładowaniu)
@@ -185,15 +185,34 @@ func Fingerprint(dir string) string {
 	return b.String()
 }
 
-// Infos zamienia reguły na opisy dla panelu.
-func Infos(rules []*detect.Rule) []alerts.RuleInfo {
+// ApplyOverrides nadpisuje włączenie reguł ustawieniami z panelu; zwraca
+// ustawienia z plików (do pokazania w panelu).
+func ApplyOverrides(rules []*detect.Rule, ov map[string]alerts.Override) map[string]bool {
+	file := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		file[r.ID] = r.Enabled()
+		if o, ok := ov[r.ID]; ok {
+			e := o.Enabled
+			r.Heimdall.Enabled = &e
+		}
+	}
+	return file
+}
+
+// Infos zamienia reguły na opisy dla panelu (fileEnabled – ustawienie
+// w pliku; nil = jak obowiązujące).
+func Infos(rules []*detect.Rule, fileEnabled map[string]bool) []alerts.RuleInfo {
 	out := make([]alerts.RuleInfo, 0, len(rules))
 	for _, r := range rules {
 		var th *alerts.Threshold
 		if t := r.Heimdall.Threshold; t != nil {
 			th = &alerts.Threshold{Count: t.Count, WindowS: int(time.Duration(t.Window) / time.Second), Distinct: t.Distinct}
 		}
-		out = append(out, alerts.RuleInfo{Threshold: th, ID: r.ID, Title: r.Title, Level: r.Level, Description: r.Description, Tags: r.Tags,
+		fe, ok := fileEnabled[r.ID]
+		if !ok {
+			fe = r.Enabled()
+		}
+		out = append(out, alerts.RuleInfo{Threshold: th, FileEnabled: fe, ID: r.ID, Title: r.Title, Level: r.Level, Description: r.Description, Tags: r.Tags,
 			File: r.File, Source: r.Source, Mode: r.Heimdall.Mode, Enabled: r.Enabled(), GroupBy: r.Heimdall.GroupBy,
 			SuppressS: int(time.Duration(r.Heimdall.Suppress) / time.Second), Instructions: r.Heimdall.Instructions})
 	}

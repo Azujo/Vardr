@@ -6,7 +6,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 // dataError oznacza, że zapis odrzucono z powodu TREŚCI wierszy (nie

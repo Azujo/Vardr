@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/model"
 	"siem/server/internal/bus"
-	"siem/server/internal/model"
 )
 
 // ErrUnreadable oznacza paczkę, której nie da się odczytać (uszkodzony gzip

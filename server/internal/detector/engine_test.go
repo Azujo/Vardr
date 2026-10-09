@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"siem/server/internal/detect"
-	"siem/server/internal/model"
+	"siem/internal/detect"
+	"siem/internal/model"
 )
 
 func TestEngineHits(t *testing.T) {

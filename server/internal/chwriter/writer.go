@@ -12,7 +12,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 const insertEvents = `INSERT INTO siem.events (timestamp, ingested, event_id, agent_id, event_dataset, event_code,

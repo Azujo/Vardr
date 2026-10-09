@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 // Zalew nieudanych logowań na jedno konto (brute force, 100/s) – koszt

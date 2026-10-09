@@ -78,6 +78,10 @@ type Server struct {
 	Notify *Notifications
 	// Alerts (opcjonalne) – alerty i reguły detekcji (Gjallarhorn).
 	Alerts AlertStore
+	// RuleAdmin (opcjonalne) – wersje reguł i ich włączanie z panelu.
+	RuleAdmin RuleAdmin
+	// RuleTester (opcjonalne) – test reguły na zdarzeniach w ClickHouse.
+	RuleTester RuleTester
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -169,6 +173,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/alerts/{id}/notes", s.authed(roleAnalyst, 0, s.addAlertNote))
 	mux.Handle("GET /api/v1/alert-assignees", s.authed(roleViewer, 0, s.listAssignees))
 	mux.Handle("GET /api/v1/rules", s.authed(roleViewer, 0, s.listRules))
+	mux.Handle("POST /api/v1/rules/test", s.authed(roleAnalyst, 0, s.testRule))
+	mux.Handle("GET /api/v1/rules/{id}/versions", s.authed(roleViewer, 0, s.ruleVersions))
+	mux.Handle("POST /api/v1/rules/{id}/enabled", s.authed(roleAdmin, 0, s.setRuleEnabled))
 
 	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))
 	mux.Handle("POST /api/v1/notify/channels", s.authed(roleAdmin, 0, s.createChannel))

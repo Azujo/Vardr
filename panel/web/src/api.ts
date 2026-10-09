@@ -790,7 +790,46 @@ export interface RuleInfo {
   threshold?: { count: number; window_s: number; distinct?: string };
   loaded_at: string;
   open_alerts: number;
+  file_enabled: boolean;
+  version: number;
+  override?: { enabled: boolean; reason: string; changed_by: string; changed_at: string };
 }
+
+export interface RuleVersion {
+  version: number;
+  sha256: string;
+  file: string;
+  source: string;
+  loaded_at: string;
+}
+
+export interface RuleTestResult {
+  matched: number;
+  events: { timestamp: string; event_id: string; host: string; user: string; code: number; summary: string }[];
+  alerts: { key?: Record<string, string>; first: string; last: string; events: number; host: string }[];
+  alerts_total: number;
+  truncated: boolean;
+  took_ms: number;
+}
+
+export const rulesApi = {
+  test: (source: string, hours: number) =>
+    request<{
+      ok: boolean;
+      error?: string;
+      result?: RuleTestResult;
+      sql?: string;
+      rule?: { id: string; title: string; level: AlertLevel; group_by: string[]; suppress_s: number; mode: string;
+        threshold?: { count: number; window_s: number; distinct?: string } };
+    }>("POST", "/api/v1/rules/test", { source, hours }),
+  versions: (id: string) => request<{ versions: RuleVersion[] }>("GET", `/api/v1/rules/${encodeURIComponent(id)}/versions`),
+  setEnabled: (id: string, enabled: boolean | null, reason: string, password?: string) =>
+    request<{ enabled: boolean; message: string }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/enabled`, {
+      enabled,
+      reason,
+      password: password ?? "",
+    }),
+};
 
 export interface AlertsSummary {
   open: number;

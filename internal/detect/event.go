@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"siem/server/internal/model"
+	"siem/internal/model"
 )
 
 // Event to zdarzenie oceniane przez reguły.

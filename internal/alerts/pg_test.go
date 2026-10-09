@@ -231,6 +231,28 @@ func TestPostgresAlerts(t *testing.T) {
 	if r, err := db.Rule(ctx, "r-ps"); err != nil || r.Threshold == nil || r.Threshold.WindowS != 300 {
 		t.Fatalf("próg reguły: %+v %v", r.Threshold, err)
 	}
+	// Wersje: ta sama treść – bez nowej wersji, zmiana – v2; ustawienie z panelu.
+	info := RuleInfo{ID: "r-ps", Title: "PowerShell", Level: "medium", File: "a.yml", Source: "x", Mode: "both", Enabled: true, FileEnabled: true}
+	_ = db.SyncRules(ctx, []RuleInfo{info}, nil, now)
+	info.Source = "x2"
+	_ = db.SyncRules(ctx, []RuleInfo{info}, nil, now.Add(time.Minute))
+	vs, err := db.RuleVersions(ctx, "r-ps")
+	if err != nil || len(vs) != 2 || vs[0].Version != 2 || vs[0].Source != "x2" {
+		t.Fatalf("wersje reguły: %+v %v", vs, err)
+	}
+	if err := db.SetOverride(ctx, "r-ps", Override{Enabled: false, Reason: "fałszywe alarmy", ChangedBy: "adam", ChangedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	ov, sig, err := db.RuleOverrides(ctx)
+	if err != nil || ov["r-ps"].Enabled || sig == "" {
+		t.Fatalf("ustawienia reguł: %+v %q %v", ov, sig, err)
+	}
+	if r, _ := db.Rule(ctx, "r-ps"); r.Override == nil || r.Override.ChangedBy != "adam" || r.Version != 2 || !r.FileEnabled {
+		t.Fatalf("reguła z ustawieniem: %+v", r)
+	}
+	if ok, err := db.ClearOverride(ctx, "r-ps"); !ok || err != nil {
+		t.Fatalf("usunięcie ustawienia: %v %v", ok, err)
+	}
 }
 
 func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {
