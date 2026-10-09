@@ -1,0 +1,37 @@
+title: Nowa usługa uruchamiana z podejrzanej lokalizacji
+id: 7ea5663e-c655-439a-a894-616ba1e203d6
+status: stable
+description: |
+  Zainstalowano usługę Windows, której program leży w katalogu użytkownika,
+  folderze tymczasowym albo jest wywołaniem PowerShell/cmd. Tak utrwala się
+  złośliwe oprogramowanie i narzędzia zdalnego wykonywania (np. PsExec-podobne).
+author: Heimdall
+tags:
+  - attack.persistence
+  - attack.t1543.003
+logsource:
+  product: windows
+  service: system
+detection:
+  selection:
+    EventID: 7045
+  suspicious:
+    ImagePath|contains:
+      - '\Users\'
+      - '\AppData\'
+      - '\Temp\'
+      - '\Windows\Temp\'
+      - '\ProgramData\'
+      - 'powershell'
+      - 'cmd.exe /c'
+      - 'cmd /c'
+      - '%COMSPEC%'
+  condition: selection and suspicious
+falsepositives:
+  - Instalatory niektórych programów rozpakowujące usługi do ProgramData
+level: high
+heimdall:
+  instructions: |
+    Sprawdź ścieżkę programu (ImagePath) i konto (AccountName). Jeśli usługa
+    nie jest znana – zatrzymaj ją, zabezpiecz plik do analizy i sprawdź, skąd
+    trafił na komputer.

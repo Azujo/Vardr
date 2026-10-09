@@ -1,0 +1,24 @@
+title: Utworzono konto użytkownika
+id: 9f379649-a04b-43de-b3a0-25587cf713de
+status: stable
+description: |
+  Utworzono nowe konto (domenowe albo lokalne). Samo w sobie zwykłe, ale konta
+  zakładane poza procesem kadrowym albo na serwerach są typowym sposobem
+  utrwalenia dostępu.
+author: Heimdall
+tags:
+  - attack.persistence
+  - attack.t1136
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4720
+  condition: selection
+falsepositives:
+  - Zakładanie kont przez dział IT
+level: low
+heimdall:
+  instructions: |
+    Sprawdź, kto założył konto (SubjectUserName) i czy było zgłoszenie.

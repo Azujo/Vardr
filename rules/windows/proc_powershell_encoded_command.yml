@@ -1,0 +1,34 @@
+title: PowerShell uruchomiony z zakodowanym poleceniem
+id: 4b767c65-adff-4033-841f-3a325dc1bda4
+status: stable
+description: |
+  PowerShell uruchomiony z parametrem -EncodedCommand (albo jego skrótem).
+  Zakodowane polecenia ukrywają treść skryptu przed podglądem i często są
+  używane przez złośliwe oprogramowanie i narzędzia ataku.
+author: Heimdall
+tags:
+  - attack.execution
+  - attack.t1059.001
+  - attack.defense_evasion
+  - attack.t1027
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  powershell:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+  encoded:
+    CommandLine|re: '(?i)\s[-/](e|ec|en|enc|enco|encod|encode|encoded|encodedc|encodedco|encodedcom|encodedcomm|encodedcomma|encodedcomman|encodedcommand)\s'
+  condition: powershell and encoded
+falsepositives:
+  - Narzędzia administracyjne i instalatory, które przekazują skrypty w postaci zakodowanej
+level: medium
+heimdall:
+  group_by: [Computer, CommandLine]
+  suppress: 1h
+  instructions: |
+    Zdekoduj parametr (Base64, UTF-16LE) i oceń skrypt. Sprawdź proces
+    nadrzędny (ParentImage) – uruchomienie z dokumentu Office albo przeglądarki
+    jest bardzo podejrzane.

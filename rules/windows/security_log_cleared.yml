@@ -1,0 +1,25 @@
+title: Wyczyszczenie dziennika zabezpieczeń
+id: 557f7b4d-d6bf-4d17-8aaf-cd1094a46a67
+status: stable
+description: |
+  Dziennik Security został wyczyszczony. Napastnicy czyszczą dziennik, żeby
+  zatrzeć ślady; w normalnej pracy prawie się to nie zdarza. Zdarzenia sprzed
+  wyczyszczenia są w Heimdallu (i w archiwum Urd), o ile agent zdążył je wysłać.
+author: Heimdall
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 1102
+  condition: selection
+falsepositives:
+  - Rzadkie, planowane czyszczenie dziennika przez administratora
+level: high
+heimdall:
+  instructions: |
+    Ustal konto (SubjectUserName) i czy czyszczenie było planowane. Przejrzyj
+    w Mímirze zdarzenia z tego komputera z okresu przed wyczyszczeniem.

@@ -1,0 +1,43 @@
+title: Podejrzane funkcje w skrypcie PowerShell
+id: 3a480a5a-0ee4-4835-8c79-62f868ca9498
+status: test
+description: |
+  Blok skryptu PowerShell (zdarzenie 4104) zawiera funkcje typowe dla narzędzi
+  ataku: pobieranie i uruchamianie kodu z sieci, wstrzykiwanie kodu do pamięci,
+  wyłączanie zabezpieczeń (AMSI), znane moduły ofensywne.
+author: Heimdall
+tags:
+  - attack.execution
+  - attack.t1059.001
+logsource:
+  product: windows
+  category: ps_script
+detection:
+  sel_download:
+    ScriptBlockText|contains|all:
+      - 'Net.WebClient'
+      - 'DownloadString'
+  sel_memory:
+    ScriptBlockText|contains:
+      - 'VirtualAlloc'
+      - 'WriteProcessMemory'
+      - 'CreateRemoteThread'
+  sel_amsi:
+    ScriptBlockText|contains: 'AmsiUtils'
+  sel_offensive:
+    ScriptBlockText|contains:
+      - 'Invoke-Mimikatz'
+      - 'Invoke-Kerberoast'
+      - 'Invoke-ShellcodeMSIL'
+      - 'Get-GPPPassword'
+      - 'Invoke-BloodHound'
+  condition: 1 of sel_*
+falsepositives:
+  - Skrypty administracyjne i narzędzia bezpieczeństwa używające tych funkcji
+level: medium
+heimdall:
+  group_by: [Computer]
+  suppress: 1h
+  instructions: |
+    Przejrzyj pełną treść bloku (ScriptBlockText) i konto, które go uruchomiło.
+    Kilka bloków o tym samym ScriptBlockId to fragmenty jednego dużego skryptu.

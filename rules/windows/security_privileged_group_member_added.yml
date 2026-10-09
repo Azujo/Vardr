@@ -1,0 +1,41 @@
+title: Dodanie konta do grupy uprzywilejowanej
+id: f406b909-37ba-4b21-b8c2-f4bd5cbf3192
+status: stable
+description: |
+  Konto zostało dodane do grupy z uprawnieniami administracyjnymi w domenie
+  albo na komputerze (Domain Admins, Enterprise Admins, Schema Admins,
+  Administratorzy, Backup/Account/Server Operators). Grupy rozpoznawane po SID,
+  więc reguła działa niezależnie od języka Windows.
+author: Heimdall
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID:
+      - 4728 # grupa globalna
+      - 4732 # grupa lokalna domeny / lokalna
+      - 4756 # grupa uniwersalna
+  privileged:
+    TargetSid|endswith:
+      - '-512' # Domain Admins
+      - '-518' # Schema Admins
+      - '-519' # Enterprise Admins
+      - '-520' # Group Policy Creator Owners
+      - 'S-1-5-32-544' # Administratorzy
+      - 'S-1-5-32-548' # Account Operators
+      - 'S-1-5-32-549' # Server Operators
+      - 'S-1-5-32-551' # Backup Operators
+  condition: selection and privileged
+falsepositives:
+  - Zaplanowane zmiany uprawnień przez administratorów
+level: high
+heimdall:
+  instructions: |
+    Sprawdź, kto dodał konto (SubjectUserName) i czy zmiana była zgłoszona.
+    Jeśli nie – usuń konto z grupy, zresetuj jego hasło i przejrzyj logowania
+    tego konta oraz konta, które dokonało zmiany.
