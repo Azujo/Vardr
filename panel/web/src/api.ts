@@ -651,7 +651,7 @@ export const replayStatusLabels: Record<ReplayStatus, { label: string; color: st
 
 // ---- Powiadomienia (kanały: Discord, webhook) ----
 
-export type NotifyEvent = "health" | "anchor";
+export type NotifyEvent = "alert" | "health" | "anchor";
 
 export interface NotifyChannel {
   id: number;
@@ -704,7 +704,92 @@ export const notifyApi = {
 };
 
 export const notifyEventLabels: Record<string, string> = {
+  alert: "alerty detekcji (Gjallarhorn)",
   health: "alerty zdrowia systemu",
   anchor: "kotwica archiwum (codziennie)",
   test: "test",
+};
+
+// ---- Gjallarhorn: alerty i reguły ----
+
+export type AlertLevel = "informational" | "low" | "medium" | "high" | "critical";
+export type AlertStatus = "open" | "acknowledged" | "closed";
+
+export interface Alert {
+  id: number;
+  rule_id: string;
+  rule_title: string;
+  level: AlertLevel;
+  engine: string;
+  group_key: string;
+  group_fields: Record<string, string>;
+  status: AlertStatus;
+  hits: number;
+  first_seen: string;
+  last_seen: string;
+  created_at: string;
+  updated_at: string;
+  agent_id: string;
+  host_name: string;
+  user_name: string;
+  source_ip: string;
+  first_event_id: string;
+  summary: string;
+  closed_at?: string;
+  closed_by?: string;
+  close_reason?: string;
+}
+
+export interface RuleInfo {
+  id: string;
+  title: string;
+  level: AlertLevel;
+  description: string;
+  tags: string[];
+  file: string;
+  source?: string;
+  mode: string;
+  enabled: boolean;
+  group_by: string[];
+  suppress_s: number;
+  instructions: string;
+  loaded_at: string;
+  open_alerts: number;
+}
+
+export interface AlertsSummary {
+  open: number;
+  open_by_level: Partial<Record<AlertLevel, number>>;
+  last_24h: number;
+  last_at?: string;
+  rules: number;
+  rule_errors: number;
+}
+
+export const alertsApi = {
+  list: (p: { status?: string; level?: string; rule?: string; before?: number }) =>
+    request<{ alerts: Alert[]; configured: boolean }>(
+      "GET",
+      `/api/v1/alerts?${qs({ status: p.status, level: p.level, rule: p.rule, before: p.before ? String(p.before) : undefined })}`,
+    ),
+  summary: () => request<{ configured: boolean; summary?: AlertsSummary }>("GET", "/api/v1/alerts/summary"),
+  get: (id: number) =>
+    request<{ alert: Alert; events: { event_id: string; event_time: string }[]; rule?: RuleInfo }>("GET", `/api/v1/alerts/${id}`),
+  setStatus: (id: number, status: AlertStatus, reason?: string) =>
+    request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),
+  rules: () => request<{ rules: RuleInfo[]; errors: { file: string; error: string; seen_at: string }[]; configured: boolean }>("GET", "/api/v1/rules"),
+};
+
+export const levelLabels: Record<AlertLevel, { label: string; color: string }> = {
+  critical: { label: "krytyczny", color: "red" },
+  high: { label: "wysoki", color: "orange" },
+  medium: { label: "średni", color: "yellow" },
+  low: { label: "niski", color: "blue" },
+  informational: { label: "informacja", color: "gray" },
+};
+
+export const alertStatusLabels: Record<AlertStatus, { label: string; color: string }> = {
+  open: { label: "nowy", color: "red" },
+  acknowledged: { label: "w analizie", color: "yellow" },
+  closed: { label: "zamknięty", color: "gray" },
 };

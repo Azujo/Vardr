@@ -26,6 +26,7 @@ import {
   IconDeviceDesktop,
   IconHome,
   IconKey,
+  IconListCheck,
   IconListDetails,
   IconLogout,
   IconMoon,
@@ -51,7 +52,8 @@ const main: Item[] = [
   { to: "/agents", label: "Huginn", hint: "agenci", icon: <IconDeviceDesktop size={18} /> },
   { to: "/groups", label: "Grupy agentów", hint: "profile i limity", icon: <IconAdjustments size={18} /> },
   { to: "/events", label: "Mímir", hint: "zdarzenia", icon: <IconDatabaseSearch size={18} /> },
-  { to: "/alerts", label: "Gjallarhorn", hint: "alerty – etap 4", icon: <IconAlertTriangle size={18} />, disabled: true },
+  { to: "/alerts", label: "Gjallarhorn", hint: "alerty", icon: <IconAlertTriangle size={18} /> },
+  { to: "/rules", label: "Reguły detekcji", hint: "Sigma", icon: <IconListCheck size={18} /> },
   { to: "/deploy", label: "Bifröst", hint: "wdrażanie agentów", icon: <IconBolt size={18} /> },
   { to: "/archive", label: "Urd", hint: "archiwum NIS2", icon: <IconArchive size={18} /> },
 ];

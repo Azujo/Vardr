@@ -76,6 +76,8 @@ type Server struct {
 	ExportDir string
 	// Notify (opcjonalne) – kanały powiadomień (Discord, webhook).
 	Notify *Notifications
+	// Alerts (opcjonalne) – alerty i reguły detekcji (Gjallarhorn).
+	Alerts AlertStore
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -157,6 +159,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/archive/policy/changes/{id}/cancel", s.authed(roleAdmin, 0, s.cancelArchivePolicyChange))
 	mux.Handle("GET /api/v1/archive/replays", s.authed(roleAdmin, 0, s.listReplays))
 	mux.Handle("POST /api/v1/archive/replays", s.authed(roleAdmin, 0, s.createReplay))
+
+	mux.Handle("GET /api/v1/alerts", s.authed(roleViewer, 0, s.listAlerts))
+	mux.Handle("GET /api/v1/alerts/summary", s.authed(roleViewer, 0, s.alertsSummary))
+	mux.Handle("GET /api/v1/alerts/{id}", s.authed(roleViewer, 0, s.getAlert))
+	mux.Handle("POST /api/v1/alerts/{id}/status", s.authed(roleAnalyst, 0, s.setAlertStatus))
+	mux.Handle("GET /api/v1/rules", s.authed(roleViewer, 0, s.listRules))
 
 	mux.Handle("GET /api/v1/notify/channels", s.authed(roleAdmin, 0, s.listChannels))
 	mux.Handle("POST /api/v1/notify/channels", s.authed(roleAdmin, 0, s.createChannel))

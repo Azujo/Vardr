@@ -29,7 +29,7 @@ const (
 )
 
 // Events to zdarzenia do wyboru w panelu.
-var Events = []string{EventHealth, EventAnchor}
+var Events = []string{EventAlert, EventHealth, EventAnchor}
 
 // Rodzaje kanałów.
 const (

@@ -10,7 +10,8 @@
 #               skrypty); bez certs/, .env, bin/, danych – te zostają na VM
 #   web         frontend panelu (budowany w kontenerze Node na VM, wynik do
 #               panel/web/dist – potem cel api)
-#   ingest normalizer writer archiver api
+#   rules       reguły detekcji z rules/ (sprawdzane przed wysłaniem)
+#   ingest normalizer writer archiver detector api
 #               program dla Linuksa z wersją z gita (svc.Version), obraz
 #               i restart usługi
 #   agent       siem_agent.exe do paczek instalacyjnych panelu (agent-dist/)
@@ -32,10 +33,11 @@ version="$(git describe --tags --always --dirty)"
 declare -A pkg=(
   [ingest]=server/cmd/siem-ingest [normalizer]=server/cmd/siem-normalizer
   [writer]=server/cmd/siem-writer [archiver]=server/cmd/siem-archiver [api]=panel/cmd/siem-api
+  [detector]=server/cmd/siem-detector
 )
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(config ingest normalizer writer archiver api)
+[ ${#targets[@]} -eq 0 ] && targets=(config rules ingest normalizer writer archiver detector api)
 
 services=()
 for t in "${targets[@]}"; do
@@ -46,6 +48,11 @@ for t in "${targets[@]}"; do
       --exclude=./agent-dist --exclude=./export-tools --exclude=./.env --exclude='*.log' --exclude=./deploy.sh -cf - . |
       ssh -i "$key" -o BatchMode=yes "$host" "mkdir -p $dir && tar -xf - -C $dir"
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
+    ;;
+  rules)
+    echo "== reguły detekcji (rules/ -> rules/ na VM; detektor przeładuje je w ciągu 30 s)"
+    GOOS= go run ./server/cmd/siem-detector check rules >/dev/null || { echo "reguły z błędami – popraw przed wdrożeniem" >&2; exit 1; }
+    tar -C rules -cf - . | ssh -i "$key" -o BatchMode=yes "$host" "rm -rf $dir/rules.new && mkdir -p $dir/rules.new && tar -xf - -C $dir/rules.new && rm -rf $dir/rules && mv $dir/rules.new $dir/rules"
     ;;
   web)
     echo "== frontend panelu (Node na VM)"
@@ -76,7 +83,7 @@ for t in "${targets[@]}"; do
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/heimdall-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
       ls -l agent-dist/heimdall-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
     ;;
-  ingest | normalizer | writer | archiver | api)
+  ingest | normalizer | writer | archiver | detector | api)
     echo "== $t ($version)"
     GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X siem/internal/svc.Version=$version" -o "deploy/lab/bin/" "./${pkg[$t]}"

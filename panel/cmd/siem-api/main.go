@@ -28,6 +28,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"siem/internal/alerts"
 	"siem/internal/fleet"
 	"siem/internal/svc"
 	"siem/internal/urd"
@@ -176,6 +177,20 @@ func serve(log *slog.Logger) error {
 	anchor := &notify.Anchor{Svc: notifySvc, Archive: archive, Store: db, Log: log, Hour: anchorHour, Loc: loc}
 	apiServer.Notify = &api.Notifications{Store: db, Svc: notifySvc, Anchor: anchor, RelayConfigured: relayToken != ""}
 	go anchor.Run(ctx)
+
+	// Gjallarhorn: alerty z detektora (schemat gjallarhorn) i wysyłka nowych
+	// alertów z outboxa na kanały powiadomień.
+	alertStore, err := alerts.Open(ctx, os.Getenv("SIEM_API_DB_URL"))
+	if err != nil {
+		return err
+	}
+	defer alertStore.Close()
+	apiServer.Alerts = alertStore
+	panelLink := ""
+	if ps := os.Getenv("SIEM_PUBLIC_SERVER"); ps != "" {
+		panelLink = "https://" + ps + ":8444"
+	}
+	go (&notify.AlertSender{Store: alertStore, Svc: notifySvc, Log: log, PanelURL: panelLink}).Run(ctx)
 	go func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()

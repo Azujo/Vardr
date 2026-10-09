@@ -460,6 +460,17 @@ npm run dev      # podgląd na żywo: http://localhost:5173, API przekierowane d
 
 Bez zbudowanego frontendu `siem-api` działa dalej, tylko zamiast panelu pokazuje stronę z instrukcją.
 
+### Detekcja – Gjallarhorn (siem-detector)
+
+Reguły w formacie **Sigma (YAML)** leżą w repozytorium w katalogu [rules/](rules/) i trafiają na serwer poleceniem `deploy/lab/deploy.sh rules` (najpierw są sprawdzane: `go run ./server/cmd/siem-detector check rules`). Detektor przeładowuje je w ciągu 30 s bez restartu.
+
+- **Silnik w locie:** `siem-detector` to osobny odbiorca strumienia zdarzeń `SIEM_EVENTS`; ocenia każde zdarzenie wszystkimi włączonymi regułami. Zatrzymany detektor powoduje zator (nie pomija zdarzeń); `siem-detector disable` usuwa jego konsumenta.
+- **Alerty** zapisuje w Sadze (schemat `gjallarhorn`, rola `siem_detector`). Para (reguła, zdarzenie) trafia do alertu najwyżej raz, więc ponowne dostarczenie i restart nie dublują alertów. Reguła z `heimdall.group_by` łączy trafienia z tymi samymi wartościami pól w oknie `heimdall.suppress` (domyślnie 1 h) w jeden alert z licznikiem.
+- **Powiadomienia:** alert i wpis w outboxie powstają w jednej transakcji; panel wysyła je na kanały z zaznaczonym „alerty detekcji” (Powiadomienia), z ponawianiem.
+- **Panel:** *Gjallarhorn* (lista, szczegóły z instrukcją reguły i zdarzeniami, „Biorę do analizy”, zamknięcie z powodem – w audycie) i *Reguły detekcji* (treść, otwarte alerty, błędy wczytania).
+- **Obsługiwany podzbiór Sigmy:** `logsource` Windows (service: security, system, application, sysmon, powershell…; category: process_creation – Sysmon 1 i Security 4688, ps_script, network_connection, file_event, dns_query, registry_set), selekcje (mapy, listy, słowa kluczowe), modyfikatory `contains`, `startswith`, `endswith`, `all`, `re`, `cidr`, `exists`, maski `*`/`?`, warunki `and/or/not`, `1 of`/`all of`. Reszta (agregacje `| count()`, `timeframe`, inne modyfikatory) jest jawnie odrzucana – progi dojdą jako rozszerzenie Heimdalla (etap 4c).
+- **Rozszerzenia Heimdalla** (klucz `heimdall:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie), `enabled`.
+
 ### Archiwum NIS2 – Urd (siem-archiver)
 
 Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skompresowane tak, jak przyszły) w katalogu `~/siem-lab/archive`. Jest osobnym odbiorcą kolejki `SIEM_RAW`, więc paczka znika z kolejki dopiero wtedy, gdy zapiszą ją oba etapy: normalizator i archiwum.

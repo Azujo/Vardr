@@ -186,6 +186,25 @@ services:
       saga: { condition: service_healthy }
     mem_limit: 384m
 
+  # Gjallarhorn – detekcja w locie: reguły Sigma z ./rules (deploy.sh rules),
+  # alerty w Sadze (schemat gjallarhorn, rola siem_detector); powiadomienia
+  # wysyła panel (outbox).
+  detector:
+    <<: *server
+    build: { context: ., args: { BIN: siem-detector } }
+    image: siem/detector:lab
+    volumes:
+      - ./rules:/rules:ro
+    environment:
+      <<: *server-env
+      SIEM_DETECTOR_DB_URL: postgres://siem_detector:${SAGA_DETECTOR_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_RULES_DIR: /rules
+      GOMEMLIMIT: 200MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      saga: { condition: service_healthy }
+    mem_limit: 256m
+
   # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).
   saga:
     image: postgres:18-alpine
@@ -198,6 +217,7 @@ services:
       POSTGRES_PASSWORD: ${SAGA_ADMIN_PASSWORD}
       SAGA_DB_PASSWORD: ${SAGA_DB_PASSWORD}
       SAGA_ARCHIVER_PASSWORD: ${SAGA_ARCHIVER_PASSWORD}
+      SAGA_DETECTOR_PASSWORD: ${SAGA_DETECTOR_PASSWORD}
     volumes:
       - ./saga/init:/docker-entrypoint-initdb.d:ro
       - saga-data:/var/lib/postgresql

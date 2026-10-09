@@ -203,3 +203,36 @@ func NewArchiver() *Archiver {
 		PolicyExcluded:      g("policy_excluded_sources", "Liczba grup i agentów wyłączonych z archiwum w polityce."),
 	}
 }
+
+// Detector to metryki detekcji (Gjallarhorn).
+type Detector struct {
+	Events     prometheus.Counter
+	Matches    *prometheus.CounterVec
+	Alerts     *prometheus.CounterVec // result: new | merged | duplicate
+	Errors     *prometheus.CounterVec
+	Rules      prometheus.Gauge
+	RuleErrors prometheus.Gauge
+	EvalTime   prometheus.Counter
+	LastEvent  prometheus.Gauge
+}
+
+func NewDetector() *Detector {
+	return &Detector{
+		Events: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "events_total",
+			Help: "Zdarzenia ocenione przez reguły."}),
+		Matches: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "matches_total",
+			Help: "Trafienia reguł."}, []string{"rule"}),
+		Alerts: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "alerts_total",
+			Help: "Zapis trafień: nowy alert, dopisanie do alertu, duplikat."}, []string{"result"}),
+		Errors: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "errors_total",
+			Help: "Błędy detektora według etapu."}, []string{"stage"}),
+		Rules: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "rules",
+			Help: "Włączone reguły wykonywane w locie."}),
+		RuleErrors: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "rule_errors",
+			Help: "Pliki reguł z błędami (niewczytane)."}),
+		EvalTime: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "eval_seconds_total",
+			Help: "Łączny czas oceny zdarzeń przez reguły."}),
+		LastEvent: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "last_event_timestamp_seconds",
+			Help: "Czas przyjęcia ostatniego ocenionego zdarzenia."}),
+	}
+}

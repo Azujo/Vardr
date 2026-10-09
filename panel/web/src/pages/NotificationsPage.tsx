@@ -30,7 +30,7 @@ import {
   type NotifyLogEntry,
 } from "../api";
 
-const allEvents: NotifyEvent[] = ["health", "anchor"];
+const allEvents: NotifyEvent[] = ["alert", "health", "anchor"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -48,7 +48,7 @@ export default function NotificationsPage() {
     name: "",
     kind: "discord",
     url: "",
-    events: ["health", "anchor"],
+    events: ["alert", "health", "anchor"],
   });
   // Zmiana wymagająca hasła (wyłączenie, rezygnacja z powiadomień, usunięcie).
   const [pending, setPending] = useState<{ label: string; run: (pw: string) => Promise<void> } | null>(null);
@@ -80,7 +80,7 @@ export default function NotificationsPage() {
       await notifyApi.create({ ...form, enabled: true });
       notifications.show({ color: "green", message: "Kanał dodany – wyślij test, żeby sprawdzić adres." });
       setAdding(false);
-      setForm({ name: "", kind: "discord", url: "", events: ["health", "anchor"] });
+      setForm({ name: "", kind: "discord", url: "", events: ["alert", "health", "anchor"] });
       load();
     } catch (err) {
       notifications.show({ color: "red", message: errMsg(err) });

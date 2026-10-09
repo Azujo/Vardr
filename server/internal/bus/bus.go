@@ -29,6 +29,9 @@ const (
 	// ConsumerArchiver: archiwum NIS2 (Urd). Zakładany tylko przez
 	// archiwizator – istnieje, gdy archiwum jest włączone.
 	ConsumerArchiver = "archiver"
+	// ConsumerDetector: detekcja w locie (Gjallarhorn). Zakładany przez
+	// detektor; usuwa go siem-detector disable.
+	ConsumerDetector = "detector"
 
 	// Nagłówki wiadomości.
 	HdrAgent      = "Siem-Agent"
@@ -157,6 +160,28 @@ func EnsureArchiver(ctx context.Context, js jetstream.JetStream, segmentAge time
 // nowych paczek – bez tego zatrzymany archiwizator blokowałby kolejkę).
 func DisableArchiver(ctx context.Context, js jetstream.JetStream) error {
 	err := js.DeleteConsumer(ctx, StreamRaw, ConsumerArchiver)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return nil
+	}
+	return err
+}
+
+// EnsureDetector zakłada konsumenta detekcji na SIEM_EVENTS. Przy pierwszym
+// utworzeniu czyta tylko nowe zdarzenia (bez lawiny alertów z zaległości).
+// Jak archiwizator: zatrzymany detektor powoduje zator, nie pominięte zdarzenia.
+func EnsureDetector(ctx context.Context, js jetstream.JetStream) (jetstream.Consumer, error) {
+	return js.CreateOrUpdateConsumer(ctx, StreamEvents, jetstream.ConsumerConfig{
+		Durable:       ConsumerDetector,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       time.Minute,
+		MaxAckPending: 2048,
+		DeliverPolicy: jetstream.DeliverNewPolicy,
+	})
+}
+
+// DisableDetector usuwa konsumenta detekcji (wyłączenie detekcji w locie).
+func DisableDetector(ctx context.Context, js jetstream.JetStream) error {
+	err := js.DeleteConsumer(ctx, StreamEvents, ConsumerDetector)
 	if errors.Is(err, jetstream.ErrConsumerNotFound) {
 		return nil
 	}

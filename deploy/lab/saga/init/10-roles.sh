@@ -21,6 +21,7 @@
 # (gniazdo unix) nie wymagają hasła.
 set -eu
 : "${SAGA_DB_PASSWORD:?brak SAGA_DB_PASSWORD}" "${SAGA_ARCHIVER_PASSWORD:?brak SAGA_ARCHIVER_PASSWORD}"
+: "${SAGA_DETECTOR_PASSWORD:?brak SAGA_DETECTOR_PASSWORD}"
 admin="$POSTGRES_USER"
 db="${POSTGRES_DB:-saga}"
 
@@ -38,20 +39,22 @@ fi
 
 psql -v ON_ERROR_STOP=1 --no-psqlrc --quiet --username "$admin" --dbname "$db" \
   -v admin_user="$admin" -v admin_pw="$POSTGRES_PASSWORD" -v db="$db" \
-  -v api_pw="$SAGA_DB_PASSWORD" -v archiver_pw="$SAGA_ARCHIVER_PASSWORD" <<'SQL'
+  -v api_pw="$SAGA_DB_PASSWORD" -v archiver_pw="$SAGA_ARCHIVER_PASSWORD" -v detector_pw="$SAGA_DETECTOR_PASSWORD" <<'SQL'
 ALTER ROLE :"admin_user" PASSWORD :'admin_pw';
 
 SELECT 'CREATE ROLE siem_api LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'siem_api') \gexec
 SELECT 'CREATE ROLE siem_archiver LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'siem_archiver') \gexec
 SELECT 'CREATE ROLE urd_reader NOLOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'urd_reader') \gexec
+SELECT 'CREATE ROLE siem_detector LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'siem_detector') \gexec
 ALTER ROLE siem_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'api_pw';
 ALTER ROLE siem_archiver LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'archiver_pw';
+ALTER ROLE siem_detector LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'detector_pw';
 GRANT urd_reader TO siem_api;
 
 -- Baza należy do administratora (właściciel bazy mógłby ją usunąć).
 ALTER DATABASE :"db" OWNER TO :"admin_user";
 REVOKE ALL ON DATABASE :"db" FROM PUBLIC;
-GRANT CONNECT, TEMPORARY ON DATABASE :"db" TO siem_api, siem_archiver;
+GRANT CONNECT, TEMPORARY ON DATABASE :"db" TO siem_api, siem_archiver, siem_detector;
 
 -- Schemat public i tabele panelu należą do panelu (po przemianowaniu
 -- superużytkownika właścicielem był saga_admin). Sekwencje kolumn
@@ -73,6 +76,14 @@ GRANT USAGE ON SCHEMA urd TO urd_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA urd TO urd_reader;
 SELECT 'GRANT UPDATE (verify_requested_at, verify_requested_by) ON urd.archiver_state TO urd_reader'
   WHERE to_regclass('urd.archiver_state') IS NOT NULL \gexec
+
+-- Schemat alertów (Gjallarhorn) należy do detektora; panel czyta i obsługuje
+-- outbox (uprawnienia nadaje też migracja detektora).
+CREATE SCHEMA IF NOT EXISTS gjallarhorn AUTHORIZATION siem_detector;
+ALTER SCHEMA gjallarhorn OWNER TO siem_detector;
+REVOKE ALL ON SCHEMA gjallarhorn FROM PUBLIC;
+GRANT USAGE ON SCHEMA gjallarhorn TO siem_api;
+GRANT SELECT ON ALL TABLES IN SCHEMA gjallarhorn TO siem_api;
 
 -- Archiwizator czyta przypisania agentów do grup (wykluczenia grup z polityki
 -- archiwum); tabele zakłada panel, więc grant także w jego migracji 005.

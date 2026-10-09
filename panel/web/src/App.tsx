@@ -8,6 +8,9 @@ import HomePage from "./pages/HomePage";
 import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import AlertsPage from "./pages/AlertsPage";
+import AlertDetailPage from "./pages/AlertDetailPage";
+import RulesPage from "./pages/RulesPage";
 import AgentsPage from "./pages/AgentsPage";
 import AgentDetailPage from "./pages/AgentDetailPage";
 import DeployPage from "./pages/DeployPage";
@@ -39,6 +42,9 @@ export default function App() {
         <Route path="/events" element={<EventsPage />} />
         <Route path="/deploy" element={<DeployPage />} />
         <Route path="/archive" element={<ArchivePage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/alerts/:id" element={<AlertDetailPage />} />
+        <Route path="/rules" element={<RulesPage />} />
         <Route path="/account/password" element={<ChangePasswordPage />} />
         {admin && <Route path="/admin/users" element={<UsersPage />} />}
         {admin && <Route path="/admin/audit" element={<AuditPage />} />}
