@@ -187,6 +187,28 @@ services:
       saga: { condition: service_healthy }
     mem_limit: 384m
 
+  # Kolektor syslog (siem-collector – agent w trybie kolektora): odbiera
+  # syslog z urządzeń (FortiGate, MikroTik, NAS…) na porcie 514 UDP/TCP hosta
+  # i wysyła go do siem-ingest jak agent (mTLS, bufor dyskowy, heartbeat).
+  # Docker pozwala procesowi bez roota otworzyć port 514 w kontenerze
+  # (ip_unprivileged_port_start=0). Rejestracja tokenem:
+  # deploy/lab/collector-enroll.sh – certyfikaty i stan w ./collector.
+  collector:
+    build: { context: ., args: { BIN: siem-collector } }
+    image: siem/collector:lab
+    hostname: heimdall-collector
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["run", "-config", "/collector/collector.yaml"]
+    volumes:
+      - ./collector:/collector
+    ports:
+      - "514:514/udp"
+      - "514:514/tcp"
+    environment:
+      GOMEMLIMIT: 100MiB
+    mem_limit: 160m
+
   # Gjallarhorn – detekcja: reguły Sigma z ./rules/current (deploy.sh rules –
   # wersje w ./rules/v<czas>, dowiązanie przełączane atomowo). Silniki
   # (SIEM_DETECTION_MODE): w locie (strumień SIEM_EVENTS) i zapytań (ClickHouse,

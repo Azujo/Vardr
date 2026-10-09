@@ -32,6 +32,7 @@ func repoEngine(t testing.TB) *Engine {
 // failed: nieudane logowanie 4625 na konto user z adresu ip.
 func failed(n int, user, ip string, at time.Time) model.Event {
 	return model.Event{ID: fmt.Sprintf("dc:Security:g0:%d", n), AgentID: "dc", Code: 4625, HostName: "dc01", Timestamp: at,
+		Dataset:  "windows.security",
 		SourceIP: ip, Fields: map[string]string{"winlog.channel": "Security", "TargetUserName": user, "TargetDomainName": "LAB",
 			"IpAddress": ip}}
 }

@@ -20,13 +20,13 @@ func TestEngineHits(t *testing.T) {
 	}
 	ts := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
 	b := &model.Batch{Events: []model.Event{
-		{ID: "a:Security:g0:1", AgentID: "a", Code: 4732, HostName: "dc01", UserName: "admin", UserDomain: "LAB", Timestamp: ts,
+		{ID: "a:Security:g0:1", AgentID: "a", Dataset: "windows.security", Code: 4732, HostName: "dc01", UserName: "admin", UserDomain: "LAB", Timestamp: ts,
 			Fields: map[string]string{"winlog.channel": "Security", "TargetSid": "S-1-5-32-551", "TargetUserName": "Backup Operators",
 				"MemberName": "CN=test,DC=lab"}},
-		{ID: "a:Security:g0:2", AgentID: "a", Code: 4688, HostName: "pc1", Timestamp: ts,
+		{ID: "a:Security:g0:2", AgentID: "a", Dataset: "windows.security", Code: 4688, HostName: "pc1", Timestamp: ts,
 			Fields: map[string]string{"winlog.channel": "Security", "NewProcessName": `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
 				"CommandLine": "powershell -enc AAAA", "TargetUserName": "-"}},
-		{ID: "a:Security:g0:3", AgentID: "a", Code: 4624, Timestamp: ts, Fields: map[string]string{"winlog.channel": "Security"}},
+		{ID: "a:Security:g0:3", AgentID: "a", Dataset: "windows.security", Code: 4624, Timestamp: ts, Fields: map[string]string{"winlog.channel": "Security"}},
 	}}
 	hits, _ := e.Evaluate(b)
 	if len(hits) != 2 {

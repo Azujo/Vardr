@@ -46,6 +46,9 @@ type Event struct {
 	// OriginalSize to pierwotny rozmiar w bajtach. Pola opcjonalne (v1).
 	Truncated    bool `json:"truncated,omitempty"`
 	OriginalSize int  `json:"original_size,omitempty"`
+	// Peer: adres urządzenia, które przysłało log (kolektor syslog) – pole
+	// opcjonalne (v1); dla Event Log puste.
+	Peer string `json:"peer,omitempty"`
 }
 
 // Response to odpowiedź serwera na paczkę.

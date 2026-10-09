@@ -15,6 +15,11 @@ type Record struct {
 	CreatedAt  time.Time // czas wystąpienia zdarzenia wg źródła (zero, jeśli brak)
 	Raw        string
 	ReadAt     time.Time
+	// Source: nazwa źródła w paczce (np. „syslog:udp”); puste = Event Log
+	// („wineventlog:” + Channel).
+	Source string
+	// Peer: adres nadawcy (syslog).
+	Peer string
 }
 
 // Position wskazuje ostatni rekord, po którym należy wznowić odczyt.

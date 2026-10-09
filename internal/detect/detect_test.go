@@ -12,7 +12,7 @@ func ev(channel string, code uint32, fields map[string]string) Event {
 	for k, v := range fields {
 		f[k] = v
 	}
-	return Event{&model.Event{Code: code, HostName: "dc01.lab.local", Fields: f}}
+	return Event{&model.Event{Code: code, HostName: "dc01.lab.local", Fields: f, Dataset: "windows." + strings.ToLower(channel)}}
 }
 
 func mustRule(t *testing.T, y string) *Rule {

@@ -1,0 +1,32 @@
+id: fortigate
+title: FortiGate (FortiOS) – ruch, zdarzenia, VPN, UTM
+description: |
+  Dziennik FortiGate wysyłany przez syslog (format „default”: pary
+  klucz=wartość, z nagłówkiem syslog albo bez). Rozpoznaje ruch (type=traffic),
+  zdarzenia systemowe i VPN (type=event) oraz UTM (IPS, antywirus, filtr www).
+version: 1
+priority: 100
+dataset: fortinet.fortigate
+match:
+  regex: '(^|\s)logid="?\d{10}"?\s.*\btype="?(traffic|event|utm|anomaly)'
+parser:
+  type: kv
+fields:
+  host.name: devname
+  user.name: [user, srcuser, dstuser]
+  source.ip: [srcip, remip]
+  event.action: action
+  event.code: logid
+  event.provider: type
+  message: [msg, logdesc]
+outcome:
+  field: [status, action]
+  failure: [failed, failure, ssl-login-fail, deny, blocked, dropped, reset, block, login-fail]
+  success: [success, ssl-login, tunnel-up, accept, close, login, pass, passthrough]
+time:
+  fields: [date, time, tz]
+  layout: "2006-01-02 15:04:05 -0700"
+samples:
+  - '<189>date=2026-10-09 time=13:05:12 devname="FGT-HQ" devid="FG100FTK19000001" eventtime=1791551112000000000 tz="+0200" logid="0101039426" type="event" subtype="vpn" level="alert" vd="root" logdesc="SSL VPN login fail" action="ssl-login-fail" tunneltype="ssl-web" tunnelid=0 remip=203.0.113.45 user="jkowalski" group="N/A" reason="sslvpn_login_permission_denied" msg="SSL user failed to logged in"'
+  - '<189>date=2026-10-09 time=13:06:01 devname="FGT-HQ" devid="FG100FTK19000001" tz="+0200" logid="0100032002" type="event" subtype="system" level="alert" vd="root" logdesc="Admin login failed" sn="0" user="admin" ui="https(198.51.100.7)" method="https" srcip=198.51.100.7 dstip=192.0.2.1 action="login" status="failed" reason="passwd_invalid" msg="Administrator admin login failed from https(198.51.100.7) because of invalid password"'
+  - '<189>date=2026-10-09 time=13:07:44 devname="FGT-HQ" devid="FG100FTK19000001" tz="+0200" logid="0000000013" type="traffic" subtype="forward" level="notice" vd="root" srcip=192.168.1.10 srcport=51234 srcintf="port2" dstip=8.8.8.8 dstport=53 dstintf="wan1" proto=17 action="accept" policyid=1 service="DNS" duration=180 sentbyte=74 rcvdbyte=90'

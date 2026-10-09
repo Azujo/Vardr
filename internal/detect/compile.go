@@ -83,11 +83,38 @@ func onChannel(ch string, codes ...uint32) Node {
 	return and{channelIs(ch), o}
 }
 
+// products: produkt Sigmy → prefiks event.dataset zdarzeń z tego źródła.
+var products = map[string]string{
+	"windows":   "windows.",
+	"fortigate": "fortinet.fortigate",
+	"fortinet":  "fortinet.fortigate",
+	"mikrotik":  "mikrotik.routeros",
+	"routeros":  "mikrotik.routeros",
+}
+
+// datasetIs: event.dataset zaczyna się od prefiksu (bez wielkości liter).
+type datasetIs string
+
+func (d datasetIs) Eval(e Event) bool {
+	return strings.HasPrefix(strings.ToLower(e.Dataset), string(d))
+}
+
+func (d datasetIs) sql() string {
+	return fmt.Sprintf("startsWith(event_dataset, %s)", Quote(string(d)))
+}
+
 func compileLogsource(l logsource) (Node, error) {
-	if l.Product != "" && !strings.EqualFold(l.Product, "windows") {
-		return nil, fmt.Errorf("product %q nieobsługiwany (MVP: windows)", l.Product)
+	prefix, ok := products[strings.ToLower(l.Product)]
+	if l.Product != "" && !ok {
+		return nil, fmt.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik)", l.Product)
+	}
+	if prefix != "windows." && (l.Service != "" || l.Category != "") {
+		return nil, fmt.Errorf("product %s: service i category tylko dla windows", l.Product)
 	}
 	n := and{}
+	if prefix != "" {
+		n = append(n, datasetIs(prefix))
+	}
 	if l.Service != "" {
 		ch, ok := services[strings.ToLower(l.Service)]
 		if !ok {

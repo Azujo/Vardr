@@ -257,9 +257,13 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 		return err
 	}
 	ev := contract.Event{
-		Source: "wineventlog:" + rec.Channel,
+		Source: rec.Source,
 		ReadAt: rec.ReadAt,
 		Raw:    rec.Raw,
+		Peer:   rec.Peer,
+	}
+	if ev.Source == "" {
+		ev.Source = "wineventlog:" + rec.Channel
 	}
 	if limit := a.opts.MaxEventBytes; limit > 0 && len(ev.Raw) > limit {
 		ev.Raw, ev.Truncated, ev.OriginalSize = truncateUTF8(ev.Raw, limit), true, len(rec.Raw)

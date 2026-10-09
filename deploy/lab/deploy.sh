@@ -15,6 +15,8 @@
 #               program dla Linuksa z wersją z gita (svc.Version), obraz
 #               i restart usługi
 #   agent       siem_agent.exe do paczek instalacyjnych panelu (agent-dist/)
+#   collector   siem-collector (kolektor syslog, kontener na VM; rejestracja:
+#               deploy/lab/collector-enroll.sh)
 #   tools       odczytaj.exe – czytnik eksportu archiwum dołączany do paczek (export-tools/)
 #
 # Zmienne: SIEM_LAB_HOST (siem@192.168.88.98), SIEM_LAB_KEY (~/.ssh/siem_lab),
@@ -102,6 +104,17 @@ for t in "${targets[@]}"; do
     services+=("$t")
     # Kopie ścieżki odtwarzania z archiwum używają tych samych programów.
     case "$t" in normalizer | writer) services+=("$t-replay") ;; esac
+    ;;
+  collector)
+    echo "== collector ($version)"
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath       -ldflags="-s -w -X main.version=$version" -o deploy/lab/bin/siem-collector ./agent/cmd/siem_collector
+    copy deploy/lab/bin/siem-collector "$host:$dir/bin/"
+    # Bez rejestracji (collector/collector.yaml) kontener tylko by się restartował.
+    if remote "test -f collector/collector.yaml"; then
+      services+=("collector")
+    else
+      remote "docker compose build collector >/dev/null" && echo "   obraz gotowy – zarejestruj kolektor: deploy/lab/collector-enroll.sh"
+    fi
     ;;
   *)
     echo "nieznany cel: $t" >&2

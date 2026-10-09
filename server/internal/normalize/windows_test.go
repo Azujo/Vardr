@@ -109,7 +109,7 @@ func TestBatchQuarantinesBadEventsWithoutStoppingOthers(t *testing.T) {
 	b := contract.Batch{BatchID: "b1", Events: []contract.Event{
 		ev("wineventlog:System", sys7045),
 		ev("wineventlog:System", "<Event><System>uszkodzone"),
-		ev("syslog:fortigate", "date=2026-10-06 devname=FG"),
+		ev("netflow:v9", "binarne dane netflow"),
 		{ID: "agt-1:x:g0:9", Source: "wineventlog:Application", Raw: app999[:200], Truncated: true},
 		ev("wineventlog:Application", app999),
 	}}
@@ -123,7 +123,7 @@ func TestBatchQuarantinesBadEventsWithoutStoppingOthers(t *testing.T) {
 			t.Errorf("brak powodu %q w %q", want, reasons)
 		}
 	}
-	if nb.Quarantine[1].Raw != "date=2026-10-06 devname=FG" {
+	if nb.Quarantine[1].Raw != "binarne dane netflow" {
 		t.Error("kwarantanna musi zachować oryginał")
 	}
 }
@@ -131,5 +131,15 @@ func TestBatchQuarantinesBadEventsWithoutStoppingOthers(t *testing.T) {
 func TestDataset(t *testing.T) {
 	if d := Dataset("Microsoft-Windows-TaskScheduler/Operational"); d != "windows.microsoft_windows_taskscheduler_operational" {
 		t.Fatal(d)
+	}
+}
+
+// Syslog z kolektora trafia do dekoderów (FortiGate) zamiast do kwarantanny.
+func TestBatchDecodesSyslog(t *testing.T) {
+	raw := `<189>date=2026-10-09 time=13:05:12 devname="FGT-HQ" tz="+0200" logid="0101039426" type="event" subtype="vpn" action="ssl-login-fail" remip=203.0.113.45 user="jkowalski"`
+	nb := Batch(contract.Batch{BatchID: "b2", Events: []contract.Event{{ID: "agt-c:syslog:g0:1", Source: "syslog:udp", Raw: raw, Peer: "10.0.0.1"}}},
+		"agt-c", ingested)
+	if len(nb.Events) != 1 || nb.Events[0].Dataset != "fortinet.fortigate" || nb.Events[0].UserName != "jkowalski" || nb.Events[0].Outcome != "failure" {
+		t.Fatalf("syslog FortiGate: %+v kwarantanna %+v", nb.Events, nb.Quarantine)
 	}
 }

@@ -1,0 +1,39 @@
+id: mikrotik
+title: MikroTik RouterOS – logowania, DHCP, zapora, interfejsy
+description: |
+  Dziennik RouterOS wysyłany przez syslog z bsd-syslog=yes. Nazwa programu
+  w nagłówku to „tematy” RouterOS (np. system,info,account). Rozpoznaje
+  logowania (udane i nieudane), zmiany konfiguracji, DHCP, wpisy zapory
+  (reguły z log=yes) i stan interfejsów; resztę zapisuje jako tekst.
+version: 1
+priority: 50
+dataset: mikrotik.routeros
+match:
+  app_regex: '^(system|firewall|dhcp|wireless|interface|account|critical|info|warning|error|ppp|pppoe|ovpn|l2tp|sstp|ipsec|script|dns|bridge|ssh|web-proxy|hotspot|route|ntp|certificate|health|e-mail|caps|wireguard|lte|dot1x|radius|manager|backup|upnp)(,[a-z0-9-]+)*$'
+parser:
+  type: regex
+  patterns:
+    - regex: '^login failure for user (?P<user>\S+) from (?P<src_ip>[0-9a-fA-F.:]+) via (?P<method>\S+)'
+      set: {event.action: login, event.outcome: failure}
+    - regex: '^user (?P<user>\S+) logged in from (?P<src_ip>[0-9a-fA-F.:]+) via (?P<method>\S+)'
+      set: {event.action: login, event.outcome: success}
+    - regex: '^user (?P<user>\S+) logged out from (?P<src_ip>[0-9a-fA-F.:]+) via (?P<method>\S+)'
+      set: {event.action: logout, event.outcome: success}
+    - regex: '^(?P<object>.+?) (?P<change>added|changed|removed|moved) by (?P<via>\S+?:)?(?P<user>[^@\s]+)(@(?P<src_ip>[0-9a-fA-F.:]+))?'
+      set: {event.action: config-change}
+    - regex: '^(?P<dhcp_server>\S+) (?P<dhcp_action>assigned|deassigned) (?P<client_ip>[0-9.]+) (for|to) (?P<client_mac>[0-9A-Fa-f:]{17})\s*(?P<client_host>\S*)'
+      set: {event.action: dhcp-lease}
+    - regex: '^(?:(?P<fw_prefix>\S+) )?(?P<fw_chain>input|forward|output|prerouting|postrouting|srcnat|dstnat): in:(?P<in_if>\S+) out:(?P<out_if>.+?), .*?proto (?P<proto>\S+)(?: \([^)]*\))?, (?P<src_ip>[0-9a-fA-F.:]+?):(?P<src_port>\d+)->(?P<dst_ip>[0-9a-fA-F.:]+?):(?P<dst_port>\d+)'
+      set: {event.action: firewall}
+    - regex: '^(?P<interface>\S+) link (?P<link>up|down)'
+      set: {event.action: link-change}
+fields:
+  user.name: user
+  source.ip: src_ip
+  process.name: method
+samples:
+  - '<86>Oct  9 13:24:55 MikroTik system,error,critical login failure for user admin from 192.168.88.10 via ssh'
+  - '<86>Oct  9 13:25:03 MikroTik system,info,account user admin logged in from 192.168.88.10 via winbox'
+  - '<30>Oct  9 13:26:11 MikroTik dhcp,info defconf assigned 192.168.88.254 for 8C:85:90:12:34:56 iPhone'
+  - '<30>Oct  9 13:27:40 MikroTik firewall,info DROP-WAN input: in:ether1 out:(unknown 0), connection-state:new src-mac 00:11:22:33:44:55, proto TCP (SYN), 203.0.113.9:44321->192.168.88.1:22, len 60'
+  - '<30>Oct  9 13:28:02 MikroTik system,info filter rule added by winbox-3.41/tcp-msg(winbox):admin@192.168.88.10 (*12 = /ip firewall filter add chain=input action=drop)'
