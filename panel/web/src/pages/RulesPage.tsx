@@ -3,7 +3,7 @@ import { Alert as MAlert, Anchor, Badge, Code, Group, Modal, ScrollArea, Stack, 
 import { Link } from "react-router-dom";
 import { alertsApi, formatDate, levelLabels, type RuleInfo } from "../api";
 
-const modeLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", both: "oba silniki" };
+const modeLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", both: "oba silniki", system: "wbudowana" };
 
 // Reguły detekcji wczytane przez detektor (pliki YAML z katalogu rules/).
 function fmtDuration(s: number): string {

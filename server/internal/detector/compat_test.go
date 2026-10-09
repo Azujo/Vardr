@@ -157,6 +157,13 @@ func buildCorpus() []model.Event {
 	c.add(sec, 4728, "dc01", time.Hour, 0, map[string]string{"TargetSid": "S-1-5-21-1-2-3-1105", "TargetUserName": "Kadry"})
 	c.add(sec, 1102, "dc01", time.Hour, 0, map[string]string{"SubjectUserName": "admin"})
 	c.add(sec, 4720, "dc01", time.Hour, 0, map[string]string{"TargetUserName": "nowy"})
+	c.add(sys, 104, "pc01", time.Hour, 0, map[string]string{"SubjectUserName": "admin"}).Provider = "Microsoft-Windows-Eventlog"
+	c.add(sys, 104, "pc01", time.Hour, 0, map[string]string{"SubjectUserName": "admin"}).Provider = "Inny-Dostawca"
+	c.add(sys, 7036, "dc01", time.Hour, 0, map[string]string{"param1": "SIEM Agent", "param2": "stopped"})
+	c.add(sys, 7036, "dc01", time.Hour, 0, map[string]string{"param1": "SIEM Agent", "param2": "running"})
+	c.add(sys, 7036, "pc01", time.Hour, 0, map[string]string{"param1": "Sysmon64", "param2": "Zatrzymany"})
+	c.add(sys, 7034, "pc01", time.Hour, 0, map[string]string{"param1": "Sysmon64", "param2": "1"})
+	c.add(sys, 7036, "pc01", time.Hour, 0, map[string]string{"param1": "Spooler", "param2": "stopped"})
 	// Konstrukcje reguł testowych: regex, adresy, null/exists, wielkość liter, Unicode, słowa kluczowe.
 	c.add(sec, 4624, "pc03", time.Hour, 0, map[string]string{"TargetUserName": "ADM42", "IpAddress": "192.168.88.200"})
 	c.add(sec, 4624, "pc03", time.Hour, 0, map[string]string{"TargetUserName": "adm4x", "IpAddress": "192.168.88.100",

@@ -1,0 +1,48 @@
+title: Zatrzymano albo przerwano usługę bezpieczeństwa (agent Heimdalla, Sysmon)
+id: d6db3a52-6c0f-477f-b079-66457370158a
+status: stable
+description: |
+  Usługa agenta Heimdalla albo Sysmona została zatrzymana (7036) albo
+  nieoczekiwanie przerwała działanie (7031, 7034). Zdarzenie dociera po
+  ponownym uruchomieniu agenta (czeka w dzienniku System), więc mówi, kiedy
+  dokładnie zatrzymano usługę – uzupełnia alert „Utrata łączności z agentem”.
+  Tekst stanu w 7036 zależy od języka Windows – reguła zna angielski i polski.
+author: Heimdall
+tags:
+  - attack.defense_evasion
+  - attack.t1562.001
+  - attack.impact
+  - attack.t1489
+logsource:
+  product: windows
+  service: system
+detection:
+  service:
+    param1:
+      - 'SIEM Agent'
+      - 'Sysmon'
+      - 'Sysmon64'
+  stopped:
+    EventID: 7036
+    param2:
+      - 'stopped'
+      - 'zatrzymany'
+      - 'zatrzymana'
+      - 'zatrzymane'
+  crashed:
+    EventID:
+      - 7031
+      - 7034
+  condition: service and (stopped or crashed)
+falsepositives:
+  - Aktualizacja agenta (MSI zatrzymuje usługę na kilka sekund)
+  - Planowane prace administracyjne
+level: medium
+heimdall:
+  group_by: [Computer, param1]
+  suppress: 1h
+  instructions: |
+    Usługa {{param1}} na {{Computer}} przestała działać. Sprawdź, czy była
+    aktualizacja albo zgłoszone prace; jeśli nie – ustal, kto był zalogowany
+    w tym czasie (4624 w Mímirze), i przejrzyj zdarzenia z okresu, gdy usługa
+    nie działała (Heimdall doczytuje je z dziennika po jej uruchomieniu).

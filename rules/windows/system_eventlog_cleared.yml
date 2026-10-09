@@ -1,0 +1,30 @@
+title: Wyczyszczono dziennik zdarzeń Windows (inny niż Security)
+id: f4edfeeb-bfc1-43b9-91e1-1bbfe1c8a7a9
+status: stable
+description: |
+  Wyczyszczono dziennik zdarzeń inny niż Security (np. System, PowerShell,
+  Sysmon). Windows zapisuje wtedy zdarzenie 104 w dzienniku System. Atakujący
+  czyszczą dzienniki, żeby usunąć ślady – dziennik Security obejmuje osobna
+  reguła (1102).
+author: Heimdall
+tags:
+  - attack.defense_evasion
+  - attack.t1070.001
+logsource:
+  product: windows
+  service: system
+detection:
+  selection:
+    EventID: 104
+    Provider_Name: 'Microsoft-Windows-Eventlog'
+  condition: selection
+falsepositives:
+  - Czyszczenie dzienników przez administratora albo narzędzia porządkujące
+level: high
+heimdall:
+  instructions: |
+    {{SubjectDomainName}}\{{SubjectUserName}} wyczyścił dziennik na komputerze
+    {{Computer}} (nazwa dziennika w polach zdarzenia). Ustal, czy było to
+    planowane; jeśli nie – przejrzyj w Mímirze zdarzenia z tego komputera
+    sprzed wyczyszczenia (Heimdall ma ich kopię) i traktuj komputer jako
+    podejrzany.

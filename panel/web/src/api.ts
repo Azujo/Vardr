@@ -321,6 +321,7 @@ export interface AgentLimits {
   buffer_max_mb?: number;
   buffer_on_full?: "pause" | "drop_oldest";
   require_sysmon?: boolean;
+  heartbeat_alert_min?: number;
 }
 
 export interface AgentGroup {

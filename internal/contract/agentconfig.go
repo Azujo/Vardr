@@ -38,6 +38,10 @@ type AgentLimits struct {
 	// RequireSysmon: grupa wymaga Sysmona – panel zgłasza komputery bez niego
 	// albo z inną konfiguracją niż większość grupy (agent go nie instaluje).
 	RequireSysmon *bool `json:"require_sysmon,omitempty"`
+	// HeartbeatAlertMin: alert detekcji (Gjallarhorn), gdy agent z tej grupy
+	// nie wysłał heartbeatu przez tyle minut (nil/0 = bez alertu – np. stacje
+	// wyłączane na noc). Agent go nie używa.
+	HeartbeatAlertMin *int `json:"heartbeat_alert_min,omitempty"`
 }
 
 // ValidProfiles to profile zdarzeń znane agentowi.
@@ -76,6 +80,10 @@ func (l AgentLimits) Validate() error {
 	}
 	if l.BufferMaxMB != nil && (*l.BufferMaxMB < 0 || *l.BufferMaxMB > 102400) {
 		errs = append(errs, errors.New("bufor dyskowy: 0 (wyłączony) – 102 400 MB"))
+	}
+	if l.HeartbeatAlertMin != nil && (*l.HeartbeatAlertMin < 0 || (*l.HeartbeatAlertMin > 0 && *l.HeartbeatAlertMin < 5) ||
+		*l.HeartbeatAlertMin > 10080) {
+		errs = append(errs, errors.New("alarm po utracie łączności: 0 (wyłączony) albo 5–10 080 min"))
 	}
 	if l.BufferOnFull != nil && *l.BufferOnFull != "pause" && *l.BufferOnFull != "drop_oldest" {
 		errs = append(errs, errors.New("pełny bufor: pause albo drop_oldest"))

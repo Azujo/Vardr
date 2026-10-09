@@ -47,12 +47,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function EventPanel({ id, time }: { id: string; time: string }) {
   const [ev, setEv] = useState<EventDetail | null>(null);
   const [err, setErr] = useState("");
+  const heartbeat = id.startsWith("heartbeat:");
   useEffect(() => {
+    if (heartbeat) return;
     eventsApi
       .get(id, time)
       .then((r) => setEv(r.event))
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, [id, time]);
+  }, [id, time, heartbeat]);
+  if (heartbeat) {
+    const agent = id.split(":")[1];
+    return (
+      <Stack gap="xs">
+        <Text size="sm">Ostatni heartbeat agenta przed przerwą – zdarzenie systemowe (nie ma go w Mímirze).</Text>
+        <Anchor component={Link} to={`/agents/${encodeURIComponent(agent)}`} size="sm">
+          Agent {agent} w Huginnie →
+        </Anchor>
+      </Stack>
+    );
+  }
   if (err) return <Text size="sm" c="red">{err}</Text>;
   if (!ev) return <Text size="sm" c="dimmed">wczytywanie…</Text>;
   return (
@@ -200,7 +213,7 @@ export default function AlertDetailPage() {
           <Field label="Pierwsze zdarzenie">{formatDate(alert.first_seen)}</Field>
           <Field label="Ostatnie zdarzenie">{formatDate(alert.last_seen)}</Field>
           <Field label="Trafienia">{String(alert.hits)}</Field>
-          <Field label="Silnik">{alert.engine === "index_query" ? "zapytania (ClickHouse)" : alert.engine === "stream" ? "w locie" : alert.engine}</Field>
+          <Field label="Silnik">{({ index_query: "zapytania (ClickHouse)", stream: "w locie", system: "reguła wbudowana" } as Record<string, string>)[alert.engine] ?? alert.engine}</Field>
         </SimpleGrid>
         {Object.keys(alert.group_fields).length > 0 && (
           <Text size="sm" mt="sm">

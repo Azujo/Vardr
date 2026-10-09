@@ -131,6 +131,16 @@ func TestRepositoryRules(t *testing.T) {
 	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `C:\Users\jan\AppData\Local\Temp\svc.exe`}), true)
 	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `"C:\Program Files\Vendor\svc.exe"`}), false)
 	must("9f379649-a04b-43de-b3a0-25587cf713de", ev("Security", 4720, nil), true)
+	cleared := ev("System", 104, nil)
+	cleared.Provider = "Microsoft-Windows-Eventlog"
+	must("f4edfeeb-bfc1-43b9-91e1-1bbfe1c8a7a9", cleared, true)
+	must("f4edfeeb-bfc1-43b9-91e1-1bbfe1c8a7a9", ev("System", 104, nil), false)
+	svc := "d6db3a52-6c0f-477f-b079-66457370158a"
+	must(svc, ev("System", 7036, map[string]string{"param1": "SIEM Agent", "param2": "stopped"}), true)
+	must(svc, ev("System", 7036, map[string]string{"param1": "Sysmon64", "param2": "zatrzymany"}), true)
+	must(svc, ev("System", 7036, map[string]string{"param1": "SIEM Agent", "param2": "running"}), false)
+	must(svc, ev("System", 7034, map[string]string{"param1": "Sysmon"}), true)
+	must(svc, ev("System", 7036, map[string]string{"param1": "Spooler", "param2": "stopped"}), false)
 
 	if k := byID["4b767c65-adff-4033-841f-3a325dc1bda4"].GroupKey(enc); len(k) != 2 || k[0] != "dc01.lab.local" || !strings.Contains(k[1], "encodedcommand") {
 		t.Fatalf("klucz alertu: %v", k)

@@ -159,7 +159,8 @@ func serve(log *slog.Logger) error {
 			rerrs = append(rerrs, alerts.RuleError{File: e.File, Error: e.Err})
 			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
 		}
-		if err := store.SyncRules(ctx, detector.Infos(rules), rerrs, time.Now().UTC()); err != nil {
+		infos := append(detector.Infos(rules), detector.HeartbeatRule())
+		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
 			log.Warn("zapis reguł w bazie nieudany", "err", err)
 		}
@@ -173,6 +174,7 @@ func serve(log *slog.Logger) error {
 	// Oba silniki zapisują przez jedną blokadę – łączenie trafień w alert
 	// (SELECT … FOR UPDATE) nie widzi alertu tworzonego równolegle.
 	var recordMu sync.Mutex
+	go runHeartbeat(ctx, log, store, &recordMu, m)
 	if indexOn {
 		idx, err := openIndex(ctx, log, store)
 		if err != nil {
@@ -389,6 +391,61 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		m.Alerts.WithLabelValues("duplicate").Add(float64(rec.Duplicates))
 		if rec.NewAlerts > 0 {
 			log.Info("nowe alerty (silnik zapytań)", "count", rec.NewAlerts, "merged", rec.Merged)
+		}
+	}
+}
+
+// runHeartbeat: reguła wbudowana „utrata łączności z agentem” – co 30 s
+// porównuje ostatni heartbeat agentów z progiem ich grupy; alert zamyka się
+// sam, gdy agent wróci.
+func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector) {
+	warned := false
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+		now := time.Now().UTC()
+		beats, err := store.AgentBeats(ctx)
+		if err != nil {
+			m.Errors.WithLabelValues("heartbeat").Inc()
+			if !warned {
+				log.Warn("odczyt heartbeatu agentów nieudany – reguła utraty łączności nie działa", "err", err)
+				warned = true
+			}
+			continue
+		}
+		warned = false
+		hits, back := detector.HeartbeatCheck(beats, now)
+		if len(hits) > 0 {
+			mu.Lock()
+			res, err := store.Record(ctx, hits, nil)
+			mu.Unlock()
+			if err != nil {
+				m.Errors.WithLabelValues("record").Inc()
+				log.Error("zapis alertów utraty łączności nieudany", "err", err)
+				continue
+			}
+			m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
+			if res.NewAlerts > 0 {
+				log.Info("utrata łączności z agentem – nowe alerty", "count", res.NewAlerts)
+			}
+		}
+		open, err := store.OpenAgents(ctx, detector.HeartbeatRuleID)
+		if err != nil || len(open) == 0 {
+			continue
+		}
+		for _, b := range back {
+			if !open[b.ID] {
+				continue
+			}
+			reason := "Agent znów wysyła heartbeat (" + now.Format("2006-01-02 15:04") + " UTC) – zamknięte automatycznie."
+			if n, err := store.CloseOpen(ctx, detector.HeartbeatRuleID, detector.HeartbeatKey(b.ID), reason, now); err != nil {
+				log.Warn("zamknięcie alertu utraty łączności nieudane", "agent", b.ID, "err", err)
+			} else if n > 0 {
+				log.Info("agent wrócił – alert zamknięty", "agent", b.ID)
+			}
 		}
 	}
 }
