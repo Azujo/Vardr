@@ -30,6 +30,7 @@ type IdentityStore interface {
 // PeopleSource to osoby ze zdarzeń (implementuje events.Searcher).
 type PeopleSource interface {
 	People(ctx context.Context, from time.Time, q string, limit int) ([]events.Person, error)
+	DomainsSeen(ctx context.Context, from time.Time) ([]events.DomainSeen, error)
 }
 
 // Identities to moduł tożsamości panelu (opcjonalny).
@@ -293,4 +294,43 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(sugg, func(i, j int) bool { return sugg[i].Identities[0] < sugg[j].Identities[0] })
 	writeJSON(w, http.StatusOK, map[string]any{"people": people, "suggestions": sugg})
+}
+
+type domainSeenView struct {
+	events.DomainSeen
+	Covered bool `json:"covered"` // należy do organizacji (na liście albo lista pusta)
+}
+
+// domainsSeen: domeny kont w zdarzeniach z ostatnich 7 dni i czy są na
+// liście domen organizacji – literówka albo brak domeny NetBIOS (np. AZUJO
+// obok azujo.centrala) rozdziela tożsamości tej samej osoby.
+func (s *Server) domainsSeen(w http.ResponseWriter, r *http.Request) {
+	if !s.identitiesEnabled(w) {
+		return
+	}
+	if s.Identities.People == nil {
+		writeError(w, http.StatusServiceUnavailable, "events_disabled", "wyszukiwarka zdarzeń wyłączona – podpowiedź domen niedostępna")
+		return
+	}
+	ds, err := s.Identities.Store.IdentityDomains(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	conf := map[string]bool{}
+	for _, d := range ds {
+		conf[d] = true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), SearchTimeout)
+	defer cancel()
+	seen, err := s.Identities.People.DomainsSeen(ctx, s.now().Add(-7*24*time.Hour))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		return
+	}
+	out := make([]domainSeenView, 0, len(seen))
+	for _, d := range seen {
+		out = append(out, domainSeenView{DomainSeen: d, Covered: len(conf) == 0 || conf[d.Domain]})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"domains": out})
 }

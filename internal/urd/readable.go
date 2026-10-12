@@ -35,6 +35,7 @@ type Readable struct {
 	Outcome     string `json:"event.outcome,omitempty"`
 	UserName    string `json:"user.name,omitempty"`
 	UserDomain  string `json:"user.domain,omitempty"`
+	Identity    string `json:"user.identity,omitempty"` // osoba (to samo konto w AD, Entra, na VPN)
 	SourceIP    string `json:"source.ip,omitempty"`
 	ProcessName string `json:"process.name,omitempty"`
 	CommandLine string `json:"process.command_line,omitempty"`
@@ -119,7 +120,7 @@ func (d *eventDigest) add(batchSHA, eventID, raw string) {
 
 // csvHeader to kolumny pliku zdarzenia/zdarzenia.csv (dla arkusza kalkulacyjnego).
 var csvHeader = []string{"czas_zdarzenia_utc", "komputer", "kod", "kanal", "akcja", "wynik", "uzytkownik", "domena",
-	"ip_zrodlowe", "proces", "agent", "przyjeto_na_serwerze_utc", "id_zdarzenia", "zbior_danych", "nadawca_syslog"}
+	"ip_zrodlowe", "proces", "agent", "przyjeto_na_serwerze_utc", "id_zdarzenia", "zbior_danych", "nadawca_syslog", "osoba"}
 
 // csvMaxRows: Excel otwiera najwyżej 1 048 576 wierszy.
 const csvMaxRows = 1_000_000
@@ -153,7 +154,7 @@ func (c *csvSink) add(r Readable) error {
 		code = strconv.FormatUint(uint64(r.Code), 10)
 	}
 	return c.w.Write([]string{r.Timestamp, r.HostName, code, r.Channel, r.Action, r.Outcome, r.UserName, r.UserDomain,
-		r.SourceIP, r.ProcessName, r.AgentID, r.Ingested, r.EventID, r.Dataset, r.Peer})
+		r.SourceIP, r.ProcessName, r.AgentID, r.Ingested, r.EventID, r.Dataset, r.Peer, r.Identity})
 }
 
 func (c *csvSink) close() error {

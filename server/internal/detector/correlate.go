@@ -52,7 +52,7 @@ func CorrelationRules() []alerts.RuleInfo {
 	src := "# Reguła wbudowana w siem-detector (server/internal/detector/correlate.go),\n" +
 		"# oceniana co minutę w ClickHouse po osobie (user.identity) we wszystkich źródłach.\n"
 	return []alerts.RuleInfo{
-		{ID: SuccessAfterFailuresID, Title: "Udane logowanie po serii nieudanych (wiele źródeł)", Level: "high", Mode: "system",
+		{ID: SuccessAfterFailuresID, Title: "Udane logowanie po serii nieudanych (wiele źródeł)", Level: "high", Mode: "correlation",
 			Enabled: true, FileEnabled: true, File: "(wbudowana)", GroupBy: []string{"user.identity"}, SuppressS: 3600,
 			Tags: []string{"attack.credential_access", "attack.t1110", "attack.initial_access", "attack.t1078"},
 			Description: fmt.Sprintf("Udane logowanie osoby (AD, Entra ID, VPN, router) poprzedzone co najmniej %d nieudanymi "+
@@ -62,7 +62,7 @@ func CorrelationRules() []alerts.RuleInfo {
 			Instructions: "Ustal z osobą, czy to ona się logowała (telefon, nie e-mail). Porównaj adresy prób i udanego " +
 				"logowania – inny adres albo kraj to prawie na pewno przejęte konto: zablokuj logowanie, unieważnij sesje " +
 				"(Entra: revoke sessions), zmień hasło i sprawdź MFA oraz reguły skrzynki pocztowej."},
-		{ID: NewCountryID, Title: "Logowanie z nowego kraju", Level: "medium", Mode: "system",
+		{ID: NewCountryID, Title: "Logowanie z nowego kraju", Level: "medium", Mode: "correlation",
 			Enabled: true, FileEnabled: true, File: "(wbudowana)", GroupBy: []string{"user.identity", "source.geo.country_iso_code"},
 			SuppressS: 86400, Tags: []string{"attack.initial_access", "attack.t1078.004"},
 			Description: fmt.Sprintf("Udane logowanie osoby z kraju, z którego w ostatnich %d dniach się nie logowała "+
@@ -79,6 +79,23 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 type Correlator struct {
 	Conn  driver.Conn
 	Table string // domyślnie siem.events (testy: inna tabela)
+	// Disabled (opcjonalne): korelacja wyłączona w panelu.
+	Disabled func(id string) bool
+}
+
+func (c *Correlator) off(id string) bool { return c.Disabled != nil && c.Disabled(id) }
+
+// CorrelationInfos: opisy korelacji z ustawieniem z panelu (wyłączenie).
+func CorrelationInfos(ov map[string]alerts.Override) ([]alerts.RuleInfo, map[string]bool) {
+	infos := CorrelationRules()
+	disabled := map[string]bool{}
+	for i := range infos {
+		if o, ok := ov[infos[i].ID]; ok {
+			infos[i].Enabled = o.Enabled
+			disabled[infos[i].ID] = !o.Enabled
+		}
+	}
+	return infos, disabled
 }
 
 func (c *Correlator) table() string {
@@ -90,15 +107,22 @@ func (c *Correlator) table() string {
 
 // Run ocenia zdarzenia przyjęte w (from, to] i zwraca trafienia.
 func (c *Correlator) Run(ctx context.Context, from, to time.Time) ([]alerts.Hit, error) {
-	a, err := c.successAfterFailures(ctx, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("udane po nieudanych: %w", err)
+	var hits []alerts.Hit
+	if !c.off(SuccessAfterFailuresID) {
+		a, err := c.successAfterFailures(ctx, from, to)
+		if err != nil {
+			return nil, fmt.Errorf("udane po nieudanych: %w", err)
+		}
+		hits = a
 	}
-	b, err := c.newCountry(ctx, from, to)
-	if err != nil {
-		return nil, fmt.Errorf("nowy kraj: %w", err)
+	if !c.off(NewCountryID) {
+		b, err := c.newCountry(ctx, from, to)
+		if err != nil {
+			return nil, fmt.Errorf("nowy kraj: %w", err)
+		}
+		hits = append(hits, b...)
 	}
-	return append(a, b...), nil
+	return hits, nil
 }
 
 func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Time) ([]alerts.Hit, error) {

@@ -21,6 +21,7 @@ import (
 	"siem/agent/internal/graph"
 	"siem/agent/internal/hostagent"
 	"siem/agent/internal/source"
+	"siem/agent/internal/status"
 )
 
 var version = "dev"
@@ -141,15 +142,16 @@ func run(cfgPath string) error {
 	return hostagent.Run(hostagent.RunOptions{
 		Common: &cfg.Common, Version: version, Mode: "connector", Log: log,
 		MaxEventBytes: 256 << 10,
-		Sources: func(_ string, log *slog.Logger) ([]source.Source, error) {
+		Sources: func(_ string, log *slog.Logger, st *status.Tracker) ([]source.Source, error) {
 			var srcs []source.Source
 			for _, k := range []struct {
 				on   bool
 				kind graph.Kind
 			}{{enabled(e.SignIns), graph.SignIns}, {enabled(e.Audits), graph.Audits}} {
 				if k.on {
+					ch := k.kind.Channel
 					srcs = append(srcs, &graph.Source{Client: client, Kind: k.kind, Interval: e.Interval, Overlap: e.Overlap,
-						Lookback: e.Lookback, Log: log})
+						Lookback: e.Lookback, Log: log, State: func(state, msg string) { st.ChannelState(ch, state, msg) }})
 				}
 			}
 			if len(srcs) == 0 {

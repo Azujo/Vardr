@@ -50,6 +50,7 @@ export default function IdentitiesPage() {
   const [testUser, setTestUser] = useState("");
   const [testDomain, setTestDomain] = useState("");
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [seen, setSeen] = useState<{ domain: string; events: number; covered: boolean }[]>([]);
 
   const loadConfig = useCallback(() => {
     identitiesApi
@@ -72,6 +73,13 @@ export default function IdentitiesPage() {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [hours, q]);
   useEffect(() => loadConfig(), [loadConfig]);
+  useEffect(() => {
+    identitiesApi
+      .domainsSeen()
+      .then((r) => setSeen(r.domains))
+      .catch(() => setSeen([]));
+  }, [savedDomains]);
+  const uncovered = seen.filter((d) => !d.covered);
   useEffect(() => loadPeople(), [loadPeople]);
 
   const saveDomains = async () => {
@@ -131,6 +139,13 @@ export default function IdentitiesPage() {
         </Text>
       </div>
       {error && <MAlert color="red">{error}</MAlert>}
+      {uncovered.length > 0 && (
+        <MAlert color="orange" title="Domeny kont spoza listy domen organizacji">
+          W zdarzeniach z ostatnich 7 dni są konta z domen spoza listy: {uncovered.map((d) => `${d.domain} (${formatNumber(d.events)})`).join(", ")}.
+          Ich osoby dostają nazwę z domeną (np. <Code>azujo\jan</Code>) i nie łączą się z tą samą osobą z innych źródeł. Jeśli to domeny
+          organizacji – dodaj je w zakładce „Domeny organizacji” (konta lokalne komputerów zostaw poza listą).
+        </MAlert>
+      )}
       {!delivery && (
         <MAlert color="orange">Panel nie jest połączony z NATS – zmiany trafią do normalizatorów po przywróceniu połączenia.</MAlert>
       )}
@@ -311,6 +326,31 @@ export default function IdentitiesPage() {
               firm – zostają osobnymi tożsamościami z domeną. Pusta lista: każda domena należy do organizacji (konto lokalne „admin” i
               domenowe „admin” to wtedy ta sama osoba).
             </Text>
+            {seen.length > 0 && (
+              <div>
+                <Text size="sm" fw={500}>
+                  Domeny kont w zdarzeniach (7 dni)
+                </Text>
+                <Group gap={6} mt={4}>
+                  {seen.map((d) => (
+                    <Badge
+                      key={d.domain}
+                      variant={d.covered ? "light" : "outline"}
+                      color={d.covered ? "green" : "orange"}
+                      tt="none"
+                      style={{ cursor: admin && !domains.includes(d.domain) ? "pointer" : undefined }}
+                      title={admin && !domains.includes(d.domain) ? "kliknij, aby dodać do listy (potem Zapisz)" : undefined}
+                      onClick={() => admin && !domains.includes(d.domain) && setDomains([...domains, d.domain])}
+                    >
+                      {d.domain} · {formatNumber(d.events)}
+                    </Badge>
+                  ))}
+                </Group>
+                <Text size="xs" c="dimmed" mt={4}>
+                  Zielone – na liście; pomarańczowe – poza listą (kliknij, aby dodać). Nazwy komputerów (konta lokalne) zostaw poza listą.
+                </Text>
+              </div>
+            )}
             <TagsInput
               label="Domeny organizacji"
               placeholder="wpisz i naciśnij Enter"

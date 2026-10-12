@@ -40,6 +40,9 @@ import (
 	"siem/server/internal/queue"
 )
 
+// corrDisabled: korelacje wyłączone w panelu (odświeżane przy przeładowaniu reguł).
+var corrDisabled atomic.Pointer[map[string]bool]
+
 func main() {
 	log := svc.Logger("detector")
 	cmd := "serve"
@@ -173,7 +176,9 @@ func serve(log *slog.Logger) error {
 			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
 		}
 		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule())
-		infos = append(infos, detector.CorrelationRules()...)
+		corrInfos, corrOff := detector.CorrelationInfos(ov)
+		infos = append(infos, corrInfos...)
+		corrDisabled.Store(&corrOff)
 		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
 			log.Warn("zapis reguł w bazie nieudany", "err", err)
@@ -205,7 +210,10 @@ func serve(log *slog.Logger) error {
 	}
 	// Korelacje międzyźródłowe (etap 7d) – zapytania do ClickHouse.
 	if chConn != nil {
-		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn}, store, &recordMu, m)
+		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn, Disabled: func(id string) bool {
+			off := corrDisabled.Load()
+			return off != nil && (*off)[id]
+		}}, store, &recordMu, m)
 	} else {
 		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
 	}

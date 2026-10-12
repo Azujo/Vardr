@@ -613,6 +613,7 @@ Każde zdarzenie z kontem dostaje **osobę** – kolumnę `user_identity` (pole 
   - Kluczem aliasu może być konto, `DOMENA\konto` albo UPN.
   - Aliasy nie tworzą łańcuchów.
   - Zakładka „Podpowiedzi” wskazuje osoby różniące się tylko kropkami, podkreśleniami lub myślnikami („połącz” dodaje aliasy).
+  - Zakładka „Domeny organizacji” pokazuje domeny kont widziane w zdarzeniach z 7 dni; domeny spoza listy są pomarańczowe, a strona ostrzega o nich. Pomyłka w domenach po cichu rozdziela osoby: np. bez `azujo` (NetBIOS) konto `AZUJO\jan` staje się `azujo\jan`, osobno od `jan@azujo.pl`.
 - Zakładka „Osoby” pokazuje najaktywniejsze osoby: źródła, konta, liczbę zdarzeń i nieudanych prób, komputery.
 - Konfiguracja trafia do normalizatorów i archiwizatora przez NATS KV `SIEM_IDENTITY` w ciągu kilku sekund. Panel wyrównuje ją przy starcie i co 5 min. Zdarzenia już zapisane się nie zmieniają.
 - Instalacje sprzed etapu 7 – jednorazowo, przed wdrożeniem nowego `siem-writer` i `siem-detector`:
@@ -689,7 +690,10 @@ Reguły Sigma: `logsource.product: azure`, `service: signinlogs` albo `auditlogs
 Reguły wbudowane `siem-detector` ocenia co minutę zapytaniami do ClickHouse:
 - okno 15 min, przy starcie 2 h wstecz;
 - konto `siem_detector`, także w trybie tylko „w locie”, o ile ustawione jest `SIEM_DETECTOR_CH_PASSWORD`;
-- silnik w alercie to „korelacja”.
+- silnik w alercie to „korelacja”;
+- korelację można wyłączyć z panelu jak regułę Sigma (powód, hasło, audyt).
+
+Przy błędzie dostępu do Graph (zły sekret, brak zgody administratora, brak licencji) panel pokazuje przy konektorze kanał `entra-signin` / `entra-audit` ze stanem „brak dostępu” i treścią błędu. Graph v1.0 zwraca tylko logowania interaktywne; nieinteraktywne są w API beta.
 
 ### Archiwum NIS2 – Urd (siem-archiver)
 

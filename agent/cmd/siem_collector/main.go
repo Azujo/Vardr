@@ -19,6 +19,7 @@ import (
 
 	"siem/agent/internal/hostagent"
 	"siem/agent/internal/source"
+	"siem/agent/internal/status"
 	"siem/agent/internal/syslog"
 )
 
@@ -118,7 +119,7 @@ func run(cfgPath string) error {
 	return hostagent.Run(hostagent.RunOptions{
 		Common: &cfg.Common, Version: version, Mode: "collector", Log: log,
 		MaxEventBytes: cfg.Syslog.MaxMessageKB << 10,
-		Sources: func(_ string, log *slog.Logger) ([]source.Source, error) {
+		Sources: func(_ string, log *slog.Logger, _ *status.Tracker) ([]source.Source, error) {
 			src = &syslog.Source{Cfg: syslog.Config{UDP: cfg.Syslog.UDP, TCP: cfg.Syslog.TCP, MaxMessage: cfg.Syslog.MaxMessageKB << 10,
 				Allow: allow}, Log: log}
 			log.Info("kolektor: nasłuch", "udp", cfg.Syslog.UDP, "tcp", cfg.Syslog.TCP, "allow", cfg.Syslog.Allow)

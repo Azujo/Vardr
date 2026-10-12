@@ -154,7 +154,8 @@ func Publish(ctx context.Context, kv jetstream.KeyValue, c Config) error {
 }
 
 // Watch obserwuje konfigurację i podmienia ją (Set) do zakończenia ctx.
-func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger) error {
+// ready (opcjonalne) jest wywoływane po wczytaniu stanu początkowego.
+func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, ready func()) error {
 	w, err := kv.Watch(ctx, Key)
 	if err != nil {
 		return err
@@ -169,6 +170,9 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger) error {
 				return errors.New("obserwacja tożsamości zakończona")
 			}
 			if e == nil {
+				if ready != nil {
+					ready()
+				}
 				continue
 			}
 			var c Config
@@ -180,6 +184,9 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger) error {
 			}
 			Set(c)
 			log.Info("tożsamości wczytane", "domains", len(c.Domains), "aliases", len(c.Aliases))
+			if ready != nil {
+				ready()
+			}
 		}
 	}
 }

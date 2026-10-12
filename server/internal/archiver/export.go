@@ -186,6 +186,7 @@ func NormalizerEnricher(ev contract.Event, agentID string, received time.Time, r
 	r.HostName, r.Code, r.Dataset, r.Provider = e.HostName, e.Code, e.Dataset, e.Provider
 	r.Action, r.Outcome, r.UserName, r.UserDomain = e.Action, e.Outcome, e.UserName, e.UserDomain
 	r.SourceIP, r.ProcessName, r.CommandLine, r.TimeQuality = e.SourceIP, e.ProcessName, e.CommandLine, e.TimeQuality
+	r.Identity = e.Identity
 }
 
 // tools zwraca programy do dołączenia (pliki z katalogu ToolsDir).

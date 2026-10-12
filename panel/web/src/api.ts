@@ -1097,4 +1097,6 @@ export const identitiesApi = {
   setAlias: (alias: string, identity: string, note: string) =>
     request<{ message: string }>("POST", "/api/v1/identities/aliases", { alias, identity, note }),
   deleteAlias: (alias: string) => request<{ message: string }>("POST", "/api/v1/identities/aliases/delete", { alias }),
+  domainsSeen: () =>
+    request<{ domains: { domain: string; events: number; covered: boolean }[] }>("GET", "/api/v1/identities/domains-seen"),
 };

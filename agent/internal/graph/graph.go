@@ -199,6 +199,8 @@ type Source struct {
 	Lookback time.Duration // pierwszy start: ile wstecz (domyślnie 24 h)
 	PageSize int           // $top (domyślnie 500)
 	Log      *slog.Logger
+	// State (opcjonalne): stan źródła w panelu (status.Channel*: ok, access_denied, error).
+	State func(state, msg string)
 
 	now func() time.Time
 }
@@ -255,6 +257,13 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 				return pos(), nil
 			}
 			failures++
+			if s.State != nil {
+				st := "error"
+				if errors.Is(err, ErrAuth) {
+					st = "access_denied"
+				}
+				s.State(st, err.Error())
+			}
 			// Błąd uwierzytelnienia: ostrzeżenie przy każdej próbie; inne – co dziesiąty raz.
 			if errors.Is(err, ErrAuth) || failures == 1 || failures%10 == 0 {
 				s.Log.Warn("Graph: odpytanie nieudane – ponowię", "kind", s.Kind.Channel, "err", err, "failures", failures)
@@ -262,6 +271,9 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 		} else {
 			if failures > 0 {
 				s.Log.Info("Graph: odpytanie znów działa", "kind", s.Kind.Channel, "after_failures", failures)
+			}
+			if s.State != nil {
+				s.State("ok", "")
 			}
 			failures = 0
 			sent := 0

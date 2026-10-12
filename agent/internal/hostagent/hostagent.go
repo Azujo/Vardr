@@ -180,8 +180,9 @@ type RunOptions struct {
 	Common  *Common
 	Version string
 	Mode    string // w statusie agenta: collector | connector
-	// Sources budują źródła (z identyfikatorem agenta z certyfikatu).
-	Sources       func(agentID string, log *slog.Logger) ([]source.Source, error)
+	// Sources budują źródła (z identyfikatorem agenta z certyfikatu; st –
+	// stan agenta w panelu, np. błędy źródła).
+	Sources       func(agentID string, log *slog.Logger, st *status.Tracker) ([]source.Source, error)
 	MaxEventBytes int
 	// Every (opcjonalne) – wywoływane co minutę (np. liczniki w dzienniku).
 	Every func(log *slog.Logger)
@@ -240,7 +241,7 @@ func Run(o RunOptions) error {
 			Holder: certs, Log: log, Warn: tracker.Warn}
 		go renewer.Run(bg)
 	}
-	sources, err := o.Sources(agentID, log)
+	sources, err := o.Sources(agentID, log, tracker)
 	if err != nil {
 		return err
 	}

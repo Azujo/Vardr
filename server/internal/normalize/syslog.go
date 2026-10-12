@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -52,6 +53,34 @@ func envOr(k, def string) string {
 	return def
 }
 
+// Gotowość konfiguracji z panelu (dekodery, tożsamości) – normalizator
+// czeka na nią przy starcie, żeby pierwsze zdarzenia po restarcie nie
+// dostały ustawień domyślnych.
+var (
+	decodersOnce, identityOnce   sync.Once
+	decodersReady, identityReady = make(chan struct{}), make(chan struct{})
+)
+
+// WaitConfig czeka na wczytanie dekoderów i tożsamości z NATS (najwyżej
+// timeout – potem praca na ustawieniach domyślnych z ostrzeżeniem).
+func WaitConfig(ctx context.Context, timeout time.Duration, log *slog.Logger) {
+	t := time.NewTimer(timeout)
+	defer t.Stop()
+	for _, c := range []struct {
+		ch   chan struct{}
+		what string
+	}{{decodersReady, "dekodery"}, {identityReady, "tożsamości"}} {
+		select {
+		case <-c.ch:
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			log.Warn("konfiguracja z panelu niewczytana – start z ustawieniami domyślnymi", "what", c.what, "timeout", timeout)
+			return
+		}
+	}
+}
+
 // WatchDecoders obserwuje dekodery z panelu (NATS KV) i podmienia zestaw do
 // zakończenia ctx – normalizator i archiwizator (czytelna część eksportu
 // dekodowana tak jak zdarzenia w bazie). Do czasu wczytania: wbudowane.
@@ -67,6 +96,7 @@ func WatchDecoders(ctx context.Context, js jetstream.JetStream, log *slog.Logger
 				log.Error("dekoder z panelu pominięty", "err", err)
 			}
 			log.Info("dekodery syslog wczytane", "decoders", n, "changed_in_panel", len(custom))
+			decodersOnce.Do(func() { close(decodersReady) })
 		})
 	})
 }
@@ -79,6 +109,6 @@ func WatchIdentity(ctx context.Context, js jetstream.JetStream, log *slog.Logger
 		if err != nil {
 			return err
 		}
-		return identity.Watch(ctx, kv, log)
+		return identity.Watch(ctx, kv, log, func() { identityOnce.Do(func() { close(identityReady) }) })
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +139,25 @@ func TestGraphLateRecords(t *testing.T) {
 	second := collect(out)
 	if len(first)+len(second) != 2 {
 		t.Fatalf("rekordy z opóźnieniem: %d + %d", len(first), len(second))
+	}
+}
+
+// Błąd uwierzytelnienia trafia do stanu źródła (panel: kanał „brak dostępu”).
+func TestGraphAuthState(t *testing.T) {
+	_, c, clk := setup(t, entrasim.Config{Tenant: "t1", ClientID: "app", ClientSecret: "inny"})
+	states := make(chan string, 10)
+	src := &Source{Client: c, Kind: SignIns, Interval: time.Hour, Log: slog.New(slog.DiscardHandler), now: clk.now,
+		State: func(st, msg string) { states <- st + ": " + msg }}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _, _ = src.Run(ctx, source.Position{}, make(chan source.Record, 1)) }()
+	select {
+	case s := <-states:
+		if !strings.HasPrefix(s, "access_denied: ") || !strings.Contains(s, "invalid_client") {
+			t.Fatalf("stan: %s", s)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("brak stanu źródła")
 	}
 }
 

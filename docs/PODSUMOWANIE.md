@@ -196,6 +196,21 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
 - **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
 
+## Przegląd etapu 7 (12.10.2026) – błędy i luki
+
+| # | Pr. | Problem | Skutek | Stan |
+|---|---|---|---|---|
+| 1 | średni | Pomyłka w domenach organizacji (literówka, brak nazwy NetBIOS obok DNS) po cichu rozdziela tożsamości | W laboratorium `aazujo.centrala` i brak `azujo`: `test01` z AD stał się `azujo\test01`, osobno od `test01` z Entra – korelacje przestają łączyć osobę | Naprawione: panel pokazuje domeny kont widziane w zdarzeniach (zielone – na liście, pomarańczowe – poza nią, kliknięcie dodaje) i ostrzega na stronie Tożsamości |
+| 2 | średni | Korelacji wbudowanych nie dało się wyłączyć z panelu (traktowane jak reguła systemowa) | Hałaśliwa korelacja tylko przez zmianę kodu | Naprawione: tryb „korelacja” – przełączanie jak reguły Sigma (powód, hasło, audyt) |
+| 3 | średni | Konektor z błędem dostępu (zły sekret, brak zgody, brak licencji) wyglądał w panelu na zdrowego – heartbeat działał | Logi z chmury przestają płynąć niezauważone | Naprawione: stan kanału `entra-signin` / `entra-audit` w statusie agenta („brak dostępu” albo „błąd” z treścią) |
+| 4 | niski | Po restarcie normalizator przez pierwsze sekundy stosował wbudowane dekodery i tożsamości bez ustawień z panelu | Pierwsze zdarzenia po restarcie z inną osobą albo zbiorem danych | Naprawione: start czeka na konfigurację z NATS (najwyżej 15 s) |
+| 5 | niski | Eksport NIS2 bez osoby | Audytor nie łączy kont tej samej osoby | Naprawione: `user.identity` w NDJSON, kolumna `osoba` w CSV |
+| 6 | uwaga | Wydajność korelacji (podzapytania ze zbioru udanych logowań) | – | Sprawdzone w laboratorium: ok. 50 ms i 30 tys. wierszy na przebieg (indeks po czasie przyjęcia) – bez zmian |
+| 7 | uwaga | Konta lokalne urządzeń bez domeny (`admin` na MikroTiku i FortiGate) to ta sama osoba co domenowy „admin” | Możliwe łączenie niezwiązanych prób w korelacjach | Później: lista kont wspólnych (bez osoby albo z nazwą urządzenia) |
+| 8 | uwaga | Graph v1.0 zwraca tylko logowania interaktywne; nieinteraktywne (tokeny aplikacji, odświeżanie sesji) są w API beta | Spraying przez stare protokoły bywa widoczny tylko w nieinteraktywnych | Później, przy prawdziwym tenancie |
+| 9 | uwaga | „Powiązane alerty” szukają po koncie, nie po osobie | Alert z Entra (UPN) nie pokazuje alertów AD tej samej osoby | Później: osoba w alertach |
+| 10 | uwaga | Scenariusze symulatora Graph cofają czas zdarzeń o ok. 2 min | W ćwiczeniu kolejność zdarzeń z różnych źródeł może się odwrócić (pierwsza próba #38) | Do pamiętania przy ćwiczeniach |
+
 ## Przegląd etapu 6 (09.10.2026) – błędy i luki
 
 | # | Pr. | Problem | Skutek | Stan |

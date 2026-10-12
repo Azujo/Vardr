@@ -35,7 +35,13 @@ import {
 import { useAuth } from "../auth";
 import { lineDiff } from "../diff";
 
-const modeLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", both: "oba silniki", system: "wbudowana" };
+const modeLabels: Record<string, string> = {
+  stream: "w locie",
+  index_query: "zapytania",
+  both: "oba silniki",
+  system: "wbudowana",
+  correlation: "korelacja (wbudowana)",
+};
 
 function fmtDuration(s: number): string {
   if (s % 3600 === 0) return `${s / 3600} h`;
@@ -454,7 +460,7 @@ export default function RulesPage() {
                 <Tabs.Tab value="versions" leftSection={<IconHistory size={14} />}>
                   Wersje
                 </Tabs.Tab>
-                {canTest && show.mode !== "system" && (
+                {canTest && show.mode !== "system" && show.mode !== "correlation" && (
                   <Tabs.Tab value="test" leftSection={<IconFlask size={14} />}>
                     Test
                   </Tabs.Tab>
