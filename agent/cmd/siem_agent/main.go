@@ -43,7 +43,7 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.7.0"
+const version = "0.7.1"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -542,6 +542,7 @@ func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender
 		MaxBytes:      cfg.Batch.MaxBytes,
 		MaxEventBytes: cfg.Batch.MaxEventBytes,
 		FlushInterval: cfg.Batch.FlushInterval,
+		FlushMaxWait:  cfg.Batch.FlushMaxWait, FlushMinEvents: cfg.Batch.FlushMinEvents,
 		Filters:       filters,
 		RetryDelay:    retryDelay,
 		MaxEPS:        cfg.Limits.MaxEPS,

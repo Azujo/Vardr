@@ -45,6 +45,9 @@ type Common struct {
 		MaxEvents     int           `yaml:"max_events"`
 		MaxBytes      int           `yaml:"max_bytes"`
 		FlushInterval time.Duration `yaml:"flush_interval"`
+		// Czekanie małej paczki (jak w agencie Windows): domyślnie 10s / 50 zdarzeń.
+		FlushMaxWait   time.Duration `yaml:"flush_max_wait"`
+		FlushMinEvents int           `yaml:"flush_min_events"`
 	} `yaml:"batch"`
 	Buffer struct {
 		MaxMB     int    `yaml:"max_mb"`
@@ -90,6 +93,12 @@ func Load(path string, cfg any, c *Common) (base string, err error) {
 	}
 	if c.Batch.FlushInterval == 0 {
 		c.Batch.FlushInterval = 2 * time.Second
+	}
+	if c.Batch.FlushMaxWait == 0 {
+		c.Batch.FlushMaxWait = 10 * time.Second
+	}
+	if c.Batch.FlushMinEvents == 0 {
+		c.Batch.FlushMinEvents = 50
 	}
 	if c.Buffer.MaxMB == 0 {
 		c.Buffer.MaxMB = 2048
@@ -265,9 +274,10 @@ func Run(o RunOptions) error {
 		MaxBytes:      c.Batch.MaxBytes,
 		MaxEventBytes: o.MaxEventBytes,
 		FlushInterval: c.Batch.FlushInterval,
-		MaxEPS:        c.MaxEPS,
-		Status:        tracker,
-		RetryDelay:    func(error) time.Duration { return 5 * time.Second },
+		FlushMaxWait:  c.Batch.FlushMaxWait, FlushMinEvents: c.Batch.FlushMinEvents,
+		MaxEPS:     c.MaxEPS,
+		Status:     tracker,
+		RetryDelay: func(error) time.Duration { return 5 * time.Second },
 	}, sources, buf, store, log)
 	log.Info("uruchomiony", "mode", o.Mode, "version", o.Version)
 	err = agent.Run(ctx)

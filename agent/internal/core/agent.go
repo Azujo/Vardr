@@ -41,6 +41,14 @@ type Options struct {
 	MaxEvents     int
 	MaxBytes      int
 	FlushInterval time.Duration
+	// FlushMaxWait i FlushMinEvents: mała paczka (mniej niż FlushMinEvents
+	// zdarzeń) czeka na kolejne zdarzenia do FlushMaxWait, zamiast wychodzić
+	// co FlushInterval. Stacja z 1–2 zdarzeniami/s wysyłała paczki po kilka
+	// zdarzeń; przy tysiącach agentów narzut na paczkę (TLS, kolejka, każdy
+	// etap serwera) zjadał serwer (etap 8: 3500 agentów × 1,4 zdarzenia/s).
+	// 0 = co FlushInterval niezależnie od rozmiaru (dawne zachowanie).
+	FlushMaxWait   time.Duration
+	FlushMinEvents int
 	// Filters: kanał → dozwolone Event ID. Stosowane tylko dla kanałów,
 	// których listy nie dało się wyrazić w zapytaniu XPath.
 	Filters    map[string]map[uint32]bool
@@ -164,6 +172,17 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// Zaległa paczka przy zatrzymaniu – do serwera albo bufora dyskowego.
+			// Dla dziennika Windows to tylko oszczędność (pozycja nie jest
+			// zapisana, więc zdarzenia wróciłyby po starcie), ale syslogu
+			// kolektora nie da się odczytać ponownie.
+			if len(b.pending) > 0 {
+				fctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := b.flush(fctx); err != nil {
+					a.log.Warn("niewysłana paczka przy zatrzymaniu", "events", len(b.pending), "err", err)
+				}
+				cancel()
+			}
 			b.logStats()
 			return nil
 		case rec := <-recs:
@@ -171,8 +190,10 @@ func (a *Agent) Run(ctx context.Context) error {
 				return ignoreCanceled(err)
 			}
 		case <-flushTick.C:
-			if err := b.flush(ctx); err != nil {
-				return ignoreCanceled(err)
+			if b.due() {
+				if err := b.flush(ctx); err != nil {
+					return ignoreCanceled(err)
+				}
 			}
 			b.checkStateFile()
 		case <-statsTick.C:
@@ -223,6 +244,18 @@ type batcher struct {
 	bytes    int
 	advance  map[string]state.ChannelState // pozycje do zapisania po potwierdzeniu
 	maxLag   time.Duration                 // maks. opóźnienie odczytu od ostatnich statystyk
+	firstAt  time.Time                     // pierwsze zdarzenie w bieżącej paczce
+}
+
+// due: czy wysłać paczkę na takcie FlushInterval. Pusta (same odfiltrowane
+// zdarzenia – tylko zapis pozycji) i duża idą od razu, mała czeka do
+// FlushMaxWait od pierwszego zdarzenia.
+func (b *batcher) due() bool {
+	o := b.agent.opts
+	if len(b.pending) == 0 || o.FlushMaxWait <= o.FlushInterval || len(b.pending) >= o.FlushMinEvents {
+		return true
+	}
+	return time.Since(b.firstAt) >= o.FlushMaxWait-o.FlushInterval/2
 }
 
 func (b *batcher) add(ctx context.Context, rec source.Record) error {
@@ -284,6 +317,9 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	ev.ID = contract.EventID(a.opts.AgentID, rec.Channel, cs.Generation, rec.RecordID)
 	if rec.Key != "" {
 		ev.ID = a.opts.AgentID + ":" + rec.Channel + ":k:" + rec.Key
+	}
+	if len(b.pending) == 0 {
+		b.firstAt = time.Now()
 	}
 	b.pending = append(b.pending, ev)
 	b.bytes += size

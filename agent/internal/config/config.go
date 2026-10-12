@@ -92,6 +92,12 @@ type BatchConfig struct {
 	MaxEvents     int           `yaml:"max_events"`
 	MaxBytes      int           `yaml:"max_bytes"`
 	FlushInterval time.Duration `yaml:"flush_interval"`
+	// FlushMaxWait / FlushMinEvents: paczka mniejsza niż flush_min_events
+	// (domyślnie 50) czeka do flush_max_wait (domyślnie 10s) – mniej małych
+	// paczek z rzadko piszących stacji. flush_max_wait = flush_interval
+	// wyłącza czekanie.
+	FlushMaxWait   time.Duration `yaml:"flush_max_wait"`
+	FlushMinEvents int           `yaml:"flush_min_events"`
 	// MaxEventBytes: dłuższe zdarzenia są przycinane i oznaczane jako truncated.
 	MaxEventBytes int `yaml:"max_event_bytes"`
 }
@@ -151,6 +157,12 @@ func (c *Config) applyDefaults(baseDir string) {
 	}
 	if c.Batch.FlushInterval == 0 {
 		c.Batch.FlushInterval = 2 * time.Second
+	}
+	if c.Batch.FlushMaxWait == 0 {
+		c.Batch.FlushMaxWait = 10 * time.Second
+	}
+	if c.Batch.FlushMinEvents == 0 {
+		c.Batch.FlushMinEvents = 50
 	}
 	if c.Batch.MaxEventBytes == 0 {
 		c.Batch.MaxEventBytes = 512 << 10

@@ -71,7 +71,7 @@ func main() {
 	flag.DurationVar(&o.duration, "duration", 2*time.Minute, "czas generowania zdarzeń")
 	flag.DurationVar(&o.ramp, "ramp", 20*time.Second, "czas rozruchu (agenci startują równomiernie)")
 	flag.IntVar(&o.batch, "batch", 500, "maks. zdarzeń w paczce (jak agent)")
-	flag.DurationVar(&o.flush, "flush", 2*time.Second, "maks. czas zbierania paczki (jak agent)")
+	flag.DurationVar(&o.flush, "flush", 10*time.Second, "maks. czas zbierania małej paczki (agent od 0.7.1: do 10 s poniżej 50 zdarzeń)")
 	flag.IntVar(&o.maxBacklog, "backlog", 50000, "pojemność bufora agenta (symulacja dziennika Windows)")
 	flag.DurationVar(&o.timeout, "timeout", 30*time.Second, "limit czasu żądania")
 	flag.BoolVar(&o.heartbeat, "heartbeat", true, "wysyłaj heartbeaty (co minutę, jak agent) – agenci widoczni w panelu")
