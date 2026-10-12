@@ -6,8 +6,11 @@
   Cicha instalacja (GPO/Intune/SCCM, jako administrator albo SYSTEM):
     msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…
   Aktualizacja: ten sam plik w nowszej wersji (bez TOKEN – rejestracja zostaje).
-  Odinstalowanie: Programy i funkcje albo msiexec /x heimdall-agent.msi /qn
-  (dane i certyfikaty zostają w %ProgramData%\SiemAgent).
+  Odinstalowanie chronionego agenta (ochrona w grupie – domyślnie włączona)
+  wymaga jednorazowego tokenu z panelu (Huginn → agent → Token deinstalacji):
+    msiexec /x heimdall-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX
+  Bez tokenu deinstalacja jest wycofywana, a panel dostaje alert.
+  Dane i certyfikaty zostają w %ProgramData%\SiemAgent.
   Przebieg instalacji agenta: %ProgramData%\SiemAgent\msi.log.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -16,9 +19,11 @@
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
              Description="Heimdall SIEM agent (Windows Event Log)" Comments="Wersja $(var.Version)"/>
     <Media Id="1" Cabinet="agent.cab" EmbedCab="yes"/>
+    <!-- Nowe wydanie agenta = nowy numer wersji: wixl nie obsługuje AllowSameVersionUpgrades, więc
+         przebudowany instalator tej samej wersji instaluje się obok poprzedniego (dwa produkty). -->
     <MajorUpgrade DowngradeErrorMessage="Zainstalowana jest nowsza wersja agenta Heimdall."/>
     <!-- Token nie trafia do dziennika instalatora. -->
-    <Property Id="MsiHiddenProperties" Value="TOKEN"/>
+    <Property Id="MsiHiddenProperties" Value="TOKEN;UNINSTALL_TOKEN"/>
     <Property Id="ARPNOMODIFY" Value="1"/>
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
@@ -37,12 +42,14 @@
       <ComponentRef Id="CaCrt"/>
     </Feature>
     <!-- Agent zainstalowany wcześniej bez MSI: zatrzymanie usługi, żeby dało się podmienić plik. -->
-    <CustomAction Id="AgentStopOld" Directory="INSTALLFOLDER" ExeCommand="&quot;[INSTALLFOLDER]siem_agent.exe&quot; stop"
+    <CustomAction Id="AgentStopOld" FileKey="AgentExe" ExeCommand="stop"
                   Execute="deferred" Impersonate="no" Return="ignore"/>
     <CustomAction Id="AgentInstall" FileKey="AgentExe" ExeCommand="msi-install -server &quot;[SERVER]&quot; -token &quot;[TOKEN]&quot;"
                   Execute="deferred" Impersonate="no" Return="check"/>
-    <CustomAction Id="AgentUninstall" FileKey="AgentExe" ExeCommand="msi-uninstall"
-                  Execute="deferred" Impersonate="no" Return="ignore"/>
+    <!-- Aktualizacja (UPGRADINGPRODUCTCODE) nie wymaga tokenu; deinstalacja chronionego agenta – tak. -->
+    <CustomAction Id="AgentUninstall" FileKey="AgentExe"
+                  ExeCommand="msi-uninstall -token &quot;[UNINSTALL_TOKEN]&quot; -upgrade &quot;[UPGRADINGPRODUCTCODE]&quot;"
+                  Execute="deferred" Impersonate="no" Return="check"/>
     <InstallExecuteSequence>
       <RemoveExistingProducts Sequence="1410"/>
       <Custom Action="AgentUninstall" Sequence="3490">REMOVE="ALL"</Custom>

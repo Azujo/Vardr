@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
@@ -88,6 +89,7 @@ func msiInstall(server, token string) (err error) {
 				return err
 			}
 		}
+		markInstaller(dataDir, "install")
 		if err := addToSystemPath(installDir); err != nil {
 			fmt.Println("uwaga: PATH:", err)
 		}
@@ -111,6 +113,35 @@ func msiInstall(server, token string) (err error) {
 	return install(installOptions{server: server, token: token, ca: filepath.Join(installDir, "ca.crt"), startAt: "now"})
 }
 
+// installerStop: zatrzymanie usługi przez instalator MSI (konto SYSTEM) przed
+// podmianą programu zainstalowanego bez MSI. Agent zgłasza je jako
+// aktualizację – panel alarmuje, jeśli agent nie wróci. SYSTEM może i tak
+// wszystko; administratorowi chroniona usługa odmówi zatrzymania.
+func installerStop(cfgPath string) error {
+	if cfg, err := config.Load(cfgPath); err == nil {
+		markInstaller(cfg.StateDir, "install")
+	}
+	return withService(func(s *mgr.Service) error {
+		if st, _ := s.Query(); st.State == svc.Stopped {
+			return nil
+		}
+		if _, err := s.Control(svc.Stop); err != nil {
+			return protectedErr(err)
+		}
+		return waitState(s, svc.Stopped, 30*time.Second)
+	})
+}
+
+// isSystem: polecenie działa z konta SYSTEM (instalator MSI, GPO, SCCM).
+func isSystem() bool {
+	tok := windows.GetCurrentProcessToken()
+	u, err := tok.GetTokenUser()
+	if err != nil {
+		return false
+	}
+	return u.User.Sid.IsWellKnown(windows.WinLocalSystemSid)
+}
+
 func restartOrStart() error {
 	return withService(func(s *mgr.Service) error {
 		if st, _ := s.Query(); st.State != svc.Stopped {
@@ -126,12 +157,21 @@ func restartOrStart() error {
 }
 
 // msiUninstall usuwa usługę, źródło zdarzeń i wpis w PATH; dane,
-// konfiguracja i certyfikaty zostają (pliki programu usuwa MSI).
-func msiUninstall() (err error) {
+// konfiguracja i certyfikaty zostają (pliki programu usuwa MSI). Przy
+// deinstalacji chronionego agenta wymaga tokenu (UNINSTALL_TOKEN), przy
+// aktualizacji (nowsze MSI usuwa starsze – UPGRADINGPRODUCTCODE) – nie:
+// agent zgłasza wtedy aktualizację, a panel alarmuje, jeśli nie wróci.
+func msiUninstall(token, upgradeCode string) (err error) {
 	logw, closeLog := msiLog()
 	defer closeLog()
 	defer redirect(logw)()
 	defer func() { logResult(logw, err) }()
+	if upgradeCode != "" {
+		fmt.Println("Aktualizacja (produkt " + upgradeCode + ") – usługę zarejestruje ponownie nowa wersja.")
+		markInstaller(dataDir, "upgrade")
+	} else if err := authorize(installCfg, "uninstall", token); err != nil {
+		return err
+	}
 	if err := deleteService(); err != nil && !errors.Is(err, errNotInstalled) {
 		return err
 	}

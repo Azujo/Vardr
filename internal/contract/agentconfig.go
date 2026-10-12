@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // AgentConfigPath to endpoint panelu, z którego agent pobiera konfigurację
@@ -21,6 +22,9 @@ type AgentConfig struct {
 	Group   string      `json:"group"`
 	Profile string      `json:"profile"` // workstation | server | dc
 	Limits  AgentLimits `json:"limits"`
+	// UninstallTokens: ważne tokeny deinstalacji tego agenta (skróty). Wersja
+	// konfiguracji z tokenami ma przyrostek „.<skrót tokenów>” (WithTokens).
+	UninstallTokens []UninstallToken `json:"uninstall_tokens,omitempty"`
 }
 
 // AgentLimits to limity zasobów agenta („kaganiec”). Wskaźnik nil = wartość
@@ -45,7 +49,13 @@ type AgentLimits struct {
 	// HeartbeatNotifyReturn: także powiadomienie, gdy agent wróci (alert
 	// utraty łączności zamyka się wtedy sam). Agent go nie używa.
 	HeartbeatNotifyReturn *bool `json:"heartbeat_notify_return,omitempty"`
+	// Protection: ochrona usługi przed zatrzymaniem i deinstalacją bez tokenu
+	// z panelu (nil = włączona). Wyłączenie przywraca zwykłe uprawnienia usługi.
+	Protection *bool `json:"protection,omitempty"`
 }
+
+// ProtectionOn: czy ochrona agenta jest włączona (domyślnie tak).
+func (l AgentLimits) ProtectionOn() bool { return l.Protection == nil || *l.Protection }
 
 // ValidProfiles to profile zdarzeń znane agentowi.
 var ValidProfiles = map[string]bool{"workstation": true, "server": true, "dc": true}
@@ -54,6 +64,9 @@ var ValidProfiles = map[string]bool{"workstation": true, "server": true, "dc": t
 func (c AgentConfig) Validate() error {
 	if !ValidProfiles[c.Profile] {
 		return fmt.Errorf("nieznany profil %q", c.Profile)
+	}
+	if err := validateTokens(c.UninstallTokens); err != nil {
+		return err
 	}
 	return c.Limits.Validate()
 }
@@ -102,4 +115,25 @@ func (c AgentConfig) ComputeVersion() string {
 	}{c.Profile, c.Limits})
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:8])
+}
+
+// WithTokens dołącza tokeny deinstalacji agenta; wersja dostaje przyrostek
+// z ich skrótu, więc agent pobiera konfigurację po wygenerowaniu tokenu.
+func (c AgentConfig) WithTokens(ts []UninstallToken) AgentConfig {
+	c.UninstallTokens = ts
+	c.Version = BaseVersion(c.Version)
+	if len(ts) > 0 {
+		data, _ := json.Marshal(ts)
+		sum := sha256.Sum256(data)
+		c.Version += "." + hex.EncodeToString(sum[:4])
+	}
+	return c
+}
+
+// BaseVersion to wersja konfiguracji grupy (bez przyrostka tokenów agenta).
+func BaseVersion(v string) string {
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		return v[:i]
+	}
+	return v
 }

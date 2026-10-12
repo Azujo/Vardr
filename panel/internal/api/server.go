@@ -58,6 +58,10 @@ type Store interface {
 	AssignAgent(ctx context.Context, agentID string, groupID int64) error
 	GroupForAgent(ctx context.Context, agentID string) (store.AgentGroup, error)
 	AgentGroupIDs(ctx context.Context) (map[string]int64, error)
+	CreateUninstallToken(ctx context.Context, agentID, hash, reason, by string, expires time.Time) (store.UninstallToken, error)
+	UninstallTokens(ctx context.Context, agentID string, now time.Time) ([]store.UninstallToken, error)
+	ActiveUninstallTokens(ctx context.Context, agentID string) ([]contract.UninstallToken, error)
+	RevokeUninstallToken(ctx context.Context, agentID string, id int64, by string) (bool, error)
 }
 
 // Server to handler HTTP panelu.
@@ -150,6 +154,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
 	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(roleAdmin, 0, s.revokeAgent))
 	mux.Handle("PUT /api/v1/agents/{id}/group", s.authed(roleAdmin, 0, s.setAgentGroup))
+	mux.Handle("GET /api/v1/agents/{id}/uninstall-tokens", s.authed(roleAdmin, 0, s.listUninstallTokens))
+	mux.Handle("POST /api/v1/agents/{id}/uninstall-tokens", s.authed(roleAdmin, 0, s.createUninstallToken))
+	mux.Handle("POST /api/v1/agents/{id}/uninstall-tokens/{tid}/revoke", s.authed(roleAdmin, 0, s.revokeUninstallToken))
 
 	mux.Handle("GET /api/v1/groups", s.authed(roleViewer, 0, s.listGroups))
 	mux.Handle("POST /api/v1/groups", s.authed(roleAdmin, 0, s.createGroup))

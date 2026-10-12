@@ -185,7 +185,12 @@ func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	cfg := g.Config()
+	tokens, err := s.Store.ActiveUninstallTokens(r.Context(), agentID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	cfg := g.Config().WithTokens(tokens) // tokeny deinstalacji tego agenta (skróty)
 	etag := `"` + cfg.Version + `"`
 	w.Header().Set("ETag", etag)
 	if r.Header.Get("If-None-Match") == etag {
@@ -196,7 +201,7 @@ func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // agentConfigState porównuje wersję zastosowaną przez agenta (z heartbeatu)
-// z oczekiwaną (z grupy).
+// z oczekiwaną (z grupy; przyrostek tokenów deinstalacji agenta pomijany).
 func agentConfigState(status json.RawMessage, expected string) (applied, state string) {
 	var st struct {
 		Config struct {
@@ -208,7 +213,7 @@ func agentConfigState(status json.RawMessage, expected string) (applied, state s
 	switch {
 	case applied == "":
 		state = "unknown" // starszy agent albo jeszcze nie pobrał konfiguracji
-	case applied == expected:
+	case contract.BaseVersion(applied) == expected:
 		state = "applied"
 	default:
 		state = "pending"

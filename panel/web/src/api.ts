@@ -135,6 +135,10 @@ export interface AgentView {
   sysmon_version?: string;
   sysmon_config?: string;
   sysmon_required?: boolean;
+  protection?: "protected" | "open" | "off" | "error" | "other" | "unknown";
+  protection_error?: string;
+  tamper_24h?: number;
+  stopping?: string;
   problems: string[];
   group_id: number;
   group: string;
@@ -177,6 +181,53 @@ export interface AgentStatusDoc {
   clock?: { offset_ms: number; uncertainty_ms: number; measured_at?: string; time_service?: string };
   sysmon?: { installed: boolean; service?: string; running: boolean; version?: string; config_hash?: string };
   warnings?: string[];
+  protection?: {
+    enabled: boolean;
+    service: string;
+    error?: string;
+    tokens: number;
+    events?: TamperRecord[];
+  };
+  stopping?: string;
+}
+
+// Zdarzenie ochrony agenta (dziennik w katalogu stanu agenta).
+export interface TamperRecord {
+  id: string;
+  at: string;
+  kind: string;
+  detail?: string;
+  user?: string;
+  token_id?: string;
+}
+
+// Rodzaje zdarzeń ochrony: opis i poziom alertu ("" – bez alertu).
+export const tamperKinds: Record<string, { title: string; level: string }> = {
+  stop: { title: "Usługa zatrzymana bez tokenu", level: "high" },
+  unclean_exit: { title: "Proces zakończony bez zatrzymania usługi (zabity albo awaria)", level: "medium" },
+  acl_restored: { title: "Zmieniono uprawnienia usługi (przywrócone)", level: "high" },
+  config_restored: { title: "Zmieniono konfigurację usługi (przywrócona)", level: "high" },
+  bad_token: { title: "Nieudana próba zatrzymania albo deinstalacji (bez ważnego tokenu)", level: "medium" },
+  stop_token: { title: "Zatrzymanie tokenem", level: "" },
+  uninstall_token: { title: "Deinstalacja tokenem", level: "" },
+  upgrade: { title: "Aktualizacja (instalator)", level: "" },
+  protection_off: { title: "Ochrona wyłączona w grupie", level: "" },
+};
+
+export interface UninstallToken {
+  id: number;
+  agent_id: string;
+  token_id: string;
+  reason: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  used_at?: string;
+  used_action?: string;
+  used_by?: string;
+  revoked_at?: string;
+  revoked_by?: string;
+  state: "active" | "used" | "revoked" | "expired";
 }
 
 export const agentsApi = {
@@ -184,6 +235,12 @@ export const agentsApi = {
   get: (id: string) =>
     request<{ agent: AgentView; status: AgentStatusDoc }>("GET", `/api/v1/agents/${encodeURIComponent(id)}`),
   remove: (id: string) => request<void>("DELETE", `/api/v1/agents/${encodeURIComponent(id)}`),
+  uninstallTokens: (id: string) =>
+    request<{ tokens: UninstallToken[] }>("GET", `/api/v1/agents/${encodeURIComponent(id)}/uninstall-tokens`),
+  createUninstallToken: (id: string, body: { reason: string; hours?: number; password: string }) =>
+    request<{ token: string; item: UninstallToken }>("POST", `/api/v1/agents/${encodeURIComponent(id)}/uninstall-tokens`, body),
+  revokeUninstallToken: (id: string, tid: number) =>
+    request<void>("POST", `/api/v1/agents/${encodeURIComponent(id)}/uninstall-tokens/${tid}/revoke`),
 };
 
 // Czas względny po polsku: „30 s temu”, „5 min temu”, „2 h temu”.
@@ -324,6 +381,7 @@ export interface AgentLimits {
   require_sysmon?: boolean;
   heartbeat_alert_min?: number;
   heartbeat_notify_return?: boolean;
+  protection?: boolean;
 }
 
 export interface AgentGroup {

@@ -175,7 +175,7 @@ func serve(log *slog.Logger) error {
 			rerrs = append(rerrs, alerts.RuleError{File: e.File, Error: e.Err})
 			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
 		}
-		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule())
+		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule(), detector.TamperRule())
 		corrInfos, corrOff := detector.CorrelationInfos(ov)
 		infos = append(infos, corrInfos...)
 		corrDisabled.Store(&corrOff)
@@ -494,6 +494,7 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *s
 			continue
 		}
 		warned = false
+		runTamper(ctx, log, store, mu, m, now)
 		hits, back := detector.HeartbeatCheck(beats, now)
 		if len(hits) > 0 {
 			mu.Lock()
@@ -524,6 +525,51 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *s
 				log.Info("agent wrócił – alert zamknięty", "agent", b.ID)
 			}
 		}
+	}
+}
+
+// tamperSeen: zdarzenia ochrony już zapisane (heartbeat powtarza je przez
+// 7 dni) – używane tylko w pętli heartbeatu. Po restarcie detektora
+// powtórki odrzuca baza (alert_events).
+var tamperSeen = map[string]time.Time{}
+
+// runTamper: reguła wbudowana „próba sabotażu agenta” – zdarzenia ochrony
+// z heartbeatu agentów (co 30 s, razem z utratą łączności).
+func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector, now time.Time) {
+	beats, err := store.TamperBeats(ctx)
+	if err != nil {
+		m.Errors.WithLabelValues("tamper").Inc()
+		log.Warn("odczyt zdarzeń ochrony agentów nieudany", "err", err)
+		return
+	}
+	var hits []alerts.Hit
+	for _, h := range detector.TamperCheck(beats, now) {
+		if _, ok := tamperSeen[h.EventID]; !ok {
+			hits = append(hits, h)
+		}
+	}
+	for id, at := range tamperSeen {
+		if now.Sub(at) > 8*24*time.Hour {
+			delete(tamperSeen, id)
+		}
+	}
+	if len(hits) == 0 {
+		return
+	}
+	mu.Lock()
+	res, err := store.Record(ctx, hits, nil)
+	mu.Unlock()
+	if err != nil {
+		m.Errors.WithLabelValues("record").Inc()
+		log.Error("zapis alertów sabotażu agenta nieudany", "err", err)
+		return
+	}
+	for _, h := range hits {
+		tamperSeen[h.EventID] = now
+	}
+	m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
+	if res.NewAlerts > 0 {
+		log.Info("próba sabotażu agenta – nowe alerty", "count", res.NewAlerts)
 	}
 }
 

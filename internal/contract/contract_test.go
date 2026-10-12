@@ -2,6 +2,7 @@ package contract
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -56,5 +57,33 @@ func TestValidate(t *testing.T) {
 		if err := b.Validate(); err == nil {
 			t.Errorf("%s: oczekiwano błędu", name)
 		}
+	}
+}
+
+func TestUninstallTokenAndVersion(t *testing.T) {
+	tok, err := NewUninstallToken()
+	if err != nil || len(tok) != 23 || strings.Count(tok, "-") != 3 || strings.ContainsAny(tok, "01IO") {
+		t.Fatalf("%q %v", tok, err)
+	}
+	if UninstallHash("a", tok) != UninstallHash("a", strings.ToLower(strings.ReplaceAll(tok, "-", " "))) ||
+		UninstallHash("a", tok) == UninstallHash("b", tok) {
+		t.Fatal("skrót tokenu")
+	}
+	c := AgentConfig{Profile: "workstation"}
+	c.Version = c.ComputeVersion()
+	h := UninstallHash("a", tok)
+	w := c.WithTokens([]UninstallToken{{ID: UninstallTokenID(h), Hash: h}})
+	if w.Version == c.Version || BaseVersion(w.Version) != c.Version || w.Validate() != nil {
+		t.Fatalf("%q %q %v", w.Version, c.Version, w.Validate())
+	}
+	if c.WithTokens(nil).Version != c.Version || w.WithTokens(nil).Version != c.Version {
+		t.Fatal("wersja bez tokenów")
+	}
+	w.UninstallTokens[0].ID = "zly"
+	if w.Validate() == nil {
+		t.Fatal("niepoprawny identyfikator tokenu przyjęty")
+	}
+	if !(AgentLimits{}).ProtectionOn() {
+		t.Fatal("ochrona domyślnie włączona")
 	}
 }

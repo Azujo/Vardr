@@ -141,7 +141,7 @@ func TestRepositoryRules(t *testing.T) {
 	must("f4edfeeb-bfc1-43b9-91e1-1bbfe1c8a7a9", cleared, true)
 	must("f4edfeeb-bfc1-43b9-91e1-1bbfe1c8a7a9", ev("System", 104, nil), false)
 	svc := "d6db3a52-6c0f-477f-b079-66457370158a"
-	must(svc, ev("System", 7036, map[string]string{"param1": "SIEM Agent", "param2": "stopped"}), true)
+	must(svc, ev("System", 7036, map[string]string{"param1": "SIEM Agent", "param2": "stopped"}), false) // reguła wbudowana „sabotaż agenta”
 	must(svc, ev("System", 7036, map[string]string{"param1": "Sysmon64", "param2": "zatrzymany"}), true)
 	must(svc, ev("System", 7036, map[string]string{"param1": "SIEM Agent", "param2": "running"}), false)
 	must(svc, ev("System", 7034, map[string]string{"param1": "Sysmon"}), true)

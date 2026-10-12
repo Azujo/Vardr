@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"siem/internal/contract"
 )
 
 // StaleAfter: status starszy niż ta wartość oznacza, że agent nie działa
@@ -126,6 +128,34 @@ func Render(w io.Writer, s Status, now time.Time) {
 			fmt.Fprintf(w, "Sysmon:   ZATRZYMANY (%s %s)\n", m.Service, m.Version)
 		default:
 			fmt.Fprintf(w, "Sysmon:   działa (%s %s, konfiguracja %s)\n", m.Service, m.Version, m.ConfigHash)
+		}
+	}
+
+	if p := s.Protection; p != nil {
+		switch {
+		case !p.Enabled:
+			fmt.Fprintln(w, "Ochrona: wyłączona (grupa w panelu albo agent bez konfiguracji z panelu)")
+		case p.Service == "protected":
+			fmt.Fprintf(w, "Ochrona: włączona – zatrzymanie i deinstalacja tylko tokenem z panelu (tokeny ważne: %d)\n", p.Tokens)
+		default:
+			fmt.Fprintf(w, "Ochrona: włączona, ale usługa NIE jest chroniona (%s) %s\n", p.Service, p.Error)
+		}
+		for _, e := range p.Events {
+			if now.Sub(e.At) > 24*time.Hour {
+				continue
+			}
+			title := contract.TamperKinds[e.Kind].Title
+			if title == "" {
+				title = e.Kind
+			}
+			line := fmt.Sprintf("  %s %s", e.At.Local().Format("2006-01-02 15:04:05"), title)
+			if e.User != "" {
+				line += " – " + e.User
+			}
+			if e.Detail != "" {
+				line += " (" + e.Detail + ")"
+			}
+			fmt.Fprintln(w, line)
 		}
 	}
 

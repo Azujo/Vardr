@@ -38,7 +38,12 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
 }
 
 export function StateBadge({ a }: { a: AgentView }) {
-  if (a.state === "offline") return <Badge color="gray">offline</Badge>;
+  if (a.state === "offline") {
+    if (a.stopping === "stop") return <Badge color="red">zatrzymany bez tokenu</Badge>;
+    if (a.stopping && a.stopping !== "shutdown") return <Badge color="gray">zatrzymany</Badge>;
+    return <Badge color="gray">offline</Badge>;
+  }
+  if (a.tamper_24h) return <Badge color="red">próba sabotażu</Badge>;
   if (a.problems.length > 0) return <Badge color="orange">problemy</Badge>;
   return <Badge color="green">online</Badge>;
 }

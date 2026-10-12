@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"agent_uninstall_tokens", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
@@ -295,5 +296,33 @@ func testGroups(t *testing.T, db *PG) {
 	empty, _ := db.CreateGroup(ctx, AgentGroup{Name: "Pusta", Profile: "workstation"})
 	if err := db.DeleteGroup(ctx, empty.ID); err != nil {
 		t.Fatalf("usunięcie pustej: %v", err)
+	}
+
+	// Tokeny deinstalacji: jeden ważny naraz, użycie zgłoszone przez agenta.
+	h1, h2 := strings.Repeat("a", 64), strings.Repeat("b", 64)
+	t1, err := db.CreateUninstallToken(ctx, "agt-1", h1, "reinstalacja", "admin", time.Now().Add(time.Hour))
+	if err != nil || t1.ID == 0 || t1.TokenID != "aaaaaaaaaaaa" {
+		t.Fatalf("token deinstalacji: %+v %v", t1, err)
+	}
+	if _, err := db.CreateUninstallToken(ctx, "agt-1", h2, "drugi", "admin", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	act, err := db.ActiveUninstallTokens(ctx, "agt-1")
+	if err != nil || len(act) != 1 || act[0].Hash != h2 {
+		t.Fatalf("aktywne: %+v %v", act, err)
+	}
+	if err := db.MarkUninstallTokensUsed(ctx, []TokenUse{{AgentID: "agt-1", TokenID: act[0].ID, Action: "uninstall_token",
+		User: `AZUJO\jan`, At: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	list, err := db.UninstallTokens(ctx, "agt-1", time.Now())
+	if err != nil || len(list) != 2 || list[0].State != "used" || list[0].UsedBy != `AZUJO\jan` || list[1].State != "revoked" {
+		t.Fatalf("lista tokenów: %+v %v", list, err)
+	}
+	if act, _ := db.ActiveUninstallTokens(ctx, "agt-1"); len(act) != 0 {
+		t.Fatalf("użyty token nadal aktywny: %+v", act)
+	}
+	if ok, err := db.RevokeUninstallToken(ctx, "agt-1", list[0].ID, "admin"); ok || err != nil {
+		t.Fatalf("unieważnienie użytego: %v %v", ok, err)
 	}
 }

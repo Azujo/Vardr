@@ -48,6 +48,7 @@ export function limitsSummary(l: AgentLimits): string {
   if (l.max_send_kbps !== undefined) parts.push(l.max_send_kbps ? `łącze ≤ ${l.max_send_kbps} KiB/s` : "łącze bez limitu");
   if (l.buffer_max_mb !== undefined) parts.push(l.buffer_max_mb ? `bufor ${l.buffer_max_mb} MB` : "bez bufora dyskowego");
   if (l.require_sysmon) parts.push("wymagany Sysmon");
+  if (l.protection === false) parts.push("bez ochrony agenta");
   if (l.heartbeat_alert_min)
     parts.push(`alarm po ${l.heartbeat_alert_min} min bez łączności${l.heartbeat_notify_return ? " (i o powrocie)" : ""}`);
   if (l.priority) parts.push(`priorytet ${priorityLabels[l.priority]}`);
@@ -338,6 +339,12 @@ export default function GroupsPage() {
                 description="Panel zgłasza komputery bez Sysmona, z zatrzymanym Sysmonem albo z inną konfiguracją niż większość grupy. Agent go nie instaluje – wdrożenie: deploy/windows/sysmon.ps1 (GPO)."
                 checked={!!edit.form.limits.require_sysmon}
                 onChange={(e) => setLimit("require_sysmon", e.currentTarget.checked || undefined)}
+              />
+              <Checkbox
+                label="Ochrona agenta (zalecana)"
+                description="Administrator komputera nie zatrzyma ani nie odinstaluje agenta bez jednorazowego tokenu z panelu (Huginn → agent → Token deinstalacji); próby bez tokenu, zabicie procesu i zmiana uprawnień usługi dają alert „Próba sabotażu agenta”. Wyłączenie przywraca zwykłe uprawnienia usługi."
+                checked={edit.form.limits.protection !== false}
+                onChange={(e) => setLimit("protection", e.currentTarget.checked ? undefined : false)}
               />
               <Checkbox
                 label="Powiadamiaj także o powrocie agenta"

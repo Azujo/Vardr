@@ -54,7 +54,9 @@ type agentStatus struct {
 		Version    string `json:"version"`
 		ConfigHash string `json:"config_hash"`
 	} `json:"sysmon"`
-	Clock struct {
+	Protection *contract.ProtectionStatus `json:"protection"`
+	Stopping   string                     `json:"stopping"`
+	Clock      struct {
 		OffsetMs      int64     `json:"offset_ms"`
 		UncertaintyMs int64     `json:"uncertainty_ms"`
 		MeasuredAt    time.Time `json:"measured_at"`
@@ -100,6 +102,14 @@ type agentView struct {
 	SysmonVersion  string `json:"sysmon_version,omitempty"`
 	SysmonConfig   string `json:"sysmon_config,omitempty"`
 	SysmonRequired bool   `json:"sysmon_required"`
+	// Ochrona agenta: protected | open | off (wyłączona w grupie) | error |
+	// unknown (agent bez ochrony – starsza wersja, kolektor, konektor).
+	Protection      string `json:"protection"`
+	ProtectionError string `json:"protection_error,omitempty"`
+	// Tamper: zdarzenia ochrony z alertem z ostatnich 24 h.
+	Tamper int `json:"tamper_24h"`
+	// Stopping: powód zatrzymania z ostatniego heartbeatu (agent offline).
+	Stopping string `json:"stopping,omitempty"`
 	// Problems to czytelne opisy problemów (pusta lista = wszystko w porządku).
 	Problems []string `json:"problems"`
 }
@@ -114,9 +124,19 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	v.SysmonRequired = g.Limits.RequireSysmon != nil && *g.Limits.RequireSysmon
 
 	v.ConfigApplied, v.ConfigState = agentConfigState(a.Status, v.ConfigExpected)
+	var st agentStatus
+	stErr := json.Unmarshal(a.Status, &st)
 	if now.Sub(a.LastSeen) > offlineAfter {
 		v.State = "offline"
-		v.Problems = append(v.Problems, "brak heartbeatu od "+humanAgo(now.Sub(a.LastSeen)))
+		v.Stopping = st.Stopping
+		switch st.Stopping {
+		case "":
+			v.Problems = append(v.Problems, "brak heartbeatu od "+humanAgo(now.Sub(a.LastSeen)))
+		case "shutdown":
+			v.Problems = append(v.Problems, "komputer wyłączony "+humanAgo(now.Sub(a.LastSeen))+" temu")
+		default:
+			v.Problems = append(v.Problems, "agent zatrzymany ("+stoppingLabel(st.Stopping)+") "+humanAgo(now.Sub(a.LastSeen))+" temu")
+		}
 	}
 	if a.CertNotAfter != nil {
 		days := int(a.CertNotAfter.Sub(now).Hours() / 24)
@@ -129,10 +149,31 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		}
 	}
 
-	var st agentStatus
-	if err := json.Unmarshal(a.Status, &st); err != nil {
+	if stErr != nil {
 		v.Problems = append(v.Problems, "nieczytelny status agenta")
 		return v
+	}
+	v.Protection = "unknown"
+	if p := st.Protection; p != nil {
+		v.Protection, v.ProtectionError = p.Service, p.Error
+		if !p.Enabled {
+			v.Protection = "off"
+		}
+		if p.Enabled && p.Service != "protected" && v.State == "online" {
+			msg := "ochrona usługi agenta nie działa"
+			if p.Error != "" {
+				msg += ": " + truncate(p.Error, 120)
+			}
+			v.Problems = append(v.Problems, msg)
+		}
+		for _, e := range p.Events {
+			if contract.TamperKinds[e.Kind].Level != "" && now.Sub(e.At) < 24*time.Hour {
+				v.Tamper++
+			}
+		}
+		if v.Tamper > 0 {
+			v.Problems = append(v.Problems, fmt.Sprintf("próby sabotażu agenta w ostatniej dobie: %d (szczegóły agenta)", v.Tamper))
+		}
 	}
 	v.ServerHealthy, v.LastAcceptedAt = st.Server.Healthy, st.Server.LastAcceptedAt
 	v.Accepted, v.Read, v.Quarantined = st.Counters.Accepted, st.Counters.Read, st.Counters.Quarantined
@@ -212,6 +253,20 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		v.Problems = append(v.Problems, "usługa czasu Windows (W32Time) wyłączona – zegar nie jest synchronizowany")
 	}
 	return v
+}
+
+func stoppingLabel(s string) string {
+	switch s {
+	case contract.TamperStop:
+		return "bez tokenu"
+	case contract.TamperStopToken:
+		return "tokenem"
+	case contract.TamperUninstallTok:
+		return "deinstalacja tokenem"
+	case contract.TamperUpgrade:
+		return "aktualizacja"
+	}
+	return s
 }
 
 func channelStateLabel(s string) string {

@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 
 	"siem/agent/internal/config"
+	"siem/agent/internal/guard"
 	"siem/agent/internal/logging"
 )
 
@@ -22,9 +23,10 @@ const (
 )
 
 type agentService struct {
-	cfg    *config.Config
-	cfgErr error
-	log    *slog.Logger
+	cfgPath string
+	cfg     *config.Config
+	cfgErr  error
+	log     *slog.Logger
 }
 
 func runService(cfgPath string) {
@@ -56,7 +58,7 @@ func runService(cfgPath string) {
 		log.Error("błędna konfiguracja agenta", "config", cfgPath, "err", cfgErr)
 	}
 
-	if err := svc.Run(serviceName, &agentService{cfg: cfg, cfgErr: cfgErr, log: log}); err != nil {
+	if err := svc.Run(serviceName, &agentService{cfgPath: cfgPath, cfg: cfg, cfgErr: cfgErr, log: log}); err != nil {
 		log.Error("usługa zakończona błędem", "err", err)
 	}
 }
@@ -68,10 +70,31 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 		return false, 1 // niezerowy kod: akcje odzyskiwania ponowią start
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Ochrona agenta: wykrycie zabicia poprzedniego procesu, pilnowanie
+	// uprawnień usługi (w runAgent) i powód zatrzymania.
+	g := newGuardian(s.cfg.StateDir, s.log)
+	g.startup()
+	svcGuard = g
+	defer g.cleanExit()
+
+	var cancel context.CancelFunc
 	done := make(chan error, 1)
-	go func() { done <- runAgent(ctx, s.cfg, s.log) }()
+	start := func(cfg *config.Config) {
+		var ctx context.Context
+		ctx, cancel = context.WithCancel(context.Background())
+		go func() { done <- runAgent(ctx, cfg, s.log) }()
+	}
+	stop := func() bool {
+		cancel()
+		select {
+		case <-done:
+			return true
+		case <-time.After(20 * time.Second):
+			s.log.Warn("agent nie zakończył się w ciągu 20 s")
+			return false
+		}
+	}
+	start(s.cfg)
 
 	status <- svc.Status{State: svc.Running, Accepts: svc.AcceptStop | svc.AcceptShutdown}
 
@@ -82,15 +105,28 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 			case svc.Interrogate:
 				status <- c.CurrentStatus
 			case svc.Stop, svc.Shutdown:
-				s.log.Info("otrzymano polecenie zatrzymania usługi")
-				status <- svc.Status{State: svc.StopPending}
-				cancel()
-				select {
-				case <-done:
-				case <-time.After(20 * time.Second):
-					s.log.Warn("agent nie zakończył się w ciągu 20 s")
+				reason := "shutdown"
+				if c.Cmd == svc.Stop {
+					reason = g.stopReason()
 				}
+				g.setStopping(reason)
+				s.log.Info("otrzymano polecenie zatrzymania usługi", "reason", reason)
+				status <- svc.Status{State: svc.StopPending}
+				stop()
 				return false, 0
+			case guard.ControlRestart:
+				// siem_agent restart / set-server: ponowne uruchomienie w procesie
+				// usługi (chroniona usługa nie pozwala administratorowi jej zatrzymać).
+				cfg, err := config.Load(s.cfgPath)
+				if err != nil {
+					s.log.Error("restart agenta: konfiguracja niepoprawna – zostaje bieżąca", "err", err, "eventlog", true)
+					continue
+				}
+				s.log.Info("polecenie restartu agenta", "eventlog", true)
+				if !stop() {
+					return false, 1 // zawieszony agent – akcje odzyskiwania uruchomią usługę ponownie
+				}
+				start(cfg)
 			}
 		case err := <-done:
 			// Agent zakończył się sam (np. błąd konfiguracji). Niezerowy kod

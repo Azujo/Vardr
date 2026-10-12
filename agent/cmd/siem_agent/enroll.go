@@ -93,12 +93,18 @@ func enrollOnly(o enrollOptions) error {
 
 // upgrade podmienia program zainstalowanej usługi na wersję, z której
 // uruchomiono polecenie. Konfiguracja, certyfikaty i stan zostają.
-func upgrade() error {
+func upgrade(cfgPath, token string) error {
 	if err := requireAdmin("Aktualizacja agenta"); err != nil {
 		return err
 	}
 	if _, err := queryService(); err != nil {
 		return errors.New("agent nie jest zainstalowany – użyj siem_agent install")
+	}
+	if err := authorize(cfgPath, "upgrade", token); err != nil {
+		return err
+	}
+	if token == "" {
+		markInstaller(dataDir, "upgrade") // usługa bez ochrony
 	}
 	src, err := os.Executable()
 	if err != nil {
@@ -111,7 +117,7 @@ func upgrade() error {
 	if err := withService(func(s *mgr.Service) error {
 		if st, _ := s.Query(); st.State != svc.Stopped {
 			if _, err := s.Control(svc.Stop); err != nil {
-				return err
+				return protectedErr(err)
 			}
 			return waitState(s, svc.Stopped, 30*time.Second)
 		}

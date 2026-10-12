@@ -2,9 +2,12 @@ package alerts
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"siem/internal/contract"
 )
 
 // AgentBeat to ostatni heartbeat agenta i próg alarmu jego grupy
@@ -40,6 +43,47 @@ func (p *PG) AgentBeats(ctx context.Context) ([]AgentBeat, error) {
 		err := r.Scan(&b.ID, &b.Host, &b.IP, &b.Version, &b.LastSeen, &b.Group, &min, &b.NotifyReturn)
 		b.AlertAfter = time.Duration(min) * time.Minute
 		return b, err
+	})
+}
+
+// TamperBeat to agent z ostatnim stanem ochrony (z heartbeatu).
+type TamperBeat struct {
+	ID, Host, IP, Version, Group string
+	LastSeen                     time.Time
+	Stopping                     string
+	Events                       []contract.TamperRecord
+	Tokens                       map[string]bool // tokeny deinstalacji wydane agentowi przez panel (token_id)
+}
+
+// TamperBeats zwraca agentów ze zdarzeniami ochrony albo zatrzymanych przez
+// instalator (status.protection.events, status.stopping). Pomija agentów
+// wycofanych (wszystkie certyfikaty unieważnione).
+func (p *PG) TamperBeats(ctx context.Context) ([]TamperBeat, error) {
+	rows, err := p.pool.Query(ctx, `SELECT a.id, a.hostname, a.remote_ip, a.version, a.last_seen, g.name,
+		coalesce(a.status->>'stopping', ''), coalesce(a.status->'protection'->'events', '[]'::jsonb),
+		coalesce((SELECT array_agg(t.token_id) FROM public.agent_uninstall_tokens t WHERE t.agent_id = a.id), '{}')
+		FROM public.agents a
+		LEFT JOIN public.agent_assignments s ON s.agent_id = a.id
+		JOIN public.agent_groups g ON g.id = coalesce(s.group_id, (SELECT id FROM public.agent_groups WHERE is_default))
+		WHERE (jsonb_array_length(coalesce(a.status->'protection'->'events', '[]'::jsonb)) > 0 OR a.status->>'stopping' = 'upgrade')
+			AND NOT (EXISTS (SELECT 1 FROM public.agent_certs c WHERE c.agent_id = a.id)
+			AND NOT EXISTS (SELECT 1 FROM public.agent_certs c WHERE c.agent_id = a.id AND c.revoked_at IS NULL))`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (TamperBeat, error) {
+		var b TamperBeat
+		var events []byte
+		var tokens []string
+		if err := r.Scan(&b.ID, &b.Host, &b.IP, &b.Version, &b.LastSeen, &b.Group, &b.Stopping, &events, &tokens); err != nil {
+			return b, err
+		}
+		b.Tokens = map[string]bool{}
+		for _, t := range tokens {
+			b.Tokens[t] = true
+		}
+		_ = json.Unmarshal(events, &b.Events) // nieczytelne zdarzenia agenta – pomijane
+		return b, nil
 	})
 }
 

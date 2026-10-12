@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
+	"siem/agent/internal/guard"
 	"siem/agent/internal/secure"
 )
 
@@ -50,18 +51,39 @@ func queryService() (svc.Status, error) {
 	return s.Query()
 }
 
+// withService otwiera usługę z pełnymi prawami, a gdy usługa jest chroniona
+// (administrator nie ma prawa jej zatrzymać ani usunąć) – z prawami, które
+// administratorowi zostają (stan, start, polecenia agenta).
 func withService(fn func(*mgr.Service) error) error {
-	m, err := mgr.Connect()
+	scm, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
 	if err != nil {
 		return fmt.Errorf("brak dostępu do menedżera usług: %w", err)
 	}
-	defer m.Disconnect()
-	s, err := m.OpenService(serviceName)
-	if err != nil {
-		return errNotInstalled
+	defer windows.CloseServiceHandle(scm)
+	name, _ := windows.UTF16PtrFromString(serviceName)
+	h, err := windows.OpenService(scm, name, windows.SERVICE_ALL_ACCESS)
+	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		h, err = windows.OpenService(scm, name, windows.SERVICE_QUERY_STATUS|windows.SERVICE_QUERY_CONFIG|windows.SERVICE_START|
+			windows.SERVICE_USER_DEFINED_CONTROL|windows.SERVICE_INTERROGATE)
 	}
+	switch {
+	case errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST):
+		return errNotInstalled
+	case err != nil:
+		return err
+	}
+	s := &mgr.Service{Name: serviceName, Handle: h}
 	defer s.Close()
 	return fn(s)
+}
+
+// protectedErr tłumaczy odmowę dostępu przy zatrzymaniu lub usunięciu usługi.
+func protectedErr(err error) error {
+	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		return errors.New("usługa agenta jest chroniona – zatrzymanie i deinstalacja wymagają tokenu z panelu " +
+			"(Huginn → agent → Token deinstalacji): -token XXXXX-XXXXX-XXXXX-XXXXX")
+	}
+	return err
 }
 
 func waitState(s *mgr.Service, want svc.State, timeout time.Duration) error {
@@ -102,8 +124,15 @@ func startService() error {
 	})
 }
 
-func stopService() error {
+func stopService(cfgPath, token string) error {
 	if err := requireAdmin("Zatrzymanie agenta"); err != nil {
+		return err
+	}
+	if st, err := queryService(); err == nil && st.State == svc.Stopped {
+		fmt.Println("Agent jest już zatrzymany.")
+		return nil
+	}
+	if err := authorize(cfgPath, "stop", token); err != nil {
 		return err
 	}
 	return withService(func(s *mgr.Service) error {
@@ -112,7 +141,7 @@ func stopService() error {
 			return nil
 		}
 		if _, err := s.Control(svc.Stop); err != nil {
-			return err
+			return protectedErr(err)
 		}
 		if err := waitState(s, svc.Stopped, 30*time.Second); err != nil {
 			return err
@@ -122,11 +151,27 @@ func stopService() error {
 	})
 }
 
+// restartService uruchamia agenta ponownie w procesie usługi (polecenie
+// agenta – bez zatrzymywania usługi, więc także przy włączonej ochronie).
 func restartService() error {
-	if err := stopService(); err != nil && !errors.Is(err, errNotInstalled) {
+	if err := requireAdmin("Ponowne uruchomienie agenta"); err != nil {
 		return err
 	}
-	return startService()
+	st, err := queryService()
+	if err != nil {
+		return err
+	}
+	if st.State != svc.Running {
+		return startService()
+	}
+	if err := withService(func(s *mgr.Service) error {
+		_, err := s.Control(svc.Cmd(guard.ControlRestart))
+		return err
+	}); err != nil {
+		return fmt.Errorf("polecenie restartu: %w", err)
+	}
+	fmt.Println("Agent uruchamia się ponownie (w procesie usługi) – stan: siem_agent status.")
+	return nil
 }
 
 // registerService tworzy usługę Windows z automatycznym startem
@@ -163,8 +208,10 @@ func deleteService() error {
 		if st, _ := s.Query(); st.State != svc.Stopped {
 			if _, err := s.Control(svc.Stop); err == nil {
 				_ = waitState(s, svc.Stopped, 30*time.Second)
+			} else if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+				return protectedErr(err)
 			}
 		}
-		return s.Delete()
+		return protectedErr(s.Delete())
 	})
 }

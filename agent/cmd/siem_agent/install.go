@@ -243,6 +243,7 @@ func install(o installOptions) error {
 	if err := registerService(installExe, installCfg); err != nil {
 		return err
 	}
+	markInstaller(dataDir, "install")
 	if o.noStart {
 		fmt.Println("  [6/7] Usługa:        zarejestrowana (nie uruchomiono: -no-start)")
 	} else {
@@ -271,8 +272,11 @@ func install(o installOptions) error {
 
 // uninstall usuwa usługę, wpis w PATH i program. Z -purge usuwa też dane,
 // konfigurację, certyfikaty i kopię stanu w rejestrze.
-func uninstall(purge bool) error {
+func uninstall(cfgPath string, purge bool, token string) error {
 	if err := requireAdmin("Odinstalowanie agenta"); err != nil {
+		return err
+	}
+	if err := authorize(cfgPath, "uninstall", token); err != nil {
 		return err
 	}
 	if err := deleteService(); err != nil && !errors.Is(err, errNotInstalled) {

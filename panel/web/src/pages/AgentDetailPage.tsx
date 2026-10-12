@@ -34,6 +34,7 @@ import {
 import { limitsSummary, profileLabels } from "./GroupsPage";
 import { useAuth } from "../auth";
 import { StateBadge } from "./AgentsPage";
+import { AgentProtection } from "./AgentProtection";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -259,6 +260,8 @@ Powód:`,
           </Field>
         </SimpleGrid>
       </Card>
+
+      <AgentProtection agent={agent} status={status} admin={user?.role === "admin"} />
 
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder>

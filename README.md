@@ -104,10 +104,12 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
    | Polecenie | Działanie | Administrator |
    |---|---|---|
    | `siem_agent status` | stan usługi; szczegóły: serwer, kanały, liczniki, limity | szczegóły – tak |
-   | `siem_agent start` / `stop` / `restart` | sterowanie usługą | tak |
+   | `siem_agent start` / `restart` | uruchomienie; restart agenta w procesie usługi | tak |
+   | `siem_agent stop [-token T]` | zatrzymanie (agent chroniony: token z panelu) | tak |
    | `siem_agent test` | test połączenia z serwerem (TLS + certyfikaty) | tak |
    | `siem_agent set-server <adres>` | zmiana adresu, test, restart agenta | tak |
-   | `siem_agent uninstall [-purge]` | odinstalowanie (`-purge`: także dane i certyfikaty) | tak |
+   | `siem_agent upgrade [-token T]` | aktualizacja programu (z folderu nowej wersji) | tak |
+   | `siem_agent uninstall [-token T] [-purge]` | odinstalowanie (`-purge`: także dane i certyfikaty) | tak |
 
 Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\ProgramData\SiemAgent\agent.log`.
 
@@ -118,10 +120,35 @@ Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\Program
 ```powershell
 msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…   # instalacja i rejestracja tokenem
 msiexec /i heimdall-agent.msi /qn                                    # aktualizacja do nowszej wersji (rejestracja zostaje)
-msiexec /x heimdall-agent.msi /qn                                    # odinstalowanie (dane i certyfikaty zostają)
+msiexec /x heimdall-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # odinstalowanie chronionego agenta
 ```
 
 MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `siem_agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
+
+Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/siem_agent/main.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
+
+### Ochrona przed zatrzymaniem i deinstalacją (od wersji 0.7)
+
+Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia usługi, a konto SYSTEM może wszystko. Cel to **utrudnić i wykryć**. Ochronę włącza grupa agentów (panel → Grupy agentów → „Ochrona agenta”, domyślnie włączona). Agent bez konfiguracji z panelu jest bez ochrony.
+
+- **Uprawnienia usługi.** Administrator sprawdzi stan usługi, uruchomi ją i zrestartuje agenta (`siem_agent restart` – polecenie 128 do usługi). Nie może jej zatrzymać, wstrzymać, przekonfigurować ani usunąć: `sc stop` i `services.msc` dostają odmowę dostępu. Zostaje mu prawo zmiany uprawnień – to granica ochrony.
+- **Token deinstalacji.** Panel → Huginn → agent → „Token deinstalacji”: rola administratora, powód i ponowne podanie hasła, wpis w audycie. Token jest jednorazowy, działa tylko na tym komputerze, domyślnie przez 24 h (do 7 dni). Panel pokazuje go raz; w bazie i na komputerze jest tylko skrót. Nowy token unieważnia poprzedni. Polecenie z tokenem samo pobiera świeżą konfigurację z panelu, więc token działa od razu. Użyty token panel oznacza na podstawie raportu agenta.
+- **Pilnowanie co 30 s.** Agent sprawdza uprawnienia usługi, typ uruchamiania i ścieżkę programu, zarówno w menedżerze usług, jak i w rejestrze. Zmianę zgłasza i cofa.
+- **Zdarzenia ochrony.** Dziennik `tamper.jsonl` w katalogu stanu; agent wysyła w heartbeacie zdarzenia z ostatnich 7 dni. Zdarzenie z chwili zatrzymania dociera więc także po ponownym starcie. Przy zatrzymaniu agent wysyła od razu ostatni heartbeat z powodem.
+
+| Zdarzenie | Alert „Próba sabotażu agenta” |
+|---|---|
+| zatrzymanie usługi bez tokenu (np. po `sc sdset` albo z konta SYSTEM) | wysoki |
+| zmiana uprawnień albo konfiguracji usługi (agent ją cofnął) | wysoki |
+| zatrzymanie „tokenem”, którego panel nie wydał (podrobiony `managed.json`) | wysoki |
+| aktualizacja przez instalator, po której agent nie wrócił w ciągu 15 min | wysoki |
+| zabicie procesu (`taskkill /f`; usługa wstaje sama po 5 s) | średni |
+| `siem_agent stop` / `uninstall` / `msiexec /x` bez tokenu albo ze złym tokenem | średni |
+| zatrzymanie, aktualizacja i deinstalacja tokenem; zamknięcie systemu | brak (wpis w panelu) |
+
+`siem_agent status` i strona agenta w panelu pokazują stan ochrony i ostatnie zdarzenia. Agent zatrzymany bez tokenu ma na liście czerwony znacznik „zatrzymany bez tokenu”. Reguła Sigma `system_security_service_stopped` dotyczy teraz tylko Sysmona: zatrzymania agenta zgłasza reguła wbudowana, która odróżnia zatrzymanie tokenem.
+
+Awaryjnie, gdy komputer nie ma łączności z panelem i nie da się użyć tokenu: `sc sdset SiemAgent` przywraca zwykłe uprawnienia, a potem `sc stop` / `sc delete`. Panel dostanie wtedy alert – to zamierzone.
 
 ## Odporność na usunięcie stanu
 
@@ -287,7 +314,6 @@ Wynik widać w zakładce *Actions* repozytorium.
 
 ## Czego jeszcze nie ma (kolejne etapy)
 
-- token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu (razem z heartbeatem)
 - odczyt plików dziennika przez agenta (np. IIS W3C – dekoder `csv` już je rozbiera) i syslog po TLS w kolektorze
 - logi M365 (Management Activity API) i prawdziwy tenant Entra ID (konektor gotowy, w laboratorium symulator)

@@ -73,7 +73,7 @@ func (s *Sender) Run(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		err := s.send(ctx)
+		err := s.Send(ctx)
 		switch {
 		case err != nil && !failing:
 			s.Log.Warn("heartbeat nieudany – panel może pokazywać agenta jako offline", "err", err)
@@ -87,7 +87,13 @@ func (s *Sender) Run(ctx context.Context) {
 	}
 }
 
-func (s *Sender) send(ctx context.Context) error {
+// Send wysyła jeden heartbeat (Run wysyła je cyklicznie; zatrzymywany agent –
+// ostatni, z powodem zatrzymania).
+func (s *Sender) Send(ctx context.Context) error {
+	if s.hostname == "" {
+		s.hostname, _ = os.Hostname()
+		s.os = OSVersion()
+	}
 	st, err := json.Marshal(s.Status())
 	if err != nil {
 		return err

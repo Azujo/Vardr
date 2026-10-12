@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"siem/agent/internal/sysmon"
+	"siem/internal/contract"
 )
 
 // Stany kanału.
@@ -45,6 +46,11 @@ type Status struct {
 	Clock    ClockStatus     `json:"clock"`
 	Sysmon   *sysmon.State   `json:"sysmon,omitempty"`
 	Warnings []string        `json:"warnings,omitempty"`
+	// Protection: ochrona usługi i ostatnie zdarzenia (próby sabotażu).
+	Protection *contract.ProtectionStatus `json:"protection,omitempty"`
+	// Stopping: agent się zatrzymuje (ostatni heartbeat) – powód: shutdown,
+	// stop, stop_token, uninstall_token, upgrade.
+	Stopping string `json:"stopping,omitempty"`
 }
 
 // BufferStatus to stan dyskowego bufora paczek.
@@ -352,6 +358,16 @@ func (t *Tracker) SetTimeService(state string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.s.Clock.TimeService = state
+}
+
+// SetStopping oznacza zatrzymywanie agenta (powód w ostatnim heartbeacie).
+func (t *Tracker) SetStopping(reason string) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Stopping = reason
 }
 
 // SetSysmon zapisuje stan Sysmona.

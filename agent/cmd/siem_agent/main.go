@@ -43,7 +43,7 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.6.2"
+const version = "0.7.0"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -58,12 +58,18 @@ ca.crt, agent.crt i agent.key):
       -ca, -cert, -key   inne położenie certyfikatów
 
 Sterowanie (po instalacji polecenie działa z każdego miejsca):
-  siem_agent status                 stan usługi, połączenia, kanałów i limitów
-  siem_agent start | stop | restart
+  siem_agent status                 stan usługi, połączenia, kanałów, limitów i ochrony
+  siem_agent start | restart
+  siem_agent stop [-token T]        zatrzymanie (agent chroniony: token z panelu)
   siem_agent test                   sprawdzenie połączenia z serwerem
   siem_agent set-server <adres>     zmiana adresu serwera (restartuje agenta)
-  siem_agent upgrade                aktualizacja programu (uruchom z folderu nowej wersji)
-  siem_agent uninstall [-purge]     odinstalowanie (-purge: także dane i certyfikaty)
+  siem_agent upgrade [-token T]     aktualizacja programu (uruchom z folderu nowej wersji)
+  siem_agent uninstall [-token T] [-purge]
+                                    odinstalowanie (-purge: także dane i certyfikaty)
+
+Ochrona: agent w grupie z włączoną ochroną (domyślnie) ma usługę, której
+administrator nie zatrzyma ani nie usunie bez jednorazowego tokenu z panelu
+(Huginn → agent → Token deinstalacji). Próby bez tokenu panel zgłasza jako alert.
 
 Diagnostyka:
   siem_agent check                  walidacja konfiguracji, certyfikatów i uprawnień
@@ -114,7 +120,13 @@ func main() {
 	var opts installOptions
 	var eo enrollOptions
 	purge := new(bool)
+	var token, upgradeCode string
 	switch cmd {
+	case "stop", "upgrade":
+		cf.StringVar(&token, "token", "", "token deinstalacji z panelu (agent chroniony)")
+	case "msi-uninstall":
+		cf.StringVar(&token, "token", "", "token deinstalacji (właściwość UNINSTALL_TOKEN instalatora MSI)")
+		cf.StringVar(&upgradeCode, "upgrade", "", "kod produktu aktualizującego (UPGRADINGPRODUCTCODE – aktualizacja, nie deinstalacja)")
 	case "install":
 		cf.StringVar(&opts.server, "server", "", "adres serwera")
 		cf.StringVar(&opts.profile, "profile", "", "profil zdarzeń (domyślnie z tokenu albo workstation)")
@@ -130,6 +142,7 @@ func main() {
 		cf.StringVar(&opts.token, "token", "", "token rejestracyjny (właściwość TOKEN instalatora MSI)")
 	case "uninstall":
 		purge = cf.Bool("purge", false, "usuń także dane, konfigurację i certyfikaty")
+		cf.StringVar(&token, "token", "", "token deinstalacji z panelu (agent chroniony)")
 	case "enroll":
 		cf.StringVar(&eo.server, "server", "", "adres serwera")
 		cf.StringVar(&eo.token, "token", "", "token rejestracyjny z panelu")
@@ -148,19 +161,23 @@ func main() {
 	case "install":
 		err = install(opts)
 	case "uninstall":
-		err = uninstall(*purge)
+		err = uninstall(*cfgPath, *purge, token)
 	case "upgrade":
-		err = upgrade()
+		err = upgrade(*cfgPath, token)
 	case "msi-install":
 		err = msiInstall(opts.server, opts.token)
 	case "msi-uninstall":
-		err = msiUninstall()
+		err = msiUninstall(token, upgradeCode)
 	case "enroll":
 		err = enrollOnly(eo)
 	case "start":
 		err = startService()
 	case "stop":
-		err = stopService()
+		if isSystem() {
+			err = installerStop(*cfgPath) // instalator MSI (stop poprzedniej instalacji bez MSI)
+		} else {
+			err = stopService(*cfgPath, token)
+		}
 	case "restart":
 		err = restartService()
 	case "status":
@@ -321,6 +338,12 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		s.Process.CPUTime = processCPUTime()
 	})
 
+	g := svcGuard
+	if g != nil {
+		g.setAgent(agentID)
+		tracker.SetProbe("protection", g.probe)
+	}
+
 	sender := shipper.NewHTTPSender(client, cfg.Server.URL, filepath.Join(cfg.StateDir, "quarantine"), log)
 	sender.AttachStatus(tracker)
 
@@ -373,11 +396,24 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		}
 	}()
 
-	// Heartbeat dla panelu (Huginn): stan agenta co minutę.
+	// Heartbeat dla panelu (Huginn): stan agenta co minutę. Przy zatrzymaniu
+	// usługi – ostatni heartbeat z powodem (zatrzymanie bez tokenu panel widzi
+	// od razu, nie dopiero po utracie łączności).
 	if hbURL, err := heartbeat.URLFromIngest(cfg.Server.URL); err == nil {
 		hb := &heartbeat.Sender{Client: client, URL: hbURL, AgentID: agentID, Version: version, Started: time.Now(),
 			Status: func() any { return tracker.Snapshot() }, Clock: tracker.SetClock, Log: log}
 		go hb.Run(bgCtx)
+		defer func() {
+			if ctx.Err() == nil || g == nil || g.stoppingReason() == "" {
+				return // przeładowanie, błąd albo tryb konsoli
+			}
+			tracker.SetStopping(g.stoppingReason())
+			fctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := hb.Send(fctx); err != nil {
+				log.Warn("ostatni heartbeat nieudany", "err", err)
+			}
+		}()
 	}
 
 	// Bifröst: odnowienie certyfikatu przed wygaśnięciem (bez restartu agenta).
@@ -397,6 +433,10 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		log.Warn("zapisana konfiguracja z panelu jest nieczytelna – używam agent.yaml", "err", err)
 		current = nil
+	}
+	if g != nil {
+		g.setConfig(current)
+		go g.run(bgCtx)
 	}
 	reload := make(chan *contract.AgentConfig, 1)
 	if panelURL != "" {
@@ -462,6 +502,9 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		}
 		log.Info("nowa konfiguracja z panelu – przeładowuję odczyt", "group", next.Group, "version", next.Version, "eventlog", true)
 		current = next
+		if g != nil {
+			g.setConfig(current)
+		}
 	}
 }
 

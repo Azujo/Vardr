@@ -2,7 +2,7 @@
 
 Stan na 12.10.2026 (etap 7). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
 
-Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3–7. Następny według roadmapy: etap 8.
+Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3–7. W toku: etap 8.
 
 ---
 
@@ -162,6 +162,18 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **6d (09.10):** kwarantanna w panelu (grupy według źródła i powodu, oryginały) i ponowne przetwarzanie: panel → normalizator (NATS request-reply) → odzyskane zdarzenia w `SIEM_EVENTS` (zapis i detekcja, bez duplikatów w archiwum NIS2), wynik każdego wpisu w Sadze. Kwarantanna zapamiętuje adres nadawcy syslog.
 - **6e (09.10):** symulator FortiGate (`tools/cmd/fortisim`) i reguły progowe: seria nieudanych logowań do VPN FortiGate, do panelu FortiGate i do routera MikroTik. Laboratorium: symulowane ataki → alerty #22–#26 w obu silnikach; test zgodności silników z korpusem syslog (155/155 trafień). Przerwa łączności kolektor–serwer: 50 wiadomości z bufora dotarło po przywróceniu `siem-ingest`.
 - **Kryterium etapu (roadmapa):** logi FortiGate znormalizowane (symulator, wszystkie scenariusze), nowy dekoder utworzony w panelu przechodzi test na próbce. IIS (W3C) – parser `csv` z separatorem spacją go rozbiera, ale odczyt plików dziennika przez agenta to osobne źródło – przesunięte (razem z syslog po TLS).
+
+## Etap 8 – ochrona agenta i skala – w toku
+
+- **8a–8b (12.10): ochrona agenta (0.7.0)** – „utrudnić i wykryć”:
+  - usługa z zawężonymi uprawnieniami: administrator nie zatrzyma ani nie usunie jej poleceniem `sc` czy `services.msc`; restart agenta to polecenie do usługi (kod 128), bez prawa zatrzymania;
+  - jednorazowe tokeny deinstalacji z panelu (administrator, powód, hasło, audyt; na komputerze i w bazie tylko skrót) dla `siem_agent stop|upgrade|uninstall` i `msiexec /x … UNINSTALL_TOKEN=`;
+  - agent co 30 s pilnuje uprawnień, typu uruchamiania i programu usługi (w menedżerze usług i w rejestrze), zmianę cofa i zgłasza;
+  - dziennik zdarzeń ochrony w heartbeacie; ostatni heartbeat z powodem zatrzymania; wykrycie zabicia procesu (znacznik działania i czas startu systemu);
+  - reguła wbudowana „Próba sabotażu agenta” – także zatrzymanie tokenem, którego panel nie wydał, i aktualizacja, po której agent nie wrócił;
+  - ochrona przełączana w grupie agentów; stan i zdarzenia na stronie agenta.
+  - **Laboratorium (DESKTOP-3P8VS81):** po aktualizacji przez MSI agent przeszedł na uprawnienia chronione bez fałszywego alarmu. `sc stop` → odmowa dostępu. Alerty #50–58: polecenia bez tokenu i ze złym tokenem, `sc sdset` (uprawnienia przywrócone w ciągu 30 s), `taskkill /f`, `sc sdset` + natychmiastowe `sc stop` (alert od razu, z ostatniego heartbeatu), `msiexec /x` bez tokenu (wycofane). Zatrzymanie, aktualizacja i deinstalacja MSI tokenem – bez alertu, token oznaczony jako użyty, ponowne użycie odrzucone.
+  - Poprawka przy okazji: akcja MSI zatrzymująca agenta zainstalowanego bez MSI nie trafiała do instalatora (`wixl` nie obsługuje atrybutu `Directory`).
 
 ## Etap 7 – Entra ID i korelacja – zakończony (bez prawdziwego tenanta)
 
