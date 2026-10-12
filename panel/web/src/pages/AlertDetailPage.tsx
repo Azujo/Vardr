@@ -276,7 +276,7 @@ export default function AlertDetailPage() {
           <Field label="Pierwsze zdarzenie">{formatDate(alert.first_seen)}</Field>
           <Field label="Ostatnie zdarzenie">{formatDate(alert.last_seen)}</Field>
           <Field label="Trafienia">{String(alert.hits)}</Field>
-          <Field label="Silnik">{({ index_query: "zapytania (ClickHouse)", stream: "w locie", system: "reguła wbudowana" } as Record<string, string>)[alert.engine] ?? alert.engine}</Field>
+          <Field label="Silnik">{({ index_query: "zapytania (ClickHouse)", stream: "w locie", system: "reguła wbudowana", correlation: "korelacja (wiele źródeł)" } as Record<string, string>)[alert.engine] ?? alert.engine}</Field>
         </SimpleGrid>
         {Object.keys(alert.group_fields).length > 0 && (
           <Text size="sm" mt="sm">

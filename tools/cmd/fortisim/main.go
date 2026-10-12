@@ -42,6 +42,7 @@ func main() {
 	rate := flag.Duration("every", 100*time.Millisecond, "odstęp między wiadomościami")
 	dev := flag.String("devname", "FGT-HQ", "nazwa urządzenia (devname)")
 	attacker := flag.String("attacker", "", "adres atakującego (domyślnie losowy z 203.0.113.0/24)")
+	user := flag.String("user", "jkowalski", "konto w scenariuszu vpn-brute")
 	header := flag.String("header", "bare", "nagłówek: bare (<PRI>date=…, domyślny FortiOS), rfc5424 albo rfc3164")
 	tz := flag.String("tz", "Europe/Warsaw", "strefa czasowa urządzenia")
 	dry := flag.Bool("dry", false, "tylko wypisz wiadomości, nie wysyłaj")
@@ -67,7 +68,7 @@ func main() {
 	case "vpn-ok":
 		lines = s.vpnOK(nonzero(*count, 3))
 	case "vpn-brute":
-		lines = s.repeat(nonzero(*count, 12), func() string { return s.vpnFail("jkowalski") })
+		lines = s.repeat(nonzero(*count, 12), func() string { return s.vpnFail(*user) })
 	case "vpn-spray":
 		lines = s.repeat(nonzero(*count, 12), func() string { return s.vpnFail(users[rand.IntN(len(users))]) })
 	case "admin-brute":

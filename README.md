@@ -290,7 +290,8 @@ Wynik widać w zakładce *Actions* repozytorium.
 - token deinstalacji i ochrona usługi (etap 8)
 - sprawdzanie polityki audytu (razem z heartbeatem)
 - odczyt plików dziennika przez agenta (np. IIS W3C – dekoder `csv` już je rozbiera) i syslog po TLS w kolektorze
-- integracje chmurowe (Entra ID, M365)
+- logi M365 (Management Activity API) i prawdziwy tenant Entra ID (konektor gotowy, w laboratorium symulator)
+- lokalna baza GeoIP (kraj dla VPN i innych źródeł)
 
 Podsumowanie etapów i lista znanych luk: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
 
@@ -620,6 +621,75 @@ Każde zdarzenie z kontem dostaje **osobę** – kolumnę `user_identity` (pole 
   docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.events ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality"
   docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.events_replay ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality"
   ```
+
+### Entra ID i korelacje międzyźródłowe (etap 7)
+
+```
+Microsoft Graph ──HTTPS──► siem-connector ──mTLS:8443──► siem-ingest ──► (dalej jak zdarzenia agentów)
+(auditLogs/signIns, directoryAudits)   (kursor czasu, bufor dyskowy)
+```
+
+**Konektor** (`siem-connector`) to ten sam szkielet co kolektor syslog (`agent/internal/hostagent`): bufor, mTLS, heartbeat i rejestracja tokenem. Działanie:
+- co minutę pobiera z Microsoft Graph logowania i zmiany w katalogu Entra ID;
+- trzyma kursor czasu z zakładką 15 min, bo logi pojawiają się w Graph z opóźnieniem;
+- zaległości (pierwszy start, długa przerwa) nadrabia oknami godzinowymi;
+- przy limicie zapytań (429) czeka tyle, ile każe `Retry-After`;
+- odnawia token aplikacji;
+- identyfikator rekordu z Graph jest identyfikatorem zdarzenia, więc ponowne pobranie po restarcie nie tworzy duplikatów.
+
+Konfiguracja to `connector/connector.yaml`, sekcja `entra` (sekret aplikacji w osobnym pliku). Prawdziwy tenant wymaga:
+- rejestracji aplikacji w Entra ID z uprawnieniami aplikacji `AuditLog.Read.All` i `Directory.Read.All` oraz zgodą administratora;
+- licencji Entra ID P1 lub P2 – bez niej logowania nie są dostępne w Graph, zostają tylko zmiany w katalogu.
+
+**Symulator Microsoft Graph** (`tools/cmd/entrasim`, usługa `entrasim` w laboratorium) to API zgodne z Graph:
+- token OAuth2, filtr czasu, stronicowanie `@odata.nextLink`;
+- opóźnienie pojawiania się logów i co 7. zapytanie z odpowiedzią 429;
+- rekordy w kształcie zasobów `signIn` i `directoryAudit`.
+
+Konektor rozmawia z nim tak samo jak z Microsoftem, a prawdziwy tenant to tylko inne `tenant_id`, `client_id`, sekret i usunięte `login_url` / `graph_url`. Scenariusze na VM:
+
+```
+curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray&attacker=185.220.101.66'
+curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=foreign&user=anowak&attacker=203.0.113.210'
+```
+
+Nazwy scenariuszy:
+- `normal`,
+- `spray`,
+- `brute`,
+- `success-after-failures`,
+- `foreign`,
+- `mfa-fatigue`,
+- `admin-role`.
+
+Wdrożenie: `deploy/lab/deploy.sh connector`, a raz `deploy/lab/service-enroll.sh connector`. Skrypt rejestruje konektor, tworzy wspólny sekret i kieruje konektor na symulator.
+
+**Dekodery** (wbudowane):
+- `entra-signin` → `azure.signinlogs`:
+  - wynik z kodu błędu (0 – udane, 50126 – złe hasło, 50053 – blokada, 500121 – odrzucone MFA…), kod w `event.code`;
+  - kraj i miasto z lokalizacji Microsoftu (`source.geo.country_iso_code`);
+  - aplikacja i protokół klienta (`user_agent.client`, np. IMAP4 – stare uwierzytelnianie).
+- `entra-audit` → `azure.auditlogs`:
+  - akcja, konto wykonujące, konto zmieniane (`user.target.name`), nadana rola (`azure.role`).
+
+Reguły Sigma: `logsource.product: azure`, `service: signinlogs` albo `auditlogs`. Dekodery mają też stałe pola `set` i `outcome.otherwise`, a tablice JSON są rozwijane również z indeksem (`targetResources.0.userPrincipalName`).
+
+**Korelacje międzyźródłowe** działają po osobie (`user.identity`, sekcja „Tożsamości osób”):
+- **Password spraying z jednego adresu (wiele źródeł)** – reguła Sigma ([rules/cross](rules/cross/password_spraying_multi_source.yml)):
+  - nieudane logowania co najmniej 5 różnych osób z jednego adresu w 10 min, łącznie w AD, Entra ID, na VPN FortiGate i routerze;
+  - działa w obu silnikach.
+- **Udane logowanie po serii nieudanych (wiele źródeł)** – reguła wbudowana:
+  - udane logowanie osoby poprzedzone co najmniej 5 nieudanymi w ciągu 30 min, w dowolnych źródłach (np. próby na VPN, a potem wejście do chmury);
+  - w alercie jest udane logowanie i próby z serii.
+- **Logowanie z nowego kraju** – reguła wbudowana:
+  - udane logowanie z kraju, z którego osoba w ostatnich 30 dniach się nie logowała;
+  - osoby bez historii są pomijane;
+  - na razie korzysta z krajów Entra ID; VPN wymaga lokalnej bazy GeoIP.
+
+Reguły wbudowane `siem-detector` ocenia co minutę zapytaniami do ClickHouse:
+- okno 15 min, przy starcie 2 h wstecz;
+- konto `siem_detector`, także w trybie tylko „w locie”, o ile ustawione jest `SIEM_DETECTOR_CH_PASSWORD`;
+- silnik w alercie to „korelacja”.
 
 ### Archiwum NIS2 – Urd (siem-archiver)
 

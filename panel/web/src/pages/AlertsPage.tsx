@@ -31,7 +31,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 
-const engineLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", system: "wbudowana" };
+const engineLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", system: "wbudowana", correlation: "korelacja" };
 
 // Gjallarhorn – lista alertów (najnowsze pierwsze) z filtrami i akcjami zbiorczymi.
 export default function AlertsPage() {

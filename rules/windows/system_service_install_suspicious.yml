@@ -26,7 +26,25 @@ detection:
       - 'cmd.exe /c'
       - 'cmd /c'
       - '%COMSPEC%'
-  condition: selection and suspicious
+  # Program w Program Files albo aktualizacje Microsoft Defendera – zwykłe
+  # usługi (np. agent SIEM z konfiguracją w ProgramData), o ile to nie
+  # wywołanie PowerShell/cmd.
+  program_files:
+    ImagePath|startswith:
+      - 'C:\Program Files\'
+      - '"C:\Program Files\'
+      - 'C:\Program Files (x86)\'
+      - '"C:\Program Files (x86)\'
+  defender:
+    ImagePath|contains: '\ProgramData\Microsoft\Windows Defender\'
+  shell:
+    ImagePath|contains:
+      - 'powershell'
+      - 'pwsh'
+      - 'cmd.exe /c'
+      - 'cmd /c'
+      - '%COMSPEC%'
+  condition: selection and suspicious and not ((program_files or defender) and not shell)
 falsepositives:
   - Instalatory niektórych programów rozpakowujące usługi do ProgramData
 level: high

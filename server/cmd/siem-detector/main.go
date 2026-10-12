@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/alerts"
@@ -172,6 +173,7 @@ func serve(log *slog.Logger) error {
 			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
 		}
 		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule())
+		infos = append(infos, detector.CorrelationRules()...)
 		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
 			log.Warn("zapis reguł w bazie nieudany", "err", err)
@@ -188,12 +190,24 @@ func serve(log *slog.Logger) error {
 	var recordMu sync.Mutex
 	go runHeartbeat(ctx, log, store, &recordMu, m)
 	go runRetention(ctx, log, store, m)
+	var chConn driver.Conn
 	if indexOn {
 		idx, err := openIndex(ctx, log, store)
 		if err != nil {
 			return err
 		}
+		chConn = idx.Conn
 		go runIndex(ctx, log, idx, eng, store, &recordMu, m)
+	} else if os.Getenv("SIEM_DETECTOR_CH_PASSWORD") != "" {
+		if idx, err := openIndex(ctx, log, store); err == nil {
+			chConn = idx.Conn
+		}
+	}
+	// Korelacje międzyźródłowe (etap 7d) – zapytania do ClickHouse.
+	if chConn != nil {
+		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn}, store, &recordMu, m)
+	} else {
+		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
 	}
 	if !streamOn {
 		// Tylko zapytania: konsument strumienia nie może zostać, bo
@@ -555,6 +569,46 @@ func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 		}
 		if res.Alerts > 0 || res.Outbox > 0 {
 			log.Info("sprzątanie alertów", "closed_alerts", res.Alerts, "outbox", res.Outbox, "retention_days", days)
+		}
+	}
+}
+
+// runCorrelation: korelacje międzyźródłowe co minutę na zdarzeniach przyjętych
+// w ostatnich 15 min (do teraz − 2 min: zapis w ClickHouse); pierwszy
+// przebieg – 2 h wstecz. Zakładka okien jest bezpieczna: para (reguła,
+// zdarzenie) trafia do alertu raz.
+func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlator, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector) {
+	lookback := 2 * time.Hour
+	for {
+		to := time.Now().UTC().Add(-2 * time.Minute)
+		qctx, cancel := context.WithTimeout(ctx, 50*time.Second)
+		hits, err := c.Run(qctx, to.Add(-lookback), to)
+		cancel()
+		if err != nil {
+			m.Errors.WithLabelValues("correlation").Inc()
+			log.Warn("korelacje międzyźródłowe nieudane", "err", err)
+		} else {
+			lookback = 15 * time.Minute
+			if len(hits) > 0 {
+				mu.Lock()
+				res, err := store.Record(ctx, hits, nil)
+				mu.Unlock()
+				if err != nil {
+					m.Errors.WithLabelValues("record").Inc()
+					log.Error("zapis alertów korelacji nieudany", "err", err)
+				} else {
+					m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
+					m.Alerts.WithLabelValues("merged").Add(float64(res.Merged))
+					if res.NewAlerts > 0 {
+						log.Info("korelacje – nowe alerty", "count", res.NewAlerts, "merged", res.Merged)
+					}
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Minute):
 		}
 	}
 }

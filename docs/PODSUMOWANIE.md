@@ -1,8 +1,8 @@
 # Heimdall – podsumowanie etapów
 
-Stan na 09.10.2026 (etap 6). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
+Stan na 12.10.2026 (etap 7). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
 
-Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3, 4, 5 i 6. Następny według roadmapy: etap 7.
+Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3–7. Następny według roadmapy: etap 8.
 
 ---
 
@@ -162,6 +162,39 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **6d (09.10):** kwarantanna w panelu (grupy według źródła i powodu, oryginały) i ponowne przetwarzanie: panel → normalizator (NATS request-reply) → odzyskane zdarzenia w `SIEM_EVENTS` (zapis i detekcja, bez duplikatów w archiwum NIS2), wynik każdego wpisu w Sadze. Kwarantanna zapamiętuje adres nadawcy syslog.
 - **6e (09.10):** symulator FortiGate (`tools/cmd/fortisim`) i reguły progowe: seria nieudanych logowań do VPN FortiGate, do panelu FortiGate i do routera MikroTik. Laboratorium: symulowane ataki → alerty #22–#26 w obu silnikach; test zgodności silników z korpusem syslog (155/155 trafień). Przerwa łączności kolektor–serwer: 50 wiadomości z bufora dotarło po przywróceniu `siem-ingest`.
 - **Kryterium etapu (roadmapa):** logi FortiGate znormalizowane (symulator, wszystkie scenariusze), nowy dekoder utworzony w panelu przechodzi test na próbce. IIS (W3C) – parser `csv` z separatorem spacją go rozbiera, ale odczyt plików dziennika przez agenta to osobne źródło – przesunięte (razem z syslog po TLS).
+
+## Etap 7 – Entra ID i korelacja – zakończony (bez prawdziwego tenanta)
+
+- **7a (12.10):** tożsamość osoby w każdym zdarzeniu (`user_identity`):
+  - konto bez domeny, małymi literami – jeden klucz dla AD, Entra ID, VPN i routera;
+  - konta techniczne bez osoby, także polskie nazwy (`ZARZĄDZANIE NT`), konta wirtualne i SID;
+  - domeny organizacji i aliasy kont w panelu („Tożsamości”: osoby ze źródłami i kontami, podpowiedzi połączeń), dostarczane przez NATS KV;
+  - pole `user.identity` w regułach i `identity:` w Mímirze;
+  - laboratorium: `AZUJO\heimdall-lab` z DC i `heimdall-lab` z MikroTika to jedna osoba.
+- **7b (12.10):** konektor `siem-connector` (Microsoft Graph: logowania i zmiany w katalogu):
+  - kursor czasu z zakładką i nadrabianiem oknami, 429 z `Retry-After`, odnawianie tokenu;
+  - identyfikator rekordu Graph jako identyfikator zdarzenia (bez duplikatów po restarcie);
+  - wspólny szkielet z kolektorem;
+  - symulator Graph (`entrasim`) z opóźnieniem logów, ograniczaniem zapytań i scenariuszami ataków.
+  - Rejestracja agentów serwerowych jednym skryptem (`service-enroll.sh`). Poprawka przy okazji: `docker compose run` wczytywał resztę zdalnego skryptu.
+- **7c (12.10):** dekodery `entra-signin` (`azure.signinlogs`) i `entra-audit` (`azure.auditlogs`):
+  - źródła API bez nagłówka syslog;
+  - stałe pola `set`, wynik `otherwise`, tablice JSON z indeksem;
+  - `product: azure` w regułach.
+  - Laboratorium: 40 rekordów z symulatora rozkodowanych, bez kwarantanny.
+- **7d (12.10):** korelacje międzyźródłowe:
+  - reguła Sigma „Password spraying z jednego adresu (wiele źródeł)” – próg `distinct user.identity`; test zgodności silników 169/169 z korpusem AD + Entra + VPN;
+  - reguły wbudowane „Udane logowanie po serii nieudanych (wiele źródeł)” i „Logowanie z nowego kraju” – zapytania do ClickHouse co minutę, test na prawdziwym ClickHouse.
+  - Przy okazji poprawiona reguła „Nowa usługa z podejrzanej lokalizacji” (fałszywe alarmy na aktualizacjach Defendera i agencie SIEM z konfiguracją w ProgramData).
+- **7e (12.10) – ćwiczenie:**
+  - spraying łącznie AD + Entra z adresu stacji: 4 konta w AD (`net use`) i 1 w Entra, osobno poniżej progu → alert #49;
+  - spraying Entra + VPN → alert #37;
+  - 12 prób na VPN FortiGate, potem udane logowanie do Entra tej samej osoby z tego adresu (Nigeria) → „Udane logowanie po serii nieudanych” (#41, źródła `azure.signinlogs, fortinet.fortigate`) i „Logowanie z nowego kraju” (#42).
+- **Kryterium etapu (roadmapa):**
+  - password spraying wykryty łącznie z AD i Entra – spełnione;
+  - logowanie VPN i Entra powiązane z tą samą osobą – spełnione (osoba w zdarzeniach, korelacja);
+  - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
+- **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
 
 ## Przegląd etapu 6 (09.10.2026) – błędy i luki
 

@@ -130,6 +130,11 @@ func TestRepositoryRules(t *testing.T) {
 		map[string]string{"ScriptBlockText": "(New-Object Net.WebClient).DownloadFile('x','y')"}), false)
 	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `C:\Users\jan\AppData\Local\Temp\svc.exe`}), true)
 	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `"C:\Program Files\Vendor\svc.exe"`}), false)
+	// Fałszywe alarmy z laboratorium: agent SIEM (konfiguracja w ProgramData) i aktualizacje Defendera.
+	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `"C:\Program Files\SiemAgent\siem_agent.exe" -config C:\ProgramData\SiemAgent\agent.yaml`}), false)
+	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `C:\ProgramData\Microsoft\Windows Defender\Definition Updates\{3AD4}\MpKslDrv.sys`}), false)
+	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `"C:\Program Files\PowerShell\7\pwsh.exe" -c iex(x) C:\Users\a\x.ps1`}), true)
+	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `C:\ProgramData\updater\svc.exe`}), true)
 	must("9f379649-a04b-43de-b3a0-25587cf713de", ev("Security", 4720, nil), true)
 	cleared := ev("System", 104, nil)
 	cleared.Provider = "Microsoft-Windows-Eventlog"

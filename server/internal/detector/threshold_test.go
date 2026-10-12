@@ -137,8 +137,9 @@ func TestThresholdRestore(t *testing.T) {
 	}
 	// Nowy detektor (restart) ze stanem z bazy – 10. próba przekracza próg.
 	e = repoEngine(t)
-	// 9 prób w regule brute force i 9 w regule password spraying (ten sam adres).
-	if n := e.RestoreThresholds(saved); n != 18 {
+	// 9 prób w regule brute force, 9 w regule password spraying i 9 w regule
+	// sprayingu z wielu źródeł (ten sam adres).
+	if n := e.RestoreThresholds(saved); n != 27 {
 		t.Fatalf("odtworzono %d", n)
 	}
 	if h, _ := run(e, bruteID, failed(9, "jan", "10.0.0.5", t0.Add(time.Minute))); len(h) != 10 {

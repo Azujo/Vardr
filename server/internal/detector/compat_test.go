@@ -17,6 +17,7 @@ import (
 	"siem/internal/contract"
 	"siem/internal/decode"
 	"siem/internal/detect"
+	"siem/internal/identity"
 	"siem/internal/model"
 	"siem/server/internal/chwriter"
 )
@@ -77,6 +78,8 @@ func (c *corpus) add(channel string, code uint32, host string, at, late time.Dur
 		Dataset: "windows." + strings.ToLower(strings.ReplaceAll(channel, "/", ".")), Fields: fields,
 		Parser: model.ParserVersion}
 	e.UserName = f["TargetUserName"]
+	e.UserDomain = f["TargetDomainName"]
+	e.Identity = identity.New(identity.Config{}).Resolve(e.UserName, e.UserDomain)
 	if ip := strings.TrimPrefix(f["IpAddress"], "::ffff:"); ip != "" && ip != "-" {
 		e.SourceIP = ip
 	}
@@ -200,11 +203,16 @@ func (c *corpus) network() {
 		ts := compatT0.Add(at).In(loc)
 		raw := strings.NewReplacer("{bsd}", ts.Format(time.Stamp), "{date}", ts.Format("2006-01-02"),
 			"{time}", ts.Format("15:04:05")).Replace(line)
-		e, err := decode.Event(contract.Event{ID: fmt.Sprintf("collector:syslog:g0:%d", c.n), Raw: raw, Peer: "192.168.88.1"},
+		src := "syslog:udp"
+		if strings.HasPrefix(raw, "{") {
+			src = "entra:signin"
+		}
+		e, err := decode.Event(contract.Event{ID: fmt.Sprintf("collector:syslog:g0:%d", c.n), Source: src, Raw: raw, Peer: "192.168.88.1"},
 			"agt-collector", compatT0.Add(at+late+2*time.Second), set, loc)
 		if err != nil {
 			panic(err)
 		}
+		e.Identity = identity.New(identity.Config{}).Resolve(e.UserName, e.UserDomain)
 		c.events = append(c.events, e)
 	}
 	mt := func(at, late time.Duration, msg string) { add(at, late, "<131>{bsd} MikroTik "+msg) }
@@ -236,6 +244,25 @@ func (c *corpus) network() {
 	for i := range 5 {
 		add(8*time.Hour+time.Duration(i)*time.Minute, 0, `<185>date={date} time={time} devname="FGT-HQ" tz="+0200" `+
 			`logid="0100032002" type="event" subtype="system" user="admin" srcip=198.51.100.7 action="login" status="failed"`)
+	}
+	// Spraying z jednego adresu rozłożony na źródła (etap 7d): 2 konta w AD,
+	// 2 w Entra ID (jedno to ta sama osoba co w AD – nie liczy się podwójnie),
+	// 1 na VPN – razem 5 różnych osób w 10 min. Drugi adres: 4 osoby (poniżej progu).
+	spray := "198.51.100.50"
+	for i, u := range []string{"marta", "tomasz"} {
+		c.add("Security", 4625, "dc01", 9*time.Hour+time.Duration(i)*time.Minute, 0,
+			map[string]string{"TargetUserName": u, "TargetDomainName": "LAB", "IpAddress": spray})
+	}
+	entra := `{"id":"sp-%d","createdDateTime":"%s","userPrincipalName":"%s@lab.pl","ipAddress":"%s","appDisplayName":"Office 365",` +
+		`"clientAppUsed":"IMAP4","status":{"errorCode":50126,"failureReason":"Invalid password"},"location":{"countryOrRegion":"NL"}}`
+	for i, u := range []string{"Tomasz", "julia", "kamil"} {
+		ts := compatT0.Add(9*time.Hour + time.Duration(3+i)*time.Minute)
+		add(9*time.Hour+time.Duration(3+i)*time.Minute, 0, fmt.Sprintf(entra, i, ts.Format(time.RFC3339), u, spray))
+	}
+	add(9*time.Hour+7*time.Minute, 0, fmt.Sprintf(vpn, spray, "piotr.vpn"))
+	for i, u := range []string{"a1x", "a2x", "a3x", "a4x"} {
+		ts := compatT0.Add(9*time.Hour + time.Duration(i)*time.Minute)
+		add(9*time.Hour+time.Duration(i)*time.Minute, 0, fmt.Sprintf(entra, 10+i, ts.Format(time.RFC3339), u, "198.51.100.51"))
 	}
 }
 
