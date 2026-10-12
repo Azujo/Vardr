@@ -887,6 +887,10 @@ Sprawdzone na VM: odtworzenie 2446 paczek trwało 1,5 s i dało 100 117 zdarzeń
 
 `deploy.sh config` dopisuje do crontaba użytkownika `siem` wpis `@reboot ~/siem-lab/boot.sh`, który 30 s po starcie systemu uruchamia `docker compose up -d` (dziennik: `~/siem-lab/boot.log`). Sama polityka `restart: unless-stopped` nie wystarczyła: po wyłączeniu VM przyciskiem w Proxmoxie Docker nie podniósł NATS ani Prometheusa.
 
+### Klucz sortowania zdarzeń (od etapu 8)
+
+`siem.events` jest sortowana po `(event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)`. Silnik zapytań i korelacje czytają nowe zdarzenia po czasie przyjęcia, a dawny klucz bez `ingested` zmuszał je do czytania całej dziennej partycji. Instalację z dawnym kluczem przenosi `bash clickhouse/events-order.sh [prefiks_agentów_do_pominięcia]` w `~/siem-lab`. Skrypt na czas kopii zatrzymuje writer (zdarzenia czekają w NATS), porównuje liczbę wierszy w każdej partycji i zostawia starą tabelę jako `siem.events_old`.
+
 ### Kopie zapasowe
 
 Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) tworzy **jedną zaszyfrowaną paczkę** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` z:
