@@ -73,8 +73,17 @@ type IndexResult struct {
 	Failed []RuleFailure
 }
 
-// eventCols: kolumny zdarzenia w kolejności scanEvent.
-const eventCols = detect.EventColumns
+// eventCols: kolumny zdarzenia w kolejności scanEvent – bez surowego XML
+// (reguły dopasowuje SQL, a raw to większość danych zdarzenia: przy
+// nadrabianiu zaległości 50 000 wierszy zajmowało ok. 200 MB, etap 8).
+// Alias nie może się nazywać raw – w ClickHouse przesłoniłby kolumnę w WHERE.
+var eventCols = strings.Replace(detect.EventColumns, "fields, raw,", "fields, '' AS raw_skipped,", 1)
+
+func init() {
+	if eventCols == detect.EventColumns {
+		panic("detector: zmieniona lista kolumn detect.EventColumns – popraw eventCols")
+	}
+}
 
 func scanEvent(rows driver.Rows, extra ...any) (model.Event, error) {
 	var e model.Event

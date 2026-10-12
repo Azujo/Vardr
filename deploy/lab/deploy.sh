@@ -53,6 +53,9 @@ for t in "${targets[@]}"; do
     # pojedynczy plik (prometheus.yml, nats.conf, siem.xml) widzą nową treść;
     # podmiana pliku zostawiłaby im starą wersję.
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
+    # Start stosu po restarcie VM (boot.sh) – wpis @reboot w crontabie użytkownika.
+    remote "crontab -l 2>/dev/null | grep -q siem-lab/boot.sh || (crontab -l 2>/dev/null; echo '@reboot \$HOME/siem-lab/boot.sh') | crontab -" &&
+      echo "   start po restarcie VM: crontab @reboot boot.sh"
     remote "docker compose ps -q prometheus | grep -q . && docker compose kill -s HUP prometheus >/dev/null" &&
       echo "   Prometheus przeładował konfigurację" || true
     remote "docker compose ps -q nats | grep -q . && docker compose kill -s HUP nats >/dev/null" &&
