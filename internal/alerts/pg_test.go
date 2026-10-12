@@ -269,6 +269,37 @@ func TestPostgresAlerts(t *testing.T) {
 	if act, _ := db.Activity(ctx, ps.ID); len(act) != 0 {
 		t.Fatalf("oś czasu usuniętego alertu: %d", len(act))
 	}
+
+	// Zapis zbiorczy (etap 8): w jednej paczce seria łączy się w jeden alert,
+	// trafienie poza oknem tworzy drugi, a powtórzone zdarzenie jest duplikatem.
+	gk := func(ev string, at time.Time) Hit {
+		h := grouped(ev, at)
+		h.RuleID, h.GroupKey, h.GroupFields = "r-batch", "pc9", map[string]string{"Computer": "pc9"}
+		return h
+	}
+	tb := t0.Add(48 * time.Hour)
+	batch := []Hit{gk("b1", tb), gk("b2", tb.Add(30*time.Minute)), gk("b2", tb.Add(30*time.Minute)),
+		gk("b3", tb.Add(80*time.Minute)), gk("b4", tb.Add(5*time.Hour)), gk("b5", tb.Add(-20*time.Minute))}
+	res, err = db.Record(ctx, batch, nil)
+	if err != nil || res.NewAlerts != 2 || res.Merged != 3 || res.Duplicates != 1 {
+		t.Fatalf("paczka: %+v %v", res, err)
+	}
+	got, _, _ := db.Alerts(ctx, Filter{Status: "open", RuleID: "r-batch"})
+	byHits := map[int]Alert{}
+	for _, a := range got {
+		byHits[a.Hits] = a
+	}
+	if a := byHits[4]; len(got) != 2 || a.ID == 0 || !a.FirstSeen.Equal(tb.Add(-20*time.Minute)) || !a.LastSeen.Equal(tb.Add(80*time.Minute)) {
+		t.Fatalf("alerty paczki: %+v", got)
+	}
+	if evs, _ := db.AlertEvents(ctx, byHits[4].ID, 10); len(evs) != 4 {
+		t.Fatalf("zdarzenia alertu paczki: %d", len(evs))
+	}
+	// Następna paczka dołącza do istniejącego alertu (zapytanie o otwarte alerty).
+	res, _ = db.Record(ctx, []Hit{gk("b6", tb.Add(90*time.Minute))}, nil)
+	if res.Merged != 1 || res.NewAlerts != 0 {
+		t.Fatalf("dołączenie: %+v", res)
+	}
 }
 
 func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {

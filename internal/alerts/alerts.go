@@ -339,56 +339,173 @@ func (p *PG) record(ctx context.Context, hits []Hit, obs []Observation, extra fu
 				return err
 			}
 		}
-		for _, h := range hits {
-			// Najpierw rezerwacja (reguła, zdarzenie) – blokuje równoległy zapis tego samego zdarzenia.
-			tag, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)
-				VALUES ($1, $2, NULL, $3) ON CONFLICT DO NOTHING`, h.RuleID, h.EventID, h.EventTime)
-			if err != nil {
-				return err
-			}
-			if tag.RowsAffected() == 0 {
-				res.Duplicates++
-				continue
-			}
-			var alertID int64
-			if h.GroupFields != nil && h.Suppress > 0 {
-				err := tx.QueryRow(ctx, `SELECT id FROM gjallarhorn.alerts
-					WHERE rule_id = $1 AND group_key = $2 AND status <> 'closed' AND last_seen >= $3 AND first_seen <= $4
-					ORDER BY id DESC LIMIT 1 FOR UPDATE`, h.RuleID, h.GroupKey, h.EventTime.Add(-h.Suppress),
-					h.EventTime.Add(h.Suppress)).Scan(&alertID)
-				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-					return err
-				}
-			}
-			if alertID != 0 {
-				if _, err := tx.Exec(ctx, `UPDATE gjallarhorn.alerts SET hits = hits + 1,
-					last_seen = greatest(last_seen, $2), first_seen = least(first_seen, $2), updated_at = now() WHERE id = $1`,
-					alertID, h.EventTime); err != nil {
-					return err
-				}
-				res.Merged++
-			} else {
-				gf, _ := json.Marshal(nonNilMap(h.GroupFields))
-				if err := tx.QueryRow(ctx, `INSERT INTO gjallarhorn.alerts (rule_id, rule_title, level, engine, group_key, group_fields,
-					first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions)
-					VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
-					h.RuleID, h.RuleTitle, h.Level, h.Engine, h.GroupKey, gf, h.EventTime, h.AgentID, h.HostName, h.UserName,
-					h.SourceIP, h.EventID, h.Summary, h.Instructions).Scan(&alertID); err != nil {
-					return err
-				}
-				if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.outbox (alert_id) VALUES ($1)`, alertID); err != nil {
-					return err
-				}
-				res.NewAlerts++
-			}
-			if _, err := tx.Exec(ctx, `UPDATE gjallarhorn.alert_events SET alert_id = $3 WHERE rule_id = $1 AND event_id = $2`,
-				h.RuleID, h.EventID, alertID); err != nil {
-				return err
-			}
-		}
-		return nil
+		return recordHits(ctx, tx, hits, &res)
 	})
 	return res, err
+}
+
+// recordHits zapisuje trafienia operacjami zbiorczymi (etap 8: przy
+// długim ataku – setki trafień na sekundę dołączanych do tego samego alertu –
+// cztery polecenia na trafienie obciążały bazę bardziej niż reszta systemu):
+//
+//  1. rezerwacja par (reguła, zdarzenie) jednym INSERT-em – zdarzenia już
+//     przypisane (ponowne dostarczenie) są pomijane;
+//  2. otwarte alerty kluczy z paczki jednym zapytaniem (FOR UPDATE);
+//  3. łączenie w pamięci w kolejności trafień – jak wcześniej: alert reguły
+//     i klucza z okna ±Suppress o największym id, w tym utworzony przed
+//     chwilą w tej samej paczce;
+//  4. jedna aktualizacja na alert i jedno zbiorcze przypisanie zdarzeń.
+func recordHits(ctx context.Context, tx pgx.Tx, hits []Hit, res *RecordResult) error {
+	if len(hits) == 0 {
+		return nil
+	}
+	rules := make([]string, len(hits))
+	events := make([]string, len(hits))
+	times := make([]time.Time, len(hits))
+	for i, h := range hits {
+		rules[i], events[i], times[i] = h.RuleID, h.EventID, h.EventTime
+	}
+	rows, err := tx.Query(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)
+		SELECT r, e, NULL, t FROM unnest($1::text[], $2::text[], $3::timestamptz[]) AS h(r, e, t)
+		ON CONFLICT DO NOTHING RETURNING rule_id, event_id`, rules, events, times)
+	if err != nil {
+		return err
+	}
+	reserved := map[[2]string]bool{}
+	for rows.Next() {
+		var r, e string
+		if err := rows.Scan(&r, &e); err != nil {
+			rows.Close()
+			return err
+		}
+		reserved[[2]string{r, e}] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var fresh []Hit
+	for _, h := range hits {
+		k := [2]string{h.RuleID, h.EventID}
+		if !reserved[k] {
+			res.Duplicates++
+			continue
+		}
+		delete(reserved, k) // to samo zdarzenie drugi raz w paczce – duplikat
+		fresh = append(fresh, h)
+	}
+	if len(fresh) == 0 {
+		return nil
+	}
+
+	type open struct {
+		id          int64
+		first, last time.Time
+		hits        int
+		touched     bool
+	}
+	cands := map[[2]string][]*open{} // (reguła, klucz) → otwarte alerty
+	var keyRules, keyKeys []string
+	var lo, hi time.Time
+	seen := map[[2]string]bool{}
+	for _, h := range fresh {
+		if h.GroupFields == nil || h.Suppress <= 0 {
+			continue
+		}
+		if a := h.EventTime.Add(-h.Suppress); lo.IsZero() || a.Before(lo) {
+			lo = a
+		}
+		if b := h.EventTime.Add(h.Suppress); b.After(hi) {
+			hi = b
+		}
+		if k := [2]string{h.RuleID, h.GroupKey}; !seen[k] {
+			seen[k] = true
+			keyRules, keyKeys = append(keyRules, h.RuleID), append(keyKeys, h.GroupKey)
+		}
+	}
+	if len(keyRules) > 0 {
+		rows, err := tx.Query(ctx, `SELECT a.id, a.rule_id, a.group_key, a.first_seen, a.last_seen FROM gjallarhorn.alerts a
+			JOIN unnest($1::text[], $2::text[]) AS k(r, g) ON a.rule_id = k.r AND a.group_key = k.g
+			WHERE a.status <> 'closed' AND a.last_seen >= $3 AND a.first_seen <= $4
+			ORDER BY a.id FOR UPDATE OF a`, keyRules, keyKeys, lo, hi)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var o open
+			var r, g string
+			if err := rows.Scan(&o.id, &r, &g, &o.first, &o.last); err != nil {
+				rows.Close()
+				return err
+			}
+			k := [2]string{r, g}
+			cands[k] = append(cands[k], &o)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+
+	ids := make([]int64, len(fresh))
+	for i, h := range fresh {
+		var target *open
+		k := [2]string{h.RuleID, h.GroupKey}
+		if h.GroupFields != nil && h.Suppress > 0 {
+			for _, o := range cands[k] { // rosnąco po id – wygrywa największe
+				if !o.last.Before(h.EventTime.Add(-h.Suppress)) && !o.first.After(h.EventTime.Add(h.Suppress)) {
+					target = o
+				}
+			}
+		}
+		if target != nil {
+			target.hits++
+			target.touched = true
+			if h.EventTime.After(target.last) {
+				target.last = h.EventTime
+			}
+			if h.EventTime.Before(target.first) {
+				target.first = h.EventTime
+			}
+			ids[i] = target.id
+			res.Merged++
+			continue
+		}
+		gf, _ := json.Marshal(nonNilMap(h.GroupFields))
+		var id int64
+		if err := tx.QueryRow(ctx, `INSERT INTO gjallarhorn.alerts (rule_id, rule_title, level, engine, group_key, group_fields,
+			first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+			h.RuleID, h.RuleTitle, h.Level, h.Engine, h.GroupKey, gf, h.EventTime, h.AgentID, h.HostName, h.UserName,
+			h.SourceIP, h.EventID, h.Summary, h.Instructions).Scan(&id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.outbox (alert_id) VALUES ($1)`, id); err != nil {
+			return err
+		}
+		res.NewAlerts++
+		ids[i] = id
+		if h.GroupFields != nil && h.Suppress > 0 {
+			cands[k] = append(cands[k], &open{id: id, first: h.EventTime, last: h.EventTime})
+		}
+	}
+	b := &pgx.Batch{}
+	for _, list := range cands {
+		for _, o := range list {
+			if o.touched {
+				b.Queue(`UPDATE gjallarhorn.alerts SET hits = hits + $2, last_seen = greatest(last_seen, $3),
+					first_seen = least(first_seen, $4), updated_at = now() WHERE id = $1`, o.id, o.hits, o.last, o.first)
+			}
+		}
+	}
+	fr := make([]string, len(fresh))
+	fe := make([]string, len(fresh))
+	for i, h := range fresh {
+		fr[i], fe[i] = h.RuleID, h.EventID
+	}
+	b.Queue(`UPDATE gjallarhorn.alert_events a SET alert_id = h.id
+		FROM unnest($1::text[], $2::text[], $3::bigint[]) AS h(r, e, id) WHERE a.rule_id = h.r AND a.event_id = h.e`, fr, fe, ids)
+	return tx.SendBatch(ctx, b).Close()
 }
 
 func nonNilMap(m map[string]string) map[string]string {
