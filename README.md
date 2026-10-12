@@ -597,6 +597,30 @@ end
   - `-attacker <adres>`,
   - `-dry` (tylko wypisanie).
 
+### Tożsamości osób (etap 7a)
+
+Każde zdarzenie z kontem dostaje **osobę** – kolumnę `user_identity` (pole `user.identity` w regułach, `identity:` albo `osoba:` w Mímirze). Klucz to nazwa konta bez domeny, małymi literami, więc to samo konto w AD (`AZUJO\jkowalski`), w Entra ID (`jkowalski@azujo.pl`), na VPN FortiGate i na routerze (`jkowalski`) to jedna osoba. Reguły mogą liczyć progi i grupować po osobie niezależnie od źródła.
+
+- **Konta techniczne** nie mają osoby:
+  - konta komputerów (`…$`);
+  - SYSTEM i usługi wbudowane, także w polskiej wersji Windows (`ZARZĄDZANIE NT`, `USŁUGA LOKALNA`);
+  - konta wirtualne usług i surowe SID.
+- **Domeny organizacji** (panel → Tożsamości) to nazwy NetBIOS i DNS, np. `azujo`, `azujo.centrala`, `azujo.pl`.
+  - Konta z innych domen zostają osobnymi tożsamościami z domeną: lokalne konta komputerów (`desktop-1\admin`) i goście (`partner@obca.pl`).
+  - Pusta lista oznacza, że każda domena należy do organizacji.
+- **Aliasy** przypisują inne nazwy do osoby, np. login VPN `j.kowalski` → `jkowalski`.
+  - Kluczem aliasu może być konto, `DOMENA\konto` albo UPN.
+  - Aliasy nie tworzą łańcuchów.
+  - Zakładka „Podpowiedzi” wskazuje osoby różniące się tylko kropkami, podkreśleniami lub myślnikami („połącz” dodaje aliasy).
+- Zakładka „Osoby” pokazuje najaktywniejsze osoby: źródła, konta, liczbę zdarzeń i nieudanych prób, komputery.
+- Konfiguracja trafia do normalizatorów i archiwizatora przez NATS KV `SIEM_IDENTITY` w ciągu kilku sekund. Panel wyrównuje ją przy starcie i co 5 min. Zdarzenia już zapisane się nie zmieniają.
+- Instalacje sprzed etapu 7 – jednorazowo, przed wdrożeniem nowego `siem-writer` i `siem-detector`:
+
+  ```
+  docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.events ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality"
+  docker compose exec -T clickhouse clickhouse-client -q "ALTER TABLE siem.events_replay ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality"
+  ```
+
 ### Archiwum NIS2 – Urd (siem-archiver)
 
 Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skompresowane tak, jak przyszły) w katalogu `~/siem-lab/archive`. Jest osobnym odbiorcą kolejki `SIEM_RAW`, więc paczka znika z kolejki dopiero wtedy, gdy zapiszą ją oba etapy: normalizator i archiwum.

@@ -51,6 +51,7 @@ type Event struct {
 	Outcome   string    `json:"outcome"`
 	User      string    `json:"user"`
 	Domain    string    `json:"domain"`
+	Identity  string    `json:"identity,omitempty"`
 	IP        string    `json:"ip"`
 	Process   string    `json:"process"`
 	Message   string    `json:"message"`
@@ -80,7 +81,7 @@ type Cursor struct {
 const ipExpr = `if(source_ip = toIPv6('::'), '', replaceRegexpOne(toString(source_ip), '^::ffff:', ''))`
 
 const listCols = `timestamp, event_id, agent_id, host_name, event_dataset, event_code, event_action, event_outcome,
-	user_name, user_domain, ` + ipExpr + `, process_name, substring(message, 1, 300)`
+	user_name, user_domain, ` + ipExpr + `, process_name, substring(message, 1, 300), user_identity`
 
 // where buduje warunek: zakres czasu (z zawężeniem partycji po czasie
 // przyjęcia) i warunki zapytania.
@@ -124,7 +125,7 @@ func (s *Searcher) Search(ctx context.Context, p Parsed, from, to time.Time, bef
 	for rows.Next() {
 		var e Event
 		if err := rows.Scan(&e.Timestamp, &e.ID, &e.AgentID, &e.Host, &e.Dataset, &e.Code, &e.Action, &e.Outcome,
-			&e.User, &e.Domain, &e.IP, &e.Process, &e.Message); err != nil {
+			&e.User, &e.Domain, &e.IP, &e.Process, &e.Message, &e.Identity); err != nil {
 			return nil, err
 		}
 		if len(out) > 0 && out[len(out)-1].ID == e.ID {
@@ -190,7 +191,7 @@ func (s *Searcher) Get(ctx context.Context, id string, ts time.Time, replay bool
 	var d Detail
 	e := &d.Event
 	err := row.Scan(&e.Timestamp, &e.ID, &e.AgentID, &e.Host, &e.Dataset, &e.Code, &e.Action, &e.Outcome,
-		&e.User, &e.Domain, &e.IP, &e.Process, &e.Message,
+		&e.User, &e.Domain, &e.IP, &e.Process, &e.Message, &e.Identity,
 		&d.Ingested, &d.Provider, &d.CommandLine, &d.Fields, &d.Raw, &d.Truncated, &d.Parser, &d.TimeQuality)
 	if err != nil {
 		if strings.Contains(err.Error(), "no rows") {

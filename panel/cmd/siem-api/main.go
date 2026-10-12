@@ -32,6 +32,7 @@ import (
 	"siem/internal/decode"
 	"siem/internal/decodekv"
 	"siem/internal/fleet"
+	"siem/internal/identity"
 	"siem/internal/reprocess"
 	"siem/internal/svc"
 	"siem/internal/urd"
@@ -149,6 +150,8 @@ func serve(log *slog.Logger) error {
 	apiServer.Decoders = decoders
 	quarantine := &api.Quarantine{Store: db, Log: log}
 	apiServer.Quarantine = quarantine
+	identities := &api.Identities{Store: db}
+	apiServer.Identities = identities
 	if n, err := db.AbortRunningQuarantineJobs(ctx); err != nil {
 		return err
 	} else if n > 0 {
@@ -169,6 +172,7 @@ func serve(log *slog.Logger) error {
 		apiServer.RuleTester = searcher
 		decoders.Samples = searcher
 		quarantine.Source = searcher
+		identities.People = searcher
 		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
 	} else {
 		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
@@ -299,6 +303,38 @@ func serve(log *slog.Logger) error {
 			}
 			return nil
 		}
+		// Tożsamości: zmiana od razu do NATS KV, wyrównanie przy starcie i co 5 min.
+		identities.Publish = func(ctx context.Context, c identity.Config) error {
+			kv, err := identity.Ensure(ctx, js)
+			if err != nil {
+				return err
+			}
+			return identity.Publish(ctx, kv, c)
+		}
+		go func() {
+			sync := func() error {
+				c, err := identities.Config(ctx)
+				if err != nil {
+					return err
+				}
+				return identities.Publish(ctx, c)
+			}
+			if svc.Retry(ctx, log, "synchronizacja tożsamości", sync) != nil {
+				return
+			}
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-t.C:
+					if err := sync(); err != nil {
+						log.Warn("synchronizacja tożsamości z NATS nieudana", "err", err)
+					}
+				}
+			}
+		}()
 		// Kwarantanna: części zleceń do normalizatora (request-reply).
 		quarantine.Request = func(ctx context.Context, data []byte) ([]byte, error) {
 			m, err := nc.RequestWithContext(ctx, reprocess.Subject, data)

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS siem.events_replay
     truncated            Bool,
     parser_version       LowCardinality(String),
     time_quality         LowCardinality(String),
+    user_identity        LowCardinality(String) DEFAULT '',
     replay_id            UInt32,
     replayed_at          DateTime64(3, 'UTC') DEFAULT now64(3),
 
@@ -48,6 +49,7 @@ ORDER BY (replay_id, event_dataset, host_name, timestamp, event_id)
 TTL toDateTime(replayed_at) + INTERVAL ${ttl} DAY
 SETTINGS ttl_only_drop_parts = 1;
 
+ALTER TABLE siem.events_replay ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality;
 ALTER TABLE siem.events_replay MODIFY TTL toDateTime(replayed_at) + INTERVAL ${ttl} DAY;
 SQL
 echo "tabela siem.events_replay gotowa (retencja ${ttl} dni od odtworzenia)"

@@ -51,6 +51,7 @@ const compatDDL = `CREATE TABLE compat_test.events
     truncated            Bool,
     parser_version       LowCardinality(String),
     time_quality         LowCardinality(String),
+    user_identity        LowCardinality(String) DEFAULT '',
     INDEX idx_ingested ingested TYPE minmax GRANULARITY 1
 )
 ENGINE = ReplacingMergeTree(ingested)

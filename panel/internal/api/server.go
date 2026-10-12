@@ -88,6 +88,8 @@ type Server struct {
 	Decoders *Decoders
 	// Quarantine (opcjonalne) – kwarantanna i jej ponowne przetwarzanie.
 	Quarantine *Quarantine
+	// Identities (opcjonalne) – tożsamości osób (domeny, aliasy kont).
+	Identities *Identities
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -191,6 +193,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /api/v1/decoders/{id}", s.authed(roleAdmin, 0, s.saveDecoder))
 	mux.Handle("POST /api/v1/decoders/{id}/enabled", s.authed(roleAdmin, 0, s.setDecoderEnabled))
 	mux.Handle("POST /api/v1/decoders/{id}/revert", s.authed(roleAdmin, 0, s.revertDecoder))
+
+	mux.Handle("GET /api/v1/identities", s.authed(roleViewer, 0, s.getIdentities))
+	mux.Handle("GET /api/v1/identities/people", s.authed(roleViewer, 0, s.listPeople))
+	mux.Handle("GET /api/v1/identities/resolve", s.authed(roleViewer, 0, s.resolveIdentity))
+	mux.Handle("PUT /api/v1/identities/domains", s.authed(roleAdmin, 0, s.setIdentityDomains))
+	mux.Handle("POST /api/v1/identities/aliases", s.authed(roleAdmin, 0, s.setIdentityAlias))
+	mux.Handle("POST /api/v1/identities/aliases/delete", s.authed(roleAdmin, 0, s.deleteIdentityAlias))
 
 	mux.Handle("GET /api/v1/quarantine", s.authed(roleViewer, 0, s.listQuarantine))
 	mux.Handle("POST /api/v1/quarantine/reprocess", s.authed(roleAdmin, 0, s.reprocessQuarantine))

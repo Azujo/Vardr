@@ -11,6 +11,7 @@ import (
 
 	"siem/internal/contract"
 	"siem/internal/decode"
+	"siem/internal/identity"
 	"siem/internal/model"
 )
 
@@ -38,6 +39,14 @@ var ErrUnsupportedSource = errors.New("brak dekodera dla źródła")
 
 // Event normalizuje pojedyncze zdarzenie z paczki agenta.
 func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, error) {
+	e, err := event(ev, agentID, ingested)
+	if err == nil {
+		e.Identity = identity.Current().Resolve(e.UserName, e.UserDomain)
+	}
+	return e, err
+}
+
+func event(ev contract.Event, agentID string, ingested time.Time) (model.Event, error) {
 	if strings.HasPrefix(ev.Source, "syslog:") {
 		return decode.Event(ev, agentID, ingested, Decoders.Load(), SyslogLocation)
 	}

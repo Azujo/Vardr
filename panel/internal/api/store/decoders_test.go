@@ -98,3 +98,50 @@ func TestPostgresQuarantineJobs(t *testing.T) {
 		t.Fatalf("wyniki: %+v %v", out, err)
 	}
 }
+
+func TestPostgresIdentities(t *testing.T) {
+	url := os.Getenv("SIEM_TEST_PG_URL")
+	if url == "" {
+		t.Skip("brak SIEM_TEST_PG_URL – pomijam test na PostgreSQL")
+	}
+	ctx := context.Background()
+	db, err := Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.pool.Exec(ctx, "TRUNCATE identity_domains, identity_aliases"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetIdentityDomains(ctx, []string{"azujo", "azujo.pl"}, "adam"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetIdentityDomains(ctx, []string{"azujo.pl", "azujo.centrala"}, "adam"); err != nil {
+		t.Fatal(err)
+	}
+	if ds, err := db.IdentityDomains(ctx); err != nil || len(ds) != 2 || ds[0] != "azujo.centrala" {
+		t.Fatalf("domeny: %v %v", ds, err)
+	}
+	if err := db.SetIdentityDomains(ctx, []string{"Duże"}, "adam"); err == nil {
+		t.Fatal("baza powinna odrzucić domenę z wielkimi literami")
+	}
+	if err := db.SetIdentityAlias(ctx, IdentityAlias{Alias: "j.kowalski", Identity: "jkowalski", CreatedBy: "adam"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetIdentityAlias(ctx, IdentityAlias{Alias: "j.kowalski", Identity: "jan", Note: "zmiana", CreatedBy: "ola"}); err != nil {
+		t.Fatal(err)
+	}
+	as, err := db.IdentityAliases(ctx)
+	if err != nil || len(as) != 1 || as[0].Identity != "jan" || as[0].CreatedBy != "ola" {
+		t.Fatalf("aliasy: %+v %v", as, err)
+	}
+	if _, err := db.DeleteIdentityAlias(ctx, "j.kowalski"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DeleteIdentityAlias(ctx, "j.kowalski"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("drugie usunięcie: %v", err)
+	}
+}

@@ -9,18 +9,21 @@ const ParserVersion = "winevt-1"
 
 // Event to znormalizowane zdarzenie – jeden wiersz tabeli siem.events.
 type Event struct {
-	Timestamp   time.Time         `json:"timestamp"` // czas wystąpienia (UTC)
-	Ingested    time.Time         `json:"ingested"`  // czas przyjęcia przez serwer
-	ID          string            `json:"event_id"`
-	AgentID     string            `json:"agent_id"`
-	Dataset     string            `json:"event_dataset"` // np. windows.security
-	Code        uint32            `json:"event_code"`    // Event ID Windows
-	Provider    string            `json:"event_provider"`
-	Action      string            `json:"event_action"`
-	Outcome     string            `json:"event_outcome"` // success | failure | ""
-	HostName    string            `json:"host_name"`
-	UserName    string            `json:"user_name"`
-	UserDomain  string            `json:"user_domain"`
+	Timestamp  time.Time `json:"timestamp"` // czas wystąpienia (UTC)
+	Ingested   time.Time `json:"ingested"`  // czas przyjęcia przez serwer
+	ID         string    `json:"event_id"`
+	AgentID    string    `json:"agent_id"`
+	Dataset    string    `json:"event_dataset"` // np. windows.security
+	Code       uint32    `json:"event_code"`    // Event ID Windows
+	Provider   string    `json:"event_provider"`
+	Action     string    `json:"event_action"`
+	Outcome    string    `json:"event_outcome"` // success | failure | ""
+	HostName   string    `json:"host_name"`
+	UserName   string    `json:"user_name"`
+	UserDomain string    `json:"user_domain"`
+	// Identity: osoba stojąca za kontem (user.identity) – ten sam klucz dla
+	// konta w AD, Entra ID i na VPN (internal/identity).
+	Identity    string            `json:"user_identity,omitempty"`
 	SourceIP    string            `json:"source_ip"`
 	ProcessName string            `json:"process_name"`
 	CommandLine string            `json:"process_command_line"`

@@ -261,6 +261,7 @@ export interface EventRow {
   outcome: string;
   user: string;
   domain: string;
+  identity?: string;
   ip: string;
   process: string;
   message: string;
@@ -1056,4 +1057,44 @@ export const quarantineApi = {
   },
   reprocess: (f: QuarantineFilterParams & { event_ids?: string[] }) =>
     request<{ job: QuarantineJob; limited: boolean }>("POST", "/api/v1/quarantine/reprocess", f),
+};
+
+// ---- Tożsamości osób ----
+
+export interface IdentityAlias {
+  alias: string;
+  identity: string;
+  note?: string;
+  created_at: string;
+  created_by: string;
+}
+
+export interface Person {
+  identity: string;
+  events: number;
+  failures: number;
+  last: string;
+  datasets: string[];
+  accounts: string[];
+  hosts: number;
+}
+
+export const identitiesApi = {
+  get: () =>
+    request<{ domains: string[]; aliases: IdentityAlias[]; delivery: boolean; people: boolean }>("GET", "/api/v1/identities"),
+  people: (hours: number, q: string) =>
+    request<{ people: Person[]; suggestions: { identities: string[] }[] }>(
+      "GET",
+      `/api/v1/identities/people?hours=${hours}&q=${encodeURIComponent(q)}`,
+    ),
+  resolve: (user: string, domain: string) =>
+    request<{ identity: string }>(
+      "GET",
+      `/api/v1/identities/resolve?user=${encodeURIComponent(user)}&domain=${encodeURIComponent(domain)}`,
+    ),
+  setDomains: (domains: string[]) =>
+    request<{ domains: string[]; message: string }>("PUT", "/api/v1/identities/domains", { domains }),
+  setAlias: (alias: string, identity: string, note: string) =>
+    request<{ message: string }>("POST", "/api/v1/identities/aliases", { alias, identity, note }),
+  deleteAlias: (alias: string) => request<{ message: string }>("POST", "/api/v1/identities/aliases/delete", { alias }),
 };

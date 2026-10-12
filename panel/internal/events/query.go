@@ -43,6 +43,7 @@ var Fields = map[string]field{
 	"agent":    {"agent_id", kindLowCard, "identyfikator agenta"},
 	"user":     {"user_name", kindString, "użytkownik"},
 	"domain":   {"user_domain", kindLowCard, "domena użytkownika"},
+	"identity": {"user_identity", kindLowCard, "osoba (to samo konto w AD, Entra, na VPN)"},
 	"ip":       {"source_ip", kindIP, "adres źródłowy"},
 	"code":     {"event_code", kindNumber, "Event ID Windows"},
 	"action":   {"event_action", kindLowCard, "akcja, np. logon-failed"},
@@ -53,7 +54,8 @@ var Fields = map[string]field{
 }
 
 // Aliasy pól.
-var aliases = map[string]string{"id": "code", "eventid": "code", "channel": "dataset", "src": "ip", "computer": "host"}
+var aliases = map[string]string{"id": "code", "eventid": "code", "channel": "dataset", "src": "ip", "computer": "host",
+	"osoba": "identity", "person": "identity"}
 
 var fieldsKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 

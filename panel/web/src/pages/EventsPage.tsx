@@ -181,6 +181,7 @@ function EventDrawer({
               ["Akcja", ev.action || "—"],
               ["Wynik", ev.outcome || "—"],
               ["Użytkownik", ev.user ? (ev.domain ? `${ev.domain}\\${ev.user}` : ev.user) : "—"],
+              ["Osoba", ev.identity || "—"],
               ["Adres IP", ev.ip || "—"],
               ["Proces", ev.process || "—"],
               ["Identyfikator", ev.event_id],
@@ -500,7 +501,14 @@ export default function EventsPage() {
                     </Text>
                   )}
                 </Table.Td>
-                <Table.Td style={{ whiteSpace: "nowrap" }}>{cell("user", r.user)}</Table.Td>
+                <Table.Td style={{ whiteSpace: "nowrap" }}>
+                  {cell("user", r.user)}
+                  {r.identity && r.identity !== r.user.toLowerCase() && (
+                    <Text size="xs" c="dimmed">
+                      osoba: {cell("identity", r.identity)}
+                    </Text>
+                  )}
+                </Table.Td>
                 <Table.Td style={{ whiteSpace: "nowrap" }}>{cell("ip", r.ip)}</Table.Td>
                 <Table.Td maw={380}>
                   <Text size="sm" lineClamp={1} c="dimmed">

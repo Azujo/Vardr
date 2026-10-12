@@ -13,6 +13,7 @@ import AlertDetailPage from "./pages/AlertDetailPage";
 import RulesPage from "./pages/RulesPage";
 import DecodersPage from "./pages/DecodersPage";
 import QuarantinePage from "./pages/QuarantinePage";
+import IdentitiesPage from "./pages/IdentitiesPage";
 import SystemPage from "./pages/SystemPage";
 import AgentsPage from "./pages/AgentsPage";
 import AgentDetailPage from "./pages/AgentDetailPage";
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/decoders" element={<DecodersPage />} />
         <Route path="/quarantine" element={<QuarantinePage />} />
+        <Route path="/identities" element={<IdentitiesPage />} />
         <Route path="/system" element={<SystemPage />} />
         <Route path="/account/password" element={<ChangePasswordPage />} />
         {admin && <Route path="/admin/users" element={<UsersPage />} />}

@@ -11,6 +11,7 @@ import (
 
 	"siem/internal/decode"
 	"siem/internal/decodekv"
+	"siem/internal/identity"
 	"siem/internal/svc"
 )
 
@@ -67,5 +68,17 @@ func WatchDecoders(ctx context.Context, js jetstream.JetStream, log *slog.Logger
 			}
 			log.Info("dekodery syslog wczytane", "decoders", n, "changed_in_panel", len(custom))
 		})
+	})
+}
+
+// WatchIdentity obserwuje konfigurację tożsamości z panelu (NATS KV) do
+// zakończenia ctx. Do czasu wczytania: każda domena „swoja”, bez aliasów.
+func WatchIdentity(ctx context.Context, js jetstream.JetStream, log *slog.Logger) {
+	_ = svc.Retry(ctx, log, "tożsamości z panelu", func() error {
+		kv, err := identity.Ensure(ctx, js)
+		if err != nil {
+			return err
+		}
+		return identity.Watch(ctx, kv, log)
 	})
 }

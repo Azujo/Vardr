@@ -17,12 +17,12 @@ import (
 
 const insertEvents = `INSERT INTO siem.events (timestamp, ingested, event_id, agent_id, event_dataset, event_code,
 	event_provider, event_action, event_outcome, host_name, user_name, user_domain, source_ip, process_name,
-	process_command_line, message, fields, raw, truncated, parser_version, time_quality)`
+	process_command_line, message, fields, raw, truncated, parser_version, time_quality, user_identity)`
 
 // insertReplayEvents: zdarzenia odtworzone z archiwum (osobna tabela).
 const insertReplayEvents = `INSERT INTO siem.events_replay (timestamp, ingested, event_id, agent_id, event_dataset, event_code,
 	event_provider, event_action, event_outcome, host_name, user_name, user_domain, source_ip, process_name,
-	process_command_line, message, fields, raw, truncated, parser_version, time_quality, replay_id)`
+	process_command_line, message, fields, raw, truncated, parser_version, time_quality, user_identity, replay_id)`
 
 const insertQuarantine = `INSERT INTO siem.quarantine (ingested, agent_id, event_id, source, reason, raw, peer, truncated)`
 
@@ -71,7 +71,7 @@ func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
 	for _, e := range events {
 		row := []any{e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
 			e.Provider, e.Action, e.Outcome, e.HostName, e.UserName, e.UserDomain, ipv6(e.SourceIP), e.ProcessName,
-			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality}
+			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality, e.Identity}
 		if w.Replay {
 			row = append(row, e.ReplayID)
 		}

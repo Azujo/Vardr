@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS siem.events
     truncated            Bool,
     parser_version       LowCardinality(String),
     time_quality         LowCardinality(String),
+    -- Etap 7a: osoba stojąca za kontem (ten sam klucz w AD, Entra, na VPN).
+    user_identity        LowCardinality(String) DEFAULT '',
 
     INDEX idx_user    user_name TYPE bloom_filter(0.01) GRANULARITY 4,
     INDEX idx_ip      source_ip TYPE bloom_filter(0.01) GRANULARITY 4,
@@ -73,6 +75,8 @@ SETTINGS ttl_only_drop_parts = 1;
 -- patrz README, „Kwarantanna”).
 ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS peer String DEFAULT '';
 ALTER TABLE siem.quarantine ADD COLUMN IF NOT EXISTS truncated Bool DEFAULT false;
+-- Etap 7a (instalacje sprzed etapu 7: patrz README, „Tożsamości”).
+ALTER TABLE siem.events ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality;
 
 -- Konta: zapis (siem-writer) i odczyt (Grafana).
 CREATE USER IF NOT EXISTS siem_writer IDENTIFIED WITH sha256_password BY '${SIEM_WRITER_PASSWORD}';

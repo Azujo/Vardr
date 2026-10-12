@@ -7,6 +7,7 @@ import (
 
 	"siem/internal/contract"
 	"siem/internal/decode"
+	"siem/internal/identity"
 	"siem/internal/reprocess"
 )
 
@@ -48,5 +49,19 @@ func TestReprocessAfterDecoderFix(t *testing.T) {
 	}
 	if !strings.Contains(rep.Failed[0].Reason, "XML") || !strings.Contains(rep.Failed[1].Reason, "nie da się przetworzyć") {
 		t.Fatalf("powody: %+v", rep.Failed)
+	}
+}
+
+// Tożsamość osoby w zdarzeniach Windows i syslog (etap 7a).
+func TestEventIdentity(t *testing.T) {
+	defer identity.Set(identity.Config{})
+	identity.Set(identity.Config{Domains: []string{"azujo"}, Aliases: map[string]string{"j.kowalski": "jkowalski"}})
+	nb := Batch(contract.Batch{BatchID: "b", Events: []contract.Event{
+		{ID: "agt-c:syslog:g0:1", Source: "syslog:udp", Peer: "10.0.0.1",
+			Raw: `<189>date=2026-10-09 time=13:05:12 devname="FGT-HQ" tz="+0200" logid="0101039426" type="event" subtype="vpn" action="ssl-login-fail" remip=203.0.113.45 user="J.Kowalski"`},
+		{ID: "agt-c:syslog:g0:2", Source: "syslog:udp", Peer: "10.0.0.2", Raw: "<131>Oct  9 20:54:15 MikroTik login failure for user admin from 192.168.88.10 via winbox"},
+	}}, "agt-c", ingested)
+	if len(nb.Events) != 2 || nb.Events[0].Identity != "jkowalski" || nb.Events[1].Identity != "admin" {
+		t.Fatalf("tożsamości: %+v", nb.Events)
 	}
 }

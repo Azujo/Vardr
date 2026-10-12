@@ -73,6 +73,7 @@ func run(log *slog.Logger) error {
 	// Dekodery syslog zmienione w panelu (NATS KV) – podmiana bez restartu;
 	// do czasu wczytania działają wbudowane.
 	go normalize.WatchDecoders(ctx, js, log)
+	go normalize.WatchIdentity(ctx, js, log)
 
 	// Ponowne przetwarzanie kwarantanny na zlecenie panelu – tylko ścieżka live.
 	if pl.Name == bus.Live.Name {

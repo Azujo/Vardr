@@ -68,6 +68,8 @@ func (e Event) Get(field string) (string, bool) {
 		return e.UserName, e.UserName != ""
 	case "user.domain":
 		return e.UserDomain, e.UserDomain != ""
+	case "user.identity":
+		return e.Identity, e.Identity != ""
 	case "source.ip":
 		return e.SourceIP, e.SourceIP != ""
 	case "process.name":

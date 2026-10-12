@@ -35,6 +35,7 @@ import {
   IconMoon,
   IconShieldHalf,
   IconSun,
+  IconUserCircle,
   IconUsers,
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router-dom";
@@ -55,6 +56,7 @@ const main: Item[] = [
   { to: "/agents", label: "Huginn", hint: "agenci", icon: <IconDeviceDesktop size={18} /> },
   { to: "/groups", label: "Grupy agentów", hint: "profile i limity", icon: <IconAdjustments size={18} /> },
   { to: "/events", label: "Mímir", hint: "zdarzenia", icon: <IconDatabaseSearch size={18} /> },
+  { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} /> },
   { to: "/alerts", label: "Gjallarhorn", hint: "alerty", icon: <IconAlertTriangle size={18} /> },
   { to: "/rules", label: "Reguły detekcji", hint: "Sigma", icon: <IconListCheck size={18} /> },
   { to: "/decoders", label: "Dekodery", hint: "syslog: FortiGate, MikroTik…", icon: <IconCode size={18} /> },

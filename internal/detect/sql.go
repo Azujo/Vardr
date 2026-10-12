@@ -49,13 +49,13 @@ func Quote(s string) string {
 // jak w EventDest) – silnik zapytań i test reguły w panelu.
 const EventColumns = `timestamp, ingested, event_id, agent_id, event_dataset, event_code, event_provider, event_action,
 	event_outcome, host_name, user_name, user_domain, ` + IPExpr + `, process_name, process_command_line,
-	message, fields, raw`
+	message, fields, raw, user_identity`
 
 // EventDest: miejsca na kolumny EventColumns (rows.Scan).
 func EventDest(e *model.Event) []any {
 	return []any{&e.Timestamp, &e.Ingested, &e.ID, &e.AgentID, &e.Dataset, &e.Code, &e.Provider, &e.Action,
 		&e.Outcome, &e.HostName, &e.UserName, &e.UserDomain, &e.SourceIP, &e.ProcessName, &e.CommandLine,
-		&e.Message, &e.Fields, &e.Raw}
+		&e.Message, &e.Fields, &e.Raw, &e.Identity}
 }
 
 // IPExpr: adres źródłowy jak w zdarzeniu (IPv4 bez ::ffff:, brak – ”).
@@ -84,6 +84,8 @@ func fieldSQL(field string) (val, present string) {
 		return column("user_name")
 	case "user.domain":
 		return column("user_domain")
+	case "user.identity":
+		return column("user_identity")
 	case "source.ip":
 		return IPExpr, IPExpr + " != ''"
 	case "process.name":

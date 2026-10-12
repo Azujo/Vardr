@@ -235,6 +235,7 @@ func serve(log *slog.Logger) error {
 	defer nc.Close()
 	// Czytelna część eksportu: syslog dekodowany tak jak w bazie (z dekoderami z panelu).
 	go normalize.WatchDecoders(ctx, js, log)
+	go normalize.WatchIdentity(ctx, js, log)
 	var cons jetstream.Consumer
 	if err := svc.Retry(ctx, log, "konsument archiwum", func() error {
 		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
