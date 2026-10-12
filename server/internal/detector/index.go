@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/ClickHouse/clickhouse-go/v2/ext"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 
 	"siem/internal/alerts"
@@ -31,9 +33,6 @@ import (
 // przebieg kończy się na ostatnim pobranym wierszu (Next), a następny
 // zaczyna dokładnie za nim.
 const MaxIndexRows = 50000
-
-// maxKeysPerQuery: klucze progów w jednym zapytaniu o kontekst (rozmiar SQL).
-const maxKeysPerQuery = 500
 
 // Index to silnik zapytań.
 type Index struct {
@@ -246,57 +245,75 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 	return nil
 }
 
-// threshold dociąga kontekst kluczy reguły progowej (w paczkach po
-// maxKeysPerQuery) i wyznacza trafienia w seriach zawierających nowe zdarzenia.
+// threshold dociąga kontekst kluczy reguły progowej (jednym zapytaniem,
+// klucze w tabeli zewnętrznej) i wyznacza trafienia w seriach zawierających
+// nowe zdarzenia.
 func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Event, keys map[string][]string,
 	lo, hi time.Time) ([]alerts.Hit, int, error) {
 	span := time.Duration(r.Heimdall.Threshold.Window) + time.Duration(r.Heimdall.Suppress)
-	tuples := make([]string, 0, len(keys))
-	for _, vals := range keys {
-		q := make([]string, len(vals))
-		for i, v := range vals {
-			q[i] = detect.Quote(v)
-		}
-		tuples = append(tuples, "tuple("+strings.Join(q, ", ")+")")
-	}
-	sort.Strings(tuples)
 	keySQL := r.GroupKeySQL()
 	byKey := map[string][]*entry{}
 	evs := map[string]detect.Event{} // ostatnie zdarzenie klucza – do opisu alertu
 	ids := map[string]bool{}
 	n := 0
-	for start := 0; start < len(tuples); start += maxKeysPerQuery {
-		chunk := tuples[start:min(start+maxKeysPerQuery, len(tuples))]
-		q := fmt.Sprintf(`SELECT %s FROM %s WHERE timestamp >= %s AND timestamp <= %s AND (%s) AND has([%s], %s)
-			ORDER BY timestamp, event_id LIMIT %d BY %s`,
-			eventCols, x.table(), ms(lo.Add(-span)), ms(hi.Add(span)), r.SQL(), strings.Join(chunk, ", "), keySQL,
-			maxEntriesPerKey, keySQL)
-		rows, err := x.Conn.Query(ctx, q)
-		if err != nil {
+	// Klucze idą do ClickHouse jako tabela zewnętrzna „keys” (jedno zapytanie
+	// niezależnie od ich liczby). Wcześniej porcje po 500 kluczy wklejane w SQL
+	// (limit długości zapytania): przy kilkudziesięciu tysiącach kluczy (np.
+	// nieudane logowania z wielu adresów) przebieg robił ~100 zapytań, każde
+	// skanujące miliony wierszy, i nie kończył się (etap 8).
+	width := max(1, len(r.Heimdall.GroupBy))
+	cols := make([]func(*ext.Table) error, width)
+	names := make([]string, width)
+	for i := range width {
+		names[i] = fmt.Sprintf("k%d", i+1)
+		cols[i] = ext.Column(names[i], "String")
+	}
+	tbl, err := ext.NewTable("keys", cols...)
+	if err != nil {
+		return nil, n, err
+	}
+	for _, vals := range keys {
+		row := make([]any, width)
+		for i := range row {
+			row[i] = ""
+			if i < len(vals) {
+				row[i] = vals[i]
+			}
+		}
+		if err := tbl.Append(row...); err != nil {
 			return nil, n, err
 		}
-		for rows.Next() {
-			e, err := scanEvent(rows)
-			if err != nil {
-				rows.Close()
-				return nil, n, err
-			}
-			n++
-			if ids[e.ID] {
-				continue
-			}
-			ids[e.ID] = true
-			ev := detect.Event{Event: &e}
-			k := strings.Join(r.GroupKey(ev), "\x1f")
-			byKey[k] = append(byKey[k], &entry{Observation: alerts.Observation{EventID: e.ID, EventTime: e.Timestamp,
-				AgentID: e.AgentID, HostName: e.HostName, UserName: e.UserName, SourceIP: e.SourceIP, Value: distinctValue(r, ev)}})
-			evs[k] = ev
-		}
-		err = rows.Err()
-		rows.Close()
+	}
+	q := fmt.Sprintf(`SELECT %s FROM %s WHERE timestamp >= %s AND timestamp <= %s AND (%s)
+		AND %s IN (SELECT tuple(%s) FROM keys)
+		ORDER BY timestamp, event_id LIMIT %d BY %s`,
+		eventCols, x.table(), ms(lo.Add(-span)), ms(hi.Add(span)), r.SQL(), keySQL, strings.Join(names, ", "),
+		maxEntriesPerKey, keySQL)
+	rows, err := x.Conn.Query(clickhouse.Context(ctx, clickhouse.WithExternalTable(tbl)), q)
+	if err != nil {
+		return nil, n, err
+	}
+	for rows.Next() {
+		e, err := scanEvent(rows)
 		if err != nil {
+			rows.Close()
 			return nil, n, err
 		}
+		n++
+		if ids[e.ID] {
+			continue
+		}
+		ids[e.ID] = true
+		ev := detect.Event{Event: &e}
+		k := strings.Join(r.GroupKey(ev), "\x1f")
+		byKey[k] = append(byKey[k], &entry{Observation: alerts.Observation{EventID: e.ID, EventTime: e.Timestamp,
+			AgentID: e.AgentID, HostName: e.HostName, UserName: e.UserName, SourceIP: e.SourceIP, Value: distinctValue(r, ev)}})
+		evs[k] = ev
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, n, err
 	}
 	if x.Known != nil && len(ids) > 0 {
 		list := make([]string, 0, len(ids))
