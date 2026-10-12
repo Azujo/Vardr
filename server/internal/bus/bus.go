@@ -112,11 +112,17 @@ func ConsumerConfigs() map[string]jetstream.ConsumerConfig {
 			AckWait:       time.Minute,
 			MaxAckPending: 256,
 		},
+		// Writer zbiera wiadomości do jednego INSERT-u (do SIEM_WRITER_MAX_ROWS
+		// wierszy), więc limit niepotwierdzonych wiadomości musi pomieścić
+		// pełną paczkę także z małych wiadomości: 3500 agentów po kilka
+		// zdarzeń na paczkę przy limicie 1024 dawało ok. 3600 wierszy na
+		// INSERT i sufit ok. 2000 zdarzeń/s (etap 8). Pamięć ogranicza liczba
+		// wierszy, nie wiadomości.
 		StreamEvents: {
 			Durable:       ConsumerWriter,
 			AckPolicy:     jetstream.AckExplicitPolicy,
 			AckWait:       2 * time.Minute,
-			MaxAckPending: 1024,
+			MaxAckPending: 16384,
 		},
 	}
 }

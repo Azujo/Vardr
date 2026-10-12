@@ -64,6 +64,22 @@ func TestCorrelations(t *testing.T) {
 	for i := range 6 {
 		evs = append(evs, ev("azure.signinlogs", 50126, "sign-in", "failure", "ola", "10.0.0.7", time.Duration(-15+i)*time.Minute, nil))
 	}
+	// Kubełki minutowe (etap 8) – brzegi okna liczone dokładnie:
+	// piotr: 4 próby przed udanym i piąta w tej samej minucie, ale po nim → bez alertu;
+	// kasia: 4 próby w oknie i piąta 20 s przed początkiem okna (ta sama minuta) → bez alertu.
+	pb := now.Truncate(time.Minute).Add(-25 * time.Minute)
+	at := func(t time.Time) time.Duration { return t.Sub(now) }
+	for i := range 4 {
+		evs = append(evs, ev("windows.security", 4625, "logon-failed", "failure", "piotr", "10.0.0.8", at(pb.Add(-time.Duration(i+1)*time.Minute)), nil))
+	}
+	evs = append(evs, ev("windows.security", 4625, "logon-failed", "failure", "piotr", "10.0.0.8", at(pb.Add(40*time.Second)), nil))
+	evs = append(evs, ev("windows.security", 4624, "logon", "success", "piotr", "10.0.0.8", at(pb.Add(30*time.Second)), nil))
+	kb := now.Truncate(time.Minute).Add(-8 * time.Minute)
+	for i := range 4 {
+		evs = append(evs, ev("windows.security", 4625, "logon-failed", "failure", "kasia", "10.0.0.9", at(kb.Add(-time.Duration(i+10)*time.Minute)), nil))
+	}
+	evs = append(evs, ev("windows.security", 4625, "logon-failed", "failure", "kasia", "10.0.0.9", at(kb.Add(-failureWindow+10*time.Second)), nil))
+	evs = append(evs, ev("windows.security", 4624, "logon", "success", "kasia", "10.0.0.9", at(kb.Add(30*time.Second)), nil))
 	// Historia krajów: jan – PL 5 dni temu (NL teraz → nowy kraj), ewa – PL i teraz PL, nowy – bez historii.
 	evs = append(evs, ev("azure.signinlogs", 0, "sign-in", "success", "jan", "192.168.88.5", -5*24*time.Hour, geo("PL")))
 	evs = append(evs, ev("azure.signinlogs", 0, "sign-in", "success", "ewa", "192.168.88.6", -3*24*time.Hour, geo("PL")))

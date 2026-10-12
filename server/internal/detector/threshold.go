@@ -36,7 +36,7 @@ import (
 // (spóźnione zdarzenia, np. z bufora agenta po przerwie w łączności).
 const ThresholdLateness = time.Hour
 
-// Limity pamięci stanu progów (detektor ma ok. 200 MiB; wpis to ok. 0,5 KB).
+// Limity pamięci stanu progów (detektor ma ok. 600 MiB; wpis to ok. 0,3 KB).
 // Po przekroczeniu nowe zdarzenia nie są liczone (metryka, log) – lepiej
 // niż pętla restartów po braku pamięci; silnik zapytań je nadrobi.
 const (
@@ -48,6 +48,14 @@ const (
 type entry struct {
 	alerts.Observation
 	emitted bool // zdarzenie dopisane już do alertu
+}
+
+// newEntry: wpis w pamięci bez pól wspólnych dla klucza (reguła, podpis,
+// klucz, pola grupy, termin) – przy setkach tysięcy wpisów kopie tych pól,
+// zwłaszcza mapa pól grupy, zajmowały większość pamięci detektora (etap 8).
+func newEntry(o alerts.Observation, emitted bool) *entry {
+	o.RuleID, o.Sig, o.GroupKey, o.GroupFields, o.ExpiresAt = "", "", "", nil, time.Time{}
+	return &entry{Observation: o, emitted: emitted}
 }
 
 // entries to zdarzenia klucza posortowane po czasie (detect.Series).
@@ -163,7 +171,7 @@ func (t *Thresholds) Restore(rules []*detect.Rule, obs []alerts.Observation) int
 		if ks.ids[o.EventID] {
 			continue
 		}
-		ks.insert(&entry{Observation: o, emitted: o.InAlert})
+		ks.insert(newEntry(o, o.InAlert))
 		t.total++
 		n++
 	}
@@ -272,7 +280,7 @@ func (t *Thresholds) observe(r *detect.Rule, ev detect.Event, base alerts.Hit) (
 		return nil, nil
 	}
 	o := observation(r, ev, base, rs.sig, t.now())
-	e := &entry{Observation: o}
+	e := newEntry(o, false)
 	i := ks.insert(e)
 	t.total++
 	var hits []alerts.Hit

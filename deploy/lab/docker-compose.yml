@@ -18,6 +18,8 @@ x-server: &server
     # czekają u agentów – nic nie jest usuwane po cichu (roadmapa, zał. E).
     SIEM_QUEUE_RAW_MAX_MB: ${SIEM_QUEUE_RAW_MAX_MB:-8192}
     SIEM_QUEUE_EVENTS_MAX_MB: ${SIEM_QUEUE_EVENTS_MAX_MB:-8192}
+    # Profile Go na porcie metryk (tylko do pomiarów obciążenia): SIEM_PPROF=1 w .env.
+    SIEM_PPROF: ${SIEM_PPROF:-0}
   depends_on:
     nats:
       condition: service_healthy
@@ -262,12 +264,12 @@ services:
       SIEM_DETECTOR_CH_ADDR: clickhouse:9000
       SIEM_DETECTOR_CH_USER: siem_detector
       SIEM_DETECTOR_CH_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
-      GOMEMLIMIT: 200MiB
+      GOMEMLIMIT: 600MiB
     depends_on:
       nats: { condition: service_healthy }
       saga: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
-    mem_limit: 256m
+    mem_limit: 768m
 
   # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).
   saga:

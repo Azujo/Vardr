@@ -8,6 +8,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
+	"os"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +24,15 @@ const ns = "siem"
 func Serve(ctx context.Context, log *slog.Logger, addr string) {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.Handler())
+	// SIEM_PPROF=1: profile Go (/debug/pprof/) na tym samym porcie – do
+	// pomiarów pod obciążeniem (etap 8), np. z kontenera w sieci Dockera:
+	// go tool pprof http://detector:9100/debug/pprof/profile?seconds=30
+	if os.Getenv("SIEM_PPROF") == "1" {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		log.Warn("profilowanie włączone (SIEM_PPROF=1) – tylko do pomiarów", "addr", addr)
+	}
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()

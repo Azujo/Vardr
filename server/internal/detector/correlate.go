@@ -125,28 +125,44 @@ func (c *Correlator) Run(ctx context.Context, from, to time.Time) ([]alerts.Hit,
 	return hits, nil
 }
 
+// successAfterFailures: udane logowanie poprzedzone co najmniej failuresNeeded
+// nieudanymi logowaniami tej osoby w ciągu failureWindow.
+//
+// Skala (etap 8): złączenie każdego udanego logowania z każdą nieudaną próbą
+// osoby przekraczało limit pamięci ClickHouse przy setkach nieudanych
+// logowań na sekundę. Dlatego udane logowania są zwijane do ostatniego
+// w minucie (osoba, minuta), a nieudane – liczone w minutowych kubełkach;
+// kubełki na brzegach okna liczą się dokładnie z czasów prób (do 1000 prób
+// na osobę i minutę). Próby do osi czasu alertu pobiera osobne, małe
+// zapytanie tylko dla trafień.
 func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Time) ([]alerts.Hit, error) {
 	t := c.table()
+	win := int(failureWindow / time.Second)
 	q := fmt.Sprintf(`WITH s AS (
-		SELECT event_id, timestamp, user_identity, event_dataset, host_name, user_name, agent_id, %[2]s AS ip
+		SELECT user_identity, toStartOfMinute(timestamp) AS m, max(timestamp) AS ts, argMax(event_id, timestamp) AS id,
+			argMax(event_dataset, timestamp) AS ds, argMax(host_name, timestamp) AS host, argMax(user_name, timestamp) AS user,
+			argMax(agent_id, timestamp) AS agent, argMax(%[2]s, timestamp) AS ip
 		FROM %[1]s
 		WHERE ingested > fromUnixTimestamp64Milli(%[3]d, 'UTC') AND ingested <= fromUnixTimestamp64Milli(%[4]d, 'UTC')
 			AND user_identity != '' AND %[5]s
-		LIMIT 1 BY event_id)
-	SELECT s.event_id, any(s.timestamp), s.user_identity, any(s.event_dataset), any(s.host_name), any(s.user_name),
-		any(s.agent_id), any(s.ip), count() AS n, arraySort(groupUniqArray(f.event_dataset)), arraySort(groupUniqArray(f.ip)),
-		groupArray(50)(f.event_id), groupArray(50)(f.timestamp), groupArray(50)(f.agent_id), groupArray(50)(f.host_name)
-	FROM s INNER JOIN (
-		SELECT event_id, timestamp, user_identity, event_dataset, %[2]s AS ip, agent_id, host_name
+		GROUP BY user_identity, m),
+	f AS (
+		SELECT user_identity, toStartOfMinute(timestamp) AS m, uniq(event_id) AS n, groupUniqArray(1000)((event_id, timestamp)) AS times,
+			groupUniqArray(event_dataset) AS fds, groupUniqArray(20)(%[2]s) AS fips
 		FROM %[1]s
-		WHERE timestamp >= (SELECT min(timestamp) FROM s) - INTERVAL %[7]d SECOND
-			AND ingested >= (SELECT min(timestamp) FROM s) - INTERVAL %[7]d SECOND - INTERVAL 1 HOUR
+		WHERE timestamp >= (SELECT min(ts) FROM s) - INTERVAL %[7]d SECOND
+			AND ingested >= (SELECT min(ts) FROM s) - INTERVAL %[7]d SECOND - INTERVAL 1 HOUR
+			AND timestamp <= (SELECT max(ts) FROM s)
 			AND user_identity IN (SELECT user_identity FROM s) AND %[6]s
-		LIMIT 1 BY event_id) AS f ON f.user_identity = s.user_identity
-	WHERE f.timestamp >= s.timestamp - INTERVAL %[7]d SECOND AND f.timestamp < s.timestamp
-	GROUP BY s.event_id, s.user_identity
-	HAVING n >= %[8]d`, t, detect.IPExpr, from.UnixMilli(), to.UnixMilli(), authSuccessSQL, authFailureSQL,
-		int(failureWindow/time.Second), failuresNeeded)
+		GROUP BY user_identity, m)
+	SELECT s.id, s.ts, s.user_identity, s.ds, s.host, s.user, s.agent, s.ip,
+		sum(if(f.m > toStartOfMinute(s.ts - INTERVAL %[7]d SECOND) AND f.m < s.m, f.n,
+			arrayCount(x -> x.2 >= s.ts - INTERVAL %[7]d SECOND AND x.2 < s.ts, f.times))) AS n,
+		arraySort(arrayDistinct(arrayFlatten(groupArray(f.fds)))), arraySort(arrayDistinct(arrayFlatten(groupArray(f.fips))))
+	FROM s INNER JOIN f ON f.user_identity = s.user_identity
+	WHERE f.m >= toStartOfMinute(s.ts - INTERVAL %[7]d SECOND) AND f.m <= s.m
+	GROUP BY s.id, s.ts, s.user_identity, s.ds, s.host, s.user, s.agent, s.ip
+	HAVING n >= %[8]d`, t, detect.IPExpr, from.UnixMilli(), to.UnixMilli(), authSuccessSQL, authFailureSQL, win, failuresNeeded)
 	rows, err := c.Conn.Query(ctx, q)
 	if err != nil {
 		return nil, err
@@ -154,34 +170,99 @@ func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Tim
 	defer rows.Close()
 	rule := CorrelationRules()[0]
 	var hits []alerts.Hit
+	first := map[string]time.Time{} // osoba → najwcześniejsze udane logowanie z trafieniem
 	for rows.Next() {
 		var (
 			id, identity, ds, host, user, agent, ip string
 			ts                                      time.Time
 			n                                       uint64
-			fds, fips, fids, fagents, fhosts        []string
-			fts                                     []time.Time
+			fds, fips                               []string
 		)
-		if err := rows.Scan(&id, &ts, &identity, &ds, &host, &user, &agent, &ip, &n, &fds, &fips, &fids, &fts, &fagents, &fhosts); err != nil {
+		if err := rows.Scan(&id, &ts, &identity, &ds, &host, &user, &agent, &ip, &n, &fds, &fips); err != nil {
 			return nil, err
 		}
 		summary := fmt.Sprintf("osoba %s: %d nieudanych logowań w %s (%s; adresy %s), potem udane w %s jako %s z %s",
 			identity, n, fmtWindow(failureWindow), strings.Join(fds, ", "), short(fips, 5), ds, user, orDash(ip))
 		instr := fmt.Sprintf("Osoba %s: %d nieudanych logowań (%s) z adresów %s, a o %s UTC udane logowanie w %s z adresu %s. ",
 			identity, n, strings.Join(fds, ", "), short(fips, 5), ts.UTC().Format("2006-01-02 15:04:05"), ds, orDash(ip)) + rule.Instructions
-		hit := alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
+		hits = append(hits, alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
 			GroupFields: map[string]string{"user.identity": identity}, GroupKey: identity, Suppress: time.Hour,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
-			Summary: summary, Instructions: instr}
-		hits = append(hits, hit)
-		// Próby z serii też w alercie (oś zdarzeń, Mímir).
-		for i := range fids {
-			h := hit
-			h.EventID, h.EventTime, h.AgentID, h.HostName = fids[i], fts[i], fagents[i], fhosts[i]
-			hits = append(hits, h)
+			Summary: summary, Instructions: instr})
+		if f, ok := first[identity]; !ok || ts.Before(f) {
+			first[identity] = ts
 		}
 	}
-	return hits, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return c.withAttempts(ctx, hits, first)
+}
+
+// withAttempts dokłada do alertów próby z serii (oś zdarzeń, Mímir): do 50
+// ostatnich nieudanych logowań osoby przed jej udanym logowaniem.
+func (c *Correlator) withAttempts(ctx context.Context, hits []alerts.Hit, first map[string]time.Time) ([]alerts.Hit, error) {
+	if len(hits) == 0 {
+		return hits, nil
+	}
+	ids := make([]string, 0, len(first))
+	var lo, hi time.Time
+	for id, ts := range first {
+		ids = append(ids, id)
+		if lo.IsZero() || ts.Before(lo) {
+			lo = ts
+		}
+	}
+	for _, h := range hits {
+		if h.EventTime.After(hi) {
+			hi = h.EventTime
+		}
+	}
+	sort.Strings(ids)
+	t := c.table()
+	q := fmt.Sprintf(`SELECT user_identity, event_id, any(timestamp) AS ts, any(agent_id), any(host_name)
+		FROM %[1]s
+		WHERE timestamp >= fromUnixTimestamp64Milli(%[2]d, 'UTC') - INTERVAL %[4]d SECOND AND timestamp < fromUnixTimestamp64Milli(%[3]d, 'UTC')
+			AND ingested >= fromUnixTimestamp64Milli(%[2]d, 'UTC') - INTERVAL %[4]d SECOND - INTERVAL 1 HOUR
+			AND user_identity IN ? AND %[5]s
+		GROUP BY user_identity, event_id
+		ORDER BY ts DESC
+		LIMIT 200 BY user_identity`, t, lo.UnixMilli(), hi.UnixMilli(), int(failureWindow/time.Second), authFailureSQL)
+	rows, err := c.Conn.Query(ctx, q, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type attempt struct {
+		id, agent, host string
+		ts              time.Time
+	}
+	byIdentity := map[string][]attempt{}
+	for rows.Next() {
+		var identity string
+		var a attempt
+		if err := rows.Scan(&identity, &a.id, &a.ts, &a.agent, &a.host); err != nil {
+			return nil, err
+		}
+		byIdentity[identity] = append(byIdentity[identity], a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := hits
+	for _, h := range hits {
+		n := 0
+		for _, a := range byIdentity[h.GroupKey] { // od najnowszych
+			if n == 50 || !a.ts.Before(h.EventTime) || a.ts.Before(h.EventTime.Add(-failureWindow)) {
+				continue
+			}
+			x := h
+			x.EventID, x.EventTime, x.AgentID, x.HostName = a.id, a.ts, a.agent, a.host
+			out = append(out, x)
+			n++
+		}
+	}
+	return out, nil
 }
 
 func (c *Correlator) newCountry(ctx context.Context, from, to time.Time) ([]alerts.Hit, error) {
