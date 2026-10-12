@@ -30,8 +30,11 @@ type Def struct {
 	Parser      ParserDef         `yaml:"parser" json:"parser"`
 	Fields      map[string]StrSet `yaml:"fields" json:"fields,omitempty"`
 	Outcome     *OutcomeDef       `yaml:"outcome" json:"outcome,omitempty"`
-	Time        *TimeDef          `yaml:"time" json:"time,omitempty"`
-	Samples     []string          `yaml:"samples" json:"samples,omitempty"` // przykłady (test i dokumentacja)
+	// Set: stałe wartości pól dla każdej wiadomości dekodera (np.
+	// event.action: sign-in); mapowanie z treści (fields) ma pierwszeństwo.
+	Set     map[string]string `yaml:"set" json:"set,omitempty"`
+	Time    *TimeDef          `yaml:"time" json:"time,omitempty"`
+	Samples []string          `yaml:"samples" json:"samples,omitempty"` // przykłady (test i dokumentacja)
 }
 
 // MatchDef: wszystkie podane warunki muszą być spełnione; Any – dodatkowo
@@ -67,6 +70,9 @@ type OutcomeDef struct {
 	Field   StrSet   `yaml:"field" json:"field"` // pierwsze niepuste z listy
 	Failure []string `yaml:"failure" json:"failure,omitempty"`
 	Success []string `yaml:"success" json:"success,omitempty"`
+	// Otherwise: wynik, gdy pole ma wartość spoza list (np. kod błędu
+	// logowania: 0 – success, każdy inny – failure).
+	Otherwise string `yaml:"otherwise" json:"otherwise,omitempty"`
 }
 
 // TimeDef: czas zdarzenia z pól treści (lepszy niż czas z nagłówka).
@@ -194,6 +200,9 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 	}
 	if d.Outcome != nil && len(d.Outcome.Field) == 0 {
 		return nil, errors.New("outcome.field: podaj pole")
+	}
+	if d.Outcome != nil && d.Outcome.Otherwise != "" && d.Outcome.Otherwise != "success" && d.Outcome.Otherwise != "failure" {
+		return nil, errors.New("outcome.otherwise: success albo failure")
 	}
 	return dec, nil
 }
@@ -349,6 +358,9 @@ func (d *Decoder) Decode(h Header) (Result, error) {
 			res.Fields["decoder.pattern"] = "none" // dekoder pasuje, ale żaden wzorzec – zostaje treść
 		}
 	}
+	for k, v := range d.Set {
+		res.Targets[k] = v
+	}
 	// Mapowanie: cel ← pierwsze niepuste pole źródłowe (albo wartość ustawiona przez wzorzec).
 	for target, srcs := range d.Fields {
 		for _, src := range srcs {
@@ -379,6 +391,9 @@ func (d *Decoder) Decode(h Header) (Result, error) {
 			if v == strings.ToLower(s) {
 				res.Targets["event.outcome"] = "success"
 			}
+		}
+		if res.Targets["event.outcome"] == "" && v != "" {
+			res.Targets["event.outcome"] = o.Otherwise
 		}
 	}
 	if t := d.Time; t != nil {
@@ -473,8 +488,13 @@ func flatten(prefix string, v any, out map[string]string) {
 			flatten(key, vv, out)
 		}
 	case []any:
+		// Cała tablica jako JSON (wyszukiwanie „contains”) i pierwsze elementy
+		// z indeksem (np. targetResources.0.userPrincipalName).
 		b, _ := json.Marshal(x)
 		out[prefix] = string(b)
+		for i, v := range x[:min(len(x), 10)] {
+			flatten(prefix+"."+strconv.Itoa(i), v, out)
+		}
 	case string:
 		out[prefix] = x
 	case nil:

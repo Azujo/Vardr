@@ -2,6 +2,7 @@ package decode
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"net/netip"
 	"strconv"
@@ -25,8 +26,15 @@ func Builtin(loc *time.Location) ([]*Decoder, error) {
 	return LoadFS(sub, loc)
 }
 
-// ParserVersion trafia do zdarzeń z syslog (siem.parser_version).
-const ParserVersion = "syslog-1"
+// ParserVersion trafia do zdarzeń z syslog (siem.parser_version);
+// APIParserVersion – do zdarzeń z konektorów API (Entra ID).
+const (
+	ParserVersion    = "syslog-1"
+	APIParserVersion = "api-1"
+)
+
+// IsAPI: źródło z konektora API (bez nagłówka syslog, treść to rekord JSON).
+func IsAPI(source string) bool { return strings.HasPrefix(source, "entra:") }
 
 // Granice czasu jak w normalizatorze zdarzeń Windows.
 var (
@@ -42,7 +50,6 @@ const MaxFutureSkew = 5 * time.Minute
 // z treścią). Błąd: treść nie pasuje do parsera dekodera (kwarantanna).
 func Event(ev contract.Event, agentID string, ingested time.Time, set *Set, loc *time.Location) (model.Event, error) {
 	peer, _ := netip.ParseAddr(ev.Peer)
-	h := ParseHeader(ev.Raw, loc, ingested)
 	e := model.Event{
 		Ingested:  ingested.UTC(),
 		ID:        ev.ID,
@@ -50,27 +57,38 @@ func Event(ev contract.Event, agentID string, ingested time.Time, set *Set, loc 
 		Raw:       ev.Raw,
 		Truncated: ev.Truncated,
 		Parser:    ParserVersion,
-		Message:   h.Message,
-		Provider:  h.App,
-		Fields:    map[string]string{"syslog.peer": ev.Peer, "syslog.format": h.Format},
 	}
-	if h.App != "" {
-		e.Fields["syslog.app"] = h.App
-	}
-	if h.PID != "" {
-		e.Fields["syslog.pid"] = h.PID
-	}
-	if h.Severity >= 0 {
-		e.Fields["syslog.facility"] = strconv.Itoa(h.Facility)
-		e.Fields["syslog.severity"] = SeverityName(h.Severity)
-	}
-	e.HostName = strings.ToLower(h.Host)
-	if e.HostName == "" {
-		e.HostName = ev.Peer
+	var h Header
+	if IsAPI(ev.Source) {
+		// Rekord z API: bez nagłówka; dekoder wybierany po źródle (match.app).
+		h = Header{Facility: -1, Severity: -1, Format: "api", App: ev.Source, Message: ev.Raw}
+		e.Parser, e.Provider = APIParserVersion, ev.Source
+		e.Fields = map[string]string{"event.source": ev.Source}
+	} else {
+		h = ParseHeader(ev.Raw, loc, ingested)
+		e.Message, e.Provider = h.Message, h.App
+		e.Fields = map[string]string{"syslog.peer": ev.Peer, "syslog.format": h.Format}
+		if h.App != "" {
+			e.Fields["syslog.app"] = h.App
+		}
+		if h.PID != "" {
+			e.Fields["syslog.pid"] = h.PID
+		}
+		if h.Severity >= 0 {
+			e.Fields["syslog.facility"] = strconv.Itoa(h.Facility)
+			e.Fields["syslog.severity"] = SeverityName(h.Severity)
+		}
+		e.HostName = strings.ToLower(h.Host)
+		if e.HostName == "" {
+			e.HostName = ev.Peer
+		}
 	}
 
 	var evTime time.Time
 	d := set.Find(h, peer)
+	if d == nil && IsAPI(ev.Source) {
+		return model.Event{}, fmt.Errorf("brak dekodera dla źródła %s", ev.Source)
+	}
 	if d == nil {
 		e.Dataset = "syslog.generic"
 	} else {
@@ -146,7 +164,7 @@ func apply(e *model.Event, t map[string]string) {
 // ponowne przetworzenie) – treść wiadomości ani definicja dekodera ich nie
 // nadpisze.
 func reserved(k string) bool {
-	return strings.HasPrefix(k, "syslog.") || strings.HasPrefix(k, "decoder.") || strings.HasPrefix(k, "siem.")
+	return strings.HasPrefix(k, "syslog.") || strings.HasPrefix(k, "decoder.") || strings.HasPrefix(k, "siem.") || k == "event.source"
 }
 
 func quality(t, ingested time.Time) (time.Time, string) {

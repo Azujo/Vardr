@@ -55,5 +55,5 @@ type Reply struct {
 // zdarzenia agentów (Windows, syslog). Odrzucone przez ClickHouse mają jako
 // źródło zbiór danych, a wpisy ścieżki odtwarzania – przedrostek replay/.
 func Supported(source string) bool {
-	return strings.HasPrefix(source, "wineventlog:") || strings.HasPrefix(source, "syslog:")
+	return strings.HasPrefix(source, "wineventlog:") || strings.HasPrefix(source, "syslog:") || strings.HasPrefix(source, "entra:")
 }

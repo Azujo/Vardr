@@ -209,6 +209,39 @@ services:
       GOMEMLIMIT: 100MiB
     mem_limit: 160m
 
+  # Konektor API (siem-connector, etap 7): pobiera logi Entra ID z Microsoft
+  # Graph (logowania, zmiany w katalogu) i wysyła je do siem-ingest jak
+  # agent (mTLS, bufor dyskowy, heartbeat). W laboratorium – z symulatora
+  # Graph (entrasim). Rejestracja: deploy/lab/service-enroll.sh connector.
+  connector:
+    build: { context: ., args: { BIN: siem-connector } }
+    image: siem/connector:lab
+    hostname: heimdall-connector
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["run", "-config", "/connector/connector.yaml"]
+    volumes:
+      - ./connector:/connector
+    environment:
+      GOMEMLIMIT: 100MiB
+    mem_limit: 160m
+
+  # Symulator Microsoft Graph (tylko laboratorium): token aplikacji, logowania
+  # i zmiany w katalogu Entra ID; scenariusze ataków na żądanie z VM:
+  #   curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'
+  entrasim:
+    build: { context: ., args: { BIN: siem-entrasim } }
+    image: siem/entrasim:lab
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["-listen", ":8080", "-tenant", "lab", "-client-id", "heimdall", "-secret-file", "/secret/entra.secret",
+              "-domain", "azujo.pl", "-users", "heimdall-lab,test01,jkowalski,anowak,pwisniewski,kwojcik"]
+    volumes:
+      - ./connector/entra.secret:/secret/entra.secret:ro
+    ports:
+      - "127.0.0.1:8099:8080"
+    mem_limit: 128m
+
   # Gjallarhorn – detekcja: reguły Sigma z ./rules/current (deploy.sh rules –
   # wersje w ./rules/v<czas>, dowiązanie przełączane atomowo). Silniki
   # (SIEM_DETECTION_MODE): w locie (strumień SIEM_EVENTS) i zapytań (ClickHouse,

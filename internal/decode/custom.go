@@ -3,6 +3,7 @@ package decode
 import (
 	"fmt"
 	"net/netip"
+	"strings"
 	"time"
 )
 
@@ -61,7 +62,7 @@ func (d *Decoder) CheckSamples(now time.Time) error {
 		}
 	}
 	for i, raw := range d.Samples {
-		h := ParseHeader(raw, d.loc, now)
+		h := d.SampleHeader(raw, now)
 		if !d.Matches(h, peer) {
 			return fmt.Errorf("próbka %d nie pasuje do warunków match", i+1)
 		}
@@ -70,4 +71,26 @@ func (d *Decoder) CheckSamples(now time.Time) error {
 		}
 	}
 	return nil
+}
+
+// SampleSource: źródło, z którego pochodzą wiadomości dekodera – konektor API
+// (gdy match.app wskazuje tylko źródła API, np. entra:signin) albo syslog.
+func (d *Decoder) SampleSource() string {
+	if len(d.Match.App) > 0 {
+		for _, a := range d.Match.App {
+			if !IsAPI(strings.ToLower(a)) {
+				return "syslog:udp"
+			}
+		}
+		return strings.ToLower(d.Match.App[0])
+	}
+	return "syslog:udp"
+}
+
+// SampleHeader: nagłówek próbki – dla dekoderów API rekord bez nagłówka.
+func (d *Decoder) SampleHeader(raw string, now time.Time) Header {
+	if src := d.SampleSource(); IsAPI(src) {
+		return Header{Facility: -1, Severity: -1, Format: "api", App: src, Message: raw}
+	}
+	return ParseHeader(raw, d.loc, now)
 }

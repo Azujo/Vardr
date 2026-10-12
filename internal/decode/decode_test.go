@@ -70,7 +70,7 @@ func TestBuiltinSamples(t *testing.T) {
 			t.Errorf("%s: brak próbek", d.ID)
 		}
 		for i, s := range d.Samples {
-			e, err := Event(contract.Event{ID: "c:syslog:g0:1", Source: "syslog:udp", Raw: s, Peer: "192.168.88.1"}, "c", ingested, set, warsaw)
+			e, err := Event(contract.Event{ID: "c:syslog:g0:1", Source: d.SampleSource(), Raw: s, Peer: "192.168.88.1"}, "c", ingested, set, warsaw)
 			if err != nil || e.Fields["decoder.id"] != d.ID || e.Fields["decoder.pattern"] == "none" {
 				t.Errorf("%s próbka %d: dekoder %q, wzorzec %q, błąd %v", d.ID, i, e.Fields["decoder.id"], e.Fields["decoder.pattern"], err)
 			}
@@ -231,12 +231,12 @@ func TestMerge(t *testing.T) {
 	if len(errs) != 2 {
 		t.Fatalf("błędy: %v", errs)
 	}
-	var ids []string
+	got := map[string]string{}
 	for _, d := range set.List() {
-		ids = append(ids, d.ID+"="+d.Dataset)
+		got[d.ID] = d.Dataset
 	}
-	if strings.Join(ids, ",") != "fortigate=fortinet.custom" {
-		t.Fatalf("zestaw: %v", ids)
+	if got["fortigate"] != "fortinet.custom" || got["mikrotik"] != "" || got["zly"] != "" || got["x1"] != "" || len(got) != len(ds)-1 {
+		t.Fatalf("zestaw: %v", got)
 	}
 	for _, d := range ds {
 		if err := d.CheckSamples(ingested); err != nil {
@@ -246,5 +246,33 @@ func TestMerge(t *testing.T) {
 	peerOnly, err := Parse([]byte("id: p1\ntitle: t\ndataset: d.x\nmatch:\n  peer: [10.9.0.0/16]\nparser:\n  type: kv\nsamples:\n  - '<13>a=1'\n"), warsaw)
 	if err != nil || peerOnly.CheckSamples(ingested) != nil {
 		t.Fatalf("próbka dekodera z warunkiem peer: %v %v", err, peerOnly.CheckSamples(ingested))
+	}
+}
+
+// Logowania i zmiany w katalogu Entra ID (rekordy z konektora API).
+func TestEntra(t *testing.T) {
+	set := builtinSet(t)
+	e, err := Event(contract.Event{ID: "conn:entra-signin:k:1", Source: "entra:signin", Raw: builtin(t, "entra-signin", 0)}, "conn", ingested, set, warsaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Dataset != "azure.signinlogs" || e.UserName != "jkowalski@azujo.pl" || e.SourceIP != "185.220.101.7" || e.Outcome != "failure" ||
+		e.Code != 50126 || e.Action != "sign-in" || e.HostName != "entra-id" || e.Fields["source.geo.country_iso_code"] != "NL" ||
+		e.Fields["user_agent.client"] != "IMAP4" || e.Timestamp.Format(time.RFC3339) != "2026-10-12T09:58:00Z" || e.Parser != APIParserVersion ||
+		e.Fields["syslog.peer"] != "" || e.Fields["event.source"] != "entra:signin" || !strings.HasPrefix(e.Message, "Error validating") {
+		t.Fatalf("logowanie Entra: %+v", e)
+	}
+	ok, err := Event(contract.Event{ID: "x", Source: "entra:signin", Raw: builtin(t, "entra-signin", 1)}, "conn", ingested, set, warsaw)
+	if err != nil || ok.Outcome != "success" || ok.HostName != "desktop-ano" || ok.Code != 0 {
+		t.Fatalf("udane logowanie: %+v %v", ok, err)
+	}
+	a, err := Event(contract.Event{ID: "y", Source: "entra:audit", Raw: builtin(t, "entra-audit", 0)}, "conn", ingested, set, warsaw)
+	if err != nil || a.Dataset != "azure.auditlogs" || a.Action != "Add member to role" || a.UserName != "heimdall-lab@azujo.pl" ||
+		a.Fields["user.target.name"] != "jkowalski@azujo.pl" || !strings.Contains(a.Fields["azure.role"], "Global Administrator") || a.Outcome != "success" {
+		t.Fatalf("zmiana w katalogu: %+v %v", a, err)
+	}
+	// Źródło API bez dekodera – kwarantanna (nie syslog.generic).
+	if _, err := Event(contract.Event{ID: "z", Source: "entra:nowe", Raw: "{}"}, "conn", ingested, set, warsaw); err == nil {
+		t.Fatal("źródło API bez dekodera powinno trafić do kwarantanny")
 	}
 }

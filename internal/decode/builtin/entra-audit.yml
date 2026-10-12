@@ -1,0 +1,34 @@
+id: entra-audit
+title: Entra ID – zmiany w katalogu (Microsoft Graph directoryAudits)
+description: |
+  Dziennik zmian Entra ID (Azure AD) z Microsoft Graph
+  (auditLogs/directoryAudits): użytkownicy, grupy, role, aplikacje.
+  Konto wykonujące w user.name, konto zmieniane w user.target.name,
+  nadana rola w azure.role.
+version: 1
+priority: 100
+dataset: azure.auditlogs
+match:
+  app: [entra:audit]
+parser:
+  type: json
+set:
+  host.name: entra-id
+fields:
+  event.action: activityDisplayName
+  user.name: [initiatedBy.user.userPrincipalName, initiatedBy.app.displayName]
+  source.ip: initiatedBy.user.ipAddress
+  message: activityDisplayName
+  event.category: category
+  user.target.name: targetResources.0.userPrincipalName
+  azure.role: targetResources.0.modifiedProperties.0.newValue
+  azure.service: loggedByService
+outcome:
+  field: result
+  success: [success]
+  failure: [failure, timeout]
+time:
+  fields: [activityDateTime]
+  layout: rfc3339
+samples:
+  - '{"id":"Directory_8f1d2c3b-0a1b-4c5d-9e8f-7a6b5c4d3e2f","category":"RoleManagement","correlationId":"aa11bb22-cc33-dd44-ee55-ff6677889900","result":"success","resultReason":"","activityDisplayName":"Add member to role","activityDateTime":"2026-10-12T10:05:31.1234567Z","loggedByService":"Core Directory","operationType":"Assign","initiatedBy":{"app":null,"user":{"id":"11111111-2222-3333-4444-555555555555","displayName":null,"userPrincipalName":"heimdall-lab@azujo.pl","ipAddress":"","userType":null}},"targetResources":[{"id":"66666666-7777-8888-9999-000000000000","displayName":null,"type":"User","userPrincipalName":"jkowalski@azujo.pl","modifiedProperties":[{"displayName":"Role.DisplayName","oldValue":null,"newValue":"\"Global Administrator\""}]}],"additionalDetails":[]}'

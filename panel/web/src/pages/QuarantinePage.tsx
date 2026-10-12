@@ -37,7 +37,7 @@ const jobStatus: Record<QuarantineJob["status"], { label: string; color: string 
 };
 
 function supportedSource(s: string) {
-  return s.startsWith("wineventlog:") || s.startsWith("syslog:");
+  return s.startsWith("wineventlog:") || s.startsWith("syslog:") || s.startsWith("entra:");
 }
 
 function EntryRow({ e }: { e: QuarantineEntry }) {

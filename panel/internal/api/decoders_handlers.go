@@ -278,6 +278,11 @@ func (s *Server) testDecoder(w http.ResponseWriter, r *http.Request) {
 	}
 	set, _ := decode.Merge(builtin, cm, loc)
 	now := s.now().UTC()
+	// Źródło próbek: dekoder konektora API (np. Entra ID) dostaje rekordy bez nagłówka syslog.
+	src := "syslog:udp"
+	if cand != nil {
+		src = cand.SampleSource()
+	}
 	results := make([]decodeResult, 0, len(samples))
 	sum := map[string]int{"total": 0, "candidate": 0, "other": 0, "generic": 0, "errors": 0, "no_pattern": 0}
 	for i, raw := range samples {
@@ -286,7 +291,7 @@ func (s *Server) testDecoder(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		sum["total"]++
-		res := decodeOne(raw, peer, i, now, set, loc, cand)
+		res := decodeOne(raw, peer, src, i, now, set, loc, cand)
 		switch {
 		case res.Error != "":
 			sum["errors"]++
@@ -309,8 +314,11 @@ func (s *Server) testDecoder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func decodeOne(raw, peer string, i int, now time.Time, set *decode.Set, loc *time.Location, cand *decode.Decoder) decodeResult {
+func decodeOne(raw, peer, src string, i int, now time.Time, set *decode.Set, loc *time.Location, cand *decode.Decoder) decodeResult {
 	h := decode.ParseHeader(raw, loc, now)
+	if cand != nil && decode.IsAPI(src) {
+		h = cand.SampleHeader(raw, now)
+	}
 	res := decodeResult{Raw: raw, Header: decodeHeader{Format: h.Format, Host: h.Host, App: h.App, PID: h.PID, Message: h.Message},
 		Event: map[string]string{}, Fields: map[string]string{}}
 	if h.Severity >= 0 {
@@ -325,7 +333,7 @@ func decodeOne(raw, peer string, i int, now time.Time, set *decode.Set, loc *tim
 	if cand != nil {
 		res.Candidate = cand.Matches(h, addr)
 	}
-	e, err := decode.Event(contract.Event{ID: "test:" + strconv.Itoa(i), Raw: raw, Peer: peer}, "test", now, set, loc)
+	e, err := decode.Event(contract.Event{ID: "test:" + strconv.Itoa(i), Source: src, Raw: raw, Peer: peer}, "test", now, set, loc)
 	if err != nil {
 		res.Error = err.Error()
 		if d := set.Find(h, addr); d != nil {

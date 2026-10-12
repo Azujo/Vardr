@@ -90,6 +90,14 @@ var products = map[string]string{
 	"fortinet":  "fortinet.fortigate",
 	"mikrotik":  "mikrotik.routeros",
 	"routeros":  "mikrotik.routeros",
+	"azure":     "azure.",
+	"entra":     "azure.",
+}
+
+// azureServices: usługa Sigmy dla product: azure → zbiór danych.
+var azureServices = map[string]string{
+	"signinlogs": "azure.signinlogs",
+	"auditlogs":  "azure.auditlogs",
 }
 
 // datasetIs: event.dataset z rodziny produktu – prefiks zakończony kropką
@@ -118,10 +126,20 @@ func (d datasetIs) sql() string {
 func compileLogsource(l logsource) (Node, error) {
 	prefix, ok := products[strings.ToLower(l.Product)]
 	if l.Product != "" && !ok {
-		return nil, fmt.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik)", l.Product)
+		return nil, fmt.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure)", l.Product)
+	}
+	if prefix == "azure." && l.Service != "" {
+		ds, ok := azureServices[strings.ToLower(l.Service)]
+		if !ok {
+			return nil, fmt.Errorf("product azure: service %q nieobsługiwany (signinlogs, auditlogs)", l.Service)
+		}
+		if l.Category != "" {
+			return nil, fmt.Errorf("product azure: category nieobsługiwana")
+		}
+		return and{datasetIs(ds)}, nil
 	}
 	if prefix != "windows." && (l.Service != "" || l.Category != "") {
-		return nil, fmt.Errorf("product %s: service i category tylko dla windows", l.Product)
+		return nil, fmt.Errorf("product %s: service i category tylko dla windows i azure", l.Product)
 	}
 	n := and{}
 	if prefix != "" {

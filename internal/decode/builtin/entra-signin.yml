@@ -1,0 +1,39 @@
+id: entra-signin
+title: Entra ID – logowania (Microsoft Graph signIns)
+description: |
+  Logowania do Entra ID (Azure AD) pobierane przez konektor z Microsoft
+  Graph (auditLogs/signIns). Wynik z kodu błędu (0 – udane; 50126 – złe
+  hasło, 50053 – konto zablokowane, 500121 – odrzucone MFA…), kraj
+  z lokalizacji Microsoftu (source.geo.country_iso_code), aplikacja
+  i protokół klienta (np. IMAP4 – stare uwierzytelnianie).
+version: 1
+priority: 100
+dataset: azure.signinlogs
+match:
+  app: [entra:signin]
+parser:
+  type: json
+set:
+  event.action: sign-in
+  host.name: entra-id
+fields:
+  user.name: userPrincipalName
+  source.ip: ipAddress
+  host.name: deviceDetail.displayName
+  event.code: status.errorCode
+  message: [status.failureReason, appDisplayName]
+  source.geo.country_iso_code: location.countryOrRegion
+  source.geo.city_name: location.city
+  user_agent.client: clientAppUsed
+  azure.app: appDisplayName
+  azure.risk_level: riskLevelDuringSignIn
+outcome:
+  field: status.errorCode
+  success: ["0"]
+  otherwise: failure
+time:
+  fields: [createdDateTime]
+  layout: rfc3339
+samples:
+  - '{"id":"66ea54eb-6301-4ee5-be62-ff5a759b8100","createdDateTime":"2026-10-12T09:58:00Z","userDisplayName":"jkowalski","userPrincipalName":"jkowalski@azujo.pl","userId":"d7f1c0e4-0c64-4d8e-9f1b-3c0f1a2b3c4d","appId":"00000002-0000-0ff1-ce00-000000000000","appDisplayName":"Office 365 Exchange Online","ipAddress":"185.220.101.7","clientAppUsed":"IMAP4","correlationId":"5f7e1b2a-1111-2222-3333-444455556666","conditionalAccessStatus":"notApplied","isInteractive":false,"riskDetail":"none","riskLevelAggregated":"low","riskLevelDuringSignIn":"low","riskState":"none","riskEventTypes_v2":[],"resourceDisplayName":"Office 365 Exchange Online","resourceId":"00000002-0000-0ff1-ce00-000000000000","status":{"errorCode":50126,"failureReason":"Error validating credentials due to invalid username or password.","additionalDetails":null},"deviceDetail":{"deviceId":"","displayName":"","operatingSystem":"","browser":"","isCompliant":false,"isManaged":false,"trustType":""},"location":{"city":"Amsterdam","state":"","countryOrRegion":"NL","geoCoordinates":{"altitude":null,"latitude":52.37,"longitude":4.89}},"appliedConditionalAccessPolicies":[]}'
+  - '{"id":"0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0","createdDateTime":"2026-10-12T10:01:12Z","userDisplayName":"Anna Nowak","userPrincipalName":"anowak@azujo.pl","appDisplayName":"Microsoft Teams","ipAddress":"192.168.88.120","clientAppUsed":"Browser","isInteractive":true,"riskLevelDuringSignIn":"none","status":{"errorCode":0,"failureReason":"","additionalDetails":null},"deviceDetail":{"deviceId":"","displayName":"DESKTOP-ANO","operatingSystem":"Windows10","browser":"Edge 129.0.0","isCompliant":true,"isManaged":true,"trustType":"AzureAd"},"location":{"city":"Warszawa","state":"Mazowieckie","countryOrRegion":"PL","geoCoordinates":{"latitude":52.23,"longitude":21.01}},"appliedConditionalAccessPolicies":[]}'

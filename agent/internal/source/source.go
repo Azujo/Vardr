@@ -23,6 +23,11 @@ type Record struct {
 	// Truncated: źródło przycięło treść (OriginalSize – rozmiar przed przycięciem).
 	Truncated    bool
 	OriginalSize int
+	// Key: stały identyfikator zdarzenia w źródle (np. id rekordu z API) –
+	// zastępuje numer rekordu w identyfikatorze zdarzenia, więc ponowne
+	// pobranie tego samego rekordu (zakładka czasu po restarcie) daje to samo
+	// zdarzenie, a nie duplikat.
+	Key string
 }
 
 // Position wskazuje ostatni rekord, po którym należy wznowić odczyt.

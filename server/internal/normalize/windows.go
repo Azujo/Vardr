@@ -47,7 +47,7 @@ func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, 
 }
 
 func event(ev contract.Event, agentID string, ingested time.Time) (model.Event, error) {
-	if strings.HasPrefix(ev.Source, "syslog:") {
+	if strings.HasPrefix(ev.Source, "syslog:") || decode.IsAPI(ev.Source) {
 		return decode.Event(ev, agentID, ingested, Decoders.Load(), SyslogLocation)
 	}
 	if !strings.HasPrefix(ev.Source, "wineventlog:") {

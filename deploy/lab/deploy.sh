@@ -118,6 +118,19 @@ for t in "${targets[@]}"; do
       remote "docker compose build collector >/dev/null" && echo "   obraz gotowy – zarejestruj kolektor: deploy/lab/collector-enroll.sh"
     fi
     ;;
+  connector)
+    echo "== connector + entrasim ($version)"
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" -o deploy/lab/bin/siem-connector ./agent/cmd/siem_connector
+    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o deploy/lab/bin/siem-entrasim ./tools/cmd/entrasim
+    copy deploy/lab/bin/siem-connector "$host:$dir/bin/"
+    copy deploy/lab/bin/siem-entrasim "$host:$dir/bin/"
+    # Bez rejestracji (connector/connector.yaml) kontenery tylko by się restartowały.
+    if remote "test -f connector/connector.yaml"; then
+      services+=("entrasim" "connector")
+    else
+      remote "docker compose build connector entrasim >/dev/null" && echo "   obrazy gotowe – zarejestruj konektor: deploy/lab/service-enroll.sh connector"
+    fi
+    ;;
   *)
     echo "nieznany cel: $t" >&2
     exit 2

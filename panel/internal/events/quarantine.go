@@ -116,7 +116,7 @@ func (s *Searcher) QuarantineOverview(ctx context.Context, f QuarantineFilter, l
 func (s *Searcher) QuarantineItems(ctx context.Context, f QuarantineFilter, limit int) ([]reprocess.Item, error) {
 	where, args := f.where()
 	rows, err := s.Conn.Query(ctx, fmt.Sprintf(`SELECT event_id, any(agent_id), any(source), any(peer), any(truncated), any(raw), min(ingested)
-		FROM siem.quarantine WHERE %s AND (startsWith(source, 'wineventlog:') OR startsWith(source, 'syslog:'))
+		FROM siem.quarantine WHERE %s AND (startsWith(source, 'wineventlog:') OR startsWith(source, 'syslog:') OR startsWith(source, 'entra:'))
 		GROUP BY event_id ORDER BY min(ingested) LIMIT %d`, where, limit), args...)
 	if err != nil {
 		return nil, fmt.Errorf("ClickHouse: %w", err)

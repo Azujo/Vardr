@@ -282,6 +282,9 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 		}
 	}
 	ev.ID = contract.EventID(a.opts.AgentID, rec.Channel, cs.Generation, rec.RecordID)
+	if rec.Key != "" {
+		ev.ID = a.opts.AgentID + ":" + rec.Channel + ":k:" + rec.Key
+	}
 	b.pending = append(b.pending, ev)
 	b.bytes += size
 	b.markAdvance(rec.Channel, cs)
