@@ -104,7 +104,11 @@ func run(log *slog.Logger) error {
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	mux := http.NewServeMux()
 	mux.Handle("POST "+contract.IngestPath, h)
-	hb := &ingest.HeartbeatHandler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, Version: svc.Version}
+	hbMax, err := svc.EnvInt("SIEM_INGEST_MAX_HEARTBEATS", 128)
+	if err != nil {
+		return err
+	}
+	hb := &ingest.HeartbeatHandler{Pub: &ingest.JetStreamPublisher{JS: js}, Log: log, Version: svc.Version, MaxInFlight: hbMax}
 	mux.Handle("POST "+contract.HeartbeatPath, hb)
 	srv := &http.Server{
 		Addr:              svc.Env("SIEM_LISTEN", ":8443"),

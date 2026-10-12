@@ -284,31 +284,50 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 			return nil, n, err
 		}
 	}
-	q := fmt.Sprintf(`SELECT %s FROM %s WHERE timestamp >= %s AND timestamp <= %s AND (%s)
+	// Kontekst bez pełnych zdarzeń: do progu wystarczą identyfikator, czas,
+	// pola opisu, klucz i wartość pola Distinct (te same małe litery co
+	// GroupKey/DistinctValue). Pełne zdarzenia z mapą fields – do 20 000 na
+	// klucz – zajmowały detektorowi większość czasu na odśmiecanie (etap 8).
+	parts := make([]string, len(r.Heimdall.GroupBy))
+	for i, f := range r.Heimdall.GroupBy {
+		parts[i] = "lowerUTF8(" + detect.FieldSQL(f) + ")"
+	}
+	keyCol := "''"
+	if len(parts) > 0 {
+		keyCol = "arrayStringConcat([" + strings.Join(parts, ", ") + "], '\x1f')"
+	}
+	valCol := "''"
+	if d := r.Heimdall.Threshold.Distinct; d != "" {
+		valCol = "lowerUTF8(" + detect.FieldSQL(d) + ")"
+	}
+	q := fmt.Sprintf(`SELECT event_id, timestamp, agent_id, host_name, user_name, %s, %s, %s
+		FROM %s WHERE timestamp >= %s AND timestamp <= %s AND (%s)
 		AND %s IN (SELECT tuple(%s) FROM keys)
 		ORDER BY timestamp, event_id LIMIT %d BY %s`,
-		eventCols, x.table(), ms(lo.Add(-span)), ms(hi.Add(span)), r.SQL(), keySQL, strings.Join(names, ", "),
-		maxEntriesPerKey, keySQL)
+		detect.IPExpr, keyCol, valCol, x.table(), ms(lo.Add(-span)), ms(hi.Add(span)), r.SQL(), keySQL,
+		strings.Join(names, ", "), maxEntriesPerKey, keySQL)
 	rows, err := x.Conn.Query(clickhouse.Context(ctx, clickhouse.WithExternalTable(tbl)), q)
 	if err != nil {
 		return nil, n, err
 	}
+	distinct := r.Heimdall.Threshold.Distinct != ""
 	for rows.Next() {
-		e, err := scanEvent(rows)
-		if err != nil {
+		var o alerts.Observation
+		var k string
+		if err := rows.Scan(&o.EventID, &o.EventTime, &o.AgentID, &o.HostName, &o.UserName, &o.SourceIP, &k, &o.Value); err != nil {
 			rows.Close()
 			return nil, n, err
 		}
 		n++
-		if ids[e.ID] {
+		if ids[o.EventID] {
 			continue
 		}
-		ids[e.ID] = true
-		ev := detect.Event{Event: &e}
-		k := strings.Join(r.GroupKey(ev), "\x1f")
-		byKey[k] = append(byKey[k], &entry{Observation: alerts.Observation{EventID: e.ID, EventTime: e.Timestamp,
-			AgentID: e.AgentID, HostName: e.HostName, UserName: e.UserName, SourceIP: e.SourceIP, Value: distinctValue(r, ev)}})
-		evs[k] = ev
+		ids[o.EventID] = true
+		o.EventTime = o.EventTime.UTC()
+		if distinct && (o.Value == "" || o.Value == "-") {
+			o.Value = "(brak)" // jak detect.Rule.DistinctValue
+		}
+		byKey[k] = append(byKey[k], &entry{Observation: o})
 	}
 	err = rows.Err()
 	rows.Close()

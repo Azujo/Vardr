@@ -103,3 +103,20 @@ func TestHeartbeatRejections(t *testing.T) {
 		t.Fatalf("kolejka niedostępna: %d", w.Code)
 	}
 }
+
+func TestHeartbeatInFlightLimit(t *testing.T) {
+	p := &fakeHBPub{}
+	h := &HeartbeatHandler{Pub: p, Log: slog.New(slog.DiscardHandler), MaxInFlight: 1}
+	h.inFlight.Store(1) // jeden heartbeat właśnie w obsłudze
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, hbRequest(t, "agt-1", heartbeat("agt-1"), true))
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" || h.Throttled.Load() != 1 || len(p.got) != 0 {
+		t.Fatalf("limit: %d %v", w.Code, w.Header())
+	}
+	h.inFlight.Store(0)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, hbRequest(t, "agt-1", heartbeat("agt-1"), true))
+	if w.Code != 200 || h.inFlight.Load() != 0 {
+		t.Fatalf("po zwolnieniu: %d, w obsłudze %d", w.Code, h.inFlight.Load())
+	}
+}

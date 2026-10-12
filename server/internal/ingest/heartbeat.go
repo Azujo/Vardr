@@ -25,13 +25,19 @@ type HeartbeatPublisher interface {
 
 // HeartbeatHandler obsługuje POST /v1/heartbeat. Heartbeat nie podlega
 // kontroli przyjęć paczek – jest mały i rzadki (1/min na agenta), a panel
-// powinien widzieć agentów także wtedy, gdy potok jest przeciążony.
+// powinien widzieć agentów także wtedy, gdy potok jest przeciążony. Ma
+// własny limit równoległych żądań: po awarii serwera tysiące agentów wysyłają
+// heartbeat w tej samej chwili (etap 8: ingest kończył się brakiem pamięci).
 type HeartbeatHandler struct {
 	Pub     HeartbeatPublisher
 	Log     *slog.Logger
 	Version string
+	// MaxInFlight: najwięcej heartbeatów obsługiwanych naraz (0 = bez limitu);
+	// nadmiar dostaje 429 – agent wyśle kolejny za minutę.
+	MaxInFlight int
 
-	Accepted, Rejected atomic.Int64
+	Accepted, Rejected, Throttled atomic.Int64
+	inFlight                      atomic.Int64
 }
 
 func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +58,14 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(http.StatusUnauthorized, "brak certyfikatu klienta")
 		return
 	}
+	if n := h.inFlight.Add(1); h.MaxInFlight > 0 && n > int64(h.MaxInFlight) {
+		h.inFlight.Add(-1)
+		h.Throttled.Add(1)
+		w.Header().Set("Retry-After", "60")
+		reply(http.StatusTooManyRequests, "serwer zajęty – kolejny heartbeat za minutę")
+		return
+	}
+	defer h.inFlight.Add(-1)
 	cert := r.TLS.PeerCertificates[0]
 	agentID := cert.Subject.CommonName
 	if !agentIDPattern.MatchString(agentID) {

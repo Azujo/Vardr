@@ -185,6 +185,8 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - po poprawkach: **5000 zdarzeń/s stabilnie** (kolejki ≈ 0, opóźnienie p99 2,5–6 s); **10 000/s** – VM wysycona, ale bez strat: 6 299 835 / 6 299 835 zdarzeń w bazie po 9 min nadrabiania;
   - koszt stosu ok. 0,6 rdzenia na 1000 zdarzeń/s (szacunek sprzętu: roadmapa, załącznik E);
   - **awaria w trakcie:** VM wyłączona przyciskiem w Proxmoxie (12:55) wróciła bez NATS i Prometheusa (Docker ich nie podniósł mimo `restart: unless-stopped`); przez 6 h potok restartował się w pętli, agenci buforowali – po uruchomieniu NATS wszystkie zdarzenia z przerwy dotarły. Poprawka: `boot.sh` z crontaba `@reboot` (`docker compose up -d`). Luka: nikt nie został powiadomiony (Prometheus też leżał) – do przeglądu etapu;
+  - **masowy powrót po awarii serwera:** 3500 agentów, 5000 zdarzeń/s, ingest zatrzymany na 5 min (1,5 mln zdarzeń w buforach agentów). Po starcie ingest ginął z braku pamięci (OOM, 4 razy w 6 min: 256 MB, heartbeaty 3500 agentów bez limitu, do ~10 MB na paczkę w obsłudze), bufory agentów rosły dalej (2 mln). Poprawka: ingest 768 MB z `GOMEMLIMIT`, limit równoległych heartbeatów (`SIEM_INGEST_MAX_HEARTBEATS`, nadmiar → 429), NATS 1 GB. Po wdrożeniu w trakcie testu: ingest bez restartów przyjmował do 44 000 zdarzeń/s, bufory agentów puste po ok. 1,5 min, kolejka serwera po kolejnych 9 min; **4 652 542 / 4 652 542 zdarzeń w bazie**;
+  - silnik zapytań: kontekst progów bez pełnych zdarzeń (klucz i wartość liczone w SQL) – wcześniej GC zajmował połowę czasu detektora;
   - pomoc do pomiarów: `SIEM_PPROF=1` (profile Go na porcie metryk).
 
 ## Etap 7 – Entra ID i korelacja – zakończony (bez prawdziwego tenanta)
