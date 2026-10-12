@@ -174,6 +174,18 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - ochrona przełączana w grupie agentów; stan i zdarzenia na stronie agenta.
   - **Laboratorium (DESKTOP-3P8VS81):** po aktualizacji przez MSI agent przeszedł na uprawnienia chronione bez fałszywego alarmu. `sc stop` → odmowa dostępu. Alerty #50–58: polecenia bez tokenu i ze złym tokenem, `sc sdset` (uprawnienia przywrócone w ciągu 30 s), `taskkill /f`, `sc sdset` + natychmiastowe `sc stop` (alert od razu, z ostatniego heartbeatu), `msiexec /x` bez tokenu (wycofane). Zatrzymanie, aktualizacja i deinstalacja MSI tokenem – bez alertu, token oznaczony jako użyty, ponowne użycie odrzucone.
   - Poprawka przy okazji: akcja MSI zatrzymująca agenta zainstalowanego bez MSI nie trafiała do instalatora (`wixl` nie obsługuje atrybutu `Directory`).
+- **8c (12.10): skala – kalibracja na VM laboratoryjnej (4 vCPU, 10 GB), 3500 symulowanych agentów:**
+  - pierwszy test (5000 zdarzeń/s, paczki co 2 s) – zaległość rosła bez końca; znalezione i poprawione:
+    - writer: limit niepotwierdzonych wiadomości 1024 przy paczkach po kilka zdarzeń → ok. 2000 zdarzeń/s (teraz 16 384, writer ok. 7000/s);
+    - korelacja „udane po nieudanych” przekraczała limit pamięci ClickHouse przy setkach nieudanych logowań na sekundę → liczenie w minutowych kubełkach z dokładnymi brzegami okna;
+    - detektor: GC przy 200 MiB (stan progów kopiował pola klucza w każdym wpisie) → odchudzone wpisy, 768 MB;
+    - zapis alertów: 4 polecenia SQL na trafienie (długi atak dołączany do jednego alertu obciążał PostgreSQL) → zapis zbiorczy;
+    - silnik zapytań: kontekst progów porcjami po 500 kluczy (limit długości SQL) – przy dziesiątkach tysięcy kluczy przebieg się nie kończył, punkt kontrolny stał godzinami → klucze w tabeli zewnętrznej, jedno zapytanie; pobierał też niepotrzebnie surowy XML (200 MB);
+    - przy 3500 agentach narzut na paczkę wysycał VM → **agent 0.7.1**: paczka poniżej 50 zdarzeń czeka do 10 s (serwery i DC bez zmian), zaległa paczka wysyłana przy zatrzymaniu;
+  - po poprawkach: **5000 zdarzeń/s stabilnie** (kolejki ≈ 0, opóźnienie p99 2,5–6 s); **10 000/s** – VM wysycona, ale bez strat: 6 299 835 / 6 299 835 zdarzeń w bazie po 9 min nadrabiania;
+  - koszt stosu ok. 0,6 rdzenia na 1000 zdarzeń/s (szacunek sprzętu: roadmapa, załącznik E);
+  - **awaria w trakcie:** VM wyłączona przyciskiem w Proxmoxie (12:55) wróciła bez NATS i Prometheusa (Docker ich nie podniósł mimo `restart: unless-stopped`); przez 6 h potok restartował się w pętli, agenci buforowali – po uruchomieniu NATS wszystkie zdarzenia z przerwy dotarły. Poprawka: `boot.sh` z crontaba `@reboot` (`docker compose up -d`). Luka: nikt nie został powiadomiony (Prometheus też leżał) – do przeglądu etapu;
+  - pomoc do pomiarów: `SIEM_PPROF=1` (profile Go na porcie metryk).
 
 ## Etap 7 – Entra ID i korelacja – zakończony (bez prawdziwego tenanta)
 

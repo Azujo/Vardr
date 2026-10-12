@@ -883,6 +883,10 @@ docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/02-replay.sh
 
 Sprawdzone na VM: odtworzenie 2446 paczek trwało 1,5 s i dało 100 117 zdarzeń. Wszystkie są identyczne z zapisanymi wcześniej w `siem.events` i mają oryginalne czasy przyjęcia.
 
+### Start po restarcie VM
+
+`deploy.sh config` dopisuje do crontaba użytkownika `siem` wpis `@reboot ~/siem-lab/boot.sh`, który 30 s po starcie systemu uruchamia `docker compose up -d` (dziennik: `~/siem-lab/boot.log`). Sama polityka `restart: unless-stopped` nie wystarczyła: po wyłączeniu VM przyciskiem w Proxmoxie Docker nie podniósł NATS ani Prometheusa.
+
 ### Kopie zapasowe
 
 Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) tworzy **jedną zaszyfrowaną paczkę** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` z:

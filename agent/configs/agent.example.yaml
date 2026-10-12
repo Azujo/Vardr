@@ -20,7 +20,10 @@ start_at: now
 batch:
   max_events: 500       # paczka po zebraniu tylu zdarzeń…
   max_bytes: 4194304    # …albo po przekroczeniu tylu bajtów (przed kompresją)…
-  flush_interval: 2s    # …albo po tym czasie
+  flush_interval: 2s    # …albo po tym czasie,
+  flush_min_events: 50  # …ale paczka mniejsza niż tyle zdarzeń…
+  flush_max_wait: 10s   # …czeka na kolejne do tego czasu (mniej małych paczek
+                        # z rzadko piszących stacji; = flush_interval wyłącza)
   # Zdarzenia dłuższe niż limit są przycinane i oznaczane jako truncated
   # (np. bardzo długie bloki skryptów PowerShell 4104). Domyślnie 512 KiB.
   max_event_bytes: 524288

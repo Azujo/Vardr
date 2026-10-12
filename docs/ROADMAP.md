@@ -848,6 +848,16 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | 20 000 zdarzeń/s, 2 min | – | ingest przyjmuje 100% (720 krótkich odmów 429), normalizator do 17 000/s, writer ok. 10 000/s, VM wysycona (load 11 na 4 vCPU); 2 596 929 z 2 596 929 zdarzeń w bazie po opróżnieniu kolejki |
 
 - Wniosek: przy 10 000 zdarzeń/s, czyli szacowanym szczycie dla firmy z roadmapy, cały potok mieści się na jednej VM z 4 vCPU. Następnym ograniczeniem są writer (W7) i liczba rdzeni. Dalej skaluje się dokładaniem rdzeni lub maszyn.
+- **Korekta (etap 8, 12.10.2026):** powyższe pomiary miały 200–500 agentów z dużymi paczkami i bez detekcji. Przy **3500 agentach** po 1–3 zdarzenia/s paczki mają kilka zdarzeń, a koszt na paczkę (żądanie TLS, wiadomość w kolejce, każdy etap serwera) dominuje. Z pełną detekcją (oba silniki, korelacje, archiwum) ta sama VM:
+
+| Test (3500 agentów, 10 min) | Wynik |
+|---|---|
+| 5000/s, paczki co 2 s (agent ≤ 0.7.0) | zaległość rośnie bez końca: writer ok. 2000/s (limit niepotwierdzonych wiadomości), detektor 400–1000/s (GC przy 200 MiB, zapis alertów po 4 polecenia na trafienie, kontekst progów porcjami po 500 kluczy), korelacja ponad limit pamięci ClickHouse |
+| 5000/s po poprawkach, paczki co 2 s | writer i detektor po ok. 3000/s – VM wysycona (load 24, 0% bezczynności) narzutem na paczkę |
+| 5000/s, paczki do 10 s (agent 0.7.1) | **wszystkie etapy nadążają**, kolejki ≈ 0, opóźnienie potoku p99 2,5–6 s, 0,1% odmów 429, 24% CPU wolne |
+| 10 000/s, paczki do 10 s | VM wysycona (CPU 100%, ingest i NATS na limitach pamięci, swap); zaległość ok. 100 tys. wiadomości odrobiona 9 min po teście; **6 299 835 / 6 299 835 zdarzeń w bazie** |
+
+- Koszt całego stosu: ok. **0,6 rdzenia na 1000 zdarzeń/s** (z ClickHouse, PostgreSQL, NATS i detekcją). Szacunek dla 15 000 zdarzeń/s: ok. 9–10 rdzeni pod obciążeniem, czyli serwer 16 rdzeni / 32 GB z zapasem; w laboratorium (4 vCPU, 10 GB) bezpiecznie ok. 5000/s.
 
 **W2 – osobna retencja surowego XML (07.10.2026)**
 
