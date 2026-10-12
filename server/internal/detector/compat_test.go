@@ -57,7 +57,7 @@ const compatDDL = `CREATE TABLE compat_test.events
 )
 ENGINE = ReplacingMergeTree(ingested)
 PARTITION BY toYYYYMMDD(ingested)
-ORDER BY (event_dataset, host_name, timestamp, event_id)`
+ORDER BY (event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)`
 
 var compatT0 = time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
 

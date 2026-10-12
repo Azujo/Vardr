@@ -49,7 +49,15 @@ CREATE TABLE IF NOT EXISTS siem.events
 )
 ENGINE = ReplacingMergeTree(ingested)
 PARTITION BY toYYYYMMDD(ingested)
-ORDER BY (event_dataset, host_name, timestamp, event_id)
+-- Godzina przyjęcia na drugim miejscu (etap 8): silnik zapytań detekcji
+-- i korelacje czytają nowe zdarzenia po ingested – przy kluczu
+-- (zbiór, komputer, czas) po scaleniu części indeks min/max na ingested
+-- prawie nic nie odcinał i każdy przebieg czytał całą dzienną partycję.
+-- Wyszukiwanie ogranicza ingested od dołu (od − 1 h), więc też korzysta.
+-- Koszt: duplikat dosłany w innej godzinie przyjęcia nie jest scalany
+-- (wyszukiwanie i tak je pomija, liczniki mogą go policzyć).
+-- Instalacje z dawnym kluczem: clickhouse/events-order.sh.
+ORDER BY (event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)
 TTL toDateTime(ingested) + INTERVAL ${SIEM_EVENTS_TTL_DAYS} DAY
 SETTINGS ttl_only_drop_parts = 1;
 
