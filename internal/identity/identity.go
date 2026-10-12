@@ -116,6 +116,9 @@ var current atomic.Pointer[Resolver]
 
 func init() { current.Store(New(Config{})) }
 
+// TechnicalDomain: „domena” kont wbudowanych (NT AUTHORITY, VIRTUAL USERS…).
+func TechnicalDomain(d string) bool { return technicalDomains[Normalize(d)] }
+
 // Current zwraca bieżący Resolver.
 func Current() *Resolver { return current.Load() }
 

@@ -330,6 +330,9 @@ func (s *Server) domainsSeen(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]domainSeenView, 0, len(seen))
 	for _, d := range seen {
+		if identity.TechnicalDomain(d.Domain) {
+			continue // konta wbudowane (np. ze zdarzeń sprzed poprawki) – nie do listy organizacji
+		}
 		out = append(out, domainSeenView{DomainSeen: d, Covered: len(conf) == 0 || conf[d.Domain]})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"domains": out})

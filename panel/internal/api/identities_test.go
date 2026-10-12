@@ -48,7 +48,7 @@ func (f fakePeople) People(context.Context, time.Time, string, int) ([]events.Pe
 	return f, nil
 }
 func (f fakePeople) DomainsSeen(context.Context, time.Time) ([]events.DomainSeen, error) {
-	return []events.DomainSeen{{Domain: "azujo", Events: 90}, {Domain: "azujo.pl", Events: 10}}, nil
+	return []events.DomainSeen{{Domain: "azujo", Events: 90}, {Domain: "virtual users", Events: 3}, {Domain: "azujo.pl", Events: 10}}, nil
 }
 
 func TestIdentitiesAPI(t *testing.T) {
@@ -89,7 +89,7 @@ func TestIdentitiesAPI(t *testing.T) {
 	}
 	// Domena NetBIOS spoza listy – podpowiedź.
 	if _, out, _ := analyst.do("GET", "/api/v1/identities/domains-seen", nil); out["domains"].([]any)[0].(map[string]any)["covered"] != true ||
-		out["domains"].([]any)[1].(map[string]any)["covered"] != true {
+		out["domains"].([]any)[1].(map[string]any)["covered"] != true || len(out["domains"].([]any)) != 2 {
 		t.Fatalf("domeny w zdarzeniach (azujo i azujo.pl na liście): %v", out)
 	}
 	code, out, _ := analyst.do("GET", "/api/v1/identities/resolve?user=J.Kowalski", nil)

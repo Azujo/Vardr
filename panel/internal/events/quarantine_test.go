@@ -57,3 +57,33 @@ func TestQuarantineClickHouse(t *testing.T) {
 		t.Fatalf("filtr agenta: %d %v", len(items), err)
 	}
 }
+
+// Podpowiedź domen i osoby na danych laboratorium.
+func TestPeopleClickHouse(t *testing.T) {
+	addr := os.Getenv("SIEM_TEST_CH_ADDR")
+	if addr == "" {
+		t.Skip("brak SIEM_TEST_CH_ADDR – pomijam test na ClickHouse")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	s, err := Open(ctx, addr, os.Getenv("SIEM_TEST_CH_USER"), os.Getenv("SIEM_TEST_CH_PASSWORD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := time.Now().Add(-7 * 24 * time.Hour)
+	ds, err := s.DomainsSeen(ctx, from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range ds {
+		if strings.ContainsAny(d.Domain, `\@`) || d.Domain != strings.ToLower(d.Domain) {
+			t.Fatalf("domena: %+v", d)
+		}
+	}
+	t.Logf("domeny: %+v", ds)
+	ps, err := s.People(ctx, from, "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("osób: %d", len(ps))
+}
