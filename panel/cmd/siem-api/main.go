@@ -280,7 +280,11 @@ func serve(log *slog.Logger) error {
 
 	// Huginn: heartbeaty agentów z NATS (publikuje je siem-ingest).
 	if natsURL := os.Getenv("SIEM_NATS_URL"); natsURL != "" {
-		nc, err := nats.Connect(natsURL, nats.Name("siem-api"), nats.MaxReconnects(-1), nats.ReconnectWait(2*time.Second))
+		// Bez NATS panel i przekaźnik alertów Grafany mają działać dalej: połączenie
+		// zestawia się w tle (etap 8: awaria NATS po restarcie VM wyłączała też
+		// panel – i powiadomienie o awarii nie miało którędy wyjść).
+		nc, err := nats.Connect(natsURL, nats.Name("siem-api"), nats.MaxReconnects(-1), nats.ReconnectWait(2*time.Second),
+			nats.RetryOnFailedConnect(true))
 		if err != nil {
 			return fmt.Errorf("NATS: %w", err)
 		}

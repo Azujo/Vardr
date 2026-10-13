@@ -115,11 +115,13 @@ services:
       SIEM_CLICKHOUSE_USER: siem_writer
       SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
       GOGC: "200"
-      GOMEMLIMIT: 400MiB
+      # Paczka do 20 000 wierszy z surowym XML + dekodowanie: przy 10 000
+      # zdarzeń/s 400 MiB dawało 50% CPU na odśmiecanie (etap 8).
+      GOMEMLIMIT: 800MiB
     depends_on:
       nats: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
-    mem_limit: 512m
+    mem_limit: 1g
 
   # Ścieżka odtwarzania z archiwum (replay): te same programy, osobne strumienie
   # (SIEM_REPLAY_RAW → SIEM_REPLAY_EVENTS) i osobna tabela siem.events_replay.

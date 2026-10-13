@@ -24,3 +24,18 @@ func TestGeneratedEventsNormalize(t *testing.T) {
 		}
 	}
 }
+
+func TestFailureShare(t *testing.T) {
+	defer SetFailureShare(0.2)
+	if len(users) != 3500 || users[0] != "jkowalski" || users[100] != "jkowalski2" {
+		t.Fatalf("konta: %d %q %q", len(users), users[0], users[100])
+	}
+	SetFailureShare(5)
+	if mix[failedIdx].weight != 50 || mixTotal != 1000 {
+		t.Fatalf("5%%: %d/%d", mix[failedIdx].weight, mixTotal)
+	}
+	SetFailureShare(0.2)
+	if mix[failedIdx].weight != 2 || mix[0].weight != 398 || mixTotal != 1000 {
+		t.Fatalf("0,2%%: %d %d/%d", mix[failedIdx].weight, mix[0].weight, mixTotal)
+	}
+}

@@ -75,7 +75,9 @@ func main() {
 	flag.IntVar(&o.maxBacklog, "backlog", 50000, "pojemność bufora agenta (symulacja dziennika Windows)")
 	flag.DurationVar(&o.timeout, "timeout", 30*time.Second, "limit czasu żądania")
 	flag.BoolVar(&o.heartbeat, "heartbeat", true, "wysyłaj heartbeaty (co minutę, jak agent) – agenci widoczni w panelu")
+	failures := flag.Float64("failures", 0.2, "udział nieudanych logowań 4625 w % (5 = ciągły brute force na wszystkich kontach)")
 	flag.Parse()
+	loadgen.SetFailureShare(*failures)
 
 	if err := run(o); err != nil {
 		fmt.Fprintln(os.Stderr, "błąd:", err)

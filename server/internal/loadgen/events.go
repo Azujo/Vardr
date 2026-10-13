@@ -9,27 +9,44 @@ import (
 )
 
 // Mieszanka zdarzeń zbliżona do stacji roboczej / serwera członkowskiego
-// w domenie: głównie logowania i procesy, rzadko instalacje usług.
+// w domenie: głównie logowania i procesy, rzadko instalacje usług. Wagi
+// w tysięcznych; udział nieudanych logowań ustawia SetFailureShare.
 var mix = []struct {
 	weight int
 	gen    func(host string, rec uint64, t string) (channel, raw string)
 }{
-	{35, logon4624},
-	{20, logoff4634},
-	{25, process4688},
-	{5, failed4625},
-	{10, app1000},
-	{4, system7036},
-	{1, service7045},
+	{398, logon4624},
+	{200, logoff4634},
+	{250, process4688},
+	{2, failed4625},
+	{100, app1000},
+	{40, system7036},
+	{10, service7045},
 }
 
-var mixTotal = func() int {
+const failedIdx = 3
+
+var mixTotal = sumWeights()
+
+func sumWeights() int {
 	n := 0
 	for _, m := range mix {
 		n += m.weight
 	}
 	return n
-}()
+}
+
+// SetFailureShare ustawia udział nieudanych logowań 4625 w procentach
+// (domyślnie 0,2% – zwykły dzień firmy; np. 5 = ciągły brute force na
+// wszystkich kontach, scenariusz przeciążenia detekcji progowej). Różnica
+// idzie z udanych logowań. Wywołać przed generowaniem zdarzeń.
+func SetFailureShare(pct float64) {
+	f := int(pct*10 + 0.5)
+	f = max(0, min(f, mix[0].weight+mix[failedIdx].weight))
+	mix[0].weight += mix[failedIdx].weight - f
+	mix[failedIdx].weight = f
+	mixTotal = sumWeights()
+}
 
 // RandomEvent zwraca kanał i XML losowego zdarzenia z typowej mieszanki.
 func RandomEvent(host string, rec uint64, now time.Time) (string, string) {
@@ -59,10 +76,18 @@ func secSys(id, version, task int, keywords, t string, rec uint64, host string) 
 var users = func() []string {
 	first := []string{"jan", "anna", "piotr", "katarzyna", "tomasz", "agnieszka", "marek", "ewa", "pawel", "magda"}
 	last := []string{"kowalski", "nowak", "wisniewski", "wojcik", "kaminski", "lewandowski", "zielinski", "szymanski", "wozniak", "dabrowski"}
+	// 3500 kont jak w firmie z roadmapy (jkowalski, jkowalski2…) – przy 100
+	// kontach każde miało kilka nieudanych logowań na sekundę.
 	var out []string
-	for _, f := range first {
-		for _, l := range last {
-			out = append(out, f[:1]+l)
+	for n := 1; len(out) < 3500; n++ {
+		for _, f := range first {
+			for _, l := range last {
+				name := f[:1] + l
+				if n > 1 {
+					name += fmt.Sprint(n)
+				}
+				out = append(out, name)
+			}
 		}
 	}
 	return out
