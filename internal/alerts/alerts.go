@@ -576,16 +576,26 @@ func (p *PG) FilterNew(ctx context.Context, hits []Hit) ([]Hit, error) {
 }
 
 // KnownEvents zwraca te z podanych zdarzeń, które są już w alertach reguły.
+// Porcjami po knownChunk: setki tysięcy identyfikatorów w jednym zapytaniu
+// (silnik zapytań przy długim ataku) przekraczały pamięć współdzieloną
+// PostgreSQL w kontenerze (etap 8).
 func (p *PG) KnownEvents(ctx context.Context, rule string, ids []string) (map[string]bool, error) {
-	rows, err := p.pool.Query(ctx, `SELECT event_id FROM gjallarhorn.alert_events
-		WHERE rule_id = $1 AND event_id = ANY($2) AND alert_id IS NOT NULL`, rule, ids)
-	if err != nil {
-		return nil, err
+	const knownChunk = 10000
+	out := map[string]bool{}
+	for start := 0; start < len(ids); start += knownChunk {
+		chunk := ids[start:min(start+knownChunk, len(ids))]
+		rows, err := p.pool.Query(ctx, `SELECT event_id FROM gjallarhorn.alert_events
+			WHERE rule_id = $1 AND event_id = ANY($2) AND alert_id IS NOT NULL`, rule, chunk)
+		if err != nil {
+			return nil, err
+		}
+		found, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range found {
+			out[id] = true
+		}
 	}
-	found, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	out := make(map[string]bool, len(found))
-	for _, id := range found {
-		out[id] = true
-	}
-	return out, err
+	return out, nil
 }

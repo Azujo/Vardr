@@ -362,7 +362,11 @@ func openIndex(ctx context.Context, log *slog.Logger, store *alerts.PG) (*detect
 	if err := svc.Retry(ctx, log, "ClickHouse (silnik zapytań)", func() error { return conn.Ping(ctx) }); err != nil {
 		return nil, err
 	}
-	return &detector.Index{Conn: conn, Known: store.KnownEvents}, nil
+	maxRows, err := svc.EnvInt("SIEM_INDEX_MAX_ROWS", detector.MaxIndexRows)
+	if err != nil {
+		return nil, err
+	}
+	return &detector.Index{Conn: conn, Known: store.KnownEvents, MaxRows: maxRows}, nil
 }
 
 // runIndex: przebiegi silnika zapytań. Każdy ocenia zdarzenia przyjęte od

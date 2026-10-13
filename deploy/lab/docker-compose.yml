@@ -271,12 +271,12 @@ services:
       SIEM_DETECTOR_CH_ADDR: clickhouse:9000
       SIEM_DETECTOR_CH_USER: siem_detector
       SIEM_DETECTOR_CH_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
-      GOMEMLIMIT: 600MiB
+      GOMEMLIMIT: 850MiB
     depends_on:
       nats: { condition: service_healthy }
       saga: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
-    mem_limit: 768m
+    mem_limit: 1g
 
   # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).
   saga:
@@ -300,6 +300,7 @@ services:
       timeout: 3s
       retries: 20
     mem_limit: 512m
+    shm_size: 256m          # równoległe zapytania PostgreSQL (domyślne 64 MB Dockera nie wystarczało, etap 8)
     logging: *logging
 
   # Hliðskjálf – panel (siem-api + aplikacja React) pod HTTPS :8444.

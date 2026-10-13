@@ -32,7 +32,12 @@ import (
 // MaxIndexRows: najwięcej zdarzeń w jednym przebiegu; przy większej liczbie
 // przebieg kończy się na ostatnim pobranym wierszu (Next), a następny
 // zaczyna dokładnie za nim.
-const MaxIndexRows = 50000
+//
+// Etap 8: 50 000 (teraz 100 000) przy długim ataku (gorące klucze progów z tysiącami zdarzeń)
+// dawało przebieg na kilka sekund danych, każdy z kosztownym kontekstem –
+// silnik nie nadrabiał. Bez surowego XML wiersz to ok. 0,5 KB. Zmiana:
+// SIEM_INDEX_MAX_ROWS.
+const MaxIndexRows = 100000
 
 // Index to silnik zapytań.
 type Index struct {
