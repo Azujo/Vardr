@@ -1008,4 +1008,6 @@ bin\siem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 
 
 Co 10 s generator pokazuje zdarzenia wygenerowane i przyjęte, odmowy, opóźnienie odpowiedzi i bufor agentów. Gdy bufor agenta się przepełni (`-backlog`, domyślnie 50 000), zdarzenia przepadają jak w nadpisanym dzienniku Windows i generator je liczy. Zdarzenia testowe mają `agent_id` z prefiksem `agt-load-` i znikają z bazy razem z retencją (5 dni).
 
+Domyślnie generator ma 3500 kont i 0,2% nieudanych logowań (zwykły dzień firmy); `-failures 5` to ciągły brute force na wszystkich kontach (scenariusz przeciążenia detekcji). Zdarzenia z prefiksem `agt-load-` nie trafiają do archiwum (`SIEM_ARCHIVE_EXCLUDE_AGENTS`). Po teście: `cd ~/siem-lab && bash loadtest-cleanup.sh` – usuwa zdarzenia, alerty, stan progów i agentów generatora (w tej kolejności, inaczej silnik zapytań odtworzy alerty z danych, które zostały).
+
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).

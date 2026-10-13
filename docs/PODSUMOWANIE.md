@@ -188,7 +188,8 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - **masowy powrót po awarii serwera:** 3500 agentów, 5000 zdarzeń/s, ingest zatrzymany na 5 min (1,5 mln zdarzeń w buforach agentów). Po starcie ingest ginął z braku pamięci (OOM, 4 razy w 6 min: 256 MB, heartbeaty 3500 agentów bez limitu, do ~10 MB na paczkę w obsłudze), bufory agentów rosły dalej (2 mln). Poprawka: ingest 768 MB z `GOMEMLIMIT`, limit równoległych heartbeatów (`SIEM_INGEST_MAX_HEARTBEATS`, nadmiar → 429), NATS 1 GB. Po wdrożeniu w trakcie testu: ingest bez restartów przyjmował do 44 000 zdarzeń/s, bufory agentów puste po ok. 1,5 min, kolejka serwera po kolejnych 9 min; **4 652 542 / 4 652 542 zdarzeń w bazie**;
   - silnik zapytań: kontekst progów bez pełnych zdarzeń (klucz i wartość liczone w SQL) – wcześniej GC zajmował połowę czasu detektora;
   - **klucz sortowania `siem.events`** (wybrany wariant 1): `(event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)` zamiast `(event_dataset, host_name, timestamp, event_id)`. Silnik zapytań czytał w każdym przebiegu całą dzienną partycję (14,6 mln wierszy, 6,8 GB, ok. 25 s) – teraz najwyżej 80 tys. wierszy w ok. 130 ms. Migracja istniejącej tabeli: `clickhouse/events-order.sh` (writer zatrzymany, kopia partycjami z kontrolą liczby wierszy, atomowa zamiana; w laboratorium 12 s, bez zdarzeń generatora). Koszt: duplikat dosłany w innej godzinie przyjęcia nie jest scalany (wyszukiwanie go pomija);
-  - sprzątanie po testach: 6286 alertów i 3500 agentów generatora usunięte, 50 alertów z ćwiczeń (etapy 4–8) zamkniętych z powodem „ćwiczenie”; zdarzenia testowe zostają tylko w archiwum Urd (do końca retencji – łańcuch hashy);
+  - sprzątanie po testach: 6286 alertów i 3500 agentów generatora usunięte, 50 alertów z ćwiczeń (etapy 4–8) zamkniętych z powodem „ćwiczenie”; zdarzenia generatora nie trafiają do archiwum Urd (`SIEM_ARCHIVE_EXCLUDE_AGENTS=agt-load-`), poza celowym testem archiwum (`agt-arch-`, 3,15 mln zdarzeń, do końca retencji). Skrypt `loadtest-cleanup.sh` – najpierw zdarzenia w ClickHouse, potem alerty (inaczej silnik zapytań odtwarzał je z tych samych danych);
+  - **VM 8 vCPU (13.10):** 10 000 zdarzeń/s stabilnie (p99 3 s, 29% CPU wolne, bez swapu) – po podniesieniu pamięci writera (GC 50% CPU przy 400 MiB); 15 000/s wysyca VM, ale bez strat (9 455 168 / 9 455 168); archiwizator przy 10 000/s nadąża (ok. 120 B na zdarzenie, ok. 100 GB/dobę); generator urealniony (3500 kont, 0,2% nieudanych logowań; `-failures 5` – scenariusz ataku);
   - pomoc do pomiarów: `SIEM_PPROF=1` (profile Go na porcie metryk).
 
 ## Etap 7 – Entra ID i korelacja – zakończony (bez prawdziwego tenanta)
@@ -223,6 +224,23 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - logowanie VPN i Entra powiązane z tą samą osobą – spełnione (osoba w zdarzeniach, korelacja);
   - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
 - **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
+
+## Przegląd etapu 8 (13.10.2026) – błędy i luki
+
+| # | Pr. | Problem | Skutek | Stan |
+|---|---|---|---|---|
+| 1 | wysoki | Po wyłączeniu VM przyciskiem w Proxmoxie Docker nie podniósł NATS ani Prometheusa | 6 h bez potoku i bez powiadomienia: usługi restartowały się w pętli, panel i przekaźnik alertów (siem-api) też – brak NATS kończył API | Naprawione: start stosu przy uruchomieniu VM (`boot.sh`, sprawdzony przy resecie 12.10), alert Grafany „Potok zdarzeń nie działa” (sprawdzony: writer zatrzymany → wiadomość na Discordzie po ok. 6 min), API startuje bez NATS. Przyczyna po stronie Dockera nieznana |
+| 2 | wysoki | Wąskie gardła przy 3500 agentach z małymi paczkami | Przy 5000 zdarzeń/s zaległość rosła bez końca | Naprawione w 8c: limit niepotwierdzonych wiadomości writera, korelacja w kubełkach, pamięć detektora i writera, zbiorczy zapis alertów, kontekst progów jednym zapytaniem, klucz sortowania zdarzeń, agent 0.7.1 (paczki do 10 s) |
+| 3 | średni | Ingest ginął z braku pamięci przy masowym powrocie agentów | Każdy restart zrywał tysiące połączeń, bufory agentów rosły | Naprawione: 768 MB + `GOMEMLIMIT`, limit heartbeatów; po poprawce 44 000 zdarzeń/s przy powrocie |
+| 4 | średni | Pierwsza wersja alertu „Potok zdarzeń nie działa” liczyła każdą przerwę z 3 min | Alarm przy każdym wdrożeniu | Naprawione przed użyciem: alarm, gdy usługa nie działała przez większość z 5 min |
+| 5 | średni | Silnik zapytań przy długim, masowym ataku (setki nieudanych logowań na sekundę na tych samych kontach) | Każdy przebieg na nowo czyta kontekst „gorących” kluczy (do 15 mln wierszy) – silnik zostawał w tyle; PostgreSQL przekraczał pamięć współdzieloną | Złagodzone: przebieg do 100 000 zdarzeń, sprawdzanie znanych zdarzeń porcjami, `shm` Sagi 256 MB, detektor 1 GB. Zostaje: przy takim ataku silnik zapytań może być godzinę w tyle (alert Grafany po 15 min); silnik w locie wykrywa na bieżąco |
+| 6 | uwaga | Limit kluczy progów w pamięci (200 000 zdarzeń) | Przy ataku z bardzo wielu adresów silnik w locie pomija część zdarzeń w progach (log, metryka) | Nadrabia silnik zapytań; limit chroni detektor przed brakiem pamięci |
+| 7 | uwaga | Wspólna blokada zapisu alertów obu silników | Duży zapis silnika zapytań wstrzymuje na chwilę silnik w locie (zaobserwowane: pół minuty przy 10 000/s) | Później: osobne transakcje albo kolejka zapisu |
+| 8 | uwaga | Testy skali bez archiwum (generator wykluczony z archiwizacji) | Archiwizator nie był obciążony | Sprawdzone osobno (`agt-arch-`, 10 000/s): nadąża. Plan dysku: ok. 100 GB/dobę przy 10 000 zdarzeń/s, ok. 3 TB na 30 dni |
+| 9 | uwaga | Nowy klucz sortowania: duplikat dosłany w innej godzinie przyjęcia nie jest scalany | Liczniki (histogram) mogą policzyć zdarzenie dwa razy; wyszukiwanie je pomija | Do pamiętania |
+| 10 | uwaga | Granica ochrony agenta | Administrator może zmienić uprawnienia usługi (`sc sdset`) i zatrzymać ją – zgłoszone jako sabotaż; zatrzymanie z konta SYSTEM traktowane jak instalator (alert dopiero, gdy agent nie wróci w 15 min); kolektor i konektor (kontenery Linux) bez ochrony | Opisane („utrudnić i wykryć”) |
+| 11 | uwaga | Agent 0.7.1 trzyma małą paczkę do 10 s | Zdarzenie ze stacji o małym ruchu dociera do 8 s później | Świadomy koszt; serwery i DC bez zmian |
+| 12 | uwaga | Sprzątanie po testach | Usunięte alerty wracały, bo zdarzenia testowe zostały w ClickHouse | `loadtest-cleanup.sh` (właściwa kolejność) |
 
 ## Przegląd etapu 7 (12.10.2026) – błędy i luki
 

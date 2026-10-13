@@ -857,6 +857,7 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | 5000/s, paczki do 10 s (agent 0.7.1) | **wszystkie etapy nadążają**, kolejki ≈ 0, opóźnienie potoku p99 2,5–6 s, 0,1% odmów 429, 24% CPU wolne |
 | 10 000/s, paczki do 10 s | VM wysycona (CPU 100%, ingest i NATS na limitach pamięci, swap); zaległość ok. 100 tys. wiadomości odrobiona 9 min po teście; **6 299 835 / 6 299 835 zdarzeń w bazie** |
 
+- **Ta sama VM z 8 vCPU (13.10.2026):** 10 000 zdarzeń/s stabilnie (opóźnienie p99 3 s, 29% CPU wolne); 15 000/s wysyca VM, ale bez strat – 9 455 168 / 9 455 168 zdarzeń po ok. 9 min nadrabiania. Pamięć 10 GB wystarcza po podniesieniu limitów writera (1 GB) i detektora (1 GB).
 - Koszt całego stosu: ok. **0,6 rdzenia na 1000 zdarzeń/s** (z ClickHouse, PostgreSQL, NATS i detekcją). Szacunek dla 15 000 zdarzeń/s: ok. 9–10 rdzeni pod obciążeniem, czyli serwer 16 rdzeni / 32 GB z zapasem; w laboratorium (4 vCPU, 10 GB) bezpiecznie ok. 5000/s.
 
 **W2 – osobna retencja surowego XML (07.10.2026)**
