@@ -31,6 +31,9 @@ psql() { docker compose exec -T saga psql -U saga_admin -d saga -At -v ON_ERROR_
 echo "zdarzenia w ClickHouse: $(ch -q "SELECT count() FROM siem.events WHERE $ch_cond")"
 ch --mutations_sync 2 -q "ALTER TABLE siem.events DELETE WHERE $ch_cond"
 ch --mutations_sync 2 -q "ALTER TABLE siem.quarantine DELETE WHERE $ch_cond"
+if [[ $(ch -q "EXISTS TABLE siem.auth_events") == 1 ]]; then
+  ch --mutations_sync 2 -q "ALTER TABLE siem.auth_events DELETE WHERE $ch_cond"
+fi
 
 docker compose stop detector >/dev/null
 trap 'docker compose start detector >/dev/null; echo "detektor uruchomiony"' EXIT

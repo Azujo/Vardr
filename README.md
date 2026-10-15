@@ -891,6 +891,14 @@ Sprawdzone na VM: odtworzenie 2446 paczek trwało 1,5 s i dało 100 117 zdarzeń
 
 `siem.events` jest sortowana po `(event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)`. Silnik zapytań i korelacje czytają nowe zdarzenia po czasie przyjęcia, a dawny klucz bez `ingested` zmuszał je do czytania całej dziennej partycji. Instalację z dawnym kluczem przenosi `bash clickhouse/events-order.sh [prefiks_agentów_do_pominięcia]` w `~/siem-lab`. Skrypt na czas kopii zatrzymuje writer (zdarzenia czekają w NATS), porównuje liczbę wierszy w każdej partycji i zostawia starą tabelę jako `siem.events_old`.
 
+### Tabela logowań dla korelacji (od etapu 8)
+
+Korelacje („udane logowanie po serii nieudanych”, „logowanie z nowego kraju”) liczą się na `siem.auth_events`, a nie na `siem.events`. Widok zmaterializowany odkłada do niej przy zapisie tylko logowania (udane i nieudane, z ustaloną osobą). Wcześniej korelacja co minutę czytała wszystkie zdarzenia Windows z ostatnich 1,5 h: przy 7000 zdarzeń/s było to ok. 48 mln wierszy na przebieg, teraz ok. 100 tys. Udane logowania Windows (4624, najliczniejsze) żyją w tabeli 1 dzień, reszta tyle co zdarzenia. Na istniejącej instalacji tabelę zakłada (i dopisuje logowania z całej retencji) polecenie w `~/siem-lab`:
+
+    docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
+
+Warunki logowań w skrypcie muszą być takie same jak w `server/internal/detector/correlate.go` – pilnuje tego test korelacji.
+
 ### Kopie zapasowe
 
 Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) tworzy **jedną zaszyfrowaną paczkę** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` z:

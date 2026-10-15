@@ -28,5 +28,8 @@ ALTER TABLE siem.events MODIFY COLUMN raw String CODEC(ZSTD(3)) TTL toDateTime(i
 ALTER TABLE siem.quarantine MODIFY TTL toDateTime(ingested) + INTERVAL $events DAY;
 SQL
 
+# Tabela logowań korelacji (etap 8): ta sama retencja (udane logowania Windows – 1 dzień).
+docker compose exec -T -e SIEM_EVENTS_TTL_DAYS="$events" clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
+
 echo "Retencja: zdarzenia i kwarantanna $events dni, surowy XML $raw dni."
 ch -q "SELECT name, formatReadableSize(data_compressed_bytes) AS na_dysku FROM system.columns WHERE database = 'siem' AND table = 'events' ORDER BY data_compressed_bytes DESC LIMIT 4 FORMAT PrettyCompactMonoBlock"

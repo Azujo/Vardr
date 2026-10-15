@@ -32,8 +32,9 @@ func TestCorrelations(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	for _, q := range []string{"DROP DATABASE IF EXISTS corr_test", "CREATE DATABASE corr_test",
-		strings.Replace(compatDDL, "compat_test.events", "corr_test.events", 1)} {
+	auth := authDDL(t, "corr_test")
+	for _, q := range append([]string{"DROP DATABASE IF EXISTS corr_test", "CREATE DATABASE corr_test",
+		strings.Replace(compatDDL, "compat_test.events", "corr_test.events", 1)}, auth...) {
 		if err := conn.Exec(ctx, q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
@@ -96,7 +97,7 @@ func TestCorrelations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := &Correlator{Conn: conn, Table: "corr_test.events"}
+	c := &Correlator{Conn: conn, Table: "corr_test.auth_events"}
 	hits, err := c.Run(ctx, now.Add(-time.Hour), now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
@@ -123,4 +124,33 @@ func TestCorrelations(t *testing.T) {
 	if hits, err := c.Run(ctx, now.Add(time.Minute), now.Add(2*time.Minute)); err != nil || len(hits) != 0 {
 		t.Fatalf("puste okno: %d %v", len(hits), err)
 	}
+}
+
+// authDDL: tabela logowań i widok zmaterializowany z deploy/lab/clickhouse/init/03-auth-events.sh
+// (ten sam SQL co na serwerze) w bazie db. Sprawdza też, że warunki logowań
+// w skrypcie są takie same jak authFailureSQL i authSuccessSQL.
+func authDDL(t *testing.T, db string) []string {
+	t.Helper()
+	b, err := os.ReadFile("../../../deploy/lab/clickhouse/init/03-auth-events.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	cut := func(from, to string) string {
+		i := strings.Index(src, from)
+		j := strings.Index(src[max(i, 0):], to)
+		if i < 0 || j < 0 {
+			t.Fatalf("03-auth-events.sh: brak %q … %q", from, to)
+		}
+		return src[i : i+j]
+	}
+	sel := strings.TrimPrefix(cut(`select="`, "\"\n"), `select="`)
+	for _, c := range []string{authFailureSQL, authSuccessSQL} {
+		if !strings.Contains(oneLine(sel), oneLine(c)) {
+			t.Fatalf("warunek logowań w 03-auth-events.sh różni się od correlate.go:\n%s", oneLine(c))
+		}
+	}
+	table := cut("CREATE TABLE siem.auth_events", "SETTINGS")
+	r := strings.NewReplacer("siem.", db+".", "$ttl", "3650")
+	return []string{r.Replace(table), r.Replace("CREATE MATERIALIZED VIEW siem.auth_events_mv TO siem.auth_events AS " + sel)}
 }

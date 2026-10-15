@@ -25,6 +25,9 @@ const (
 )
 
 // Logowania nieudane i udane we wszystkich źródłach (SQL na siem.events).
+// Korelacje czytają tabelę logowań, którą zasila widok zmaterializowany
+// z tymi samymi warunkami (clickhouse/init/03-auth-events.sh); tu – opis
+// reguły w panelu i test zgodności warunków.
 const (
 	authFailureSQL = `((event_dataset = 'windows.security' AND event_code IN (4625, 4771))
 		OR (event_dataset = 'azure.signinlogs' AND event_outcome = 'failure')
@@ -77,8 +80,10 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 
 // Correlator ocenia korelacje na zdarzeniach w ClickHouse.
 type Correlator struct {
-	Conn  driver.Conn
-	Table string // domyślnie siem.events (testy: inna tabela)
+	Conn driver.Conn
+	// Table: tabela logowań zasilana przy zapisie zdarzeń (etap 8,
+	// clickhouse/init/03-auth-events.sh) – domyślnie siem.auth_events.
+	Table string
 	// Disabled (opcjonalne): korelacja wyłączona w panelu.
 	Disabled func(id string) bool
 }
@@ -100,7 +105,7 @@ func CorrelationInfos(ov map[string]alerts.Override) ([]alerts.RuleInfo, map[str
 
 func (c *Correlator) table() string {
 	if c.Table == "" {
-		return "siem.events"
+		return "siem.auth_events"
 	}
 	return c.Table
 }
@@ -141,28 +146,27 @@ func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Tim
 	q := fmt.Sprintf(`WITH s AS (
 		SELECT user_identity, toStartOfMinute(timestamp) AS m, max(timestamp) AS ts, argMax(event_id, timestamp) AS id,
 			argMax(event_dataset, timestamp) AS ds, argMax(host_name, timestamp) AS host, argMax(user_name, timestamp) AS user,
-			argMax(agent_id, timestamp) AS agent, argMax(%[2]s, timestamp) AS ip
+			argMax(agent_id, timestamp) AS agent, argMax(ip, timestamp) AS ip
 		FROM %[1]s
-		WHERE ingested > fromUnixTimestamp64Milli(%[3]d, 'UTC') AND ingested <= fromUnixTimestamp64Milli(%[4]d, 'UTC')
-			AND user_identity != '' AND %[5]s
+		WHERE outcome = 'success' AND ingested > fromUnixTimestamp64Milli(%[2]d, 'UTC') AND ingested <= fromUnixTimestamp64Milli(%[3]d, 'UTC')
 		GROUP BY user_identity, m),
 	f AS (
 		SELECT user_identity, toStartOfMinute(timestamp) AS m, uniq(event_id) AS n, groupUniqArray(1000)((event_id, timestamp)) AS times,
-			groupUniqArray(event_dataset) AS fds, groupUniqArray(20)(%[2]s) AS fips
+			groupUniqArray(event_dataset) AS fds, groupUniqArray(20)(ip) AS fips
 		FROM %[1]s
-		WHERE timestamp >= (SELECT min(ts) FROM s) - INTERVAL %[7]d SECOND
-			AND ingested >= (SELECT min(ts) FROM s) - INTERVAL %[7]d SECOND - INTERVAL 1 HOUR
+		WHERE outcome = 'failure' AND timestamp >= (SELECT min(ts) FROM s) - INTERVAL %[4]d SECOND
+			AND ingested >= (SELECT min(ts) FROM s) - INTERVAL %[4]d SECOND - INTERVAL 1 HOUR
 			AND timestamp <= (SELECT max(ts) FROM s)
-			AND user_identity IN (SELECT user_identity FROM s) AND %[6]s
+			AND user_identity IN (SELECT user_identity FROM s)
 		GROUP BY user_identity, m)
 	SELECT s.id, s.ts, s.user_identity, s.ds, s.host, s.user, s.agent, s.ip,
-		sum(if(f.m > toStartOfMinute(s.ts - INTERVAL %[7]d SECOND) AND f.m < s.m, f.n,
-			arrayCount(x -> x.2 >= s.ts - INTERVAL %[7]d SECOND AND x.2 < s.ts, f.times))) AS n,
+		sum(if(f.m > toStartOfMinute(s.ts - INTERVAL %[4]d SECOND) AND f.m < s.m, f.n,
+			arrayCount(x -> x.2 >= s.ts - INTERVAL %[4]d SECOND AND x.2 < s.ts, f.times))) AS n,
 		arraySort(arrayDistinct(arrayFlatten(groupArray(f.fds)))), arraySort(arrayDistinct(arrayFlatten(groupArray(f.fips))))
 	FROM s INNER JOIN f ON f.user_identity = s.user_identity
-	WHERE f.m >= toStartOfMinute(s.ts - INTERVAL %[7]d SECOND) AND f.m <= s.m
+	WHERE f.m >= toStartOfMinute(s.ts - INTERVAL %[4]d SECOND) AND f.m <= s.m
 	GROUP BY s.id, s.ts, s.user_identity, s.ds, s.host, s.user, s.agent, s.ip
-	HAVING n >= %[8]d`, t, detect.IPExpr, from.UnixMilli(), to.UnixMilli(), authSuccessSQL, authFailureSQL, win, failuresNeeded)
+	HAVING n >= %[5]d`, t, from.UnixMilli(), to.UnixMilli(), win, failuresNeeded)
 	rows, err := c.Conn.Query(ctx, q)
 	if err != nil {
 		return nil, err
@@ -222,12 +226,13 @@ func (c *Correlator) withAttempts(ctx context.Context, hits []alerts.Hit, first 
 	t := c.table()
 	q := fmt.Sprintf(`SELECT user_identity, event_id, any(timestamp) AS ts, any(agent_id), any(host_name)
 		FROM %[1]s
-		WHERE timestamp >= fromUnixTimestamp64Milli(%[2]d, 'UTC') - INTERVAL %[4]d SECOND AND timestamp < fromUnixTimestamp64Milli(%[3]d, 'UTC')
+		WHERE outcome = 'failure' AND timestamp >= fromUnixTimestamp64Milli(%[2]d, 'UTC') - INTERVAL %[4]d SECOND
+			AND timestamp < fromUnixTimestamp64Milli(%[3]d, 'UTC')
 			AND ingested >= fromUnixTimestamp64Milli(%[2]d, 'UTC') - INTERVAL %[4]d SECOND - INTERVAL 1 HOUR
-			AND user_identity IN ? AND %[5]s
+			AND user_identity IN ?
 		GROUP BY user_identity, event_id
 		ORDER BY ts DESC
-		LIMIT 200 BY user_identity`, t, lo.UnixMilli(), hi.UnixMilli(), int(failureWindow/time.Second), authFailureSQL)
+		LIMIT 200 BY user_identity`, t, lo.UnixMilli(), hi.UnixMilli(), int(failureWindow/time.Second))
 	rows, err := c.Conn.Query(ctx, q, ids)
 	if err != nil {
 		return nil, err
@@ -273,25 +278,24 @@ func (c *Correlator) newCountry(ctx context.Context, from, to time.Time) ([]aler
 	}
 	geo := "event_dataset IN (" + strings.Join(ds, ", ") + ")"
 	q := fmt.Sprintf(`WITH s AS (
-		SELECT event_id, timestamp, user_identity, fields['source.geo.country_iso_code'] AS country, fields['source.geo.city_name'] AS city,
-			event_dataset, host_name, user_name, agent_id, %[2]s AS ip
+		SELECT event_id, timestamp, user_identity, country, city, event_dataset, host_name, user_name, agent_id, ip
 		FROM %[1]s
-		WHERE ingested > fromUnixTimestamp64Milli(%[3]d, 'UTC') AND ingested <= fromUnixTimestamp64Milli(%[4]d, 'UTC')
-			AND %[5]s AND user_identity != '' AND event_outcome = 'success' AND country != ''
+		WHERE outcome = 'success' AND %[4]s AND ingested > fromUnixTimestamp64Milli(%[2]d, 'UTC')
+			AND ingested <= fromUnixTimestamp64Milli(%[3]d, 'UTC') AND country != ''
 		LIMIT 1 BY event_id)
 	SELECT s.event_id, any(s.timestamp), s.user_identity, any(s.country), any(s.city), any(s.event_dataset), any(s.host_name),
 		any(s.user_name), any(s.agent_id), any(s.ip), count() AS prior, countIf(h.country = s.country) AS same,
 		arraySort(groupUniqArray(10)(h.country))
 	FROM s INNER JOIN (
-		SELECT user_identity, timestamp, fields['source.geo.country_iso_code'] AS country
+		SELECT user_identity, timestamp, country
 		FROM %[1]s
-		WHERE %[5]s AND timestamp >= (SELECT min(timestamp) FROM s) - INTERVAL %[6]d SECOND
-			AND ingested >= (SELECT min(timestamp) FROM s) - INTERVAL %[6]d SECOND - INTERVAL 1 DAY
-			AND user_identity IN (SELECT user_identity FROM s) AND event_outcome = 'success' AND country != '') AS h
+		WHERE outcome = 'success' AND %[4]s AND timestamp >= (SELECT min(timestamp) FROM s) - INTERVAL %[5]d SECOND
+			AND ingested >= (SELECT min(timestamp) FROM s) - INTERVAL %[5]d SECOND - INTERVAL 1 DAY
+			AND user_identity IN (SELECT user_identity FROM s) AND country != '') AS h
 		ON h.user_identity = s.user_identity
-	WHERE h.timestamp < s.timestamp AND h.timestamp >= s.timestamp - INTERVAL %[6]d SECOND
+	WHERE h.timestamp < s.timestamp AND h.timestamp >= s.timestamp - INTERVAL %[5]d SECOND
 	GROUP BY s.event_id, s.user_identity
-	HAVING prior > 0 AND same = 0`, t, detect.IPExpr, from.UnixMilli(), to.UnixMilli(), geo, int(historyWindow/time.Second))
+	HAVING prior > 0 AND same = 0`, t, from.UnixMilli(), to.UnixMilli(), geo, int(historyWindow/time.Second))
 	rows, err := c.Conn.Query(ctx, q)
 	if err != nil {
 		return nil, err
