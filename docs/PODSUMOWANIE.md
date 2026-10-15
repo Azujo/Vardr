@@ -225,6 +225,17 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
 - **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
 
+## Test długotrwały (15.10.2026) – przerwany po 4 h 17 min
+
+7000 zdarzeń/s (3500 agentów, realistyczny profil), VM 8 vCPU / 9,4 GB. Przerwany na prośbę (hałas serwera). Nic nie zginęło, ale **warunek „bez narastającego zalegania” nie jest spełniony**:
+
+- przez pierwsze ok. 40 min wszystkie etapy nadążały (p99 3 s); potem ClickHouse urósł z 0,7 do 3–4 rdzeni, a zaległość writera i detektora rosła liniowo (na końcu ok. 285 tys. wiadomości, silnik zapytań 2,5 h w tyle);
+- przyczyny (dziennik zapytań ClickHouse z czasu testu):
+  1. **ścieżka awaryjna silnika zapytań** – przy błędzie łącznego zapytania (tu: przepełniona pamięć ClickHouse, 3,6 GB) sprawdzała każdą regułę osobnym pełnym skanem: 834 zapytania, **17 mld wierszy, 1 TB odczytu**, 62 nieudane przebiegi – pętla, która sama podtrzymywała przeciążenie. Poprawione: przy błędzie z braku zasobów przebieg kończy się od razu i ponawia za minutę;
+  2. **korelacja „udane po nieudanych”** – co minutę czyta wszystkie zdarzenia Windows z ostatnich 1,5 h, żeby znaleźć nieudane logowania (ok. 48 mln wierszy, 13 s; razem 6,4 mld), plus pobieranie prób do osi alertu (3,5 mld). Koszt rośnie z ruchem – do zrobienia: osobna mała tabela logowań (widok zmaterializowany zasilany przy zapisie), na której liczą się korelacje;
+  3. **logi systemowe ClickHouse 25.x** (`query_metric_log`, `processors_profile_log`) – scalanie `query_metric_log` zajmowało 2,2 GB pamięci. Wyłączone w `clickhouse/config.d/siem.xml`;
+- sprzątanie: 107 mln zdarzeń testowych – mutacja DELETE przekraczała pamięć ClickHouse; partycja przepisana (7705 prawdziwych zdarzeń zachowanych, testowa reszta usunięta), konsument detektora utworzony od nowa (bez przerabiania 300 tys. wiadomości testowych).
+
 ## Przegląd etapu 8 (13.10.2026) – błędy i luki
 
 | # | Pr. | Problem | Skutek | Stan |

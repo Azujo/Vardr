@@ -2,6 +2,7 @@ package detector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -110,6 +111,23 @@ func (x *Index) table() string {
 	return x.Table
 }
 
+// resourceError: błąd ClickHouse z braku zasobów (pamięć, czas, limit
+// zapytań, anulowanie). Szukanie winnej reguły (osobne zapytanie na każdą)
+// nic wtedy nie da, a mnoży obciążenie – w teście 7000 zdarzeń/s (etap 8)
+// takie zapytania przeczytały 17 mld wierszy (1 TB) przy przepełnionej
+// pamięci serwera. Przebieg kończy się błędem i ponawia za interwał.
+func resourceError(err error) bool {
+	var ex *clickhouse.Exception
+	if !errors.As(err, &ex) {
+		return true // sieć, zerwane połączenie – też nie wina reguły
+	}
+	switch ex.Code {
+	case 159, 160, 202, 241, 394: // TIMEOUT_EXCEEDED, TOO_SLOW, TOO_MANY_SIMULTANEOUS_QUERIES, MEMORY_LIMIT_EXCEEDED, QUERY_WAS_CANCELLED
+		return true
+	}
+	return false
+}
+
 // IndexRules wybiera reguły silnika zapytań (włączone, tryb index_query albo both).
 func IndexRules(all []*detect.Rule) []*detect.Rule {
 	var out []*detect.Rule
@@ -136,7 +154,7 @@ func (x *Index) Run(ctx context.Context, rules []*detect.Rule, from Cursor, to t
 		return res, nil
 	}
 	err := x.scan(ctx, rules, from, to, &res)
-	if err == nil || ctx.Err() != nil {
+	if err == nil || ctx.Err() != nil || resourceError(err) {
 		return res, err
 	}
 	// Zapytanie łączne nie przeszło – szukamy reguł, których SQL się nie
