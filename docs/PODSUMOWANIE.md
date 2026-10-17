@@ -2,7 +2,7 @@
 
 Stan na 12.10.2026 (etap 7). Plik zbiera, co zrobiono w każdym etapie, jak to sprawdzono i czego świadomie jeszcze nie ma. Plan i uzasadnienia są w [ROADMAP.md](ROADMAP.md), instrukcje obsługi w [README.md](../README.md).
 
-Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3–7. W toku: etap 8.
+Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.5 (wzmocnienie), potem etap 2 razem z pierwszymi modułami panelu (część etapu 5), potem etapy 3–8. Etap 8 zakończony 17.10.2026 – MVP gotowe.
 
 ---
 
@@ -163,7 +163,7 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **6e (09.10):** symulator FortiGate (`tools/cmd/fortisim`) i reguły progowe: seria nieudanych logowań do VPN FortiGate, do panelu FortiGate i do routera MikroTik. Laboratorium: symulowane ataki → alerty #22–#26 w obu silnikach; test zgodności silników z korpusem syslog (155/155 trafień). Przerwa łączności kolektor–serwer: 50 wiadomości z bufora dotarło po przywróceniu `siem-ingest`.
 - **Kryterium etapu (roadmapa):** logi FortiGate znormalizowane (symulator, wszystkie scenariusze), nowy dekoder utworzony w panelu przechodzi test na próbce. IIS (W3C) – parser `csv` z separatorem spacją go rozbiera, ale odczyt plików dziennika przez agenta to osobne źródło – przesunięte (razem z syslog po TLS).
 
-## Etap 8 – ochrona agenta i skala – w toku
+## Etap 8 – ochrona agenta i skala – zakończony
 
 - **8a–8b (12.10): ochrona agenta (0.7.0)** – „utrudnić i wykryć”:
   - usługa z zawężonymi uprawnieniami: administrator nie zatrzyma ani nie usunie jej poleceniem `sc` czy `services.msc`; restart agenta to polecenie do usługi (kod 128), bez prawa zatrzymania;
@@ -224,6 +224,16 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - logowanie VPN i Entra powiązane z tą samą osobą – spełnione (osoba w zdarzeniach, korelacja);
   - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
 - **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
+
+## Test potwierdzający (17.10.2026) – 2 h, kryterium etapu 8 spełnione
+
+7000 zdarzeń/s jak w teście nocnym, po trzech poprawkach z jego wyników: pierwszeństwo procesora dla detekcji (`cpu_shares`: detektor 4096, normalizator i ingest 2048, reszta 1024), trafienia korelacji „tylko licznik” przy otwartym alercie osoby, nieudane logowania generatora na 2% kont:
+
+- **50 607 778 zdarzeń wygenerowanych i przyjętych, 0 utraconych** (średnio 6956/s); 429 dla 0,3% paczek;
+- **detektor w locie bez zaległości przez całe 2 h**: 30–340 zdarzeń w kolejce (w teście nocnym od 3. godziny rosło o 100 tys./h); zapis: zaległość do 3500 wiadomości bez trendu, p99 3–25 s – ustępuje zgodnie z założeniem; silnik zapytań stale 2–4 min w tyle; ClickHouse 0,9–3,7 rdzenia;
+- korelacja: 60 alertów „udane po nieudanych” (konta z próbami), liczniki rosną bez dołączania każdego logowania;
+- uwaga: 106 ostrzeżeń „zdarzenia pominięte przez limit kluczy” w progach w locie (ok. 100 tys. kluczy z 3500 kont) – nadrabia silnik zapytań (przegląd etapu 8, pkt 6);
+- **kryterium „bez narastającego zalegania” spełnione** dla 7000 zdarzeń/s na VM 8 vCPU / 9,4 GB – dwa razy ruch firmy z roadmapy (3500 agentów). Zapis i silnik zapytań sprawdzone też przez 8 h (test nocny), detekcja w locie po poprawce przez 2 h; doba w jednym ciągu się nie odbyła (hałas serwera w domu).
 
 ## Test nocny (16/17.10.2026) – 8 h po poprawkach
 
