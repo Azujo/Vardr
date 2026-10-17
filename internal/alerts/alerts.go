@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io/fs"
 	"sort"
 	"strconv"
@@ -321,10 +322,25 @@ func (p *PG) IndexCheckpoint(ctx context.Context) (time.Time, bool, error) {
 	return t, err == nil, err
 }
 
+// record zapisuje w jednej transakcji. Równoległe zapisy (silnik w locie,
+// silnik zapytań, korelacje, heartbeaty – osobne gorutyny, etap 8) czekają
+// na siebie tylko przy tych samych kluczach alertów: blokady doradcze
+// transakcji na (reguła, klucz), zakładane przed czymkolwiek innym
+// i w stałej kolejności. Bez nich dwie transakcje mogłyby utworzyć dwa
+// alerty dla jednego klucza (SELECT … FOR UPDATE nie widzi alertu
+// tworzonego równolegle). Wcześniej wszystkie zapisy szły przez jedną
+// blokadę w detektorze – duży zapis jednego silnika wstrzymywał pozostałe.
 func (p *PG) record(ctx context.Context, hits []Hit, obs []Observation, extra func(pgx.Tx) error) (RecordResult, error) {
 	var res RecordResult
-	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+	keys := keyLocks(hits)
+	err := p.retryTx(ctx, func(tx pgx.Tx) error {
 		res = RecordResult{}
+		if len(keys) > 0 {
+			if _, err := tx.Exec(ctx, `SELECT count(pg_advisory_xact_lock($1::int, k)) FROM unnest($2::int[]) AS k`,
+				keyLockClass, keys); err != nil {
+				return err
+			}
+		}
 		if extra != nil {
 			if err := extra(tx); err != nil {
 				return err
@@ -347,6 +363,30 @@ func (p *PG) record(ctx context.Context, hits []Hit, obs []Observation, extra fu
 		return recordHits(ctx, tx, hits, &res)
 	})
 	return res, err
+}
+
+// keyLockClass: przestrzeń blokad doradczych kluczy alertów ("Gjlk").
+const keyLockClass = 0x476a6c6b
+
+// keyLocks: posortowane, unikalne skróty (reguła, klucz) trafień
+// z łączeniem w alert. Kolizja skrótów oznacza najwyżej zbędne czekanie.
+func keyLocks(hits []Hit) []int32 {
+	seen := map[int32]bool{}
+	var out []int32
+	for _, h := range hits {
+		if h.GroupFields == nil || h.Suppress <= 0 {
+			continue
+		}
+		f := fnv.New32a()
+		f.Write([]byte(h.RuleID + "\x1f" + h.GroupKey))
+		k := int32(f.Sum32())
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // recordHits zapisuje trafienia operacjami zbiorczymi (etap 8: przy
@@ -528,10 +568,19 @@ func reserve(ctx context.Context, tx pgx.Tx, hits []Hit) (map[[2]string]bool, er
 	if len(hits) == 0 {
 		return reserved, nil
 	}
-	rules := make([]string, len(hits))
-	events := make([]string, len(hits))
-	times := make([]time.Time, len(hits))
-	for i, h := range hits {
+	// Stała kolejność wierszy: równoległe rezerwacje tych samych zdarzeń
+	// (oba silniki) czekają na siebie zamiast się zakleszczać.
+	sorted := append([]Hit(nil), hits...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].RuleID != sorted[j].RuleID {
+			return sorted[i].RuleID < sorted[j].RuleID
+		}
+		return sorted[i].EventID < sorted[j].EventID
+	})
+	rules := make([]string, len(sorted))
+	events := make([]string, len(sorted))
+	times := make([]time.Time, len(sorted))
+	for i, h := range sorted {
 		rules[i], events[i], times[i] = h.RuleID, h.EventID, h.EventTime
 	}
 	rows, err := tx.Query(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)

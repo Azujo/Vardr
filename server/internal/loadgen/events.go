@@ -4,6 +4,7 @@ package loadgen
 
 import (
 	"fmt"
+	"hash/fnv"
 	mrand "math/rand/v2"
 	"time"
 )
@@ -113,7 +114,21 @@ var processes = []string{
 
 func user() string       { return users[mrand.IntN(len(users))] }
 func failedUser() string { return users[mrand.IntN(failPool)] }
-func logonID() string    { return fmt.Sprintf("0x%x", 0x100000+mrand.IntN(0xffffff)) }
+
+// failedIP: przy zwykłym profilu nieudane logowania konta przychodzą z jego
+// komputera (stały adres) – losowy adres przy każdej próbie dawał dziesiątki
+// tysięcy kluczy reguły „password spraying” (grupowanie po adresie) i limit
+// kluczy w pamięci detektora (test 17.10). Scenariusz ataku – adresy losowe.
+func failedIP(u string) string {
+	if failPool == len(users) {
+		return ip()
+	}
+	h := fnv.New32a()
+	h.Write([]byte(u))
+	v := h.Sum32()
+	return fmt.Sprintf("10.%d.%d.%d", v%4, (v>>8)%256, 1+(v>>16)%254)
+}
+func logonID() string { return fmt.Sprintf("0x%x", 0x100000+mrand.IntN(0xffffff)) }
 func ip() string {
 	return fmt.Sprintf("10.%d.%d.%d", mrand.IntN(4), mrand.IntN(256), 1+mrand.IntN(254))
 }
@@ -135,8 +150,9 @@ func logoff4634(host string, rec uint64, t string) (string, string) {
 }
 
 func failed4625(host string, rec uint64, t string) (string, string) {
+	u := failedUser()
 	data := fmt.Sprintf(`<EventData><Data Name='SubjectUserSid'>S-1-0-0</Data><Data Name='SubjectUserName'>-</Data><Data Name='SubjectDomainName'>-</Data><Data Name='SubjectLogonId'>0x0</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>%s</Data><Data Name='TargetDomainName'>LAB</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>NtLmSsp </Data><Data Name='AuthenticationPackageName'>NTLM</Data><Data Name='WorkstationName'>WS%03d</Data><Data Name='ProcessName'>-</Data><Data Name='IpAddress'>%s</Data><Data Name='IpPort'>%d</Data></EventData>`,
-		failedUser(), mrand.IntN(500), ip(), 49152+mrand.IntN(16000))
+		u, mrand.IntN(500), failedIP(u), 49152+mrand.IntN(16000))
 	return "Security", wrap(secSys(4625, 0, 12544, "0x8010000000000000", t, rec, host), data)
 }
 

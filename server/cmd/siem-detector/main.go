@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -190,10 +189,9 @@ func serve(log *slog.Logger) error {
 	}
 	reload()
 	restore()
-	// Oba silniki zapisują przez jedną blokadę – łączenie trafień w alert
-	// (SELECT … FOR UPDATE) nie widzi alertu tworzonego równolegle.
-	var recordMu sync.Mutex
-	go runHeartbeat(ctx, log, store, &recordMu, m)
+	// Zapisy alertów z gorutyn idą równolegle – alerts.PG blokuje w bazie
+	// tylko te same klucze alertów (etap 8; wcześniej jedna blokada tutaj).
+	go runHeartbeat(ctx, log, store, m)
 	go runRetention(ctx, log, store, m)
 	var chConn driver.Conn
 	if indexOn {
@@ -202,7 +200,7 @@ func serve(log *slog.Logger) error {
 			return err
 		}
 		chConn = idx.Conn
-		go runIndex(ctx, log, idx, eng, store, &recordMu, m)
+		go runIndex(ctx, log, idx, eng, store, m)
 	} else if os.Getenv("SIEM_DETECTOR_CH_PASSWORD") != "" {
 		if idx, err := openIndex(ctx, log, store); err == nil {
 			chConn = idx.Conn
@@ -213,7 +211,7 @@ func serve(log *slog.Logger) error {
 		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn, Disabled: func(id string) bool {
 			off := corrDisabled.Load()
 			return off != nil && (*off)[id]
-		}, Open: store.OpenAlerts}, store, &recordMu, m)
+		}, Open: store.OpenAlerts}, store, m)
 	} else {
 		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
 	}
@@ -319,9 +317,7 @@ func serve(log *slog.Logger) error {
 		if len(batch) == 0 {
 			continue
 		}
-		recordMu.Lock()
 		res, err := store.Record(ctx, hits, obs)
-		recordMu.Unlock()
 		if err != nil {
 			// Alerty nie zapisane – zdarzenia wrócą (zapis jest idempotentny),
 			// a stan progów wraca do ostatniej udanej transakcji.
@@ -375,7 +371,7 @@ func openIndex(ctx context.Context, log *slog.Logger, store *alerts.PG) (*detect
 // a po limicie wierszy kolejny przebieg zaczyna dokładnie za ostatnim
 // wierszem (bez zakładki – inaczej duża zakładka blokowałaby postęp).
 func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *detector.Engine, store *alerts.PG,
-	mu *sync.Mutex, m *metrics.Detector) {
+	m *metrics.Detector) {
 	interval, _ := svc.EnvDuration("SIEM_INDEX_INTERVAL", time.Minute)
 	delay, _ := svc.EnvDuration("SIEM_INDEX_DELAY", 2*time.Minute)
 	overlap, _ := svc.EnvDuration("SIEM_INDEX_OVERLAP", 5*time.Minute)
@@ -449,9 +445,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 				hits = fresh
 			}
 		}
-		mu.Lock()
 		rec, err := store.RecordIndex(ctx, hits, res.Reached)
-		mu.Unlock()
 		if err != nil {
 			m.IndexRuns.WithLabelValues("error").Inc()
 			m.Errors.WithLabelValues("record").Inc()
@@ -479,7 +473,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 // runHeartbeat: reguła wbudowana „utrata łączności z agentem” – co 30 s
 // porównuje ostatni heartbeat agentów z progiem ich grupy; alert zamyka się
 // sam, gdy agent wróci.
-func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector) {
+func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metrics.Detector) {
 	warned := false
 	for {
 		select {
@@ -498,12 +492,10 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *s
 			continue
 		}
 		warned = false
-		runTamper(ctx, log, store, mu, m, now)
+		runTamper(ctx, log, store, m, now)
 		hits, back := detector.HeartbeatCheck(beats, now)
 		if len(hits) > 0 {
-			mu.Lock()
 			res, err := store.Record(ctx, hits, nil)
-			mu.Unlock()
 			if err != nil {
 				m.Errors.WithLabelValues("record").Inc()
 				log.Error("zapis alertów utraty łączności nieudany", "err", err)
@@ -539,7 +531,7 @@ var tamperSeen = map[string]time.Time{}
 
 // runTamper: reguła wbudowana „próba sabotażu agenta” – zdarzenia ochrony
 // z heartbeatu agentów (co 30 s, razem z utratą łączności).
-func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector, now time.Time) {
+func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metrics.Detector, now time.Time) {
 	beats, err := store.TamperBeats(ctx)
 	if err != nil {
 		m.Errors.WithLabelValues("tamper").Inc()
@@ -560,9 +552,7 @@ func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, mu *sync
 	if len(hits) == 0 {
 		return
 	}
-	mu.Lock()
 	res, err := store.Record(ctx, hits, nil)
-	mu.Unlock()
 	if err != nil {
 		m.Errors.WithLabelValues("record").Inc()
 		log.Error("zapis alertów sabotażu agenta nieudany", "err", err)
@@ -635,7 +625,7 @@ func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 // w ostatnich 15 min (do teraz − 2 min: zapis w ClickHouse); pierwszy
 // przebieg – 2 h wstecz. Zakładka okien jest bezpieczna: para (reguła,
 // zdarzenie) trafia do alertu raz.
-func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlator, store *alerts.PG, mu *sync.Mutex, m *metrics.Detector) {
+func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlator, store *alerts.PG, m *metrics.Detector) {
 	lookback := 2 * time.Hour
 	for {
 		to := time.Now().UTC().Add(-2 * time.Minute)
@@ -648,9 +638,7 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 		} else {
 			lookback = 15 * time.Minute
 			if len(hits) > 0 {
-				mu.Lock()
 				res, err := store.Record(ctx, hits, nil)
-				mu.Unlock()
 				if err != nil {
 					m.Errors.WithLabelValues("record").Inc()
 					log.Error("zapis alertów korelacji nieudany", "err", err)

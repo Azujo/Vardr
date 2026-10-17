@@ -38,4 +38,7 @@ func TestFailureShare(t *testing.T) {
 	if mix[failedIdx].weight != 2 || mix[0].weight != 398 || mixTotal != 1000 || failPool != 70 {
 		t.Fatalf("0,2%%: %d %d/%d", mix[failedIdx].weight, mix[0].weight, mixTotal)
 	}
+	if failedIP("jkowalski") != failedIP("jkowalski") || failedIP("jkowalski") == failedIP("anowak") {
+		t.Fatal("adres nieudanych logowań konta: ma być stały i różny dla kont")
+	}
 }

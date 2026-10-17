@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -319,6 +321,77 @@ func TestPostgresAlerts(t *testing.T) {
 	}
 	if again, _ := db.Record(ctx, []Hit{other}, nil); again.Duplicates != 0 || again.Merged != 1 {
 		t.Fatalf("drugie „tylko licznik”: %+v", again)
+	}
+
+	// Równoległe zapisy (silniki bez wspólnej blokady w detektorze): ten sam
+	// klucz i różne zdarzenia – jeden alert (bez blokady kluczy powstawało
+	// kilka); te same zdarzenia w odwrotnej kolejności – bez dubli
+	// i bez zakleszczeń.
+	tp := tb.Add(24 * time.Hour)
+	parallel := func(key string, batch func(g int) []Hit) {
+		t.Helper()
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		errs := make(chan error, 8)
+		for g := range 8 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				hs := batch(g)
+				<-start
+				if _, err := db.Record(ctx, hs, nil); err != nil {
+					errs <- err
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Fatalf("zapis równoległy %s: %v", key, err)
+		}
+	}
+	par := func(key, ev string, at time.Time) Hit {
+		h := gk(ev, at)
+		h.RuleID, h.GroupKey = "r-par", key
+		return h
+	}
+	for round := range 10 {
+		key := fmt.Sprintf("pc-par-%d", round)
+		parallel(key, func(g int) []Hit {
+			var hs []Hit
+			for i := range 10 {
+				hs = append(hs, par(key, fmt.Sprintf("%s-%d-%d", key, g, i), tp.Add(time.Duration(i)*time.Second)))
+			}
+			return hs
+		})
+	}
+	parallel("pc-shared", func(g int) []Hit {
+		var hs []Hit
+		for i := range 20 {
+			hs = append(hs, par("pc-shared", fmt.Sprintf("sh-%d", i), tp.Add(time.Duration(i)*time.Second)))
+		}
+		if g%2 == 1 {
+			slices.Reverse(hs)
+		}
+		return hs
+	})
+	got, _, _ = db.Alerts(ctx, Filter{Status: "open", RuleID: "r-par", Limit: 100})
+	perKey := map[string][]int{}
+	for _, a := range got {
+		perKey[a.GroupKey] = append(perKey[a.GroupKey], a.Hits)
+	}
+	for k, hits := range perKey {
+		want := 80
+		if k == "pc-shared" {
+			want = 20
+		}
+		if len(hits) != 1 || hits[0] != want {
+			t.Fatalf("zapis równoległy %s: alerty z trafieniami %v (oczekiwany jeden z %d)", k, hits, want)
+		}
+	}
+	if len(perKey) != 11 {
+		t.Fatalf("zapis równoległy: %d kluczy", len(perKey))
 	}
 }
 
