@@ -225,6 +225,18 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
   - zastrzeżenie: Entra z symulatora; konektor czeka na tenant z licencją P1/P2.
 - **Przesunięte:** logi M365 (Management Activity API), lokalna baza GeoIP dla VPN.
 
+## Test nocny (16/17.10.2026) – 8 h po poprawkach
+
+7000 zdarzeń/s (3500 agentów, profil jak wyżej), ta sama VM (8 vCPU / 9,4 GB), po wyłączeniu ścieżki awaryjnej silnika zapytań, logów systemowych ClickHouse i z tabelą logowań dla korelacji:
+
+- **201 807 747 zdarzeń wygenerowanych i przyjętych, 0 utraconych** (średnio 6991/s); 429 dla ok. 1,1% paczek przy chwilowych szczytach – agenci ponawiali, nic nie przepadło;
+- **zapis nadążał przez całe 8 h**: zaległość writera zwykle poniżej 4000 wiadomości (szczyt 11 600), opóźnienie p99 zwykle 3–25 s (szczyt 51 s);
+- **silnik zapytań nadążał**: opóźnienie stałe 2–5,5 min (poprzednio 2,5 h w tyle po 4 h); ClickHouse stale 1,3–3,8 rdzenia, bez wzrostu w czasie; korelacje czytają ułamek tego co wcześniej;
+- **słaby punkt: VM na granicy mocy** – ok. 6,5–7 z 8 rdzeni zajęte (load 17–30), rosnące oczekiwanie na dysk (do 0,8 rdzenia, zajętość dysku 60–76%) przy scalaniu coraz większych części ClickHouse. Ustępuje detektor w locie: od ok. 3. godziny zaległość rosła o ok. 100 tys. zdarzeń na godzinę (na końcu 760 tys.); po zatrzymaniu ruchu przetwarzał 13 000/s – sam nie jest wolny, brakuje mu procesora;
+- **korelacja na danych generatora**: generator rozkłada 0,2% nieudanych logowań równo na wszystkie 3500 kont, więc prawie każde konto ma 5 prób w 30 min i każde udane logowanie pasuje – 2506 alertów i ok. 8000 dołączanych trafień na minutę (2 mln wierszy `alert_events`), zapisywanych pod tą samą blokadą co trafienia detektora w locie. Profil nierealny, ale pokazuje, że otwarty alert korelacji dołącza każde kolejne udane logowanie;
+- miejsce: ok. 125 B na zdarzenie w ClickHouse (z surowym XML), tabela logowań ok. 24 B na udane logowanie Windows;
+- wniosek: na tej VM ok. 5000 zdarzeń/s z zapasem; 7000/s działa bez strat, ale detekcja w locie może po kilku godzinach być minuty w tyle.
+
 ## Test długotrwały (15.10.2026) – przerwany po 4 h 17 min
 
 7000 zdarzeń/s (3500 agentów, realistyczny profil), VM 8 vCPU / 9,4 GB. Przerwany na prośbę (hałas serwera). Nic nie zginęło, ale **warunek „bez narastającego zalegania” nie jest spełniony**:
