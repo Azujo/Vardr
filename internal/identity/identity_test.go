@@ -30,6 +30,22 @@ func TestResolve(t *testing.T) {
 			t.Errorf("Resolve(%q, %q) = %q, oczekiwano %q", c.user, c.domain, got, c.want)
 		}
 	}
+	// Konta wspólne urządzeń: bez domeny – „urządzenie\konto”; z domeną jak dotąd.
+	s := New(Config{Domains: []string{"azujo"}, Shared: []string{"Admin", "root"},
+		Aliases: map[string]string{`fw01\admin`: "jkowalski"}})
+	for _, c := range []struct{ user, domain, host, want string }{
+		{"admin", "", "MikroTik", `mikrotik\admin`},
+		{"admin", "", "fw02.azujo.pl", `fw02\admin`},
+		{"root", "-", "192.168.88.1", `192.168.88.1\root`},
+		{"admin", "", "fw01", "jkowalski"},  // alias konta na urządzeniu
+		{"admin", "", "", ""},               // bez urządzenia – bez osoby
+		{"admin", "AZUJO", "dc01", "admin"}, // konto domenowe
+		{"jkowalski", "", "MikroTik", "jkowalski"},
+	} {
+		if got := s.ResolveOn(c.user, c.domain, c.host); got != c.want {
+			t.Errorf("ResolveOn(%q, %q, %q) = %q, oczekiwano %q", c.user, c.domain, c.host, got, c.want)
+		}
+	}
 	// Bez domen organizacji: każda domena „swoja”.
 	if got := New(Config{}).Resolve("admin", "DESKTOP-2"); got != "admin" {
 		t.Errorf("bez domen: %q", got)

@@ -270,7 +270,11 @@ export default function AlertDetailPage() {
       <Card withBorder>
         <SimpleGrid cols={{ base: 2, md: 4 }}>
           <Field label="Komputer">{alert.host_name}</Field>
-          <Field label="Konto">{alert.user_name}</Field>
+          <Field label="Konto">
+            {alert.user_identity && alert.user_identity !== alert.user_name.toLowerCase()
+              ? `${alert.user_name || "—"} (osoba: ${alert.user_identity})`
+              : alert.user_name}
+          </Field>
           <Field label="Adres źródłowy">{alert.source_ip}</Field>
           <Field label="Agent">{alert.agent_id}</Field>
           <Field label="Pierwsze zdarzenie">{formatDate(alert.first_seen)}</Field>
@@ -397,7 +401,7 @@ export default function AlertDetailPage() {
             Powiązane alerty ({related.length})
           </Title>
           <Text size="xs" c="dimmed" mb="xs">
-            Ten sam komputer albo konto, ±24 h od zdarzeń tego alertu.
+            Ten sam komputer, konto albo osoba (to samo konto w AD, Entra ID i na VPN), ±24 h od zdarzeń tego alertu.
           </Text>
           {related.length === 0 ? (
             <Text size="sm" c="dimmed">

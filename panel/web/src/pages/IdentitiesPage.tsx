@@ -36,6 +36,9 @@ export default function IdentitiesPage() {
   const [tab, setTab] = useState<string | null>("people");
   const [domains, setDomains] = useState<string[]>([]);
   const [savedDomains, setSavedDomains] = useState<string[]>([]);
+  const [shared, setShared] = useState<string[]>([]);
+  const [savedShared, setSavedShared] = useState<string[]>([]);
+  const [testHost, setTestHost] = useState("");
   const [aliases, setAliases] = useState<IdentityAlias[]>([]);
   const [delivery, setDelivery] = useState(true);
   const [people, setPeople] = useState<Person[]>([]);
@@ -58,6 +61,8 @@ export default function IdentitiesPage() {
       .then((r) => {
         setDomains(r.domains);
         setSavedDomains(r.domains);
+        setShared(r.shared);
+        setSavedShared(r.shared);
         setAliases(r.aliases);
         setDelivery(r.delivery);
       })
@@ -94,6 +99,18 @@ export default function IdentitiesPage() {
       setBusy(false);
     }
   };
+  const saveShared = async () => {
+    setBusy(true);
+    try {
+      const r = await identitiesApi.setShared(shared);
+      notifications.show({ color: "green", message: r.message });
+      loadConfig();
+    } catch (e) {
+      err(e);
+    } finally {
+      setBusy(false);
+    }
+  };
   const addAlias = async (a: string, id: string, n: string) => {
     setBusy(true);
     try {
@@ -120,12 +137,13 @@ export default function IdentitiesPage() {
   };
   const test = async () => {
     try {
-      setTestResult((await identitiesApi.resolve(testUser, testDomain)).identity);
+      setTestResult((await identitiesApi.resolve(testUser, testDomain, testHost)).identity);
     } catch (e) {
       err(e);
     }
   };
   const domainsChanged = domains.join(",") !== savedDomains.join(",");
+  const sharedChanged = shared.join(",") !== savedShared.join(",");
 
   return (
     <Stack>
@@ -156,7 +174,7 @@ export default function IdentitiesPage() {
             Podpowiedzi {suggestions.length > 0 && <Badge size="xs">{suggestions.length}</Badge>}
           </Tabs.Tab>
           <Tabs.Tab value="aliases">Aliasy kont ({aliases.length})</Tabs.Tab>
-          <Tabs.Tab value="domains">Domeny organizacji</Tabs.Tab>
+          <Tabs.Tab value="domains">Domeny i konta wspólne</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="people" pt="sm">
@@ -367,11 +385,36 @@ export default function IdentitiesPage() {
               </Group>
             )}
             <Text fw={600} size="sm" mt="md">
+              Konta wspólne urządzeń
+            </Text>
+            <Text size="sm" c="dimmed">
+              Konta bez domeny, które nie należą do jednej osoby – np. <Code>admin</Code> na routerze MikroTik i na FortiGate,{" "}
+              <Code>root</Code> na urządzeniu. Takie konto dostaje tożsamość z nazwą urządzenia (<Code>mikrotik\admin</Code>), więc
+              korelacje nie łączą prób na różnych urządzeniach ani z domenowym kontem „admin”. Konto z domeną (<Code>AZUJO\admin</Code>)
+              liczy się jak dotąd. Jeśli konto na urządzeniu ma właściciela, dodaj alias (np. <Code>mikrotik\admin</Code> → osoba).
+            </Text>
+            <TagsInput
+              label="Konta wspólne"
+              placeholder="wpisz i naciśnij Enter"
+              value={shared}
+              onChange={setShared}
+              disabled={!admin}
+              splitChars={[",", " ", ";"]}
+            />
+            {admin && (
+              <Group>
+                <Button loading={busy} disabled={!sharedChanged} onClick={() => void saveShared()}>
+                  Zapisz konta wspólne
+                </Button>
+              </Group>
+            )}
+            <Text fw={600} size="sm" mt="md">
               Sprawdź konto
             </Text>
             <Group align="flex-end" gap="xs">
               <TextInput label="Konto" placeholder="jkowalski, AZUJO\jan, jan@azujo.pl" w={260} value={testUser} onChange={(e) => setTestUser(e.currentTarget.value)} />
               <TextInput label="Domena (opcjonalnie)" placeholder="AZUJO" w={160} value={testDomain} onChange={(e) => setTestDomain(e.currentTarget.value)} />
+              <TextInput label="Urządzenie (opcjonalnie)" placeholder="MikroTik" w={160} value={testHost} onChange={(e) => setTestHost(e.currentTarget.value)} />
               <Button variant="default" onClick={() => void test()} disabled={!testUser.trim()}>
                 Sprawdź
               </Button>

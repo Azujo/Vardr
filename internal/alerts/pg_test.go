@@ -393,6 +393,27 @@ func TestPostgresAlerts(t *testing.T) {
 	if len(perKey) != 11 {
 		t.Fatalf("zapis równoległy: %d kluczy", len(perKey))
 	}
+
+	// Powiązane po osobie: konto Entra (UPN) i konto AD tej samej osoby.
+	ti := tp.Add(24 * time.Hour)
+	entra := single("id-entra", ti)
+	entra.HostName, entra.UserName, entra.Identity = "", "jan@azujo.pl", "jan"
+	ad := single("id-ad", ti.Add(time.Hour))
+	ad.HostName, ad.UserName, ad.Identity = "pc7", `AZUJO\jan`, "jan"
+	if _, err := db.Record(ctx, []Hit{entra, ad}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = db.Alerts(ctx, Filter{Status: "open", RuleID: "r-log", Limit: 100})
+	var ea Alert
+	for _, a := range got {
+		if a.FirstEventID == "id-entra" {
+			ea = a
+		}
+	}
+	rel, err = db.Related(ctx, ea, 24*time.Hour, 10)
+	if err != nil || ea.UserIdentity != "jan" || len(rel) != 1 || rel[0].FirstEventID != "id-ad" {
+		t.Fatalf("powiązane po osobie: %+v %v %v", ea, rel, err)
+	}
 }
 
 func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {

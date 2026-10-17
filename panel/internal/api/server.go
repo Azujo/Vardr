@@ -206,6 +206,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/identities/resolve", s.authed(roleViewer, 0, s.resolveIdentity))
 	mux.Handle("GET /api/v1/identities/domains-seen", s.authed(roleViewer, 0, s.domainsSeen))
 	mux.Handle("PUT /api/v1/identities/domains", s.authed(roleAdmin, 0, s.setIdentityDomains))
+	mux.Handle("PUT /api/v1/identities/shared", s.authed(roleAdmin, 0, s.setIdentityShared))
 	mux.Handle("POST /api/v1/identities/aliases", s.authed(roleAdmin, 0, s.setIdentityAlias))
 	mux.Handle("POST /api/v1/identities/aliases/delete", s.authed(roleAdmin, 0, s.deleteIdentityAlias))
 

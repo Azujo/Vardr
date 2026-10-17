@@ -801,6 +801,7 @@ export interface Alert {
   agent_id: string;
   host_name: string;
   user_name: string;
+  user_identity?: string;
   source_ip: string;
   first_event_id: string;
   summary: string;
@@ -1139,19 +1140,21 @@ export interface Person {
 
 export const identitiesApi = {
   get: () =>
-    request<{ domains: string[]; aliases: IdentityAlias[]; delivery: boolean; people: boolean }>("GET", "/api/v1/identities"),
+    request<{ domains: string[]; aliases: IdentityAlias[]; shared: string[]; delivery: boolean; people: boolean }>("GET", "/api/v1/identities"),
   people: (hours: number, q: string) =>
     request<{ people: Person[]; suggestions: { identities: string[] }[] }>(
       "GET",
       `/api/v1/identities/people?hours=${hours}&q=${encodeURIComponent(q)}`,
     ),
-  resolve: (user: string, domain: string) =>
+  resolve: (user: string, domain: string, host = "") =>
     request<{ identity: string }>(
       "GET",
-      `/api/v1/identities/resolve?user=${encodeURIComponent(user)}&domain=${encodeURIComponent(domain)}`,
+      `/api/v1/identities/resolve?user=${encodeURIComponent(user)}&domain=${encodeURIComponent(domain)}&host=${encodeURIComponent(host)}`,
     ),
   setDomains: (domains: string[]) =>
     request<{ domains: string[]; message: string }>("PUT", "/api/v1/identities/domains", { domains }),
+  setShared: (accounts: string[]) =>
+    request<{ accounts: string[]; message: string }>("PUT", "/api/v1/identities/shared", { accounts }),
   setAlias: (alias: string, identity: string, note: string) =>
     request<{ message: string }>("POST", "/api/v1/identities/aliases", { alias, identity, note }),
   deleteAlias: (alias: string) => request<{ message: string }>("POST", "/api/v1/identities/aliases/delete", { alias }),

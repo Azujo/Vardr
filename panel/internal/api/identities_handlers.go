@@ -22,6 +22,8 @@ import (
 type IdentityStore interface {
 	IdentityDomains(ctx context.Context) ([]string, error)
 	SetIdentityDomains(ctx context.Context, domains []string, by string) error
+	IdentitySharedAccounts(ctx context.Context) ([]string, error)
+	SetIdentitySharedAccounts(ctx context.Context, accounts []string, by string) error
 	IdentityAliases(ctx context.Context) ([]store.IdentityAlias, error)
 	SetIdentityAlias(ctx context.Context, a store.IdentityAlias) error
 	DeleteIdentityAlias(ctx context.Context, alias string) (store.IdentityAlias, error)
@@ -54,6 +56,9 @@ func (m *Identities) Config(ctx context.Context) (identity.Config, error) {
 		return c, err
 	}
 	c.Domains = ds
+	if c.Shared, err = m.Store.IdentitySharedAccounts(ctx); err != nil {
+		return c, err
+	}
 	if len(as) > 0 {
 		c.Aliases = map[string]string{}
 		for _, a := range as {
@@ -85,7 +90,12 @@ func (s *Server) getIdentities(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"domains": nonNilSlice(ds), "aliases": nonNilSlice(as),
+	sh, err := s.Identities.Store.IdentitySharedAccounts(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"domains": nonNilSlice(ds), "aliases": nonNilSlice(as), "shared": nonNilSlice(sh),
 		"delivery": s.Identities.Publish != nil, "people": s.Identities.People != nil})
 }
 
@@ -149,6 +159,51 @@ func (s *Server) setIdentityDomains(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "identity_domains_changed", "", map[string]any{"before": before, "after": domains})
 	writeJSON(w, http.StatusOK, map[string]any{"domains": domains, "message": s.publishIdentities(r)})
+}
+
+// sharedRe: nazwa konta wspólnego (bez domeny i spacji).
+var sharedRe = regexp.MustCompile(`^[^\s"'<>\\@\x00-\x1f]{1,64}$`)
+
+func (s *Server) setIdentityShared(w http.ResponseWriter, r *http.Request) {
+	if !s.identitiesEnabled(w) {
+		return
+	}
+	a := current(r)
+	var req struct {
+		Accounts []string `json:"accounts"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	seen := map[string]bool{}
+	accounts := []string{}
+	for _, x := range req.Accounts {
+		x = identity.Normalize(x)
+		if x == "" || seen[x] {
+			continue
+		}
+		if !sharedRe.MatchString(x) {
+			writeError(w, http.StatusBadRequest, "bad_account", "niepoprawne konto: "+x+" (sama nazwa, np. admin, root)")
+			return
+		}
+		seen[x] = true
+		accounts = append(accounts, x)
+	}
+	if len(accounts) > 100 {
+		writeError(w, http.StatusBadRequest, "too_many", "najwyżej 100 kont")
+		return
+	}
+	before, err := s.Identities.Store.IdentitySharedAccounts(r.Context())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := s.Identities.Store.SetIdentitySharedAccounts(r.Context(), accounts, a.user.Username); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	s.audit(r, &a.user, "identity_shared_changed", "", map[string]any{"before": before, "after": accounts})
+	writeJSON(w, http.StatusOK, map[string]any{"accounts": accounts, "message": s.publishIdentities(r)})
 }
 
 // accountRe: nazwa konta albo tożsamość (także DOMENA\konto i UPN).
@@ -237,7 +292,7 @@ func (s *Server) resolveIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	writeJSON(w, http.StatusOK, map[string]any{"identity": identity.New(c).Resolve(q.Get("user"), q.Get("domain"))})
+	writeJSON(w, http.StatusOK, map[string]any{"identity": identity.New(c).ResolveOn(q.Get("user"), q.Get("domain"), q.Get("host"))})
 }
 
 // Suggestion to podpowiedź połączenia: tożsamości różniące się tylko

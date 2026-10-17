@@ -84,6 +84,8 @@ type Correlator struct {
 	// Table: tabela logowań zasilana przy zapisie zdarzeń (etap 8,
 	// clickhouse/init/03-auth-events.sh) – domyślnie siem.auth_events.
 	Table string
+	// Events: tabela zdarzeń (cisza źródła) – domyślnie siem.events.
+	Events string
 	// Disabled (opcjonalne): korelacja wyłączona w panelu.
 	Disabled func(id string) bool
 	// Open (opcjonalne): otwarte alerty reguły z ostatnim trafieniem od
@@ -95,7 +97,7 @@ func (c *Correlator) off(id string) bool { return c.Disabled != nil && c.Disable
 
 // CorrelationInfos: opisy korelacji z ustawieniem z panelu (wyłączenie).
 func CorrelationInfos(ov map[string]alerts.Override) ([]alerts.RuleInfo, map[string]bool) {
-	infos := CorrelationRules()
+	infos := append(CorrelationRules(), SilenceRule())
 	disabled := map[string]bool{}
 	for i := range infos {
 		if o, ok := ov[infos[i].ID]; ok {
@@ -193,7 +195,7 @@ func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Tim
 		instr := fmt.Sprintf("Osoba %s: %d nieudanych logowań (%s) z adresów %s, a o %s UTC udane logowanie w %s z adresu %s. ",
 			identity, n, strings.Join(fds, ", "), short(fips, 5), ts.UTC().Format("2006-01-02 15:04:05"), ds, orDash(ip)) + rule.Instructions
 		hits = append(hits, alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
-			GroupFields: map[string]string{"user.identity": identity}, GroupKey: identity, Suppress: time.Hour,
+			GroupFields: map[string]string{"user.identity": identity}, GroupKey: identity, Suppress: time.Hour, Identity: identity,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
 			Summary: summary, Instructions: instr})
 	}
@@ -380,7 +382,7 @@ func (c *Correlator) newCountry(ctx context.Context, from, to time.Time) ([]aler
 		}
 		hits = append(hits, alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
 			GroupFields: map[string]string{"user.identity": identity, "source.geo.country_iso_code": country},
-			GroupKey:    identity + "\x1f" + country, Suppress: 24 * time.Hour,
+			GroupKey:    identity + "\x1f" + country, Suppress: 24 * time.Hour, Identity: identity,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
 			Summary: fmt.Sprintf("osoba %s: udane logowanie z %s, adres %s; wcześniej tylko z: %s", identity, where, orDash(ip),
 				strings.Join(known, ", ")),

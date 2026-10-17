@@ -14,12 +14,18 @@ import (
 
 type memIdentities struct {
 	domains []string
+	shared  []string
 	aliases map[string]store.IdentityAlias
 }
 
 func (m *memIdentities) IdentityDomains(context.Context) ([]string, error) { return m.domains, nil }
 func (m *memIdentities) SetIdentityDomains(_ context.Context, d []string, _ string) error {
 	m.domains = d
+	return nil
+}
+func (m *memIdentities) IdentitySharedAccounts(context.Context) ([]string, error) { return m.shared, nil }
+func (m *memIdentities) SetIdentitySharedAccounts(_ context.Context, a []string, _ string) error {
+	m.shared = a
 	return nil
 }
 func (m *memIdentities) IdentityAliases(context.Context) ([]store.IdentityAlias, error) {
@@ -99,6 +105,23 @@ func TestIdentitiesAPI(t *testing.T) {
 	if _, out, _ := analyst.do("GET", "/api/v1/identities/resolve?user=admin&domain=PC01", nil); out["identity"] != `pc01\admin` {
 		t.Fatalf("konto lokalne: %v", out)
 	}
+	// Konta wspólne urządzeń.
+	if code, _, _ := analyst.do("PUT", "/api/v1/identities/shared", map[string]any{"accounts": []string{"admin"}}); code != 403 {
+		t.Fatalf("konta wspólne przez analityka: %d", code)
+	}
+	if code, out, _ := admin.do("PUT", "/api/v1/identities/shared", map[string]any{"accounts": []string{`AZUJO\admin`}}); code != 400 {
+		t.Fatalf("konto wspólne z domeną: %d %v", code, out)
+	}
+	if code, _, _ := admin.do("PUT", "/api/v1/identities/shared", map[string]any{"accounts": []string{"Admin", "root", "admin"}}); code != 200 ||
+		!slices.Equal(mi.shared, []string{"admin", "root"}) || !slices.Equal(published[len(published)-1].Shared, []string{"admin", "root"}) {
+		t.Fatalf("konta wspólne: %d %v", code, mi.shared)
+	}
+	if _, out, _ := analyst.do("GET", "/api/v1/identities/resolve?user=admin&host=MikroTik", nil); out["identity"] != `mikrotik\admin` {
+		t.Fatalf("konto wspólne: %v", out)
+	}
+	if _, out, _ := analyst.do("GET", "/api/v1/identities", nil); len(out["shared"].([]any)) != 2 {
+		t.Fatalf("lista kont wspólnych: %v", out)
+	}
 	code, out, _ = analyst.do("GET", "/api/v1/identities/people", nil)
 	sugg, _ := out["suggestions"].([]any)
 	if code != 200 || len(sugg) != 1 || len(sugg[0].(map[string]any)["identities"].([]any)) != 3 {
@@ -107,7 +130,7 @@ func TestIdentitiesAPI(t *testing.T) {
 	if code, _, _ := admin.do("POST", "/api/v1/identities/aliases/delete", map[string]any{"alias": "j.kowalski"}); code != 200 || len(mi.aliases) != 0 {
 		t.Fatalf("usunięcie aliasu: %d", code)
 	}
-	for _, a := range []string{"identity_domains_changed", "identity_alias_set", "identity_alias_deleted"} {
+	for _, a := range []string{"identity_domains_changed", "identity_shared_changed", "identity_alias_set", "identity_alias_deleted"} {
 		if !slices.Contains(e.st.actions(), a) {
 			t.Fatalf("brak audytu %s", a)
 		}

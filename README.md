@@ -635,6 +635,7 @@ Każde zdarzenie z kontem dostaje **osobę** – kolumnę `user_identity` (pole 
 - **Domeny organizacji** (panel → Tożsamości) to nazwy NetBIOS i DNS, np. `azujo`, `azujo.centrala`, `azujo.pl`.
   - Konta z innych domen zostają osobnymi tożsamościami z domeną: lokalne konta komputerów (`desktop-1\admin`) i goście (`partner@obca.pl`).
   - Pusta lista oznacza, że każda domena należy do organizacji.
+- **Konta wspólne urządzeń** (ta sama zakładka; domyślnie `admin`, `administrator`, `root`, `guest`): takie konto bez domeny – `admin` na routerze MikroTik czy FortiGate – dostaje tożsamość z nazwą urządzenia (`mikrotik\admin`). Korelacje nie łączą wtedy prób na różnych urządzeniach ani z domenowym `AZUJO\admin`. Konto na urządzeniu z właścicielem: alias `mikrotik\admin` → osoba. „Sprawdź konto” przyjmuje też nazwę urządzenia.
 - **Aliasy** przypisują inne nazwy do osoby, np. login VPN `j.kowalski` → `jkowalski`.
   - Kluczem aliasu może być konto, `DOMENA\konto` albo UPN.
   - Aliasy nie tworzą łańcuchów.
@@ -718,6 +719,14 @@ Reguły wbudowane `siem-detector` ocenia co minutę zapytaniami do ClickHouse:
 - konto `siem_detector`, także w trybie tylko „w locie”, o ile ustawione jest `SIEM_DETECTOR_CH_PASSWORD`;
 - silnik w alercie to „korelacja”;
 - korelację można wyłączyć z panelu jak regułę Sigma (powód, hasło, audyt).
+
+**„Powiązane alerty”** na stronie alertu szukają po komputerze, koncie i osobie: alert z Entra ID (`jan@azujo.pl`) pokazuje alerty AD tej samej osoby (`AZUJO\jan`). Detektor zapisuje osobę w alercie od wersji z 17.10.2026; starsze alerty mają ją tylko w korelacjach.
+
+**Cisza źródła** – reguła wbudowana (wyłączana z panelu jak korelacje), co 5 min w ClickHouse:
+- źródło to urządzenie syslog (router, zapora – po nazwie urządzenia) albo połączenie z chmurą (konektor i zbiór, np. `azure.signinlogs`; komputer w logowaniu Entra to urządzenie użytkownika, nie źródło); zdarzenia Windows pilnuje heartbeat agenta;
+- alert, gdy źródło milczy dłużej niż jego najdłuższa przerwa z ostatnich 7 dni + 1 h (najmniej `SIEM_SOURCE_SILENCE_MIN`, domyślnie 1 h): zapora logująca bez przerwy – po ok. 2 h, router cichy nocami – dopiero po przerwie dłuższej niż zwykła noc;
+- źródła rzadkie (zdarzenia w mniej niż 24 godzinach tygodnia) są pomijane;
+- jedna przerwa = jeden alert; gdy zdarzenia wrócą, alert zamyka się sam (z powiadomieniem).
 
 Przy błędzie dostępu do Graph (zły sekret, brak zgody administratora, brak licencji) panel pokazuje przy konektorze kanał `entra-signin` / `entra-audit` ze stanem „brak dostępu” i treścią błędu. Graph v1.0 zwraca tylko logowania interaktywne; nieinteraktywne są w API beta.
 

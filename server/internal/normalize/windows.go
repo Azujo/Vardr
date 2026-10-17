@@ -41,7 +41,7 @@ var ErrUnsupportedSource = errors.New("brak dekodera dla źródła")
 func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, error) {
 	e, err := event(ev, agentID, ingested)
 	if err == nil {
-		e.Identity = identity.Current().Resolve(e.UserName, e.UserDomain)
+		e.Identity = identity.Current().ResolveOn(e.UserName, e.UserDomain, e.HostName)
 	}
 	return e, err
 }

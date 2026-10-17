@@ -29,17 +29,27 @@ type Config struct {
 	// Aliases: nazwa konta (klucz, pełne DOMENA\konto albo UPN; małe litery)
 	// → tożsamość osoby.
 	Aliases map[string]string `json:"aliases,omitempty"`
+	// Shared: konta wspólne urządzeń (np. admin, root) – takie konto bez
+	// domeny (router, zapora, konsola) to nie osoba z organizacji, tylko
+	// konto urządzenia: tożsamość „urządzenie\konto” (przegląd etapu 7).
+	Shared []string `json:"shared,omitempty"`
 }
 
 // Resolver wyznacza tożsamość według konfiguracji.
 type Resolver struct {
 	domains map[string]bool
 	aliases map[string]string
+	shared  map[string]bool
 }
 
 // New buduje Resolver (nazwy domen i aliasów bez wielkości liter).
 func New(c Config) *Resolver {
-	r := &Resolver{domains: map[string]bool{}, aliases: map[string]string{}}
+	r := &Resolver{domains: map[string]bool{}, aliases: map[string]string{}, shared: map[string]bool{}}
+	for _, a := range c.Shared {
+		if a = Normalize(a); a != "" {
+			r.shared[a] = true
+		}
+	}
 	for _, d := range c.Domains {
 		if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
 			r.domains[d] = true
@@ -70,7 +80,12 @@ var technicalDomains = map[string]bool{"nt authority": true, "zarządzanie nt": 
 
 // Resolve zwraca tożsamość dla konta (user, domena). Domena może być też
 // w nazwie: „DOMENA\konto” albo „konto@domena”. "" – konto bez osoby.
-func (r *Resolver) Resolve(user, domain string) string {
+func (r *Resolver) Resolve(user, domain string) string { return r.ResolveOn(user, domain, "") }
+
+// ResolveOn jak Resolve, z nazwą urządzenia zdarzenia: konto wspólne
+// (Config.Shared) bez domeny dostaje tożsamość „urządzenie\konto”
+// (bez urządzenia – brak osoby).
+func (r *Resolver) ResolveOn(user, domain, host string) string {
 	u := Normalize(user)
 	if u == "" || technical[u] || strings.HasSuffix(u, "$") {
 		return ""
@@ -92,6 +107,17 @@ func (r *Resolver) Resolve(user, domain string) string {
 	if technicalDomains[dom] {
 		return ""
 	}
+	if r.shared[u] && (dom == "" || dom == "-") {
+		h := hostKey(host)
+		if h == "" {
+			return ""
+		}
+		key := h + `\` + u
+		if id, ok := r.aliases[key]; ok {
+			return id
+		}
+		return key
+	}
 	// Alias: najpierw pełna nazwa (DOMENA\konto, UPN), potem samo konto.
 	if id, ok := r.aliases[full]; ok {
 		return id
@@ -109,6 +135,18 @@ func (r *Resolver) Resolve(user, domain string) string {
 		return id
 	}
 	return key
+}
+
+// hostKey: nazwa urządzenia małymi literami, bez domeny DNS (adres IP – cały).
+func hostKey(h string) string {
+	h = Normalize(h)
+	if strings.Trim(h, "0123456789.") == "" || strings.Contains(h, ":") {
+		return h
+	}
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		h = h[:i]
+	}
+	return h
 }
 
 // current to konfiguracja używana przez normalizator (podmieniana z panelu).
@@ -186,7 +224,7 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, ready f
 				}
 			}
 			Set(c)
-			log.Info("tożsamości wczytane", "domains", len(c.Domains), "aliases", len(c.Aliases))
+			log.Info("tożsamości wczytane", "domains", len(c.Domains), "aliases", len(c.Aliases), "shared", len(c.Shared))
 			if ready != nil {
 				ready()
 			}

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -208,10 +209,12 @@ func serve(log *slog.Logger) error {
 	}
 	// Korelacje międzyźródłowe (etap 7d) – zapytania do ClickHouse.
 	if chConn != nil {
-		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn, Disabled: func(id string) bool {
+		corr := &detector.Correlator{Conn: chConn, Disabled: func(id string) bool {
 			off := corrDisabled.Load()
 			return off != nil && (*off)[id]
-		}, Open: store.OpenAlerts}, store, m)
+		}, Open: store.OpenAlerts}
+		go runCorrelation(ctx, log, corr, store, m)
+		go runSilence(ctx, log, corr, store, m)
 	} else {
 		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
 	}
@@ -655,6 +658,63 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 		case <-ctx.Done():
 			return
 		case <-time.After(time.Minute):
+		}
+	}
+}
+
+// runSilence: reguła „cisza źródła” co 5 minut (SIEM_SOURCE_SILENCE_MIN –
+// najkrótszy próg, domyślnie 1 h). Alert zamyka się sam, gdy źródło wróci.
+func runSilence(ctx context.Context, log *slog.Logger, c *detector.Correlator, store *alerts.PG, m *metrics.Detector) {
+	minSilence, _ := svc.EnvDuration("SIEM_SOURCE_SILENCE_MIN", time.Hour)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Minute):
+		}
+		if c.Disabled != nil && c.Disabled(detector.SourceSilentID) {
+			continue
+		}
+		now := time.Now().UTC()
+		qctx, cancel := context.WithTimeout(ctx, time.Minute)
+		srcs, err := c.Sources(qctx, now)
+		cancel()
+		if err != nil {
+			m.Errors.WithLabelValues("silence").Inc()
+			log.Warn("cisza źródła: odczyt źródeł nieudany", "err", err)
+			continue
+		}
+		hits, back := detector.SilenceCheck(srcs, now, minSilence)
+		if len(hits) > 0 {
+			res, err := store.Record(ctx, hits, nil)
+			if err != nil {
+				m.Errors.WithLabelValues("record").Inc()
+				log.Error("zapis alertów ciszy źródła nieudany", "err", err)
+				continue
+			}
+			m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
+			if res.NewAlerts > 0 {
+				log.Info("cisza źródła – nowe alerty", "count", res.NewAlerts)
+			}
+		}
+		open, err := store.OpenAlerts(ctx, detector.SourceSilentID, now.Add(-365*24*time.Hour))
+		if err != nil || len(open) == 0 {
+			continue
+		}
+		for _, key := range back {
+			found := false
+			for k := range open {
+				found = found || strings.HasPrefix(k, key)
+			}
+			if !found {
+				continue
+			}
+			reason := "Źródło znów przysyła zdarzenia (" + now.Format("2006-01-02 15:04") + " UTC) – zamknięte automatycznie."
+			if n, err := store.CloseOpen(ctx, detector.SourceSilentID, key, reason, true, now); err != nil {
+				log.Warn("zamknięcie alertu ciszy źródła nieudane", "source", key, "err", err)
+			} else if n > 0 {
+				log.Info("źródło wróciło – alert zamknięty", "source", key)
+			}
 		}
 	}
 }

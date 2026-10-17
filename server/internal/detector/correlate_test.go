@@ -146,6 +146,40 @@ func TestCorrelations(t *testing.T) {
 		}
 	}
 	c.Open = nil
+
+	// Cisza źródła: urządzenie syslog po komputerze, chmura (dostawca entra:)
+	// po zbiorze – bez urządzeń użytkowników; Windows pominięty.
+	var src []model.Event
+	for h := range 30 {
+		e := ev("fortinet.fortigate", 0, "traffic", "", "", "", -time.Duration(h+1)*time.Hour, nil)
+		e.HostName = "fw9"
+		src = append(src, e)
+		a := ev("azure.signinlogs", 0, "sign-in", "success", "jan", "", -time.Duration(h+1)*time.Hour, nil)
+		a.Provider, a.HostName = "entra:signin", fmt.Sprintf("desktop-%d", h%3)
+		src = append(src, a)
+	}
+	if err := w.InsertEvents(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	c.Events = "corr_test.events"
+	srcs, err := c.Sources(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]Source{}
+	for _, s := range srcs {
+		byKey[s.Key()] = s
+	}
+	fw9, cloud := byKey[Source{Agent: "a", Host: "fw9"}.Key()], byKey[Source{Agent: "a", Dataset: "azure.signinlogs"}.Key()]
+	if len(fw9.Hours) < 30 || len(cloud.Hours) < 30 || byKey[Source{Agent: "a", Host: "desktop-1"}.Key()].Agent != "" ||
+		byKey[Source{Agent: "a", Host: "h"}.Key()].Agent == "" {
+		t.Fatalf("źródła: %+v", srcs)
+	}
+	for _, s := range srcs {
+		if s.Dataset == "windows.security" || s.Host == "desktop-1" {
+			t.Fatalf("źródło Windows albo urządzenie użytkownika: %+v", s)
+		}
+	}
 	// Okno bez nowych zdarzeń – nic.
 	if hits, err := c.Run(ctx, now.Add(time.Minute), now.Add(2*time.Minute)); err != nil || len(hits) != 0 {
 		t.Fatalf("puste okno: %d %v", len(hits), err)

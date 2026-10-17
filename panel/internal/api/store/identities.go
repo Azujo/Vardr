@@ -43,6 +43,32 @@ func (s *PG) SetIdentityDomains(ctx context.Context, domains []string, by string
 	return tx.Commit(ctx)
 }
 
+// IdentitySharedAccounts zwraca konta wspólne urządzeń.
+func (s *PG) IdentitySharedAccounts(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT account FROM identity_shared_accounts ORDER BY account`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// SetIdentitySharedAccounts zastępuje listę kont wspólnych urządzeń.
+func (s *PG) SetIdentitySharedAccounts(ctx context.Context, accounts []string, by string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM identity_shared_accounts WHERE NOT (account = ANY($1))`, accounts); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO identity_shared_accounts (account, created_by) SELECT unnest($1::text[]), $2
+		ON CONFLICT (account) DO NOTHING`, accounts, by); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // IdentityAliases zwraca aliasy kont.
 func (s *PG) IdentityAliases(ctx context.Context) ([]IdentityAlias, error) {
 	rows, err := s.pool.Query(ctx, `SELECT alias, identity, note, created_at, created_by FROM identity_aliases ORDER BY identity, alias`)

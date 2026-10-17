@@ -128,6 +128,16 @@ func TestPostgresIdentities(t *testing.T) {
 	if err := db.SetIdentityDomains(ctx, []string{"Duże"}, "adam"); err == nil {
 		t.Fatal("baza powinna odrzucić domenę z wielkimi literami")
 	}
+	// Konta wspólne: domyślna lista z migracji, potem zastąpiona.
+	if sh, err := db.IdentitySharedAccounts(ctx); err != nil || len(sh) != 4 || sh[0] != "admin" {
+		t.Fatalf("konta wspólne (domyślne): %v %v", sh, err)
+	}
+	if err := db.SetIdentitySharedAccounts(ctx, []string{"admin", "support"}, "adam"); err != nil {
+		t.Fatal(err)
+	}
+	if sh, err := db.IdentitySharedAccounts(ctx); err != nil || len(sh) != 2 || sh[1] != "support" {
+		t.Fatalf("konta wspólne: %v %v", sh, err)
+	}
 	if err := db.SetIdentityAlias(ctx, IdentityAlias{Alias: "j.kowalski", Identity: "jkowalski", CreatedBy: "adam"}); err != nil {
 		t.Fatal(err)
 	}

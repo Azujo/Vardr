@@ -105,7 +105,7 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 	h := alerts.Hit{
 		RuleID: r.ID, RuleTitle: r.Title, Level: r.Level, Engine: "stream",
 		EventID: ev.ID, EventTime: ev.Timestamp, AgentID: ev.AgentID, HostName: ev.HostName,
-		UserName: ev.UserName, SourceIP: ev.SourceIP, Summary: summary(r, ev),
+		UserName: ev.UserName, SourceIP: ev.SourceIP, Identity: ev.Identity, Summary: summary(r, ev),
 		Instructions: detect.Render(r.Heimdall.Instructions, ev),
 	}
 	if h.EventTime.IsZero() {

@@ -285,9 +285,9 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 | 4 | niski | Po restarcie normalizator przez pierwsze sekundy stosował wbudowane dekodery i tożsamości bez ustawień z panelu | Pierwsze zdarzenia po restarcie z inną osobą albo zbiorem danych | Naprawione: start czeka na konfigurację z NATS (najwyżej 15 s) |
 | 5 | niski | Eksport NIS2 bez osoby | Audytor nie łączy kont tej samej osoby | Naprawione: `user.identity` w NDJSON, kolumna `osoba` w CSV |
 | 6 | uwaga | Wydajność korelacji (podzapytania ze zbioru udanych logowań) | – | Sprawdzone w laboratorium: ok. 50 ms i 30 tys. wierszy na przebieg (indeks po czasie przyjęcia) – bez zmian |
-| 7 | uwaga | Konta lokalne urządzeń bez domeny (`admin` na MikroTiku i FortiGate) to ta sama osoba co domenowy „admin” | Możliwe łączenie niezwiązanych prób w korelacjach | Później: lista kont wspólnych (bez osoby albo z nazwą urządzenia) |
+| 7 | uwaga | Konta lokalne urządzeń bez domeny (`admin` na MikroTiku i FortiGate) to ta sama osoba co domenowy „admin” | Możliwe łączenie niezwiązanych prób w korelacjach | Naprawione (17.10): lista kont wspólnych w panelu (domyślnie admin, administrator, root, guest) – bez domeny tożsamość „urządzenie\konto” |
 | 8 | uwaga | Graph v1.0 zwraca tylko logowania interaktywne; nieinteraktywne (tokeny aplikacji, odświeżanie sesji) są w API beta | Spraying przez stare protokoły bywa widoczny tylko w nieinteraktywnych | Później, przy prawdziwym tenancie |
-| 9 | uwaga | „Powiązane alerty” szukają po koncie, nie po osobie | Alert z Entra (UPN) nie pokazuje alertów AD tej samej osoby | Później: osoba w alertach |
+| 9 | uwaga | „Powiązane alerty” szukają po koncie, nie po osobie | Alert z Entra (UPN) nie pokazuje alertów AD tej samej osoby | Naprawione (17.10): osoba zapisywana w alercie, „Powiązane alerty” także po osobie |
 | 10 | uwaga | Scenariusze symulatora Graph cofają czas zdarzeń o ok. 2 min | W ćwiczeniu kolejność zdarzeń z różnych źródeł może się odwrócić (pierwsza próba #38) | Do pamiętania przy ćwiczeniach |
 
 ## Przegląd etapu 6 (09.10.2026) – błędy i luki
@@ -308,7 +308,7 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 | 12 | uwaga | Grupy kwarantanny liczą także wpisy odzyskane | Licznik nie maleje po ponownym przetworzeniu | Opisane w nagłówku kolumny; stan wpisów na liście i w zleceniach |
 | 13 | uwaga | Licznik `{{count}}` w instrukcji alertu progowego z chwili przekroczenia progu (#27: „5” przy 10 zdarzeniach) | Instrukcja zaniża skalę trwającej serii | Bez zmian (od etapu 4) – liczba zdarzeń jest w alercie |
 | 14 | uwaga | Każdy zarejestrowany agent może wysłać zdarzenia „syslog:” (jak dowolny XML Windows) | Przejęta stacja może fałszować logi urządzeń | Do etapu 8 (ograniczenie źródeł do typu agenta) |
-| 15 | uwaga | Utrata kolektora albo cisza urządzenia nie wywołuje alertu, gdy kolektor jest w grupie bez progu utraty łączności | Logi z sieci mogą przestać płynąć niezauważone | Zalecenie: osobna grupa „Kolektory” z alarmem po utracie łączności; reguła „cisza źródła” – później |
+| 15 | uwaga | Utrata kolektora albo cisza urządzenia nie wywołuje alertu, gdy kolektor jest w grupie bez progu utraty łączności | Logi z sieci mogą przestać płynąć niezauważone | Zalecenie: osobna grupa „Kolektory” z alarmem po utracie łączności. Reguła wbudowana „Cisza źródła” (17.10): urządzenie syslog albo połączenie z chmurą milczy dłużej niż jego najdłuższa przerwa z 7 dni + 1 h |
 
 ## Przegląd etapu 5 (09.10.2026) – błędy i luki
 

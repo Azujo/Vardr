@@ -141,16 +141,19 @@ func (p *PG) Activity(ctx context.Context, id int64) ([]Activity, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[Activity])
 }
 
-// Related zwraca alerty z tego samego komputera albo konta w promieniu
+// Related zwraca alerty z tego samego komputera, konta albo osoby
+// (user.identity – to samo konto w AD, Entra ID i na VPN) w promieniu
 // window od pierwszego zdarzenia alertu (bez niego samego).
 func (p *PG) Related(ctx context.Context, a Alert, window time.Duration, limit int) ([]Alert, error) {
-	if a.HostName == "" && a.UserName == "" {
+	if a.HostName == "" && a.UserName == "" && a.UserIdentity == "" {
 		return []Alert{}, nil
 	}
 	rows, err := p.pool.Query(ctx, `SELECT `+alertCols+` FROM gjallarhorn.alerts
 		WHERE id <> $1 AND first_seen BETWEEN $4 AND $5
-		AND (($2 <> '' AND lower(host_name) = lower($2)) OR ($3 <> '' AND lower(user_name) = lower($3)))
-		ORDER BY first_seen DESC LIMIT $6`, a.ID, a.HostName, a.UserName, a.FirstSeen.Add(-window), a.LastSeen.Add(window), limit)
+		AND (($2 <> '' AND lower(host_name) = lower($2)) OR ($3 <> '' AND lower(user_name) = lower($3))
+			OR ($7 <> '' AND user_identity = $7))
+		ORDER BY first_seen DESC LIMIT $6`, a.ID, a.HostName, a.UserName, a.FirstSeen.Add(-window), a.LastSeen.Add(window), limit,
+		a.UserIdentity)
 	if err != nil {
 		return nil, notConfigured(err)
 	}
