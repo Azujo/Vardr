@@ -23,7 +23,9 @@ func (m *memIdentities) SetIdentityDomains(_ context.Context, d []string, _ stri
 	m.domains = d
 	return nil
 }
-func (m *memIdentities) IdentitySharedAccounts(context.Context) ([]string, error) { return m.shared, nil }
+func (m *memIdentities) IdentitySharedAccounts(context.Context) ([]string, error) {
+	return m.shared, nil
+}
 func (m *memIdentities) SetIdentitySharedAccounts(_ context.Context, a []string, _ string) error {
 	m.shared = a
 	return nil
