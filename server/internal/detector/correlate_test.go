@@ -10,6 +10,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 
+	"siem/internal/alerts"
 	"siem/internal/model"
 	"siem/server/internal/chwriter"
 )
@@ -120,6 +121,31 @@ func TestCorrelations(t *testing.T) {
 	if len(nc) != 1 || !strings.HasPrefix(nc[0], "jan\x1fNL/") {
 		t.Fatalf("nowy kraj: %q", nc)
 	}
+	// Otwarty alert osoby: późniejsze udane logowanie – jedno trafienie „tylko
+	// licznik” bez prób; logowanie już policzone (≤ ostatnie trafienie) – nic.
+	janAt := now.Add(-5 * time.Minute)
+	for _, tc := range []struct {
+		last time.Time
+		want int
+	}{{janAt.Add(-time.Second), 1}, {janAt, 0}} {
+		c.Open = func(context.Context, string, time.Time) (map[string]time.Time, error) {
+			return map[string]time.Time{"jan": tc.last}, nil
+		}
+		hits, err := c.Run(ctx, now.Add(-time.Hour), now.Add(time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var jan []alerts.Hit
+		for _, h := range hits {
+			if h.RuleID == SuccessAfterFailuresID && h.GroupKey == "jan" {
+				jan = append(jan, h)
+			}
+		}
+		if len(jan) != tc.want || (tc.want == 1 && (!jan[0].CountOnly || jan[0].Count != 1 || !jan[0].EventTime.Equal(janAt))) {
+			t.Fatalf("otwarty alert (ostatnie %v): %+v", tc.last, jan)
+		}
+	}
+	c.Open = nil
 	// Okno bez nowych zdarzeń – nic.
 	if hits, err := c.Run(ctx, now.Add(time.Minute), now.Add(2*time.Minute)); err != nil || len(hits) != 0 {
 		t.Fatalf("puste okno: %d %v", len(hits), err)

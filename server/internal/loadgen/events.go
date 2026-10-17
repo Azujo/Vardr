@@ -40,13 +40,24 @@ func sumWeights() int {
 // (domyślnie 0,2% – zwykły dzień firmy; np. 5 = ciągły brute force na
 // wszystkich kontach, scenariusz przeciążenia detekcji progowej). Różnica
 // idzie z udanych logowań. Wywołać przed generowaniem zdarzeń.
+//
+// Poniżej 1% nieudane logowania dotyczą 2% kont (stare hasło w telefonie,
+// literówki) – jak w firmie. Rozłożone równo na wszystkie konta (test nocny
+// 16.10) sprawiały, że każde konto wyglądało na atakowane.
 func SetFailureShare(pct float64) {
 	f := int(pct*10 + 0.5)
 	f = max(0, min(f, mix[0].weight+mix[failedIdx].weight))
 	mix[0].weight += mix[failedIdx].weight - f
 	mix[failedIdx].weight = f
 	mixTotal = sumWeights()
+	failPool = len(users)
+	if pct < 1 {
+		failPool = len(users) / 50
+	}
 }
+
+// failPool: liczba kont (od początku listy) z nieudanymi logowaniami.
+var failPool = len(users) / 50
 
 // RandomEvent zwraca kanał i XML losowego zdarzenia z typowej mieszanki.
 func RandomEvent(host string, rec uint64, now time.Time) (string, string) {
@@ -100,8 +111,9 @@ var processes = []string{
 	`C:\Windows\System32\RuntimeBroker.exe`, `C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE`,
 }
 
-func user() string    { return users[mrand.IntN(len(users))] }
-func logonID() string { return fmt.Sprintf("0x%x", 0x100000+mrand.IntN(0xffffff)) }
+func user() string       { return users[mrand.IntN(len(users))] }
+func failedUser() string { return users[mrand.IntN(failPool)] }
+func logonID() string    { return fmt.Sprintf("0x%x", 0x100000+mrand.IntN(0xffffff)) }
 func ip() string {
 	return fmt.Sprintf("10.%d.%d.%d", mrand.IntN(4), mrand.IntN(256), 1+mrand.IntN(254))
 }
@@ -124,7 +136,7 @@ func logoff4634(host string, rec uint64, t string) (string, string) {
 
 func failed4625(host string, rec uint64, t string) (string, string) {
 	data := fmt.Sprintf(`<EventData><Data Name='SubjectUserSid'>S-1-0-0</Data><Data Name='SubjectUserName'>-</Data><Data Name='SubjectDomainName'>-</Data><Data Name='SubjectLogonId'>0x0</Data><Data Name='TargetUserSid'>S-1-0-0</Data><Data Name='TargetUserName'>%s</Data><Data Name='TargetDomainName'>LAB</Data><Data Name='Status'>0xc000006d</Data><Data Name='FailureReason'>%%%%2313</Data><Data Name='SubStatus'>0xc000006a</Data><Data Name='LogonType'>3</Data><Data Name='LogonProcessName'>NtLmSsp </Data><Data Name='AuthenticationPackageName'>NTLM</Data><Data Name='WorkstationName'>WS%03d</Data><Data Name='ProcessName'>-</Data><Data Name='IpAddress'>%s</Data><Data Name='IpPort'>%d</Data></EventData>`,
-		user(), mrand.IntN(500), ip(), 49152+mrand.IntN(16000))
+		failedUser(), mrand.IntN(500), ip(), 49152+mrand.IntN(16000))
 	return "Security", wrap(secSys(4625, 0, 12544, "0x8010000000000000", t, rec, host), data)
 }
 

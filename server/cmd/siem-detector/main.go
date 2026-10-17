@@ -213,7 +213,7 @@ func serve(log *slog.Logger) error {
 		go runCorrelation(ctx, log, &detector.Correlator{Conn: chConn, Disabled: func(id string) bool {
 			off := corrDisabled.Load()
 			return off != nil && (*off)[id]
-		}}, store, &recordMu, m)
+		}, Open: store.OpenAlerts}, store, &recordMu, m)
 	} else {
 		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
 	}

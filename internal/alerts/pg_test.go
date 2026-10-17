@@ -300,6 +300,26 @@ func TestPostgresAlerts(t *testing.T) {
 	if res.Merged != 1 || res.NewAlerts != 0 {
 		t.Fatalf("dołączenie: %+v", res)
 	}
+	// Trafienie „tylko licznik”: podbija licznik i czas bez dołączania zdarzenia;
+	// bez otwartego alertu – zwykłe trafienie.
+	co := gk("b7", tb.Add(100*time.Minute))
+	co.CountOnly, co.Count = true, 3
+	other := gk("c1", tb.Add(100*time.Minute))
+	other.GroupKey, other.CountOnly = "pc10", true
+	if res, err = db.Record(ctx, []Hit{co, other}, nil); err != nil || res.Merged != 1 || res.NewAlerts != 1 {
+		t.Fatalf("tylko licznik: %+v %v", res, err)
+	}
+	keys, err := db.OpenAlerts(ctx, "r-batch", tb)
+	if err != nil || len(keys) != 2 || !keys["pc9"].Equal(tb.Add(5*time.Hour)) { // najnowszy z dwóch alertów pc9
+		t.Fatalf("otwarte alerty: %v %v", keys, err)
+	}
+	a, _ := db.Alert(ctx, byHits[4].ID)
+	if evs, _ := db.AlertEvents(ctx, a.ID, 10); a.Hits != 8 || len(evs) != 5 {
+		t.Fatalf("alert po trafieniu „tylko licznik”: %d trafień, %d zdarzeń", a.Hits, len(evs))
+	}
+	if again, _ := db.Record(ctx, []Hit{other}, nil); again.Duplicates != 0 || again.Merged != 1 {
+		t.Fatalf("drugie „tylko licznik”: %+v", again)
+	}
 }
 
 func mustClaim(t *testing.T, db *PG, now time.Time) []Pending {

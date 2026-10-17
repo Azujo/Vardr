@@ -86,6 +86,9 @@ type Correlator struct {
 	Table string
 	// Disabled (opcjonalne): korelacja wyłączona w panelu.
 	Disabled func(id string) bool
+	// Open (opcjonalne): otwarte alerty reguły z ostatnim trafieniem od
+	// since (klucz → ostatnie trafienie), np. alerts.PG.OpenAlerts.
+	Open func(ctx context.Context, rule string, since time.Time) (map[string]time.Time, error)
 }
 
 func (c *Correlator) off(id string) bool { return c.Disabled != nil && c.Disabled(id) }
@@ -193,20 +196,75 @@ func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Tim
 			GroupFields: map[string]string{"user.identity": identity}, GroupKey: identity, Suppress: time.Hour,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
 			Summary: summary, Instructions: instr})
-		if f, ok := first[identity]; !ok || ts.Before(f) {
-			first[identity] = ts
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	hits, err = c.countOnly(ctx, hits)
+	if err != nil {
+		return nil, err
+	}
+	for _, h := range hits {
+		if f, ok := first[h.GroupKey]; !h.CountOnly && (!ok || h.EventTime.Before(f)) {
+			first[h.GroupKey] = h.EventTime
+		}
+	}
 	return c.withAttempts(ctx, hits, first)
+}
+
+// countOnly (etap 8): osoba z otwartym alertem – kolejne udane logowania
+// tylko podbijają jego licznik (jedno trafienie „tylko licznik” na osobę
+// i przebieg, bez prób), zamiast dołączać każde logowanie z 50 próbami.
+// W teście nocnym (każde konto z próbami) takie dołączanie dawało 8000
+// trafień na minutę. Logowania nie późniejsze niż ostatnie trafienie alertu
+// są już policzone (okna przebiegów zachodzą na siebie) – pomijane.
+func (c *Correlator) countOnly(ctx context.Context, hits []alerts.Hit) ([]alerts.Hit, error) {
+	if c.Open == nil || len(hits) == 0 {
+		return hits, nil
+	}
+	lo := hits[0].EventTime
+	for _, h := range hits {
+		if h.EventTime.Before(lo) {
+			lo = h.EventTime
+		}
+	}
+	open, err := c.Open(ctx, SuccessAfterFailuresID, lo.Add(-time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	var out []alerts.Hit
+	counted := map[string]int{} // osoba → indeks trafienia „tylko licznik” w out
+	for _, h := range hits {
+		last, ok := open[h.GroupKey]
+		switch {
+		case !ok || h.EventTime.Sub(last) > h.Suppress:
+			out = append(out, h)
+		case !h.EventTime.After(last):
+		default:
+			if i, ok := counted[h.GroupKey]; ok {
+				out[i].Count++
+				if h.EventTime.After(out[i].EventTime) {
+					n := out[i].Count
+					out[i] = h
+					out[i].CountOnly, out[i].Count = true, n
+				}
+				continue
+			}
+			h.CountOnly, h.Count = true, 1
+			counted[h.GroupKey] = len(out)
+			out = append(out, h)
+		}
+	}
+	return out, nil
 }
 
 // withAttempts dokłada do alertów próby z serii (oś zdarzeń, Mímir): do 50
 // ostatnich nieudanych logowań osoby przed jej udanym logowaniem.
 func (c *Correlator) withAttempts(ctx context.Context, hits []alerts.Hit, first map[string]time.Time) ([]alerts.Hit, error) {
 	if len(hits) == 0 {
+		return hits, nil
+	}
+	if len(first) == 0 {
 		return hits, nil
 	}
 	ids := make([]string, 0, len(first))
@@ -218,7 +276,7 @@ func (c *Correlator) withAttempts(ctx context.Context, hits []alerts.Hit, first 
 		}
 	}
 	for _, h := range hits {
-		if h.EventTime.After(hi) {
+		if !h.CountOnly && h.EventTime.After(hi) {
 			hi = h.EventTime
 		}
 	}
@@ -257,6 +315,9 @@ func (c *Correlator) withAttempts(ctx context.Context, hits []alerts.Hit, first 
 	out := hits
 	for _, h := range hits {
 		n := 0
+		if h.CountOnly {
+			continue
+		}
 		for _, a := range byIdentity[h.GroupKey] { // od najnowszych
 			if n == 50 || !a.ts.Before(h.EventTime) || a.ts.Before(h.EventTime.Add(-failureWindow)) {
 				continue

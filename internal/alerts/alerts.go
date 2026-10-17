@@ -259,6 +259,11 @@ type Hit struct {
 	Summary     string
 	// Instructions: instrukcja reguły z podstawionymi wartościami zdarzenia.
 	Instructions string
+	// CountOnly (korelacje, etap 8): trafienie tylko podbija licznik i czas
+	// otwartego alertu klucza o Count (0 = 1) – bez dołączania zdarzenia.
+	// Bez otwartego alertu zapisuje się jak zwykłe trafienie.
+	CountOnly bool
+	Count     int
 }
 
 // Observation to zdarzenie pasujące do reguły progowej (stan progu).
@@ -359,34 +364,23 @@ func recordHits(ctx context.Context, tx pgx.Tx, hits []Hit, res *RecordResult) e
 	if len(hits) == 0 {
 		return nil
 	}
-	rules := make([]string, len(hits))
-	events := make([]string, len(hits))
-	times := make([]time.Time, len(hits))
-	for i, h := range hits {
-		rules[i], events[i], times[i] = h.RuleID, h.EventID, h.EventTime
-	}
-	rows, err := tx.Query(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)
-		SELECT r, e, NULL, t FROM unnest($1::text[], $2::text[], $3::timestamptz[]) AS h(r, e, t)
-		ON CONFLICT DO NOTHING RETURNING rule_id, event_id`, rules, events, times)
-	if err != nil {
-		return err
-	}
-	reserved := map[[2]string]bool{}
-	for rows.Next() {
-		var r, e string
-		if err := rows.Scan(&r, &e); err != nil {
-			rows.Close()
-			return err
+	var attach []Hit
+	for _, h := range hits {
+		if !h.CountOnly {
+			attach = append(attach, h)
 		}
-		reserved[[2]string{r, e}] = true
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
+	reserved, err := reserve(ctx, tx, attach)
+	if err != nil {
 		return err
 	}
 	var fresh []Hit
 	for _, h := range hits {
 		k := [2]string{h.RuleID, h.EventID}
+		if h.CountOnly {
+			fresh = append(fresh, h)
+			continue
+		}
 		if !reserved[k] {
 			res.Duplicates++
 			continue
@@ -458,8 +452,20 @@ func recordHits(ctx context.Context, tx pgx.Tx, hits []Hit, res *RecordResult) e
 				}
 			}
 		}
+		if h.CountOnly && target == nil {
+			// Alert zamknięty w międzyczasie – zwykłe trafienie (z rezerwacją).
+			r, err := reserve(ctx, tx, []Hit{h})
+			if err != nil {
+				return err
+			}
+			if !r[[2]string{h.RuleID, h.EventID}] {
+				res.Duplicates++
+				continue
+			}
+			fresh[i].CountOnly = false
+		}
 		if target != nil {
-			target.hits++
+			target.hits += max(h.Count, 1)
 			target.touched = true
 			if h.EventTime.After(target.last) {
 				target.last = h.EventTime
@@ -498,14 +504,72 @@ func recordHits(ctx context.Context, tx pgx.Tx, hits []Hit, res *RecordResult) e
 			}
 		}
 	}
-	fr := make([]string, len(fresh))
-	fe := make([]string, len(fresh))
+	var fr, fe []string
+	var fi []int64
 	for i, h := range fresh {
-		fr[i], fe[i] = h.RuleID, h.EventID
+		if !h.CountOnly && ids[i] != 0 {
+			fr, fe, fi = append(fr, h.RuleID), append(fe, h.EventID), append(fi, ids[i])
+		}
 	}
-	b.Queue(`UPDATE gjallarhorn.alert_events a SET alert_id = h.id
-		FROM unnest($1::text[], $2::text[], $3::bigint[]) AS h(r, e, id) WHERE a.rule_id = h.r AND a.event_id = h.e`, fr, fe, ids)
+	if len(fr) > 0 {
+		b.Queue(`UPDATE gjallarhorn.alert_events a SET alert_id = h.id
+			FROM unnest($1::text[], $2::text[], $3::bigint[]) AS h(r, e, id) WHERE a.rule_id = h.r AND a.event_id = h.e`, fr, fe, fi)
+	}
+	if b.Len() == 0 {
+		return nil
+	}
 	return tx.SendBatch(ctx, b).Close()
+}
+
+// reserve rezerwuje pary (reguła, zdarzenie) jednym INSERT-em i zwraca te,
+// których jeszcze nie było (zdarzenie przypisane wcześniej – brak w mapie).
+func reserve(ctx context.Context, tx pgx.Tx, hits []Hit) (map[[2]string]bool, error) {
+	reserved := map[[2]string]bool{}
+	if len(hits) == 0 {
+		return reserved, nil
+	}
+	rules := make([]string, len(hits))
+	events := make([]string, len(hits))
+	times := make([]time.Time, len(hits))
+	for i, h := range hits {
+		rules[i], events[i], times[i] = h.RuleID, h.EventID, h.EventTime
+	}
+	rows, err := tx.Query(ctx, `INSERT INTO gjallarhorn.alert_events (rule_id, event_id, alert_id, event_time)
+		SELECT r, e, NULL, t FROM unnest($1::text[], $2::text[], $3::timestamptz[]) AS h(r, e, t)
+		ON CONFLICT DO NOTHING RETURNING rule_id, event_id`, rules, events, times)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r, e string
+		if err := rows.Scan(&r, &e); err != nil {
+			return nil, err
+		}
+		reserved[[2]string{r, e}] = true
+	}
+	return reserved, rows.Err()
+}
+
+// OpenAlerts zwraca otwarte alerty reguły z ostatnim trafieniem od since:
+// klucz grupowania → ostatnie trafienie (korelacje – trafienia „tylko licznik”).
+func (p *PG) OpenAlerts(ctx context.Context, rule string, since time.Time) (map[string]time.Time, error) {
+	rows, err := p.pool.Query(ctx, `SELECT group_key, max(last_seen) FROM gjallarhorn.alerts
+		WHERE rule_id = $1 AND status <> 'closed' AND last_seen >= $2 GROUP BY group_key`, rule, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var k string
+		var t time.Time
+		if err := rows.Scan(&k, &t); err != nil {
+			return nil, err
+		}
+		out[k] = t
+	}
+	return out, rows.Err()
 }
 
 func nonNilMap(m map[string]string) map[string]string {

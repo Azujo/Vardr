@@ -93,6 +93,7 @@ services:
     ports:
       - "8443:8443"
     mem_limit: 768m
+    cpu_shares: 2048          # pierwszeństwo przy braku CPU – patrz detector
 
   normalizer:
     <<: *server
@@ -104,6 +105,7 @@ services:
       GOGC: "200"
       GOMEMLIMIT: 400MiB
     mem_limit: 512m
+    cpu_shares: 2048          # detektor czyta zdarzenia po normalizacji – patrz detector
 
   writer:
     <<: *server
@@ -277,6 +279,12 @@ services:
       saga: { condition: service_healthy }
       clickhouse: { condition: service_healthy }
     mem_limit: 1g
+    # Pierwszeństwo detekcji przy braku CPU (etap 8, test nocny: przy VM
+    # zajętej w 85–90% ustępował detektor – zaległość rosła o 100 tys.
+    # zdarzeń na godzinę). Waga 4× domyślnej (1024): gdy brakuje procesora,
+    # ustępują zapis i scalanie w ClickHouse – zdarzenia czekają w NATS,
+    # wyszukiwanie ma opóźnienie, a alerty przychodzą na czas.
+    cpu_shares: 4096
 
   # Saga – baza panelu (konta, sesje, audyt; później agenci, tokeny, reguły).
   saga:

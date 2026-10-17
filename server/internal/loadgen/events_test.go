@@ -31,11 +31,11 @@ func TestFailureShare(t *testing.T) {
 		t.Fatalf("konta: %d %q %q", len(users), users[0], users[100])
 	}
 	SetFailureShare(5)
-	if mix[failedIdx].weight != 50 || mixTotal != 1000 {
+	if mix[failedIdx].weight != 50 || mixTotal != 1000 || failPool != 3500 {
 		t.Fatalf("5%%: %d/%d", mix[failedIdx].weight, mixTotal)
 	}
 	SetFailureShare(0.2)
-	if mix[failedIdx].weight != 2 || mix[0].weight != 398 || mixTotal != 1000 {
+	if mix[failedIdx].weight != 2 || mix[0].weight != 398 || mixTotal != 1000 || failPool != 70 {
 		t.Fatalf("0,2%%: %d %d/%d", mix[failedIdx].weight, mix[0].weight, mixTotal)
 	}
 }
