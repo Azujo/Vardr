@@ -14,6 +14,8 @@ Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token d
 
 ## Moduły
 
+Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły detekcji), **Zdarzenia** (Wyszukiwarka, Tożsamości, Dekodery, Kwarantanna), **Agenci** (Lista agentów, Grupy agentów, Wdrażanie), **System** (Archiwum NIS2, Stan systemu) i **Administracja** (tylko administrator). Etykieta mówi, co jest na stronie; nazwa modułu z roadmapy jest podpisem pod nią.
+
 | Moduł | Adres | Co tam jest |
 |---|---|---|
 | **Start** | `/` | podsumowanie: otwarte alerty, agenci, archiwum NIS2, stan systemu |

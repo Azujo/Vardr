@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import {
   ActionIcon,
   AppShell,
-  Badge,
   Burger,
   Group,
   Menu,
   NavLink,
+  ScrollArea,
   Text,
   Tooltip,
   UnstyledButton,
@@ -50,26 +50,56 @@ interface Item {
   disabled?: boolean;
 }
 
-// Nazwy modułów według roadmapy (załącznik D), z opisem dla nowych osób.
-const main: Item[] = [
-  { to: "/", label: "Start", icon: <IconHome size={18} /> },
-  { to: "/agents", label: "Huginn", hint: "agenci", icon: <IconDeviceDesktop size={18} /> },
-  { to: "/groups", label: "Grupy agentów", hint: "profile i limity", icon: <IconAdjustments size={18} /> },
-  { to: "/events", label: "Mímir", hint: "zdarzenia", icon: <IconDatabaseSearch size={18} /> },
-  { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} /> },
-  { to: "/alerts", label: "Gjallarhorn", hint: "alerty", icon: <IconAlertTriangle size={18} /> },
-  { to: "/rules", label: "Reguły detekcji", hint: "Sigma", icon: <IconListCheck size={18} /> },
-  { to: "/decoders", label: "Dekodery", hint: "syslog: FortiGate, MikroTik…", icon: <IconCode size={18} /> },
-  { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} /> },
-  { to: "/deploy", label: "Bifröst", hint: "wdrażanie agentów", icon: <IconBolt size={18} /> },
-  { to: "/archive", label: "Urd", hint: "archiwum NIS2", icon: <IconArchive size={18} /> },
-  { to: "/system", label: "Himinbjörg", hint: "stan systemu", icon: <IconActivityHeartbeat size={18} /> },
-];
+// Menu w grupach według tego, czym się zajmuje użytkownik. Etykieta mówi,
+// co jest na stronie, a nazwa modułu z roadmapy (załącznik D) jest podpisem.
+interface Section {
+  title?: string;
+  items: Item[];
+  adminOnly?: boolean;
+}
 
-const admin: Item[] = [
-  { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} /> },
-  { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} /> },
-  { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} /> },
+const sections: Section[] = [
+  { items: [{ to: "/", label: "Start", icon: <IconHome size={18} /> }] },
+  {
+    title: "Wykrywanie",
+    items: [
+      { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} /> },
+      { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} /> },
+    ],
+  },
+  {
+    title: "Zdarzenia",
+    items: [
+      { to: "/events", label: "Wyszukiwarka", hint: "Mímir", icon: <IconDatabaseSearch size={18} /> },
+      { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} /> },
+      { to: "/decoders", label: "Dekodery", hint: "syslog i API", icon: <IconCode size={18} /> },
+      { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} /> },
+    ],
+  },
+  {
+    title: "Agenci",
+    items: [
+      { to: "/agents", label: "Lista agentów", hint: "Huginn", icon: <IconDeviceDesktop size={18} /> },
+      { to: "/groups", label: "Grupy agentów", hint: "profile, limity, ochrona", icon: <IconAdjustments size={18} /> },
+      { to: "/deploy", label: "Wdrażanie", hint: "Bifröst – tokeny i paczki", icon: <IconBolt size={18} /> },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      { to: "/archive", label: "Archiwum NIS2", hint: "Urd", icon: <IconArchive size={18} /> },
+      { to: "/system", label: "Stan systemu", hint: "Himinbjörg", icon: <IconActivityHeartbeat size={18} /> },
+    ],
+  },
+  {
+    title: "Administracja",
+    adminOnly: true,
+    items: [
+      { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} /> },
+      { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} /> },
+      { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} /> },
+    ],
+  },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -155,21 +185,25 @@ export default function Layout({ children }: { children: ReactNode }) {
       </AppShell.Header>
 
       <AppShell.Navbar p="xs">
-        {main.map(link)}
-        {user?.role === "admin" && (
-          <>
-            <Text size="xs" c="dimmed" fw={600} tt="uppercase" mt="lg" mb={4} px="sm">
-              Administracja
-            </Text>
-            {admin.map(link)}
-          </>
-        )}
-        <Badge variant="light" color="gray" mt="auto" mx="sm" mb={4}>
-          etap 3 – w budowie
-        </Badge>
-        <Text size="xs" c="dimmed" ta="center" mb="xs" title="wersja siem-api">
-          {version && `wersja ${version}`}
-        </Text>
+        <AppShell.Section grow component={ScrollArea} type="scroll">
+          {sections
+            .filter((sec) => !sec.adminOnly || user?.role === "admin")
+            .map((sec, i) => (
+              <div key={sec.title ?? i}>
+                {sec.title && (
+                  <Text size="xs" c="dimmed" fw={600} tt="uppercase" mt="md" mb={2} px="sm">
+                    {sec.title}
+                  </Text>
+                )}
+                {sec.items.map(link)}
+              </div>
+            ))}
+        </AppShell.Section>
+        <AppShell.Section>
+          <Text size="xs" c="dimmed" ta="center" my="xs" title="wersja siem-api">
+            {version && `wersja ${version}`}
+          </Text>
+        </AppShell.Section>
       </AppShell.Navbar>
 
       <AppShell.Main>{children}</AppShell.Main>
