@@ -101,6 +101,20 @@ time:                      # czas zdarzenia z treści (dokładniejszy niż nagł
 
 Próbki to prawdziwe wiadomości (z nagłówkiem syslog). Przy zapisie w panelu każda próbka musi pasować do `match` i dać się rozebrać parserem – dekoder z niepasującą próbką nie zostanie zapisany. Próbki wbudowanych dekoderów sprawdzają testy (`internal/decode`).
 
+## Kreator dekoderów
+
+Dekoder dla nowego urządzenia można złożyć bez pisania YAML-a i wyrażeń regularnych: **Dekodery → Kreator z próbek** (nierozpoznane wiadomości z ostatnich 7 dni albo wklejone) albo **Kwarantanna → kreator dekodera** przy grupie wiadomości syslog.
+
+1. **Próbki.** Kreator rozbiera nagłówki syslog i rozpoznaje rodzaj treści: tekst, pary `klucz=wartość` albo JSON (można to zmienić).
+2. **Oznaczanie pól.**
+   - *Tekst:* zaznacz myszą fragment wiadomości i kliknij etykietę albo przeciągnij ją na zaznaczenie. Etykiety: czas, użytkownik, domena, adres źródłowy i docelowy, port, komputer, akcja, wynik, kod, program, treść, własne pole, **dowolne** (fragment zmienny, bez zapisu – np. protokół) i **rozpoznawanie** (stały fragment, po którym dekoder pozna te wiadomości). Każdy rodzaj wiadomości (np. logowanie udane i nieudane) oznacza się osobno – powstają osobne wzorce, każdy z własną akcją i wynikiem.
+   - *klucz=wartość i JSON:* etykieta przy każdym polu; „wymagaj” – warunek rozpoznawania.
+3. **Ustawienia.** Id, nazwa, zbiór danych, priorytet, warunki rozpoznawania (program, host, nadawca z nagłówka), format czasu (rozpoznawany z przykładu, także czas złożony z kilku pól) i wartości wyniku (udane/nieudane).
+4. **Sprawdzenie.** Definicja jest testowana na wszystkich próbkach w trakcie oznaczania: ✓ rozpoznana z polami, ✗ nie (kliknięcie otwiera ją do oznaczenia jako kolejny wzorzec), ↷ obsługuje ją inny dekoder.
+5. **Zapis.** „Zapisz i wdroż” (administrator) albo „Otwórz w edytorze”, żeby dopracować YAML ręcznie.
+
+Kreator buduje wzorzec z tekstu wokół zaznaczeń: odstępy i liczby są uogólniane, długie odcinki zastępowane kotwicą z ostatnich słów przed polem. Słowo, które w wiadomościach tego rodzaju się zmienia, a nie jest polem, oznacz jako „dowolne” – inaczej wzorzec obejmie tylko wiadomości z tym samym słowem (widać to w sprawdzeniu).
+
 ## Nowe urządzenie – krok po kroku
 
 1. **Logi.** Ustaw na urządzeniu syslog na adres kolektora (UDP/TCP 514). Dopisz sieć urządzenia do `syslog.allow` kolektora.

@@ -21,7 +21,8 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconDownload, IconFileCode, IconFlask, IconHistory, IconPlus } from "@tabler/icons-react";
+import { IconDownload, IconFileCode, IconFlask, IconHistory, IconPlus, IconWand } from "@tabler/icons-react";
+import DecoderWizard from "./DecoderWizard";
 import {
   ApiError,
   decodersApi,
@@ -31,6 +32,7 @@ import {
   type DecoderTestResponse,
   type DecoderVersion,
 } from "../api";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 import { lineDiff } from "../diff";
 
@@ -177,13 +179,15 @@ function DecoderEditor({
   admin,
   samplesAvailable,
   onSaved,
+  initialSource,
 }: {
   decoder: DecoderInfo | null;
   admin: boolean;
   samplesAvailable: boolean;
   onSaved: () => void;
+  initialSource?: string;
 }) {
-  const [source, setSource] = useState(decoder?.source ?? newDecoderTemplate);
+  const [source, setSource] = useState(decoder?.source ?? initialSource ?? newDecoderTemplate);
   const [samples, setSamples] = useState("");
   const [peer, setPeer] = useState("");
   const [hours, setHours] = useState<number | string>(24);
@@ -415,6 +419,18 @@ export default function DecodersPage() {
   const [error, setError] = useState("");
   const [show, setShow] = useState<DecoderInfo | null>(null);
   const [creating, setCreating] = useState(false);
+  const [wizard, setWizard] = useState(false);
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  // Definicja z kreatora otwartego w kwarantannie – do dopracowania w edytorze.
+  const location = useLocation();
+  useEffect(() => {
+    const d = (location.state as { draft?: string } | null)?.draft;
+    if (d) {
+      setDraft(d);
+      setCreating(true);
+      window.history.replaceState({}, "");
+    }
+  }, [location.state]);
   const [tab, setTab] = useState<string | null>("source");
   const [action, setAction] = useState<{ d: DecoderInfo; kind: "disable" | "enable" | "revert" } | null>(null);
   const [reason, setReason] = useState("");
@@ -473,9 +489,20 @@ export default function DecodersPage() {
           </Text>
         </div>
         {canTest && (
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+          <Group gap="xs" wrap="nowrap">
+          <Button variant="light" leftSection={<IconWand size={16} />} onClick={() => setWizard(true)}>
+            Kreator z próbek
+          </Button>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => {
+              setDraft(undefined);
+              setCreating(true);
+            }}
+          >
             Nowy dekoder
           </Button>
+          </Group>
         )}
       </Group>
       {error && <MAlert color="red">{error}</MAlert>}
@@ -640,8 +667,28 @@ export default function DecodersPage() {
             decoder={null}
             admin={admin}
             samplesAvailable={samplesOn}
+            initialSource={draft}
             onSaved={() => {
               setCreating(false);
+              load();
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal opened={wizard} onClose={() => setWizard(false)} title="Kreator dekodera – zaznacz pola w przykładowych wiadomościach" size="95%">
+        {wizard && (
+          <DecoderWizard
+            initialSamples={[]}
+            admin={admin}
+            samplesAvailable={samplesOn}
+            onEdit={(yaml) => {
+              setDraft(yaml);
+              setWizard(false);
+              setCreating(true);
+            }}
+            onSaved={() => {
+              setWizard(false);
               load();
             }}
           />

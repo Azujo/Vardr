@@ -17,8 +17,9 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconRefresh, IconRotateClockwise } from "@tabler/icons-react";
-import { Link } from "react-router-dom";
+import { IconRefresh, IconRotateClockwise, IconWand } from "@tabler/icons-react";
+import { Link, useNavigate } from "react-router-dom";
+import DecoderWizard from "./DecoderWizard";
 import {
   formatBytes,
   formatDate,
@@ -119,6 +120,8 @@ export default function QuarantinePage() {
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<{ title: string; params: QuarantineFilterParams } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [wizard, setWizard] = useState<{ samples: string[]; peer?: string } | null>(null);
+  const navigate = useNavigate();
 
   const load = useCallback(() => {
     quarantineApi
@@ -284,6 +287,21 @@ export default function QuarantinePage() {
                     <Text size="xs">{formatDate(g.last)}</Text>
                   </Table.Td>
                   <Table.Td>
+                    {g.source.startsWith("syslog:") && user?.role !== "viewer" && (
+                      <Button
+                        size="compact-xs"
+                        variant="subtle"
+                        leftSection={<IconWand size={12} />}
+                        onClick={() => {
+                          const prefix = g.reason.split(/[0-9]/)[0].trim();
+                          const mine = entries.filter((e) => e.source === g.source && e.reason.startsWith(prefix) && !e.truncated);
+                          const peers = new Set(mine.map((e) => e.peer).filter(Boolean));
+                          setWizard({ samples: mine.map((e) => e.raw), peer: peers.size === 1 ? [...peers][0] : undefined });
+                        }}
+                      >
+                        kreator dekodera
+                      </Button>
+                    )}
                     {admin && canReprocess && supportedSource(g.source) && (
                       <Button
                         size="compact-xs"
@@ -346,6 +364,21 @@ export default function QuarantinePage() {
               </Button>
             </Group>
           </Stack>
+        )}
+      </Modal>
+      <Modal opened={!!wizard} onClose={() => setWizard(null)} title="Kreator dekodera – zaznacz pola w wiadomościach z kwarantanny" size="95%">
+        {wizard && (
+          <DecoderWizard
+            initialSamples={wizard.samples}
+            initialPeer={wizard.peer}
+            admin={admin}
+            samplesAvailable
+            onEdit={(yaml) => navigate("/decoders", { state: { draft: yaml } })}
+            onSaved={() => {
+              setWizard(null);
+              notifications.show({ color: "green", message: "Dekoder zapisany – teraz przetwórz grupę ponownie" });
+            }}
+          />
         )}
       </Modal>
     </Stack>
