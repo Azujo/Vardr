@@ -137,6 +137,8 @@ type exportInfo struct {
 	Tools         []string        `json:"tools,omitempty"`
 	Note          string          `json:"note"`
 	Chain         exportChainSpan `json:"chain"`
+	// Recoveries: liczba zapisów obsługi niezgodności (obsluga-niezgodnosci/).
+	Recoveries int `json:"recoveries,omitempty"`
 }
 
 type exportRef struct {
@@ -233,6 +235,21 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 			}
 		}
 	}
+
+	// 1a. Obsługa niezgodności (przyjęcia plików do spisu, kwarantanna) –
+	// audytor widzi, jak rozstrzygnięto każdą wykrytą niezgodność.
+	logs, _ := filepath.Glob(filepath.Join(a.Dir, RecoveryLogDir, "*.json"))
+	sort.Strings(logs)
+	for _, f := range logs {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			return j, err
+		}
+		if err := add("obsluga-niezgodnosci/"+filepath.Base(f), data); err != nil {
+			return j, err
+		}
+	}
+	info.Recoveries = len(logs)
 
 	// 2. Czytelne zdarzenia: plik NDJSON (gzip) na godzinę i jeden CSV.
 	csvFile, err := os.CreateTemp(opt.TempDir, "urd-csv-*")
@@ -792,6 +809,10 @@ nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
   chain/      manifesty godzinowe od pierwszej godziny zakresu do najnowszej;
               każdy zawiera sumy SHA-256 segmentów i SHA-256 poprzedniego
               manifestu (łańcuch – usunięcie lub zmiana danych go przerywa)
+  obsluga-niezgodnosci/
+              zapis każdej obsługi niezgodności archiwum (np. po przywróceniu
+              kopii bazy): kto, kiedy, dlaczego, które pliki przyjęto do spisu
+              po sprawdzeniu sum, które odłożono do kwarantanny
   export.json kto, kiedy i w jakim celu zlecił eksport, zakres, liczby,
               kotwica (SHA-256 najnowszego manifestu)
   SHA256SUMS  sumy SHA-256 wszystkich plików paczki

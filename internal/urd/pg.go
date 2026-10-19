@@ -146,22 +146,30 @@ func (p *PG) LockWriter(ctx context.Context) (release func(), err error) {
 const writerLock = 0x5572645f77726974 // "Urd_writ"
 
 func (p *PG) AddSegment(ctx context.Context, s Segment) error {
+	var reg *time.Time
+	if !s.RegisteredAt.IsZero() {
+		reg = &s.RegisteredAt
+	}
 	_, err := p.pool.Exec(ctx, `INSERT INTO urd.segments
-		(path, hour, sha256, bytes, records, first_received_at, last_received_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-		s.Path, s.Hour, s.SHA256, s.Bytes, s.Records, s.FirstReceivedAt, s.LastReceivedAt, s.CreatedAt)
+		(path, hour, sha256, bytes, records, first_received_at, last_received_at, created_at, registered_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		s.Path, s.Hour, s.SHA256, s.Bytes, s.Records, s.FirstReceivedAt, s.LastReceivedAt, s.CreatedAt, reg)
 	return err
 }
 
 func (p *PG) OpenSegments(ctx context.Context) ([]Segment, error) {
-	rows, err := p.pool.Query(ctx, `SELECT path, hour, sha256, bytes, records, first_received_at, last_received_at, created_at
-		FROM urd.segments WHERE manifest_seq IS NULL ORDER BY created_at, path`)
+	rows, err := p.pool.Query(ctx, `SELECT path, hour, sha256, bytes, records, first_received_at, last_received_at, created_at,
+		registered_at FROM urd.segments WHERE manifest_seq IS NULL ORDER BY created_at, path`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Segment, error) {
 		var s Segment
-		err := r.Scan(&s.Path, &s.Hour, &s.SHA256, &s.Bytes, &s.Records, &s.FirstReceivedAt, &s.LastReceivedAt, &s.CreatedAt)
+		var reg *time.Time
+		err := r.Scan(&s.Path, &s.Hour, &s.SHA256, &s.Bytes, &s.Records, &s.FirstReceivedAt, &s.LastReceivedAt, &s.CreatedAt, &reg)
+		if reg != nil {
+			s.RegisteredAt = *reg
+		}
 		return s, err
 	})
 }
@@ -240,12 +248,16 @@ func (p *PG) SaveVerification(ctx context.Context, v Verification) (int64, error
 	if err != nil {
 		return 0, err
 	}
+	unknown, err := json.Marshal(nonNil(v.Unknown))
+	if err != nil {
+		return 0, err
+	}
 	var id int64
 	err = p.pool.QueryRow(ctx, `INSERT INTO urd.verifications
-		(started_at, finished_at, ok, manifests, segments, records, bytes, problems, full_manifests, unverified, oldest_full_check)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+		(started_at, finished_at, ok, manifests, segments, records, bytes, problems, full_manifests, unverified, oldest_full_check, unknown)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
 		v.StartedAt, v.FinishedAt, v.OK, v.Manifests, v.Segments, v.Records, v.Bytes, problems,
-		v.FullManifests, v.Unverified, v.OldestFullCheck).Scan(&id)
+		v.FullManifests, v.Unverified, v.OldestFullCheck, unknown).Scan(&id)
 	return id, err
 }
 
@@ -254,7 +266,7 @@ func (p *PG) LastVerification(ctx context.Context) (Verification, bool, error) {
 	var problems []byte
 	err := p.pool.QueryRow(ctx, `SELECT `+verifCols+`
 		FROM urd.verifications ORDER BY id DESC LIMIT 1`).
-		Scan(verifDst(&v, &problems)...)
+		Scan(verifDst(&v, &problems, &v.Unknown)...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return v, false, nil
 	}
@@ -271,9 +283,9 @@ func (p *PG) MarkVerified(ctx context.Context, seqs []int64, at time.Time) error
 }
 
 const verifCols = `id, started_at, finished_at, ok, manifests, segments, records, bytes, problems,
-	full_manifests, unverified, oldest_full_check`
+	full_manifests, unverified, oldest_full_check, unknown`
 
-func verifDst(v *Verification, problems any) []any {
+func verifDst(v *Verification, problems, unknown any) []any {
 	return []any{&v.ID, &v.StartedAt, &v.FinishedAt, &v.OK, &v.Manifests, &v.Segments, &v.Records, &v.Bytes, problems,
-		&v.FullManifests, &v.Unverified, &v.OldestFullCheck}
+		&v.FullManifests, &v.Unverified, &v.OldestFullCheck, unknown}
 }

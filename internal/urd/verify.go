@@ -195,7 +195,12 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	for _, s := range open {
 		known[s.Path] = true
 		a.verifySegment(s, &v, &p)
-		if s.Hour.Before(stale) {
+		// Segment przyjęty później (Reconcile) – zaległość od godziny rejestracji.
+		ref := s.Hour
+		if reg := s.RegisteredAt.Truncate(time.Hour); reg.After(ref) {
+			ref = reg
+		}
+		if ref.Before(stale) {
 			p.add("segment %s bez manifestu od ponad godziny", s.Path)
 		}
 	}
@@ -216,6 +221,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 		for _, f := range unknown {
 			if !known[f] {
 				p.add("plik %s nie występuje w spisie archiwum – dodany poza archiwizatorem", f)
+				v.Unknown = append(v.Unknown, f)
 			}
 		}
 	}
@@ -254,6 +260,9 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	}
 
 	v.Problems = p.result()
+	if v.Unknown == nil {
+		v.Unknown = []string{}
+	}
 	v.OK = len(v.Problems) == 0
 	v.FinishedAt = a.now()
 	return v

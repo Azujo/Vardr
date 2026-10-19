@@ -21,8 +21,17 @@ type fakeArchive struct {
 	replays     []urd.ReplayJob
 	changes     []urd.PolicyChange
 	members     map[string]urd.Membership
+	recoveries  []urd.Recovery
 }
 
+func (f *fakeArchive) RequestRecovery(_ context.Context, kind, by, reason string, paths []string, verification int64) (int64, error) {
+	f.recoveries = append(f.recoveries, urd.Recovery{ID: int64(len(f.recoveries) + 1), Kind: kind, RequestedBy: by, Reason: reason,
+		Paths: paths, VerificationID: &verification})
+	return int64(len(f.recoveries)), nil
+}
+func (f *fakeArchive) Recoveries(context.Context, int) ([]urd.Recovery, error) {
+	return f.recoveries, nil
+}
 func (f *fakeArchive) ManifestHashes(context.Context, []int64) (map[int64]string, error) {
 	return map[int64]string{}, f.err
 }
@@ -325,5 +334,53 @@ func TestArchivePolicyAPI(t *testing.T) {
 	fa.o.Policy.Enabled = false
 	if _, out, _ := admin.do("GET", "/api/v1/archive/policy", nil); len(out["unarchived"].([]any)) != 2 {
 		t.Fatalf("wyłączone archiwum – wszyscy bez archiwizacji: %v", out)
+	}
+}
+
+// Obsługa niezgodności: tylko pliki z ostatniej weryfikacji, powód i hasło.
+func TestArchiveRecoveryAPI(t *testing.T) {
+	e := newEnv(t)
+	seg := "segments/2026/10/19/08/seg-1792397135794534241.urd"
+	fa := &fakeArchive{o: urd.Overview{State: &urd.ArchiverState{HeartbeatAt: e.clock, VerifyEveryS: 3600},
+		LastVerification: &urd.Verification{ID: 42, OK: false, FinishedAt: e.clock, Unknown: []string{seg}}}}
+	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), Archive: fa}
+	srv.now = func() time.Time { return e.clock }
+	e.h = srv.Handler()
+	e.addUser("ola", store.RoleAnalyst, "haslo-oli-12345", false)
+	e.addUser("adam", store.RoleAdmin, "haslo-adama-123", false)
+	analyst, admin := e.client("10.0.0.1"), e.client("10.0.0.2")
+	analyst.login("ola", "haslo-oli-12345")
+	admin.login("adam", "haslo-adama-123")
+	body := func(action string, paths []string, reason, pw string) map[string]any {
+		return map[string]any{"action": action, "paths": paths, "reason": reason, "password": pw}
+	}
+	why := "przywrócenie kopii 19.10 – segmenty zapisane po zrzucie bazy"
+	if code, _, _ := analyst.do("POST", "/api/v1/archive/recoveries", body("adopt", []string{seg}, why, "haslo-oli-12345")); code != 403 {
+		t.Fatalf("tylko administrator: %d", code)
+	}
+	for name, b := range map[string]map[string]any{
+		"zła decyzja":       body("delete", []string{seg}, why, "haslo-adama-123"),
+		"krótki powód":      body("adopt", []string{seg}, "bo tak", "haslo-adama-123"),
+		"spoza weryfikacji": body("adopt", []string{"segments/2026/10/19/08/seg-1.urd"}, why, "haslo-adama-123"),
+		"dowolna ścieżka":   body("quarantine", []string{"../../etc/passwd"}, why, "haslo-adama-123"),
+	} {
+		if code, _, _ := admin.do("POST", "/api/v1/archive/recoveries", b); code != 400 {
+			t.Fatalf("%s: %d", name, code)
+		}
+	}
+	if code, out, _ := admin.do("POST", "/api/v1/archive/recoveries", body("adopt", []string{seg}, why, "")); code != 403 || out["error"] != "reauth_required" {
+		t.Fatalf("bez hasła: %d %v", code, out)
+	}
+	if code, out, _ := admin.do("POST", "/api/v1/archive/recoveries", body("adopt", []string{seg}, why, "haslo-adama-123")); code != 202 || out["id"] != 1.0 {
+		t.Fatalf("przyjęcie: %d %v", code, out)
+	}
+	if r := fa.recoveries[0]; r.Kind != "adopt" || r.RequestedBy != "adam" || *r.VerificationID != 42 || r.Reason != why {
+		t.Fatalf("zlecenie: %+v", r)
+	}
+	if !slices.Contains(e.st.actions(), "archive_recovery_requested") {
+		t.Fatal("brak wpisu w audycie")
+	}
+	if code, out, _ := analyst.do("GET", "/api/v1/archive", nil); code != 200 || len(out["recoveries"].([]any)) != 1 {
+		t.Fatalf("historia w przeglądzie: %d %v", code, out["recoveries"])
 	}
 }

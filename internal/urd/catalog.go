@@ -25,6 +25,9 @@ type Verification struct {
 	Unverified      int        `json:"unverified"`
 	OldestFullCheck *time.Time `json:"oldest_full_check,omitempty"`
 	Problems        []string   `json:"problems"`
+	// Unknown: pliki na dysku nieznane spisowi (do decyzji administratora:
+	// przyjęcie albo kwarantanna – Reconcile, Quarantine).
+	Unknown []string `json:"unknown"`
 }
 
 // Catalog to spis archiwum: segmenty, manifesty (łańcuch) i wyniki

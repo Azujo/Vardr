@@ -155,7 +155,7 @@ Metryki: `siem_detector_events_total`, `_matches_total`, `_alerts_total{result}`
 
 ## siem-archiver
 
-Kod: `server/cmd/siem-archiver`, `server/internal/archiver`, `internal/urd`. Urd: archiwum NIS2 oryginalnych paczek. Konsument `archiver` na `SIEM_RAW` (zakładany tylko przy włączonej archiwizacji w polityce). Też: weryfikacja łańcucha, retencja, eksporty dla audytora, polecenia odtworzenia, wykonywanie zmian polityki z panelu (z opóźnieniem dla osłabień).
+Kod: `server/cmd/siem-archiver`, `server/internal/archiver`, `internal/urd`. Urd: archiwum NIS2 oryginalnych paczek. Konsument `archiver` na `SIEM_RAW` (zakładany tylko przy włączonej archiwizacji w polityce). Też: weryfikacja łańcucha, retencja, eksporty dla audytora, polecenia odtworzenia, wykonywanie zmian polityki z panelu (z opóźnieniem dla osłabień), uzgodnienie spisu z dyskiem po przywróceniu kopii bazy i decyzje administratora o plikach nieznanych spisowi (`urd.recoveries`, zapis w `archive/recoveries/`).
 
 | Zmienna | Domyślnie | Znaczenie |
 |---|---|---|

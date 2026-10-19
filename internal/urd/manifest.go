@@ -22,6 +22,9 @@ type Segment struct {
 	LastReceivedAt  time.Time `json:"last_received_at"`
 	Hour            time.Time `json:"-"`
 	CreatedAt       time.Time `json:"-"`
+	// RegisteredAt: wpisanie do spisu później niż zatwierdzenie (segment
+	// przyjęty przez Reconcile); zero – razem z zatwierdzeniem.
+	RegisteredAt time.Time `json:"-"`
 }
 
 // Manifest podsumowuje jedną godzinę archiwizacji i wiąże się z poprzednim

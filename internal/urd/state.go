@@ -179,7 +179,7 @@ func (p *PG) Verifications(ctx context.Context, limit int) ([]Verification, erro
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Verification, error) {
 		var v Verification
-		err := r.Scan(verifDst(&v, &v.Problems)...)
+		err := r.Scan(verifDst(&v, &v.Problems, &v.Unknown)...)
 		return v, err
 	})
 }

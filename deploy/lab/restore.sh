@@ -43,6 +43,31 @@ log() { echo "$(date -u +%FT%TZ) $*"; }
 # Usługi korzystające z bazy Saga – zatrzymane na czas pg_restore.
 saga_users=(api detector archiver backup)
 
+# Kto i z jakiej kopii przywraca (wpis w spisie archiwum).
+restore_by="restore.sh (ręcznie)"
+restore_name=""
+
+# recovery_request <saga.dump>: spis archiwum NIS2 wraca do chwili zrzutu,
+# a segmenty i manifesty zapisane później zostają na dysku bez wpisu.
+# Zlecenie dla archiwizatora (urd.recoveries): przy starcie przyjmie do spisu
+# pliki utworzone od zrzutu (10 min zapasu – segment otwarty przed zrzutem)
+# do teraz, po sprawdzeniu sum i łańcucha; reszta – decyzja w panelu.
+recovery_request() {
+  local dumped from by name
+  dumped=$(docker compose exec -T saga pg_restore --list < "$1" | sed -n 's/^;[[:space:]]*Archive created at //p' | head -1 || true)
+  dumped=${dumped//\'/}
+  from=NULL
+  [ -n "$dumped" ] && from="('$dumped'::timestamptz - interval '10 minutes')"
+  by=${restore_by//\'/\'\'}
+  name=${restore_name//\'/\'\'}
+  if psql_saga -c "INSERT INTO urd.recoveries (kind, requested_by, reason, backup, window_from, window_to)
+      VALUES ('restore', '$by', 'przywrócenie kopii $name (zrzut bazy: ${dumped:-nieznany})', '$name', $from, now())" >/dev/null; then
+    log "   archiwum NIS2: zlecono uzgodnienie spisu z plikami zapisanymi po zrzucie (${dumped:-czas zrzutu nieznany})"
+  else
+    log "   UWAGA: nie udało się zlecić uzgodnienia spisu archiwum – pliki zapisane po zrzucie rozstrzygniesz w panelu (Urd)" >&2
+  fi
+}
+
 # restore_parts <katalog z rozpakowaną kopią> <części: saga config grafana>
 restore_parts() {
   local work="$1"
@@ -70,6 +95,7 @@ restore_parts() {
       sleep 2
     done
     docker compose exec -T saga pg_restore -U saga_admin -d saga --clean --if-exists < "$work/saga.dump"
+    recovery_request "$work/saga.dump"
   fi
 
   if [[ $parts == *" grafana "* ]]; then
@@ -139,6 +165,7 @@ if [ "${1:-}" = --zlecenie ]; then
   }
   trap 'fail "przerwane w kroku: $BASH_COMMAND"' ERR
 
+  restore_by="$by (panel)" restore_name="$name"
   log "== przywracanie z panelu: $name ($parts), zlecił $by"
   [ -f "$src" ] || fail "kopii $name nie ma na serwerze (usunięta przez retencję?)"
   decrypt "$src" | tar -C "$work" -xf - || fail "odszyfrowanie kopii nieudane (hasło kopii?)"
@@ -194,6 +221,7 @@ echo "Odtworzenie ZASTĄPI na tym serwerze to, co jest w kopii:"
 read -r -p "Kontynuować? Wpisz TAK: " ok
 [ "$ok" = TAK ] || { echo "Przerwano."; exit 1; }
 
+restore_name=$(basename "$backup")
 # shellcheck disable=SC2086
 restore_parts "$work" $parts
 

@@ -95,6 +95,10 @@ func expectProblem(t *testing.T, c ExportCheck, want string) {
 
 func TestExportRoundtripAndTamper(t *testing.T) {
 	a, _, _ := fillReal(t)
+	// Zapis obsługi niezgodności trafia do paczki (obsluga-niezgodnosci/).
+	if err := a.LogRecovery(Recovery{ID: 3, Kind: "adopt", Reason: "przywrócenie kopii"}); err != nil {
+		t.Fatal(err)
+	}
 	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
 	to := from.Add(2 * time.Hour) // godziny 10:00 i 11:00 (z 4 manifestów)
 	data := buildExport(t, a, from, to)
@@ -102,6 +106,9 @@ func TestExportRoundtripAndTamper(t *testing.T) {
 	c := CheckExport(bytes.NewReader(data))
 	if !c.OK || c.Manifests != 2 || c.Segments != 4 || c.Records != 12 || c.ExportID != 7 {
 		t.Fatalf("poprawna paczka: %+v", c)
+	}
+	if !bytes.Contains(data, []byte("obsluga-niezgodnosci/")) || !bytes.Contains(data, []byte(`"recoveries": 1`)) {
+		t.Fatal("brak zapisu obsługi niezgodności w paczce")
 	}
 	firstSeg := ""
 	tr := tar.NewReader(bytes.NewReader(data))

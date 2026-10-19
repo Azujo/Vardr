@@ -30,6 +30,8 @@ type ArchiveReader interface {
 	CancelPolicyChange(ctx context.Context, id int64, by string, at time.Time) (urd.PolicyChange, error)
 	GroupMembership(ctx context.Context) (map[string]urd.Membership, error)
 	ManifestHashes(ctx context.Context, seqs []int64) (map[int64]string, error)
+	RequestRecovery(ctx context.Context, kind, by, reason string, paths []string, verification int64) (int64, error)
+	Recoveries(ctx context.Context, limit int) ([]urd.Recovery, error)
 }
 
 // Stan zgodności archiwum (pole compliance).
@@ -105,6 +107,14 @@ func (s *Server) archiveOverview(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	recs, err := s.Archive.Recoveries(ctx, 50)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if recs == nil {
+		recs = []urd.Recovery{}
+	}
 	if manifests == nil {
 		manifests = []urd.ManifestRecord{}
 	}
@@ -121,6 +131,7 @@ func (s *Server) archiveOverview(w http.ResponseWriter, r *http.Request) {
 		"verifications":     verifs,
 		"policy":            o.Policy,
 		"scheduled_change":  o.ScheduledChange,
+		"recoveries":        recs,
 	})
 }
 

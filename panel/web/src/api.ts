@@ -57,7 +57,7 @@ export function setUnauthenticatedHandler(fn: () => void) {
   onUnauthenticated = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
@@ -474,6 +474,32 @@ export interface ArchiveVerification {
   full_manifests: number;
   unverified: number;
   oldest_full_check?: string;
+  // Pliki na dysku nieznane spisowi – do decyzji administratora.
+  unknown?: string[];
+}
+
+// Operacja uzgodnienia spisu archiwum z dyskiem (po przywróceniu kopii albo
+// decyzja administratora).
+export interface ArchiveRecovery {
+  id: number;
+  kind: "restore" | "adopt" | "quarantine";
+  requested_by: string;
+  requested_at: string;
+  reason: string;
+  paths: string[];
+  backup?: string;
+  window_from?: string;
+  window_to?: string;
+  verification_id?: number;
+  processed_at?: string;
+  ok?: boolean;
+  error?: string;
+  result?: {
+    manifests: { seq: number; hour: string; path: string; segments: number; records: number }[];
+    segments: { path: string; records: number; bytes: number }[];
+    quarantined: string[];
+    rejected: { path: string; reason: string }[];
+  };
 }
 
 export interface ArchiveManifest {
@@ -499,6 +525,7 @@ export interface ArchiveOverview {
   verifications?: ArchiveVerification[];
   policy?: ArchivePolicy | null;
   scheduled_change?: PolicyChange | null;
+  recoveries?: ArchiveRecovery[];
 }
 
 export interface ArchivePolicy {
@@ -562,6 +589,8 @@ export interface PolicyChangeRequest {
 export const archiveApi = {
   overview: () => request<ArchiveOverview>("GET", "/api/v1/archive"),
   verify: () => request<{ message: string }>("POST", "/api/v1/archive/verify"),
+  recovery: (action: "adopt" | "quarantine", paths: string[], reason: string, password: string) =>
+    request<{ id: number; message: string }>("POST", "/api/v1/archive/recoveries", { action, paths, reason, password }),
   policy: () => request<PolicyInfo>("GET", "/api/v1/archive/policy"),
   changePolicy: (p: PolicyChangeRequest) =>
     request<{ change: PolicyChange; weakening: Weakening[]; grace_s: number; message: string }>("POST", "/api/v1/archive/policy", p),

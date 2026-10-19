@@ -96,6 +96,14 @@ Kopie wykonuje usługa `siem-backup` (kontener `backup`), a ustawia się je w pa
 
 Po przywróceniu bazy panel jest w stanie z dnia kopii: konta i sesje też, więc trzeba się zalogować ponownie. Alerty, agenci i zmiany ustawień późniejsze niż kopia znikają. Zdarzeń w ClickHouse i archiwum NIS2 przywracanie nie zmienia; archiwum odtwarza się na czystym serwerze ręcznie (`restore.sh <kopia> <katalog urd>`). Usługa kopii nie ma dostępu do Dockera – zatrzymać usługi może tylko skrypt na serwerze.
 
+**Archiwum NIS2 po przywróceniu bazy.** Spis archiwum (schemat `urd`) wraca do chwili zrzutu, a segmenty i manifesty zapisane później zostają na dysku bez wpisu – weryfikacja zgłosiłaby je jako „dodane poza archiwizatorem”. Dlatego:
+
+1. `restore.sh` po odtworzeniu bazy zostawia zlecenie w `urd.recoveries` z oknem czasu: od zrzutu (czas z nagłówka zrzutu, 10 min zapasu) do przywrócenia.
+2. Archiwizator przy starcie, zanim zamknie kolejną godzinę, przyjmuje do spisu pliki z tego okna: manifest – gdy przedłuża łańcuch (numer, godzina, hash poprzednika) i jego segmenty mają zgodne sumy; segment bez manifestu – gdy format i sumy SHA-256 wszystkich paczek się zgadzają (trafi do najbliższego manifestu). Potem od razu weryfikuje archiwum.
+3. Pliki spoza okna, uszkodzone albo bez dowodu ciągłości zostają zgłaszane. W panelu (*Urd*) administrator decyduje o nich: **przyjmij do archiwum** (te same sprawdzenia) albo **odłóż do kwarantanny** (`archive/quarantine/<czas>/…`, plik zachowany poza łańcuchem). Decyzja wymaga opisu przyczyny i hasła.
+
+Nic nie jest usuwane ani przepisywane: wynik weryfikacji, która wykryła niezgodność, zostaje w historii, a każda operacja to osobny wpis (zakładka *Obsługa niezgodności*, audyt panelu) oraz plik w `archive/recoveries/` – ten przetrwa kolejne przywrócenie bazy i trafia do eksportu dla audytora (`obsluga-niezgodnosci/`). Kopia sprzed tej zmiany (bez tabeli `urd.recoveries`) nie dostanie zlecenia automatycznego – pliki rozstrzyga się wtedy w panelu.
+
 ```bash
 ./backup.sh                 # kopia teraz (zlecenie dla usługi, czeka na wynik)
 ./backup.sh haslo init      # pierwsze hasło (pokazywane raz – zapisz poza serwerem)

@@ -51,6 +51,9 @@ type Archiver struct {
 	M   *metrics.Archiver
 	// Policy: polityka z panelu (nil = archiwizowane wszystko poza ExcludeAgents).
 	Policy *Policy
+	// SealLock: wspólna z obsługą niezgodności (Recoveries) – zamykanie
+	// godzin i przyjmowanie plików do spisu nie mogą się przeplatać.
+	SealLock *sync.Mutex
 
 	cur       *urd.SegmentWriter
 	pending   []Msg
@@ -130,7 +133,13 @@ func (r *Archiver) Tick(ctx context.Context) error {
 	if r.cur != nil && !r.cur.Hour().Equal(hour) {
 		return nil
 	}
+	if r.SealLock != nil {
+		r.SealLock.Lock()
+	}
 	n, err := r.A.Seal(ctx)
+	if r.SealLock != nil {
+		r.SealLock.Unlock()
+	}
 	if err != nil {
 		r.M.Errors.WithLabelValues("seal").Inc()
 		r.sealRetry = now.Add(30 * time.Second)
@@ -204,6 +213,10 @@ type MaintainConfig struct {
 	Policy      *Policy
 	PolicyStore PolicyStore
 	PolicyGrace time.Duration
+	// Obsługa niezgodności (przyjęcie plików do spisu, kwarantanna) –
+	// zlecenia z panelu wykonywane co minutę; po wykonaniu weryfikacja.
+	Recoveries RecoveryStore
+	SealLock   *sync.Mutex
 }
 
 // Maintain co minutę zapisuje stan dla panelu, usuwa dane po retencji
@@ -237,6 +250,9 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 				log.Info("weryfikacja zlecona z panelu", "by", by)
 				verifyAt = time.Now()
 			}
+		}
+		if c.Recoveries != nil && ProcessRecoveries(ctx, a, c.Recoveries, log, c.SealLock) > 0 {
+			verifyAt = time.Now()
 		}
 		if time.Since(lastExpire) >= time.Hour {
 			lastExpire = time.Now()

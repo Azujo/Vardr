@@ -26,12 +26,14 @@ import {
   formatNumber,
   type ArchiveManifest,
   type ArchiveOverview,
+  type ArchiveRecovery,
   type ArchiveVerification,
 } from "../api";
 import { useAuth } from "../auth";
 import ArchiveExports from "./ArchiveExports";
 import ArchivePolicy from "./ArchivePolicy";
 import ArchiveReplays from "./ArchiveReplays";
+import { RecoveryTable, UnknownFiles, recoveryKindLabels } from "./ArchiveRecovery";
 
 function hourLabel(iso?: string) {
   if (!iso) return "—";
@@ -149,7 +151,7 @@ function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
   );
 }
 
-function VerificationTable({ items }: { items: ArchiveVerification[] }) {
+function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]; recoveries: ArchiveRecovery[] }) {
   return (
     <Table.ScrollContainer minWidth={820}>
       <Table striped verticalSpacing="xs">
@@ -197,6 +199,13 @@ function VerificationTable({ items }: { items: ArchiveVerification[] }) {
                     </Text>
                   </Tooltip>
                 )}
+                {recoveries
+                  .filter((r) => r.verification_id === v.id)
+                  .map((r) => (
+                    <Badge key={r.id} size="xs" variant="light" color={r.processed_at && r.ok !== false ? "teal" : "gray"} mt={2}>
+                      {r.processed_at ? "rozstrzygnięte" : "zlecone"}: #{r.id} {recoveryKindLabels[r.kind]}
+                    </Badge>
+                  ))}
               </Table.Td>
             </Table.Tr>
           ))}
@@ -244,6 +253,8 @@ export default function ArchivePage() {
   const st = data?.archiver;
   const sum = data?.summary;
   const lv = data?.last_verification;
+  const recoveries = data?.recoveries ?? [];
+  const pendingDecision = recoveries.find((r) => !r.processed_at && r.kind !== "restore");
 
   return (
     <Stack>
@@ -289,6 +300,17 @@ export default function ArchivePage() {
             </List>
           )}
         </Alert>
+      )}
+
+      {lv && !lv.ok && !!lv.unknown?.length && (
+        user?.role === "admin" ? (
+          <UnknownFiles verification={lv} pending={pendingDecision} onDone={load} />
+        ) : (
+          <Alert color="orange" variant="light">
+            Ostatnia weryfikacja znalazła {lv.unknown.length} plików nieznanych spisowi – o ich przyjęciu albo kwarantannie decyduje
+            administrator.
+          </Alert>
+        )
       )}
 
       {st && sum && (
@@ -369,6 +391,7 @@ export default function ArchivePage() {
           <Tabs.List>
             <Tabs.Tab value="manifests">Manifesty ({data.manifests?.length ?? 0})</Tabs.Tab>
             <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
+            <Tabs.Tab value="recoveries">Obsługa niezgodności ({recoveries.length})</Tabs.Tab>
             <Tabs.Tab value="policy">Polityka</Tabs.Tab>
             {user?.role === "admin" && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
             {user?.role === "admin" && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
@@ -384,10 +407,24 @@ export default function ArchivePage() {
           </Tabs.Panel>
           <Tabs.Panel value="verifications" pt="sm">
             {data.verifications?.length ? (
-              <VerificationTable items={data.verifications} />
+              <VerificationTable items={data.verifications} recoveries={recoveries} />
             ) : (
               <Text size="sm" c="dimmed">
                 Jeszcze nie było weryfikacji.
+              </Text>
+            )}
+          </Tabs.Panel>
+          <Tabs.Panel value="recoveries" pt="sm">
+            <Text size="sm" c="dimmed" mb="xs" maw={900}>
+              Uzgodnienia spisu archiwum z plikami na dysku: automatyczne po przywróceniu kopii bazy (pliki zapisane między zrzutem a
+              przywróceniem, po sprawdzeniu sum i łańcucha) oraz decyzje administratora. Każda operacja jest też zapisana jako plik
+              w katalogu archiwum <code>recoveries/</code> – przetrwa kolejne przywrócenie bazy.
+            </Text>
+            {recoveries.length ? (
+              <RecoveryTable items={recoveries} />
+            ) : (
+              <Text size="sm" c="dimmed">
+                Nie było jeszcze żadnej obsługi niezgodności.
               </Text>
             )}
           </Tabs.Panel>

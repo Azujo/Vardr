@@ -223,6 +223,13 @@ func serve(log *slog.Logger) error {
 	} else if n > 0 {
 		log.Warn("usunięto niezatwierdzone segmenty po przerwanej pracy (ich paczki wrócą z kolejki)", "files", n)
 	}
+	// Po przywróceniu kopii bazy (restore.sh zostawia zlecenie): pliki
+	// zapisane między zrzutem a przywróceniem wracają do spisu, zanim
+	// archiwizator zamknie kolejną godzinę.
+	sealLock := &sync.Mutex{}
+	if n := archiver.ProcessRecoveries(ctx, a, cat, log, sealLock); n > 0 {
+		log.Info("wykonano zlecenia obsługi niezgodności przed startem", "count", n)
+	}
 
 	limits, err := queue.Limits()
 	if err != nil {
@@ -264,7 +271,7 @@ func serve(log *slog.Logger) error {
 	go (&archiver.Replayer{A: a, Store: cat, Pub: js, Log: log, Lock: dataLock}).Run(ctx)
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,
-		Policy: policy, PolicyStore: cat, PolicyGrace: cfg.grace,
+		Policy: policy, PolicyStore: cat, PolicyGrace: cfg.grace, Recoveries: cat, SealLock: sealLock,
 		State: cat, Health: health, DataLock: dataLock, StateBase: urd.ArchiverState{
 			MinRetentionDays: cfg.bounds.MinRetentionDays, MaxRetentionDays: cfg.bounds.MaxRetentionDays,
 			PolicyGraceS: int(cfg.grace / time.Second), ExcludePrefixes: cfg.exclude,
@@ -273,7 +280,7 @@ func serve(log *slog.Logger) error {
 			VerifyEveryS: int(cfg.verifyEvery / time.Second), StartedAt: time.Now().UTC(),
 		}})
 
-	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health, Policy: policy,
+	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health, Policy: policy, SealLock: sealLock,
 		Cfg: archiver.Config{SegmentMaxBytes: cfg.segBytes, SegmentMaxAge: cfg.segAge, ExcludeAgents: cfg.exclude,
 			MinFreeBytes: uint64(cfg.minFreeGB) << 30, MinFreePercent: cfg.minFreePct, WarnFreePercent: cfg.warnFreePct}}
 	log.Info("archiwizator uruchomiony", "dir", cfg.dir, "retention", cfg.retention.String(),

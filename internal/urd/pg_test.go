@@ -308,3 +308,96 @@ func TestPostgresPolicy(t *testing.T) {
 		t.Fatalf("grupy bez tabel panelu: %v %v", ok, err)
 	}
 }
+
+// Obsługa niezgodności na PostgreSQL: pliki zapisane po „zrzucie” (wpisy
+// usunięte z bazy) wracają do spisu; zlecenia i lista nieznanych plików.
+func TestPostgresRecovery(t *testing.T) {
+	url := os.Getenv("SIEM_TEST_PG_URL")
+	if url == "" {
+		t.Skip("brak SIEM_TEST_PG_URL – pomijam test na PostgreSQL")
+	}
+	ctx := context.Background()
+	db, err := OpenPG(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.pool.Exec(ctx, "DROP SCHEMA IF EXISTS urd CASCADE"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 19, 6, 50, 0, 0, time.UTC)
+	a := New(t.TempDir(), db)
+	a.Now = func() time.Time { return now }
+	seg := func() Segment {
+		w, err := a.OpenSegment()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Add(RecordMeta{Agent: "agt", ReceivedAt: now}, []byte("dane")); err != nil {
+			t.Fatal(err)
+		}
+		s, err := w.Commit(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	seg()
+	now = now.Add(15 * time.Minute) // 07:05
+	if n, err := a.Seal(ctx); err != nil || n != 1 {
+		t.Fatalf("seal 06: %d %v", n, err)
+	}
+	dumpAt := now
+	// Po „zrzucie”: zamknięcie godziny 07 i segment w 08 – potem przywrócenie
+	// bazy usuwa ich wpisy (symulacja: DELETE).
+	seg()
+	now = now.Add(time.Hour) // 08:05
+	if n, err := a.Seal(ctx); err != nil || n != 1 {
+		t.Fatalf("seal 07: %d %v", n, err)
+	}
+	late := seg()
+	if _, err := db.pool.Exec(ctx, `DELETE FROM urd.manifests WHERE seq = 2; DELETE FROM urd.segments WHERE hour >= '2026-10-19 07:00Z'`); err != nil {
+		t.Fatal(err)
+	}
+	v := a.Verify(ctx, VerifyOptions{})
+	if v.OK || len(v.Unknown) != 3 {
+		t.Fatalf("nieznane: %+v", v.Unknown)
+	}
+	vid, err := db.SaveVerification(ctx, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := db.LastVerification(ctx); len(got.Unknown) != 3 {
+		t.Fatalf("odczyt nieznanych: %v", got.Unknown)
+	}
+	// Zlecenie po przywróceniu (jak restore.sh) i decyzja administratora.
+	if _, err := db.pool.Exec(ctx, `INSERT INTO urd.recoveries (kind, requested_by, reason, backup, window_from, window_to)
+		VALUES ('restore', 'adam (panel)', 'test', 'heimdall-x.tar.gpg', $1, $2)`, dumpAt.Add(-10*time.Minute), now); err != nil {
+		t.Fatal(err)
+	}
+	id, err := db.RequestRecovery(ctx, "quarantine", "adam", "plik testowy", []string{"segments/x"}, vid)
+	if err != nil || id == 0 {
+		t.Fatal(id, err)
+	}
+	pending, err := db.PendingRecoveries(ctx)
+	if err != nil || len(pending) != 2 || pending[0].Kind != "restore" || pending[0].WindowFrom == nil || *pending[1].VerificationID != vid {
+		t.Fatalf("oczekujące: %+v %v", pending, err)
+	}
+	res, err := a.Run(ctx, pending[0])
+	if err != nil || len(res.Manifests) != 1 || len(res.Segments) != 1 || res.Segments[0].Path != late.Path {
+		t.Fatalf("uzgodnienie: %+v %v", res, err)
+	}
+	if err := db.FinishRecovery(ctx, pending[0].ID, true, &res, "", now); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.Verify(ctx, VerifyOptions{}); !v.OK {
+		t.Fatalf("po uzgodnieniu: %v", v.Problems)
+	}
+	all, err := db.Recoveries(ctx, 10)
+	if err != nil || len(all) != 2 || all[1].Result == nil || len(all[1].Result.Manifests) != 1 || all[0].ProcessedAt != nil {
+		t.Fatalf("historia: %+v %v", all, err)
+	}
+}
