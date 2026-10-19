@@ -158,6 +158,11 @@ func TestRenderInstructions(t *testing.T) {
 	if got != `LAB\admin założył jan na dc01.lab.local; (brak)` {
 		t.Fatalf("Render: %q", got)
 	}
+	// Pola ze spacją w nazwie (Defender) – ale nie dowolny tekst w klamrach.
+	d := ev("Microsoft-Windows-Windows Defender/Operational", 1116, map[string]string{"Threat Name": "Virus:DOS/EICAR_Test_File"})
+	if got := Render(`{{Threat Name}} | {{ Threat Name }} | {{to nie  pole}}`, d); got != `Virus:DOS/EICAR_Test_File | Virus:DOS/EICAR_Test_File | {{to nie  pole}}` {
+		t.Fatalf("Render ze spacją: %q", got)
+	}
 }
 
 func TestUnwrap(t *testing.T) {

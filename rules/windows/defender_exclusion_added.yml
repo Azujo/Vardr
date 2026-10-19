@@ -1,0 +1,30 @@
+title: Dodano wykluczenie w Microsoft Defender
+id: 3e35fe1a-3373-4e25-9943-e757afe9f78b
+status: experimental
+description: |
+  Zmiana ustawień Defendera (5007) dodająca wykluczenie – ścieżki,
+  rozszerzenia, procesu albo adresu. Wykluczony katalog nie jest skanowany,
+  więc napastnik może w nim bezpiecznie trzymać swoje narzędzia.
+author: Heimdall
+tags:
+  - attack.defense_impairment
+  - attack.t1685
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID: 5007
+    New Value|contains: '\Exclusions\'
+  condition: selection
+falsepositives:
+  - Wykluczenia wymagane przez oprogramowanie (bazy danych, kopie zapasowe) dodawane przez administratora
+level: high
+heimdall:
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} dodano wykluczenie Defendera: {{New Value}}. Ustal, czy
+    to uzgodniona zmiana (dokumentacja oprogramowania, zgłoszenie). Jeśli
+    nie – usuń wykluczenie, przeskanuj wykluczoną lokalizację i sprawdź, kto
+    był zalogowany na komputerze w tym czasie.

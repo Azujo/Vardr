@@ -43,7 +43,7 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.7.1"
+const version = "0.7.2"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows

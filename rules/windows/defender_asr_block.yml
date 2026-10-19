@@ -1,0 +1,31 @@
+title: Reguła ASR Defendera zablokowała działanie
+id: aca5ef34-394c-4242-abc1-9239e7d0b077
+status: experimental
+description: |
+  Reguła ograniczania powierzchni ataku (ASR) Microsoft Defender
+  zablokowała działanie (1121) – np. makro Office uruchamiające proces,
+  odczyt pamięci LSASS, skrypt pobierający plik wykonywalny. Blokada
+  zadziałała, ale próba to sygnał, że coś na komputerze zachowuje się jak
+  narzędzie ataku. Technika zależy od reguły ASR (identyfikator w ID).
+author: Heimdall
+tags:
+  - heimdall.attack_dynamic
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID: 1121
+  condition: selection
+falsepositives:
+  - Nietypowe, ale legalne oprogramowanie (np. makra działu finansów) – wykluczenie ASR po weryfikacji
+level: medium
+heimdall:
+  group_by: [host.name, Process Name]
+  suppress: 24h
+  instructions: |
+    ASR zablokował {{Process Name}} na {{host.name}} (reguła {{ID}}, cel {{Path}}).
+    Sprawdź, czym jest ten proces i co próbował zrobić; identyfikator reguły
+    ASR opisuje dokumentacja Microsoft („Attack surface reduction rules
+    reference”). Powtarzające się blokady tego samego legalnego programu –
+    rozważ wykluczenie po weryfikacji.

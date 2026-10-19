@@ -126,6 +126,7 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 }
 
 var summaryFields = []struct{ name, label string }{
+	{"Threat Name", "zagrożenie"},
 	{"CommandLine", "polecenie"},
 	{"ScriptBlockText", "skrypt"},
 	{"ImagePath", "program usługi"},

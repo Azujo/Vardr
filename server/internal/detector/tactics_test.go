@@ -59,7 +59,12 @@ func TestTacticRules(t *testing.T) {
 		{"dc417c4c-fd8e-4e9f-8967-997dc4295798", "pc09", 2},          // AnyDesk, plink -R
 		{"dccb69cd-3a68-4712-aee5-9087e23f9de8", "pc10", 2},          // rclone copy, curl -T
 		{"c443836f-8cb9-4a07-a788-12ab3b6a17e8", "203.0.113.77", -1}, // skanowanie portów
-		{"9c55e2e1-ad24-400b-9d3d-bb7159593ab4", "10.10.10.66", -1},  // przeszukiwanie sieci
+		{"9c55e2e1-ad24-400b-9d3d-bb7159593ab4", "10.10.10.66", -1},
+		{"3cd1463f-e00d-4b16-a478-06a8a67e530a", "pc11", 3}, // Defender: wykrycia (bez 1117)
+		{"d83b0e53-f614-4795-b75c-ada2efd162b8", "pc12", 1}, // nieudane usunięcie
+		{"558a2a89-3f7e-40b9-8ea1-9a6e36e65a55", "pc12", 1}, // wyłączona ochrona
+		{"3e35fe1a-3373-4e25-9943-e757afe9f78b", "pc12", 1}, // wykluczenie (zwykła zmiana – nie)
+		{"aca5ef34-394c-4242-abc1-9239e7d0b077", "pc12", 1}, // ASR  // przeszukiwanie sieci
 	} {
 		got := byRule[c.rule]
 		if uniq(got) != c.hosts || (c.n >= 0 && len(got) != c.n) {

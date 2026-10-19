@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -63,8 +64,9 @@ func TestRulesAttackTags(t *testing.T) {
 		if len(m.Warnings) > 0 {
 			t.Errorf("%s: %v", name, m.Warnings)
 		}
-		// Reguła bazowa korelacji sama nie alarmuje – technikę ma korelacja.
-		if len(m.Techniques) == 0 && !base {
+		// Reguła bazowa korelacji sama nie alarmuje – technikę ma korelacja;
+		// heimdall.attack_dynamic – technika zależy od wykrycia (Defender, ASR).
+		if len(m.Techniques) == 0 && !base && !slices.Contains(tags, "heimdall.attack_dynamic") {
 			t.Errorf("%s: brak techniki ATT&CK", name)
 		}
 	}

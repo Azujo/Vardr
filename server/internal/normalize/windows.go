@@ -125,6 +125,8 @@ func Dataset(channel string) string {
 		return "windows.sysmon"
 	case "microsoft-windows-powershell/operational":
 		return "windows.powershell"
+	case "microsoft-windows-windows defender/operational":
+		return "windows.defender"
 	}
 	var b strings.Builder
 	b.WriteString("windows.")

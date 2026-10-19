@@ -64,6 +64,24 @@ var otherRules = map[string]map[uint32]rule{
 		13: {action: "registry-value-set"},
 		22: {action: "dns-query"},
 	},
+	// Microsoft Defender (dziennik Operational).
+	"windows.defender": {
+		1006: {action: "malware-detected"},
+		1007: {action: "malware-action-taken", outcome: "success"},
+		1008: {action: "malware-action-failed", outcome: "failure"},
+		1015: {action: "suspicious-behavior-detected"},
+		1116: {action: "malware-detected"},
+		1117: {action: "malware-action-taken", outcome: "success"},
+		1118: {action: "malware-action-failed", outcome: "failure"},
+		1119: {action: "malware-action-failed", outcome: "failure"},
+		1121: {action: "asr-blocked"},
+		5001: {action: "realtime-protection-disabled"},
+		5004: {action: "realtime-protection-config-changed"},
+		5007: {action: "config-changed"},
+		5010: {action: "antispyware-scanning-disabled"},
+		5012: {action: "antivirus-scanning-disabled"},
+		5013: {action: "tamper-protection-blocked-change"},
+	},
 }
 
 // applyECS uzupełnia pola wspólne (akcja, wynik, użytkownik, IP, proces).
@@ -90,11 +108,16 @@ func applyECS(e *model.Event) {
 	if e.UserName == "" {
 		e.UserName, e.UserDomain = clean(f["SubjectUserName"]), clean(f["SubjectDomainName"])
 	}
-	if e.UserName == "" && f["User"] != "" { // Sysmon: "DOMENA\użytkownik"
-		if dom, user, found := strings.Cut(f["User"], `\`); found {
+	// Sysmon i Defender: "DOMENA\użytkownik" (Defender: konto, przy którym
+	// wykryto zagrożenie).
+	for _, k := range []string{"User", "Detection User"} {
+		if e.UserName != "" || clean(f[k]) == "" {
+			continue
+		}
+		if dom, user, found := strings.Cut(f[k], `\`); found {
 			e.UserName, e.UserDomain = user, dom
 		} else {
-			e.UserName = f["User"]
+			e.UserName = f[k]
 		}
 	}
 
@@ -107,7 +130,7 @@ func applyECS(e *model.Event) {
 	}
 
 	// Proces.
-	for _, k := range []string{"NewProcessName", "Image", "ProcessName", "ImagePath", "ServiceFileName"} {
+	for _, k := range []string{"NewProcessName", "Image", "ProcessName", "Process Name", "ImagePath", "ServiceFileName"} {
 		if p := clean(f[k]); p != "" {
 			e.ProcessName = p
 			break
@@ -126,7 +149,35 @@ func applyECS(e *model.Event) {
 	if e.Dataset == "windows.powershell" && e.Code == 4104 && e.Message == "" {
 		e.Message = f["ScriptBlockText"]
 	}
+	if e.Dataset == "windows.defender" && e.Message == "" {
+		e.Message = defenderMessage(f)
+	}
 	if e.Dataset == "windows.system" && e.Code == 7036 && e.Message == "" {
 		e.Message = strings.TrimSpace(f["param1"] + " " + f["param2"])
 	}
+}
+
+// defenderMessage opisuje zdarzenie Defendera: zagrożenie, poziom, działanie,
+// plik – albo zmienione ustawienie (5007).
+func defenderMessage(f map[string]string) string {
+	var parts []string
+	for _, k := range []string{"Threat Name", "Severity Name", "Category Name", "Action Name", "Path"} {
+		if v := clean(f[k]); v != "" {
+			parts = append(parts, v)
+		}
+	}
+	// Opis błędu tylko przy błędzie (przy sukcesie Defender wpisuje
+	// „Operacja ukończona pomyślnie” z kodem 0x00000000).
+	if code := strings.TrimLeft(strings.TrimPrefix(strings.ToLower(clean(f["Error Code"])), "0x"), "0"); code != "" {
+		if v := clean(f["Error Description"]); v != "" {
+			parts = append(parts, v)
+		}
+	}
+	if len(parts) == 0 && clean(f["New Value"]) != "" {
+		parts = append(parts, "zmiana ustawienia: "+clean(f["New Value"]))
+		if v := clean(f["Old Value"]); v != "" {
+			parts = append(parts, "poprzednio: "+v)
+		}
+	}
+	return strings.Join(parts, " – ")
 }

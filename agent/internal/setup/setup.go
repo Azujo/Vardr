@@ -64,6 +64,13 @@ var (
 		{"System", []uint32{7036, 7040, 7045}},
 		{"Microsoft-Windows-PowerShell/Operational", []uint32{4104}},
 		{"Microsoft-Windows-Sysmon/Operational", []uint32{1, 3, 11, 13, 22}},
+		// Microsoft Defender: wykrycia (1006, 1116), działania i ich błędy
+		// (1007, 1008, 1117–1119), podejrzane zachowanie (1015), blokady ASR
+		// (1121), wyłączenie ochrony i zmiany ustawień (5001, 5004, 5007,
+		// 5010, 5012), zablokowana próba zmiany przy ochronie przed
+		// naruszeniem (5013).
+		{"Microsoft-Windows-Windows Defender/Operational", []uint32{1006, 1007, 1008, 1015, 1116, 1117, 1118, 1119, 1121,
+			5001, 5004, 5007, 5010, 5012, 5013}},
 	}
 )
 

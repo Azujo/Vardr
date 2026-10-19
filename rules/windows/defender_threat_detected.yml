@@ -1,0 +1,37 @@
+title: Microsoft Defender wykrył zagrożenie
+id: 3cd1463f-e00d-4b16-a478-06a8a67e530a
+status: experimental
+description: |
+  Microsoft Defender wykrył złośliwe oprogramowanie (1116, starsze 1006)
+  albo podejrzane zachowanie (1015). Samo wykrycie zwykle kończy się
+  zablokowaniem pliku, ale mówi, że coś groźnego dotarło do komputera –
+  trzeba ustalić skąd i czy nie ma tam czegoś więcej. Technika ATT&CK
+  zależy od wykrytego zagrożenia (nazwa w Threat Name).
+author: Heimdall
+tags:
+  - heimdall.attack_dynamic
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID:
+      - 1006
+      - 1015
+      - 1116
+  condition: selection
+falsepositives:
+  - Pliki testowe antywirusa (EICAR)
+  - Narzędzia administracyjne i testy penetracyjne uznawane za niechciane (HackTool, PUA)
+level: high
+heimdall:
+  group_by: [host.name, Threat Name]
+  suppress: 24h
+  instructions: |
+    Defender wykrył {{Threat Name}} ({{Severity Name}}, {{Category Name}}) na
+    {{host.name}}: {{Path}}, proces {{Process Name}}, konto {{Detection User}}.
+    Sprawdź, czy zagrożenie zostało usunięte (zdarzenie 1117 albo alert
+    „Defender nie usunął zagrożenia”), skąd przyszedł plik (pobranie, poczta,
+    nośnik) i co działo się na komputerze tuż przed wykryciem. Zagrożenie
+    poważne albo powtarzające się – odizoluj komputer i przeskanuj go
+    w całości.

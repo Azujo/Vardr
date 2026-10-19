@@ -1,0 +1,31 @@
+title: Microsoft Defender nie usunął zagrożenia
+id: d83b0e53-f614-4795-b75c-ada2efd162b8
+status: experimental
+description: |
+  Defender wykrył zagrożenie, ale działanie (kwarantanna, usunięcie)
+  się nie powiodło (1008, 1118, 1119). Złośliwy plik może nadal być na
+  komputerze i działać.
+author: Heimdall
+tags:
+  - heimdall.attack_dynamic
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID:
+      - 1008
+      - 1118
+      - 1119
+  condition: selection
+falsepositives:
+  - Plik zablokowany przez inny program w chwili usuwania (Defender ponowi próbę po restarcie)
+level: critical
+heimdall:
+  group_by: [host.name]
+  suppress: 24h
+  instructions: |
+    Defender nie usunął {{Threat Name}} na {{host.name}} ({{Path}}): {{Error Description}}.
+    Odizoluj komputer od sieci, uruchom pełne skanowanie offline (Microsoft
+    Defender Offline) i sprawdź procesy oraz autostart. Nie przywracaj
+    komputera do pracy, dopóki skanowanie nie potwierdzi usunięcia.

@@ -1,0 +1,37 @@
+title: Wyłączono ochronę Microsoft Defender
+id: 558a2a89-3f7e-40b9-8ea1-9a6e36e65a55
+status: experimental
+description: |
+  Wyłączona ochrona w czasie rzeczywistym (5001), skanowanie antywirusowe
+  albo antyszpiegowskie (5010, 5012), albo ochrona przed naruszeniem
+  zablokowała próbę zmiany ustawień (5013). Napastnicy wyłączają
+  antywirusa przed uruchomieniem właściwego narzędzia (np. ransomware).
+author: Heimdall
+tags:
+  - attack.defense_impairment
+  - attack.t1685
+logsource:
+  product: windows
+  service: windefend
+detection:
+  selection:
+    EventID:
+      - 5001
+      - 5010
+      - 5012
+      - 5013
+  condition: selection
+falsepositives:
+  - Administrator diagnozujący problem z wydajnością (powinien to zgłosić)
+  - Instalacja innego antywirusa (Defender przechodzi wtedy w tryb pasywny)
+level: high
+heimdall:
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} wyłączono ochronę Defendera albo próbowano ją wyłączyć
+    (zdarzenie {{EventID}}). Ustal, kto to zrobił i dlaczego. Bez
+    uzgodnienia – włącz ochronę z powrotem, przejrzyj procesy uruchomione na
+    komputerze w ostatniej godzinie i traktuj komputer jako podejrzany.
+    Zdarzenie 5013 oznacza, że ochrona przed naruszeniem zatrzymała zmianę –
+    ktoś (albo coś) próbował osłabić Defendera.

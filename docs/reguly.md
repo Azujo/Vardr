@@ -56,6 +56,7 @@ Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_
 
 - **Słownik**: ATT&CK Enterprise wbudowany w Heimdalla (`internal/attack/enterprise.json`, obecnie wersja 20). Od wersji 20 taktyka Defense Evasion jest podzielona na `stealth` i `defense_impairment`, a część technik przeniesiono (np. czyszczenie dziennika: T1070.001 → T1685.005, wyłączenie narzędzi ochrony: T1562.001 → T1685).
 - **Sprawdzanie**: `siem-detector check` wypisuje `UWAGA` przy nieznanej technice, wycofanej technice (z następcą) i nieistniejącej taktyce; reguła działa dalej. Test reguły w panelu pokazuje te same ostrzeżenia, a test `TestRulesAttackTags` pilnuje reguł z repozytorium i wbudowanych.
+- **Bez stałej techniki**: wykrycia antywirusa (Defender, ASR) dotyczą różnych technik zależnie od zagrożenia – takie reguły mają tag `heimdall.attack_dynamic` zamiast `attack.t…` (test pokrycia ich nie wymaga).
 - **Taktyki**: technika sama wskazuje swoje taktyki (kolumny macierzy), więc tag taktyki jest opcjonalny – pomaga tylko czytać regułę.
 - **W panelu**: plakietki technik przy regułach i alertach (z linkiem do attack.mitre.org), filtr alertów po technice (`/alerts?technique=T1110` – z podtechnikami) i taktyce, macierz pokrycia (*Wykrywanie → MITRE ATT&CK*) z eksportem warstwy dla ATT&CK Navigator, technika w powiadomieniach o alertach. Kreator korelacji dopisuje korelacji tagi `attack.*` reguł, z których ją złożono.
 - **Aktualizacja słownika** (nowa wersja ATT&CK, zwykle dwa razy w roku): pobierz `enterprise-attack.json` z `github.com/mitre-attack/attack-stix-data` i uruchom `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json`, potem `siem-detector check rules`.
@@ -200,6 +201,8 @@ heimdall:
 
 **Reguły z panelu** są zapisywane w Sadze (`gjallarhorn.panel_rules`), a detektor wczytuje je obok katalogu `rules/` jako plik `panel/<id korelacji>.yml` (w ciągu 30 s, bez wdrożenia). Mają historię wersji, włączanie i wyłączanie jak reguły z plików; administrator może je edytować (YAML) i usuwać (powód i hasło, audyt). Id reguł z panelu nie może powtarzać id reguł wdrożonych – przy konflikcie wygrywa plik z repozytorium. Dobrą regułę warto potem przenieść do repozytorium (`rules/correlation/`) i usunąć z panelu.
 
+**Pola ze spacją w nazwie** (Microsoft Defender: `Threat Name`, `Severity Name`, `Process Name`, `Detection User`, `New Value`…) piszemy w selekcjach w apostrofach albo bez (`Threat Name|contains: Mimikatz`), w `group_by` i instrukcjach tak samo (`{{Threat Name}}`). Zdarzenia Defendera mają zbiór danych `windows.defender` (logsource `service: windefend`); agent zbiera je od wersji 0.7.2.
+
 ## Dobre praktyki
 
 - **Grupuj po tym, co analityk zablokuje albo sprawdzi:** konto (brute force), adres (spraying), osoba (`user.identity` – próby z wielu źródeł), komputer (podejrzane procesy).
@@ -268,6 +271,11 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 | `windows/proc_remote_access_tunnel.yml` | C2: AnyDesk, ScreenConnect, TeamViewer…, ngrok, chisel, plink -R |
 | `windows/proc_exfil_cloud_tools.yml` | wynoszenie: rclone copy/sync, MEGA, curl --upload-file |
 | `network/fortigate_port_scan.yml` | rozpoznanie: ≥20 odrzuconych portów z jednego adresu w 2 min |
+| `windows/defender_threat_detected.yml` | Microsoft Defender wykrył zagrożenie (1116, 1006, podejrzane zachowanie 1015); alert na komputer i nazwę zagrożenia |
+| `windows/defender_remediation_failed.yml` | Defender nie usunął zagrożenia (1008, 1118, 1119) – krytyczny |
+| `windows/defender_protection_disabled.yml` | wyłączona ochrona w czasie rzeczywistym albo skanowanie (5001, 5010, 5012), zablokowana próba zmiany (5013) |
+| `windows/defender_exclusion_added.yml` | dodane wykluczenie Defendera (5007 z `\Exclusions\`) |
+| `windows/defender_asr_block.yml` | reguła ASR zablokowała działanie (1121) |
 | `network/fortigate_host_sweep.yml` | rozpoznanie: ≥30 odrzuconych adresów docelowych z jednego adresu w 2 min |
 
 Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – domeny, serwery, konta poza firmą) nie ma reguł: nie zostawia śladów w logach organizacji. Reguły skanowania na FortiGate wymagają logowania odrzuconego ruchu w polityce zapory.

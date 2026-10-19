@@ -379,7 +379,8 @@ func (r *Rule) GroupKey(e Event) []string {
 	return out
 }
 
-var placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.]+)\s*\}\}`)
+// Nazwa pola: litery, cyfry, _ . i pojedyncze spacje (pola Defendera, np. {{Threat Name}}).
+var placeholderRe = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.]+(?: [A-Za-z0-9_.]+)*)\s*\}\}`)
 
 // Render podstawia w tekście (np. instrukcji reguły) zmienne {{Pole}}
 // wartościami ze zdarzenia; brak pola – „(brak)”.

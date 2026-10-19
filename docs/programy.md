@@ -49,7 +49,7 @@ Opcja `-config <plik>` wskazuje inną konfigurację. Instalator MSI (`deploy/lab
 | `limits.priority`, `cpu_max_percent`, `memory_soft_mb`, `memory_hard_mb`, `max_eps`, `max_send_kbps`, `max_procs` | „kaganiec” zasobów |
 | `buffer.max_mb`, `on_full` (`pause`\|`drop_oldest`), `min_free_mb` | bufor dyskowy (domyślnie 1 GB) |
 | `logging.level`, `max_size_mb`, `max_files` | log agenta |
-| `channels[].name`, `event_ids` | kanały i identyfikatory zdarzeń (gdy agent nie dostaje profilu z panelu) |
+| `channels[].name`, `event_ids` | kanały i identyfikatory zdarzeń (gdy agent nie dostaje profilu z panelu); każdy profil zbiera Security (zakres według profilu), System, PowerShell 4104, Sysmon i od 0.7.2 Microsoft Defender (wykrycia, działania, ASR, wyłączenie ochrony, zmiany ustawień) |
 
 Panel nadpisuje kanały, limity i ochronę według grupy agenta (`/enroll/v1/config`, sprawdzane co kilka minut; `SIEM_CONFIG_POLL_SECONDS` skraca to w testach). Lokalny plik decyduje o serwerze, certyfikatach i katalogu stanu. Szczegóły instalacji, ochrony i diagnostyki: [README.md](../README.md#instalacja-agenta-na-komputerze).
 
