@@ -169,7 +169,9 @@ func (s *Searcher) TestRule(ctx context.Context, r *detect.Rule, from, to time.T
 	if len(out) > 100 {
 		out = out[:100]
 	}
-	res.Alerts = out
+	if out != nil { // pusta lista, nie null – panel czyta alerts.length
+		res.Alerts = out
+	}
 	res.TookMS = time.Since(t0).Milliseconds()
 	return res, nil
 }

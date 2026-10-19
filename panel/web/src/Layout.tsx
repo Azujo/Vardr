@@ -40,6 +40,7 @@ import {
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
+import ErrorBoundary from "./ErrorBoundary";
 import { api, roleLabels } from "./api";
 
 interface Item {
@@ -206,7 +207,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </AppShell.Section>
       </AppShell.Navbar>
 
-      <AppShell.Main>{children}</AppShell.Main>
+      <AppShell.Main>
+        <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
+      </AppShell.Main>
     </AppShell>
   );
 }

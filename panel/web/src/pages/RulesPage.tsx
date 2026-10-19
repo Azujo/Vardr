@@ -84,7 +84,8 @@ function RuleTester({ initial }: { initial: string }) {
       const r = await rulesApi.test(source, Number(hours));
       if (!r.ok) setErr(r.error ?? "błąd");
       else {
-        setRes(r.result ?? null);
+        // Puste listy mogą przyjść jako null (starszy serwer) – bez tego strona się wywracała.
+        setRes(r.result ? { ...r.result, events: r.result.events ?? [], alerts: r.result.alerts ?? [] } : null);
         setSql(r.sql ?? "");
       }
     } catch (e) {
