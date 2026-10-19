@@ -66,6 +66,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		return err
 	}
 	r.Log.Info("usługa kopii gotowa", "key_id", backupcfg.KeyID(r.pub), "backup_dir", r.BackupDir)
+	if err := svcRetry(ctx, func() error { return r.closeOrphans(ctx) }); err != nil {
+		return err
+	}
 	for {
 		if err := r.tick(ctx); err != nil && ctx.Err() == nil {
 			r.Log.Warn("przebieg usługi kopii nieudany", "err", err)
@@ -287,6 +290,49 @@ func (r *Runner) requests(ctx context.Context, cfg backupcfg.Config) error {
 		if _, err := r.DB.Exec(ctx, `UPDATE backup_requests SET done_at = now(), ok = $2, message = $3 WHERE id = $1`,
 			id, ok, truncate(msg, 2000)); err != nil {
 			return err
+		}
+	}
+}
+
+// closeOrphans zamyka wpisy „w toku” po poprzednim uruchomieniu usługi
+// (usługa wykonuje wszystko w jednej gorutynie, więc przy starcie nic nie
+// jest w toku). Powstają przy restarcie w trakcie kopii albo po
+// przywróceniu bazy, której zrzut zrobiono w trakcie kopii. Przywracanie
+// czekające na restore.sh (plik zlecenia) zostaje.
+func (r *Runner) closeOrphans(ctx context.Context) error {
+	const why = "przerwane – usługa kopii została uruchomiona ponownie (restart albo przywrócenie bazy z kopii zrobionej w trakcie)"
+	tag, err := r.DB.Exec(ctx, `UPDATE backup_runs SET status = 'error', finished_at = now(), message = $1 WHERE status = 'running'`, why)
+	if err != nil {
+		return err
+	}
+	pendingRestore := false
+	for _, f := range []string{"zlecenie", "zlecenie.wykonywane"} { // czeka albo właśnie trwa
+		if _, err := os.Stat(filepath.Join(r.restoreDir(), f)); err == nil {
+			pendingRestore = true
+		}
+	}
+	tag2, err := r.DB.Exec(ctx, `UPDATE backup_requests SET done_at = now(), ok = false, message = $1
+		WHERE done_at IS NULL AND started_at IS NOT NULL AND NOT (action = 'restore' AND $2)`, why, pendingRestore)
+	if err != nil {
+		return err
+	}
+	if n := tag.RowsAffected() + tag2.RowsAffected(); n > 0 {
+		r.Log.Warn("zamknięto wpisy przerwane przez restart", "runs", tag.RowsAffected(), "requests", tag2.RowsAffected())
+	}
+	return nil
+}
+
+// svcRetry ponawia operację na bazie przy starcie (Saga może jeszcze startować).
+func svcRetry(ctx context.Context, fn func() error) error {
+	for delay := time.Second; ; delay = min(delay*2, 30*time.Second) {
+		err := fn()
+		if err == nil || ctx.Err() != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
 		}
 	}
 }
