@@ -28,8 +28,10 @@ import {
   type AlertLevel,
   type AlertListFilter,
   type AlertStatus,
+  type RuleAttack,
 } from "../api";
 import { useAuth } from "../auth";
+import { AttackBadges } from "../attack";
 
 const engineLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", system: "wbudowana", correlation: "korelacja" };
 
@@ -50,9 +52,12 @@ export default function AlertsPage() {
     engine: get("engine"),
     q: get("q"),
     since: get("since"),
+    technique: get("technique"),
+    tactic: get("tactic"),
   };
   const key = JSON.stringify(filter);
   const [items, setItems] = useState<Alert[]>([]);
+  const [attack, setAttack] = useState<Record<string, RuleAttack>>({});
   const [total, setTotal] = useState(0);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
@@ -82,6 +87,7 @@ export default function AlertsPage() {
           setConfigured(r.configured);
           paged.current = !!before;
           setItems((cur) => (before ? [...cur, ...r.alerts] : r.alerts));
+          setAttack((cur) => (before ? { ...cur, ...(r.attack ?? {}) } : (r.attack ?? {})));
           setTotal(r.total);
           setMore(r.alerts.length === 100);
           setError("");
@@ -128,7 +134,9 @@ export default function AlertsPage() {
     }
   };
 
-  const hasFilters = ["level", "rule", "host", "user", "assignee", "engine", "q", "since"].some((k) => params.get(k));
+  const hasFilters = ["level", "rule", "host", "user", "assignee", "engine", "q", "since", "technique", "tactic"].some((k) =>
+    params.get(k),
+  );
 
   return (
     <Stack>
@@ -208,8 +216,18 @@ export default function AlertsPage() {
           onChange={(v) => set("engine", v ?? "")}
           data={Object.entries(engineLabels).map(([value, label]) => ({ value, label }))}
         />
-        {(filter.host || filter.user || filter.rule) && (
+        {(filter.host || filter.user || filter.rule || filter.technique || filter.tactic) && (
           <Group gap={4}>
+            {filter.technique && (
+              <Badge variant="outline" color="grape" style={{ cursor: "pointer" }} onClick={() => set("technique", "")}>
+                ATT&CK {filter.technique} ✕
+              </Badge>
+            )}
+            {filter.tactic && (
+              <Badge variant="outline" color="grape" style={{ cursor: "pointer" }} onClick={() => set("tactic", "")}>
+                taktyka {filter.tactic} ✕
+              </Badge>
+            )}
             {filter.host && (
               <Badge variant="outline" style={{ cursor: "pointer" }} onClick={() => set("host", "")}>
                 komputer: {filter.host} ✕
@@ -317,6 +335,7 @@ export default function AlertsPage() {
                     <Text size="xs" c="dimmed" lineClamp={1} title={a.summary}>
                       {a.summary}
                     </Text>
+                    <AttackBadges ra={attack[a.rule_id]} tactics={false} size="xs" />
                   </Table.Td>
                   <Table.Td onClick={(e) => e.stopPropagation()}>
                     {a.host_name ? (

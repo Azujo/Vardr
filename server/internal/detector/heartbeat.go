@@ -19,7 +19,7 @@ const (
 // HeartbeatRule opisuje regułę wbudowaną dla panelu.
 func HeartbeatRule() alerts.RuleInfo {
 	return alerts.RuleInfo{ID: HeartbeatRuleID, Title: heartbeatRuleTitle, Level: "high", Mode: "system", Enabled: true, FileEnabled: true,
-		File: "(wbudowana)", Tags: []string{"attack.defense_evasion", "attack.t1562.001", "attack.t1489"},
+		File: "(wbudowana)", Tags: []string{"attack.defense_impairment", "attack.t1685", "attack.t1489"},
 		Description: "Agent z grupy z ustawionym progiem („alarm po utracie łączności”) nie wysłał heartbeatu " +
 			"przez zadany czas. Wyłączona usługa agenta, odcięta sieć albo wyłączony komputer – na serwerach " +
 			"i kontrolerach domeny każde z nich wymaga wyjaśnienia. Alert zamyka się sam, gdy agent wróci.",

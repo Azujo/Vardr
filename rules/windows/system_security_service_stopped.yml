@@ -9,8 +9,8 @@ description: |
   tokenem z panelu od zatrzymania bez tokenu i zabicia procesu).
 author: Heimdall
 tags:
-  - attack.defense_evasion
-  - attack.t1562.001
+  - attack.defense_impairment
+  - attack.t1685
   - attack.impact
   - attack.t1489
 logsource:

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"siem/internal/alerts"
+	"siem/internal/attack"
 )
 
 // EventAlert: alerty detekcji (Gjallarhorn).
@@ -43,6 +44,8 @@ type AlertSender struct {
 	// o rozwiązaniu zawsze osobno. PerRule < 0 wyłącza limit.
 	PerRule int
 	Window  time.Duration
+	// RuleTags (opcjonalne): tagi reguły – techniki MITRE ATT&CK w wiadomości.
+	RuleTags func(ruleID string) []string
 
 	digestRetry time.Time // po nieudanej wiadomości zbiorczej – nie częściej niż co minutę
 }
@@ -287,9 +290,36 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		add("Klucz alertu", strings.Join(parts, "\n"), false)
 	}
 	trusted("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
+	if a.RuleTags != nil {
+		if s := attackLine(a.RuleTags(al.RuleID)); s != "" {
+			trusted("MITRE ATT&CK", s, false)
+		}
+	}
 	add("Co zrobić", strings.TrimSpace(al.Instructions), false)
 	if a.PanelURL != "" {
 		trusted("Panel", a.PanelURL+"/alerts/"+strconv.FormatInt(al.ID, 10), false)
 	}
 	return m
+}
+
+// attackLine opisuje techniki ATT&CK reguły jednym tekstem
+// („T1110.001 Password Guessing (Credential Access)”, kolejne w nowej linii).
+func attackLine(tags []string) string {
+	d := attack.Enterprise()
+	m := d.Map(tags)
+	var lines []string
+	for _, t := range m.Techniques {
+		var tactics []string
+		for _, s := range t.Tactics {
+			if ta, ok := d.Tactic(s); ok {
+				tactics = append(tactics, ta.Name)
+			}
+		}
+		l := t.ID + " " + t.Name
+		if len(tactics) > 0 {
+			l += " (" + strings.Join(tactics, ", ") + ")"
+		}
+		lines = append(lines, l)
+	}
+	return strings.Join(lines, "\n")
 }

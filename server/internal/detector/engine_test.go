@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"siem/internal/alerts"
+	"siem/internal/attack"
 	"siem/internal/detect"
 	"siem/internal/model"
 )
@@ -45,5 +47,35 @@ func TestEngineHits(t *testing.T) {
 	if ps.GroupFields["Computer"] != "pc1" || ps.Suppress != time.Hour || strings.Contains(ps.Summary, "cel: -") ||
 		!strings.Contains(ps.Summary, "polecenie: powershell -enc") {
 		t.Fatalf("PowerShell: %+v", ps)
+	}
+}
+
+// Tagi MITRE ATT&CK reguł z repozytorium i wbudowanych: bez nieznanych
+// i wycofanych technik (siem-detector check pokazuje je jako UWAGA).
+func TestRulesAttackTags(t *testing.T) {
+	set, _, err := detect.LoadSet("../../../rules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := attack.Enterprise()
+	check := func(name string, tags []string, base bool) {
+		m := d.Map(tags)
+		if len(m.Warnings) > 0 {
+			t.Errorf("%s: %v", name, m.Warnings)
+		}
+		// Reguła bazowa korelacji sama nie alarmuje – technikę ma korelacja.
+		if len(m.Techniques) == 0 && !base {
+			t.Errorf("%s: brak techniki ATT&CK", name)
+		}
+	}
+	for _, r := range set.Rules {
+		check(r.File, r.Tags, r.CorrelationOnly)
+	}
+	for _, c := range set.Correlations {
+		check(c.File, c.Tags, false)
+	}
+	corr, _ := CorrelationInfos(nil)
+	for _, r := range append([]alerts.RuleInfo{HeartbeatRule(), TamperRule(), SilenceRule()}, corr...) {
+		check(r.ID, r.Tags, false)
 	}
 }

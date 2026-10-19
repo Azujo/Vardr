@@ -27,6 +27,7 @@ type AlertStore interface {
 	AddNote(ctx context.Context, id int64, by, text string, now time.Time) error
 	Activity(ctx context.Context, id int64) ([]alerts.Activity, error)
 	Related(ctx context.Context, a alerts.Alert, window time.Duration, limit int) ([]alerts.Alert, error)
+	AlertCountsByRule(ctx context.Context, since time.Time) (map[string]alerts.RuleAlertCount, error)
 }
 
 func (s *Server) alertsEnabled(w http.ResponseWriter) bool {
@@ -86,6 +87,19 @@ func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("before"); v != "" {
 		f.Before, _ = strconv.ParseInt(v, 10, 64)
 	}
+	// MITRE ATT&CK: alerty reguł danej techniki (T1110 – także podtechnik) albo taktyki.
+	if tech, tac := strings.ToUpper(strings.TrimSpace(q.Get("technique"))), strings.TrimSpace(q.Get("tactic")); tech != "" || tac != "" {
+		if len(tech) > 16 || len(tac) > 64 {
+			writeError(w, http.StatusBadRequest, "bad_filter", "za długi filtr")
+			return
+		}
+		ids, err := s.attackRuleFilter(r.Context(), tech, tac)
+		if err != nil {
+			s.alertsError(w, r, err)
+			return
+		}
+		f.RuleIDs = ids
+	}
 	list, total, err := s.Alerts.Alerts(r.Context(), f)
 	if errors.Is(err, alerts.ErrNotConfigured) {
 		writeJSON(w, http.StatusOK, map[string]any{"alerts": []alerts.Alert{}, "total": 0, "configured": false})
@@ -98,7 +112,8 @@ func (s *Server) listAlerts(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []alerts.Alert{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"alerts": list, "total": total, "configured": true})
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": list, "total": total, "configured": true,
+		"attack": s.alertsAttack(r.Context(), list)})
 }
 
 func (s *Server) alertsSummary(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +170,8 @@ func (s *Server) getAlert(w http.ResponseWriter, r *http.Request) {
 		s.alertsError(w, r, err)
 		return
 	}
-	resp := map[string]any{"alert": a, "events": nonNilSlice(evs), "activity": nonNilSlice(act), "related": nonNilSlice(rel)}
+	resp := map[string]any{"alert": a, "events": nonNilSlice(evs), "activity": nonNilSlice(act), "related": nonNilSlice(rel),
+		"attack": s.alertsAttack(ctx, append([]alerts.Alert{a}, rel...))}
 	if rule, err := s.Alerts.Rule(ctx, a.RuleID); err == nil {
 		resp["rule"] = rule
 	}

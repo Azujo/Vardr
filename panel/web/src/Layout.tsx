@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconActivityHeartbeat,
+  IconGridDots,
   IconAlertOctagon,
   IconAdjustments,
   IconAlertTriangle,
@@ -67,6 +68,7 @@ const sections: Section[] = [
     items: [
       { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} /> },
       { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} /> },
+      { to: "/attack", label: "MITRE ATT&CK", hint: "pokrycie technik", icon: <IconGridDots size={18} /> },
     ],
   },
   {

@@ -137,6 +137,17 @@ func TestPostgresAlerts(t *testing.T) {
 	if _, n, _ := db.Alerts(ctx, Filter{Level: "critical"}); n != 0 {
 		t.Fatalf("filtr poziomu od krytycznego: %d", n)
 	}
+	// Filtr po regułach (technika ATT&CK): lista reguł; pusta lista – nic.
+	if l, n, _ := db.Alerts(ctx, Filter{RuleIDs: []string{ps.RuleID}}); n < 1 || l[0].RuleID != ps.RuleID {
+		t.Fatalf("filtr reguł: %d", n)
+	}
+	if _, n, _ := db.Alerts(ctx, Filter{RuleIDs: []string{}}); n != 0 {
+		t.Fatalf("pusta lista reguł: %d", n)
+	}
+	counts, err := db.AlertCountsByRule(ctx, time.Time{})
+	if err != nil || counts[ps.RuleID].Total < 1 || counts[ps.RuleID].Last == nil {
+		t.Fatalf("liczby alertów reguł: %+v %v", counts, err)
+	}
 	open, _, _ := db.Alerts(ctx, Filter{Status: "open"})
 	var ids []int64
 	for _, a := range open {

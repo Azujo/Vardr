@@ -246,3 +246,13 @@ func TestAlertFilter(t *testing.T) {
 		t.Fatalf("wiadomość o rozwiązaniu: %+v", m)
 	}
 }
+
+func TestAttackLine(t *testing.T) {
+	got := attackLine([]string{"attack.credential_access", "attack.t1110.001", "attack.t1098"})
+	if got != "T1110.001 Password Guessing (Credential Access)\nT1098 Account Manipulation (Persistence, Privilege Escalation)" {
+		t.Fatalf("%q", got)
+	}
+	if attackLine(nil) != "" {
+		t.Fatal("bez tagów – pusto")
+	}
+}

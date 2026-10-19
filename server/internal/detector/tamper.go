@@ -25,7 +25,7 @@ const (
 // TamperRule opisuje regułę wbudowaną dla panelu.
 func TamperRule() alerts.RuleInfo {
 	return alerts.RuleInfo{ID: TamperRuleID, Title: tamperRuleTitle, Level: "high", Mode: "system", Enabled: true, FileEnabled: true,
-		File: "(wbudowana)", Tags: []string{"attack.defense_evasion", "attack.t1562.001", "attack.t1489"},
+		File: "(wbudowana)", Tags: []string{"attack.defense_impairment", "attack.t1685", "attack.t1489"},
 		Description: "Agent zgłosił próbę wyłączenia albo obejścia ochrony: zatrzymanie usługi bez tokenu deinstalacji, " +
 			"zabicie procesu, zmianę uprawnień lub konfiguracji usługi (agent ją cofnął), nieudaną próbę zatrzymania " +
 			"albo deinstalacji (zły lub brak tokenu), a także aktualizację, po której agent nie wrócił w ciągu 15 min. " +

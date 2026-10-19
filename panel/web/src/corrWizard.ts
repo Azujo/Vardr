@@ -11,6 +11,7 @@ export interface WizRule {
   level: string;
   file: string;
   threshold: boolean;
+  tags?: string[];
 }
 
 export interface WizEvent {
@@ -419,6 +420,9 @@ export function buildYAML(st: WizardState, steps: Step[]): string {
   const temporal = st.type === "temporal" || st.type === "temporal_ordered";
   const c = [`title: ${q(st.title.trim())}`, `id: ${st.id}`, "status: experimental"];
   if (st.description.trim()) c.push("description: |", block(st.description, "  "));
+  // Tagi MITRE ATT&CK: suma tagów attack.* wdrożonych reguł kroków.
+  const tags = attackTags(steps);
+  if (tags.length) c.push("tags:", ...tags.map((t) => `  - ${t}`));
   c.push(`level: ${st.level}`, "correlation:", `  type: ${st.type}`, "  rules:");
   for (const r of refs) c.push(`    - ${r.ref} # ${r.comment.replace(/\n/g, " ")}`);
   if (st.key) {
@@ -437,4 +441,12 @@ export function buildYAML(st: WizardState, steps: Step[]): string {
   if (st.instructions.trim()) c.push("heimdall:", "  instructions: |", block(st.instructions, "    "));
   docs.push(c.join("\n"));
   return docs.join("\n---\n") + "\n";
+}
+
+// attackTags: tagi attack.* reguł użytych w krokach (bez powtórzeń, taktyki
+// przed technikami – jak w regułach z repozytorium).
+export function attackTags(steps: Step[]): string[] {
+  const set = new Set<string>();
+  for (const s of steps) for (const t of s.rule?.tags ?? []) if (t.toLowerCase().startsWith("attack.")) set.add(t.toLowerCase());
+  return [...set].sort((a, b) => Number(/^attack\.t\d/.test(a)) - Number(/^attack\.t\d/.test(b)) || a.localeCompare(b));
 }

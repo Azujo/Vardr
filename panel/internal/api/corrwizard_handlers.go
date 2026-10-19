@@ -25,12 +25,13 @@ const maxWizardEvents = 10
 const maxPanelRuleSource = 64 << 10
 
 type wizardRule struct {
-	ID        string `json:"id"`
-	Name      string `json:"name,omitempty"`
-	Title     string `json:"title"`
-	Level     string `json:"level"`
-	File      string `json:"file"`
-	Threshold bool   `json:"threshold"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name,omitempty"`
+	Title     string   `json:"title"`
+	Level     string   `json:"level"`
+	File      string   `json:"file"`
+	Threshold bool     `json:"threshold"`
+	Tags      []string `json:"tags"`
 }
 
 type wizardEvent struct {
@@ -123,7 +124,7 @@ func (s *Server) wizardEvents(w http.ResponseWriter, r *http.Request) {
 		for _, k := range known {
 			if k.Match(de) {
 				we.Rules = append(we.Rules, wizardRule{ID: k.ID, Name: k.Name, Title: k.Title, Level: k.Level, File: k.File,
-					Threshold: k.IsThreshold()})
+					Threshold: k.IsThreshold(), Tags: nonNilSlice(k.Tags)})
 			}
 		}
 		out = append(out, we)

@@ -4,6 +4,7 @@ import {
   Alert as MAlert,
   Anchor,
   Badge,
+  Box,
   Button,
   Card,
   Code,
@@ -32,9 +33,11 @@ import {
   type AlertActivity,
   type AlertStatus,
   type EventDetail,
+  type RuleAttack,
   type RuleInfo,
 } from "../api";
 import { useAuth } from "../auth";
+import { AttackBadges } from "../attack";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -129,6 +132,7 @@ export default function AlertDetailPage() {
   const [firstEvent, setFirstEvent] = useState<EventDetail | null>(null);
   const [activity, setActivity] = useState<AlertActivity[]>([]);
   const [related, setRelated] = useState<Alert[]>([]);
+  const [attack, setAttack] = useState<Record<string, RuleAttack>>({});
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const [note, setNote] = useState("");
 
@@ -141,6 +145,7 @@ export default function AlertDetailPage() {
         setRule(r.rule);
         setActivity(r.activity);
         setRelated(r.related);
+        setAttack(r.attack ?? {});
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
@@ -230,6 +235,9 @@ export default function AlertDetailPage() {
           <Text c="dimmed" size="sm">
             Alert #{alert.id} · {alert.summary}
           </Text>
+          <Box mt={6}>
+            <AttackBadges ra={attack[alert.rule_id]} />
+          </Box>
         </div>
         {canEdit && (
           <Group>

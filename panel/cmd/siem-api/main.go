@@ -236,7 +236,17 @@ func serve(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	go (&notify.AlertSender{Store: alertStore, Svc: notifySvc, Log: log, PanelURL: panelLink, PerRule: perRule, Window: window}).Run(ctx)
+	ruleTags := func(id string) []string {
+		c, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		r, err := alertStore.Rule(c, id)
+		if err != nil {
+			return nil
+		}
+		return r.Tags
+	}
+	go (&notify.AlertSender{Store: alertStore, Svc: notifySvc, Log: log, PanelURL: panelLink, PerRule: perRule, Window: window,
+		RuleTags: ruleTags}).Run(ctx)
 	go func() {
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()

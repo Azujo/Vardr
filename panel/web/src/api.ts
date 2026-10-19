@@ -863,6 +863,20 @@ export interface AlertListFilter {
   q?: string;
   since?: string;
   before?: number;
+  // MITRE ATT&CK: technika (T1110 – z podtechnikami) albo taktyka (credential-access).
+  technique?: string;
+  tactic?: string;
+}
+
+// ATT&CK reguły alertu (z tagów; klucz w odpowiedziach – id reguły).
+export interface AttackRef {
+  id: string;
+  name: string;
+  url?: string;
+}
+export interface RuleAttack {
+  techniques: AttackRef[];
+  tactics: AttackRef[];
 }
 
 export interface RuleInfo {
@@ -910,6 +924,7 @@ export const rulesApi = {
       error?: string;
       result?: RuleTestResult;
       sql?: string;
+      attack_warnings?: string[];
       rule?: { id: string; title: string; level: AlertLevel; group_by: string[]; suppress_s: number; mode: string;
         threshold?: { count: number; window_s: number; distinct?: string } };
     }>("POST", "/api/v1/rules/test", { source, hours }),
@@ -962,7 +977,7 @@ export interface AlertsSummary {
 
 export const alertsApi = {
   list: (p: AlertListFilter) =>
-    request<{ alerts: Alert[]; total: number; configured: boolean }>(
+    request<{ alerts: Alert[]; total: number; configured: boolean; attack?: Record<string, RuleAttack> }>(
       "GET",
       `/api/v1/alerts?${qs({ ...p, before: p.before ? String(p.before) : undefined })}`,
     ),
@@ -974,6 +989,7 @@ export const alertsApi = {
       rule?: RuleInfo;
       activity: AlertActivity[];
       related: Alert[];
+      attack?: Record<string, RuleAttack>;
     }>("GET", `/api/v1/alerts/${id}`),
   setStatus: (id: number, status: AlertStatus, reason?: string) =>
     request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),

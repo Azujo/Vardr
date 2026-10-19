@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"siem/internal/alerts"
+	"siem/internal/attack"
 	"siem/internal/detect"
 	"siem/internal/model"
 	"siem/panel/internal/events"
@@ -85,6 +86,7 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 		th = &alerts.Threshold{Count: t.Count, WindowS: int(time.Duration(t.Window) / time.Second), Distinct: t.Distinct}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": rule.SQL(),
+		"attack_warnings": nonNilSlice(attack.Enterprise().Map(rule.Tags).Warnings),
 		"rule": map[string]any{"id": rule.ID, "title": rule.Title, "level": rule.Level, "group_by": rule.Heimdall.GroupBy,
 			"suppress_s": int(time.Duration(rule.Heimdall.Suppress) / time.Second), "threshold": th, "mode": rule.Heimdall.Mode}})
 }
@@ -133,7 +135,13 @@ func (s *Server) testCorrelation(w http.ResponseWriter, r *http.Request, source 
 	for _, b := range c.Rules {
 		base = append(base, b.Title+" ("+b.ID+")")
 	}
+	var warns []string
+	for _, b := range set.Rules {
+		warns = append(warns, attack.Enterprise().Map(b.Tags).Warnings...)
+	}
+	warns = append(warns, attack.Enterprise().Map(c.Tags).Warnings...)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": c.EventsSQL("siem.events", to.Add(-time.Duration(hours)*time.Hour), to, 20000),
+		"attack_warnings": nonNilSlice(warns),
 		"rule": map[string]any{"id": c.ID, "title": c.Title, "level": c.Level, "group_by": c.GroupBy, "mode": "correlation",
 			"suppress_s": int(time.Duration(c.Heimdall.Suppress) / time.Second), "correlation": map[string]any{"type": c.Type,
 				"timespan_s": int(c.Timespan / time.Second), "count": c.Count, "field": c.Field, "rules": base}}})

@@ -234,6 +234,7 @@ Kod: `server/cmd/siem-loadgen`, `server/internal/loadgen`. Generator ruchu: symu
 | `siem-ingest-stub` | `tools/cmd/siem-ingest-stub` | testowy `/v1/ingest` zapisujący zdarzenia do pliku NDJSON (`-listen :8443 -out data/events.ndjson`); do testów agenta bez serwera |
 | `fortisim` | `tools/cmd/fortisim` | symulator syslog FortiGate: `-target 192.168.88.98:514 -proto udp\|tcp -scenario traffic\|vpn-ok\|vpn-brute\|vpn-spray\|admin-brute\|utm\|mix -count N -every 100ms -user -attacker -header bare\|rfc3164\|rfc5424 -dry` |
 | `entrasim` | `tools/cmd/entrasim`, `internal/entrasim` | symulator Microsoft Graph (kontener `entrasim`): tło logowań i scenariusze na żądanie – `curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'`; scenariusze `normal`, `spray`, `brute`, `success-after-failures`, `foreign`, `mfa-fatigue`, `admin-role` (parametry `user=`, `attacker=`) |
+| `attackgen` | `tools/cmd/attackgen` | słownik MITRE ATT&CK z oficjalnego pakietu STIX: `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json` |
 | `odczytaj` | `tools/cmd/odczytaj` | czytnik eksportu archiwum dla audytora (Windows, bez instalacji): sprawdza integralność paczki i zapisuje raport oraz zdarzenia dnia po polsku w podfolderze `ODCZYT` |
 
 Budowanie: [rozwoj.md](rozwoj.md#budowanie).

@@ -23,6 +23,7 @@ export default function RuleTester({
   const [err, setErr] = useState("");
   const [res, setRes] = useState<RuleTestResult | null>(null);
   const [sql, setSql] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   useEffect(() => setSourceState(initial), [initial]);
 
   const run = async () => {
@@ -36,6 +37,7 @@ export default function RuleTester({
         // Puste listy mogą przyjść jako null (starszy serwer) – bez tego strona się wywracała.
         setRes(r.result ? { ...r.result, events: r.result.events ?? [], alerts: r.result.alerts ?? [] } : null);
         setSql(r.sql ?? "");
+        setWarnings(r.attack_warnings ?? []);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -84,6 +86,15 @@ export default function RuleTester({
           <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
             {err}
           </Text>
+        </MAlert>
+      )}
+      {res && warnings.length > 0 && (
+        <MAlert color="orange" title="Tagi MITRE ATT&CK do poprawy">
+          {warnings.map((w) => (
+            <Text size="sm" key={w}>
+              {w}
+            </Text>
+          ))}
         </MAlert>
       )}
       {res && (

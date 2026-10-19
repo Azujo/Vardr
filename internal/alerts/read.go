@@ -55,9 +55,12 @@ func scanAlert(r pgx.Row) (Alert, error) {
 
 // Filter to filtr listy alertów.
 type Filter struct {
-	Status   string // "" = wszystkie, open = otwarte i potwierdzone
-	Level    string // najniższy poziom („high” = wysokie i krytyczne)
-	RuleID   string
+	Status string // "" = wszystkie, open = otwarte i potwierdzone
+	Level  string // najniższy poziom („high” = wysokie i krytyczne)
+	RuleID string
+	// RuleIDs: tylko alerty tych reguł (np. reguł danej techniki ATT&CK);
+	// nil – bez ograniczenia, pusta lista – nic.
+	RuleIDs  []string
 	Host     string // komputer (bez wielkości liter, fragment)
 	User     string // konto (bez wielkości liter, fragment)
 	Assignee string // login; "-" = bez przypisania
@@ -81,7 +84,8 @@ func (f Filter) where() (string, []any) {
 		}
 		return "%" + string(r) + "%"
 	}
-	args := []any{f.Status, f.Level, f.RuleID, like(f.Host), like(f.User), f.Assignee, f.Engine, like(f.Text), f.Since}
+	args := []any{f.Status, f.Level, f.RuleID, like(f.Host), like(f.User), f.Assignee, f.Engine, like(f.Text), f.Since,
+		f.RuleIDs != nil, nonNil(f.RuleIDs)}
 	return `($1 = '' OR ($1 = 'open' AND status <> 'closed') OR status = $1)
 		AND ($2 = '' OR ` + levelRank + ` >= array_position(ARRAY['informational','low','medium','high','critical'], $2))
 		AND ($3 = '' OR rule_id = $3)
@@ -89,7 +93,8 @@ func (f Filter) where() (string, []any) {
 		AND ($6 = '' OR assignee = CASE WHEN $6 = '-' THEN '' ELSE $6 END)
 		AND ($7 = '' OR engine = $7)
 		AND ($8 = '%%' OR rule_title ILIKE $8 OR summary ILIKE $8 OR host_name ILIKE $8 OR user_name ILIKE $8)
-		AND ($9::timestamptz IS NULL OR last_seen >= $9)`, args
+		AND ($9::timestamptz IS NULL OR last_seen >= $9)
+		AND (NOT $10::boolean OR rule_id = ANY($11))`, args
 }
 
 // Alerts zwraca alerty (najnowsze pierwsze) i liczbę wszystkich pasujących.
@@ -102,13 +107,40 @@ func (p *PG) Alerts(ctx context.Context, f Filter) ([]Alert, int, error) {
 	if err := p.pool.QueryRow(ctx, `SELECT count(*) FROM gjallarhorn.alerts WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, notConfigured(err)
 	}
-	q := `SELECT ` + alertCols + ` FROM gjallarhorn.alerts WHERE ` + where + ` AND ($10 = 0 OR id < $10) ORDER BY id DESC LIMIT $11`
+	q := `SELECT ` + alertCols + ` FROM gjallarhorn.alerts WHERE ` + where + ` AND ($12 = 0 OR id < $12) ORDER BY id DESC LIMIT $13`
 	rows, err := p.pool.Query(ctx, q, append(args, f.Before, f.Limit)...)
 	if err != nil {
 		return nil, 0, notConfigured(err)
 	}
 	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Alert, error) { return scanAlert(r) })
 	return list, total, err
+}
+
+// RuleAlertCount to liczba alertów reguły (macierz ATT&CK w panelu).
+type RuleAlertCount struct {
+	Total int        `json:"total"`
+	Open  int        `json:"open"`
+	Last  *time.Time `json:"last,omitempty"`
+}
+
+// AlertCountsByRule liczy alerty reguł widziane od since (wszystkie i otwarte).
+func (p *PG) AlertCountsByRule(ctx context.Context, since time.Time) (map[string]RuleAlertCount, error) {
+	rows, err := p.pool.Query(ctx, `SELECT rule_id, count(*), count(*) FILTER (WHERE status <> 'closed'), max(last_seen)
+		FROM gjallarhorn.alerts WHERE last_seen >= $1 GROUP BY rule_id`, since)
+	if err != nil {
+		return nil, notConfigured(err)
+	}
+	defer rows.Close()
+	out := map[string]RuleAlertCount{}
+	for rows.Next() {
+		var id string
+		var c RuleAlertCount
+		if err := rows.Scan(&id, &c.Total, &c.Open, &c.Last); err != nil {
+			return nil, err
+		}
+		out[id] = c
+	}
+	return out, rows.Err()
 }
 
 // Alert zwraca alert.

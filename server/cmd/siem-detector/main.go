@@ -21,7 +21,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -31,6 +33,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"siem/internal/alerts"
+	"siem/internal/attack"
 	"siem/internal/detect"
 	"siem/internal/model"
 	"siem/internal/svc"
@@ -89,6 +92,20 @@ func check(dir string) int {
 	}
 	for _, c := range set.Correlations {
 		fmt.Printf("OK     %-8s %s  (%s)  [korelacja %s, %s]\n", c.Level, c.Title, c.File, c.Type, c.Timespan)
+	}
+	// Tagi MITRE ATT&CK: nieznane i wycofane techniki – ostrzeżenie (reguła działa).
+	d := attack.Enterprise()
+	tags := map[string][]string{}
+	for _, r := range set.Rules {
+		tags[r.Title+"  ("+r.File+")"] = r.Tags
+	}
+	for _, c := range set.Correlations {
+		tags[c.Title+"  ("+c.File+")"] = c.Tags
+	}
+	for _, name := range slices.Sorted(maps.Keys(tags)) {
+		for _, w := range d.Map(tags[name]).Warnings {
+			fmt.Printf("UWAGA  %s: %s\n", name, w)
+		}
 	}
 	for _, e := range errs {
 		fmt.Printf("BŁĄD   %s: %s\n", e.File, e.Err)

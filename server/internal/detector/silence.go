@@ -34,7 +34,7 @@ const apiSourceSQL = `startsWith(event_provider, 'entra:')`
 // SilenceRule opisuje regułę dla panelu (wyłączana jak korelacje).
 func SilenceRule() alerts.RuleInfo {
 	return alerts.RuleInfo{ID: SourceSilentID, Title: sourceSilentTitle, Level: "medium", Mode: "correlation",
-		Enabled: true, FileEnabled: true, File: "(wbudowana)", Tags: []string{"attack.defense_evasion", "attack.t1562.006"},
+		Enabled: true, FileEnabled: true, File: "(wbudowana)", Tags: []string{"attack.defense_impairment", "attack.t1685"},
 		Description: "Urządzenie wysyłające syslog (router, zapora) albo połączenie z chmurą (Entra ID) nie przysłało " +
 			"zdarzeń dłużej niż zwykle: próg to najdłuższa przerwa z ostatnich 7 dni + 1 h. Wyłączone logowanie na " +
 			"urządzeniu, zmieniony adres serwera syslog, awaria urządzenia albo wygasłe uprawnienia aplikacji w chmurze. " +

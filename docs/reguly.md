@@ -48,7 +48,17 @@ heimdall:
 | `level` | tak | `informational`, `low`, `medium`, `high`, `critical` – poziom alertu i filtr kanałów powiadomień |
 | `logsource` | tak | źródło (niżej) |
 | `detection` | tak | selekcje i warunek |
-| `status`, `description`, `author`, `references`, `tags`, `falsepositives`, `date`, `modified` | nie | opis w panelu; `tags` z ATT&CK (`attack.t1110`) |
+| `status`, `description`, `author`, `references`, `tags`, `falsepositives`, `date`, `modified` | nie | opis w panelu; `tags` z ATT&CK – niżej |
+
+### Tagi MITRE ATT&CK
+
+Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_access`; grupy i oprogramowanie (`attack.g0016`, `attack.s0002`) są dozwolone, ale nie trafiają do macierzy. Każda reguła, która tworzy alerty, powinna mieć co najmniej jedną technikę (reguła bazowa korelacji – nie musi; technikę ma korelacja).
+
+- **Słownik**: ATT&CK Enterprise wbudowany w Heimdalla (`internal/attack/enterprise.json`, obecnie wersja 20). Od wersji 20 taktyka Defense Evasion jest podzielona na `stealth` i `defense_impairment`, a część technik przeniesiono (np. czyszczenie dziennika: T1070.001 → T1685.005, wyłączenie narzędzi ochrony: T1562.001 → T1685).
+- **Sprawdzanie**: `siem-detector check` wypisuje `UWAGA` przy nieznanej technice, wycofanej technice (z następcą) i nieistniejącej taktyce; reguła działa dalej. Test reguły w panelu pokazuje te same ostrzeżenia, a test `TestRulesAttackTags` pilnuje reguł z repozytorium i wbudowanych.
+- **Taktyki**: technika sama wskazuje swoje taktyki (kolumny macierzy), więc tag taktyki jest opcjonalny – pomaga tylko czytać regułę.
+- **W panelu**: plakietki technik przy regułach i alertach (z linkiem do attack.mitre.org), filtr alertów po technice (`/alerts?technique=T1110` – z podtechnikami) i taktyce, macierz pokrycia (*Wykrywanie → MITRE ATT&CK*) z eksportem warstwy dla ATT&CK Navigator, technika w powiadomieniach o alertach. Kreator korelacji dopisuje korelacji tagi `attack.*` reguł, z których ją złożono.
+- **Aktualizacja słownika** (nowa wersja ATT&CK, zwykle dwa razy w roku): pobierz `enterprise-attack.json` z `github.com/mitre-attack/attack-stix-data` i uruchom `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json`, potem `siem-detector check rules`.
 
 ## logsource
 

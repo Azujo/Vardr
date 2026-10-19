@@ -32,6 +32,7 @@ import {
   type RuleVersion,
 } from "../api";
 import { useAuth } from "../auth";
+import { AttackTags } from "../attack";
 import { lineDiff } from "../diff";
 import RuleTester from "./RuleTester";
 
@@ -287,6 +288,7 @@ export default function RulesPage() {
                     <Text size="xs" c="dimmed" lineClamp={1}>
                       {r.description}
                     </Text>
+                    <AttackTags tags={r.tags} size="xs" />
                   </Table.Td>
                   <Table.Td>{modeLabel(r)}</Table.Td>
                   <Table.Td>
@@ -330,12 +332,15 @@ export default function RulesPage() {
       <Modal opened={!!show} onClose={() => setShow(null)} title={show?.title} size="xl">
         {show && (
           <Stack gap="xs">
+            <AttackTags tags={show.tags} />
             <Group gap={4}>
-              {show.tags.map((t) => (
-                <Badge key={t} variant="outline" size="sm">
-                  {t}
-                </Badge>
-              ))}
+              {show.tags
+                .filter((t) => !t.toLowerCase().startsWith("attack."))
+                .map((t) => (
+                  <Badge key={t} variant="outline" size="sm">
+                    {t}
+                  </Badge>
+                ))}
             </Group>
             <Text size="xs" c="dimmed">
               id {show.id} · wersja {show.version} · wczytana {formatDate(show.loaded_at)}
