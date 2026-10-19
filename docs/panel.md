@@ -29,7 +29,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Kwarantanna** | `/quarantine` | zdarzenia nieznormalizowane pogrupowane według źródła i powodu, oryginały, kreator dekodera z wiadomości grupy, ponowne przetworzenie po poprawie dekodera |
 | **Bifröst** | `/deploy` | tokeny rejestracyjne i paczki instalacyjne agenta (ZIP z programem, CA i tokenem) |
 | **Urd** | `/archive` | archiwum NIS2: stan, segmenty, weryfikacje, polityka (włączenie, retencja, grupy), eksporty dla audytora, odtworzenie do `siem.events_replay` |
-| **Himinbjörg** | `/system` | stan usług, kolejek, dysków i baz (z Prometheusa) |
+| **Himinbjörg** | `/system` | stan usług, kolejek, dysków i baz (z Prometheusa); linki do Grafany: pulpity „zdrowie potoku” i „przegląd zdarzeń”, aktywne alerty, reguły alertów, Explore – z wybranym zakresem czasu, a przy każdej grupie i problemie wykresy tej dziedziny |
 | **Użytkownicy** | `/admin/users` | konta, role, reset hasła |
 | **Dziennik audytu** | `/admin/audit` | kto, co i kiedy zmienił w panelu |
 | **Kopie zapasowe** | `/admin/backup` | zakładki: *Ustawienia* (harmonogram, zawartość, retencja, miejsce docelowe SFTP/SMB/S3 z poświadczeniami), *Historia* kopii, *Przywracanie* (lista kopii, sprawdzenie zawartości, przywrócenie bazy z konfiguracją i/lub Grafany z kopią obecnego stanu); kopia na żądanie, test połączenia |

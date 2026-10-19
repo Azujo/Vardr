@@ -88,6 +88,9 @@ type Server struct {
 	RuleTester RuleTester
 	// Status (opcjonalne) – stan systemu z metryk Prometheusa.
 	Status StatusReporter
+	// GrafanaURL (opcjonalne) – adres Grafany dla przeglądarki (linki
+	// w Himinbjörgu); pusty – panel bierze adres serwera z portem 3000.
+	GrafanaURL string
 	// Decoders (opcjonalne) – dekodery syslog i ich edytor.
 	Decoders *Decoders
 	// Quarantine (opcjonalne) – kwarantanna i jej ponowne przetwarzanie.

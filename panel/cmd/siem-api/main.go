@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 	_ "time/tzdata" // strefa czasu kotwicy (obraz bez tzdata)
 
@@ -212,6 +213,7 @@ func serve(log *slog.Logger) error {
 		return err
 	}
 	defer alertStore.Close()
+	apiServer.GrafanaURL = strings.TrimRight(svc.Env("SIEM_GRAFANA_URL", ""), "/")
 	if u := svc.Env("SIEM_PROMETHEUS_URL", ""); u != "" {
 		apiServer.Status = &status.Prometheus{URL: u}
 	}

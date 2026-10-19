@@ -989,7 +989,7 @@ export interface SystemReport {
 }
 
 export const systemApi = {
-  get: () => request<{ configured: boolean; report?: SystemReport }>("GET", "/api/v1/system"),
+  get: () => request<{ configured: boolean; report?: SystemReport; grafana_url?: string }>("GET", "/api/v1/system"),
 };
 
 // ---- Dekodery syslog ----

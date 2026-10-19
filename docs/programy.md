@@ -215,6 +215,7 @@ W laboratorium: `docker compose run --rm api bootstrap-admin -username admin`.
 | `SIEM_PUBLIC_SERVER` | – | adres serwera wpisywany do paczek instalacyjnych |
 | `SIEM_AGENT_EXE` | `/agent-dist/siem_agent.exe` | program agenta do paczek |
 | `SIEM_PROMETHEUS_URL` | – | strona Stan systemu |
+| `SIEM_GRAFANA_URL` | adres serwera panelu, port 3000 | adres Grafany dla przeglądarki – linki do pulpitów i alertów w Himinbjörgu |
 | `SIEM_ARCHIVE_EXPORT_DIR` | – | pobieranie eksportów archiwum |
 | `SIEM_ALERT_NOTIFY_PER_RULE`, `SIEM_ALERT_NOTIFY_WINDOW` | 5, 10m | „burza alertów”: ponad limit w oknie – wiadomość zbiorcza |
 | `SIEM_ANCHOR_HOUR`, `SIEM_ANCHOR_TZ` | 7, `Europe/Warsaw` | dzienna kotwica archiwum na kanał |
