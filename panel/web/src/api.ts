@@ -1161,3 +1161,108 @@ export const identitiesApi = {
   domainsSeen: () =>
     request<{ domains: { domain: string; events: number; covered: boolean }[] }>("GET", "/api/v1/identities/domains-seen"),
 };
+
+// ---- Kopie zapasowe (siem-backup) ----
+
+export type BackupMethod = "none" | "sftp" | "smb" | "s3";
+export type BackupAuth = "server_key" | "private_key" | "password";
+
+export interface BackupConfig {
+  enabled: boolean;
+  schedule: { kind: "hours" | "daily" | "weekly"; every_hours?: number; hour: number; minute: number; weekday?: number };
+  include: { saga: boolean; config: boolean; archive: boolean; grafana: boolean };
+  local: { keep_days: number; keep_count: number };
+  remote: { keep_days: number; keep_count: number };
+  target: {
+    method: BackupMethod;
+    host?: string;
+    port?: number;
+    user?: string;
+    auth?: BackupAuth;
+    share?: string;
+    domain?: string;
+    path?: string;
+    endpoint?: string;
+    region?: string;
+    bucket?: string;
+    access_key?: string;
+  };
+}
+
+export interface BackupRun {
+  id: number;
+  kind: "scheduled" | "manual";
+  started_at: string;
+  finished_at?: string;
+  status: "running" | "ok" | "partial" | "error";
+  file: string;
+  size_bytes: number;
+  remote: "" | "ok" | "error";
+  message: string;
+}
+
+export type BackupPart = "saga" | "config" | "grafana";
+
+export interface BackupFile {
+  location: "local" | "remote";
+  name: string;
+  size_bytes: number;
+  modified?: string;
+  contents: BackupPart[] | null;
+  note?: string;
+  listed_at: string;
+}
+
+export interface BackupRequest {
+  id: number;
+  action: "run" | "test" | "genkey" | "list" | "inspect" | "restore";
+  params?: { location?: string; name?: string; parts?: BackupPart[]; safety_backup?: boolean };
+  requested_at: string;
+  requested_by: string;
+  started_at?: string;
+  done_at?: string;
+  ok?: boolean;
+  message: string;
+}
+
+export interface BackupView {
+  state: {
+    config: BackupConfig;
+    saved: boolean;
+    updated_at?: string;
+    updated_by?: string;
+    secrets: { name: string; key_id: string; updated_at: string; updated_by: string }[];
+    runner: {
+      key_id: string;
+      ssh_public_key: string;
+      host_key: string;
+      pass_id: string;
+      local_dir: string;
+      local_free: number;
+      version: string;
+      seen_at?: string;
+    } | null;
+    runs: BackupRun[];
+    requests: BackupRequest[];
+    files: BackupFile[];
+  };
+  online: boolean;
+  stale_secrets: string[];
+  needed_secrets: string[];
+}
+
+export const backupApi = {
+  get: () => request<BackupView>("GET", "/api/v1/backup"),
+  save: (config: BackupConfig, secrets: Record<string, string>, password: string) =>
+    request<{ message: string }>("PUT", "/api/v1/backup", { config, secrets, password }),
+  request: (action: "run" | "test" | "genkey" | "list" | "inspect", file?: { location: string; name: string }) =>
+    request<{ request: BackupRequest }>("POST", "/api/v1/backup/requests", { action, ...file }),
+  restore: (file: { location: string; name: string }, parts: BackupPart[], safety_backup: boolean, confirm: string, password: string) =>
+    request<{ request: BackupRequest; message: string }>("POST", "/api/v1/backup/restore", {
+      ...file,
+      parts,
+      safety_backup,
+      confirm,
+      password,
+    }),
+};

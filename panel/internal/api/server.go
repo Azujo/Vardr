@@ -94,6 +94,8 @@ type Server struct {
 	Quarantine *Quarantine
 	// Identities (opcjonalne) – tożsamości osób (domeny, aliasy kont).
 	Identities *Identities
+	// Backups (opcjonalne): ustawienia i zlecenia kopii zapasowych (siem-backup).
+	Backups BackupStore
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -207,6 +209,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/identities/domains-seen", s.authed(roleViewer, 0, s.domainsSeen))
 	mux.Handle("PUT /api/v1/identities/domains", s.authed(roleAdmin, 0, s.setIdentityDomains))
 	mux.Handle("PUT /api/v1/identities/shared", s.authed(roleAdmin, 0, s.setIdentityShared))
+	mux.Handle("GET /api/v1/backup", s.authed(roleAdmin, 0, s.getBackup))
+	mux.Handle("PUT /api/v1/backup", s.authed(roleAdmin, 0, s.saveBackup))
+	mux.Handle("POST /api/v1/backup/requests", s.authed(roleAdmin, 0, s.addBackupRequest))
+	mux.Handle("POST /api/v1/backup/restore", s.authed(roleAdmin, 0, s.restoreBackup))
 	mux.Handle("POST /api/v1/identities/aliases", s.authed(roleAdmin, 0, s.setIdentityAlias))
 	mux.Handle("POST /api/v1/identities/aliases/delete", s.authed(roleAdmin, 0, s.deleteIdentityAlias))
 

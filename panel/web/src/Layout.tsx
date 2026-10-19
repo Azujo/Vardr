@@ -25,6 +25,7 @@ import {
   IconBolt,
   IconChevronDown,
   IconCode,
+  IconDatabaseExport,
   IconDatabaseSearch,
   IconDeviceDesktop,
   IconHome,
@@ -98,6 +99,7 @@ const sections: Section[] = [
     items: [
       { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} /> },
       { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} /> },
+      { to: "/admin/backup", label: "Kopie zapasowe", hint: "harmonogram i miejsce", icon: <IconDatabaseExport size={18} /> },
       { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} /> },
     ],
   },

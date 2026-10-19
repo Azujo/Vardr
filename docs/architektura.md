@@ -37,6 +37,7 @@ Heimdall to zestaw małych programów w Go, połączonych kolejką NATS JetStrea
 | `siem-detector` | detekcja w locie, silnik zapytań, korelacje, reguły wbudowane | alerty i stan progów w Sadze |
 | `siem-archiver` | archiwum NIS2: oryginalne paczki w segmentach z łańcuchem hashy | pliki archiwum, spis w Sadze (`urd`) |
 | `siem-api` | panel WWW i API, rejestracja agentów, wysyłka powiadomień | Saga (schemat `public`) |
+| `siem-backup` | kopie zapasowe według ustawień z panelu: Saga, konfiguracja, archiwum NIS2, Grafana; wysyłka SFTP/SMB/S3 | klucze w `backup-state/`, wyniki w Sadze |
 
 Szczegóły każdego programu: [programy.md](programy.md).
 
@@ -99,7 +100,7 @@ Konta ClickHouse: `siem_writer` (zapis), `siem_detector` (odczyt z limitami czas
 
 | Schemat | Właściciel migracji | Tabele |
 |---|---|---|
-| `public` | `siem-api` (`panel/internal/api/store/migrations`) | `users`, `sessions`, `audit_log`, `agents`, `agent_groups`, `agent_assignments`, `agent_certs`, `enrollment_tokens`, `agent_uninstall_tokens`, `notify_channels`, `notify_log`, `syslog_decoders`, `syslog_decoder_versions`, `quarantine_jobs`, `quarantine_outcomes`, `identity_domains`, `identity_aliases`, `identity_shared_accounts` |
+| `public` | `siem-api` (`panel/internal/api/store/migrations`) | `users`, `sessions`, `audit_log`, `agents`, `agent_groups`, `agent_assignments`, `agent_certs`, `enrollment_tokens`, `agent_uninstall_tokens`, `notify_channels`, `notify_log`, `syslog_decoders`, `syslog_decoder_versions`, `quarantine_jobs`, `quarantine_outcomes`, `identity_domains`, `identity_aliases`, `identity_shared_accounts`, `backup_config`, `backup_secrets` (zaszyfrowane kluczem usługi kopii), `backup_runner`, `backup_runs`, `backup_requests` |
 | `gjallarhorn` | `siem-detector` (`internal/alerts/migrations`) | `alerts`, `alert_events`, `alert_activity`, `outbox`, `threshold_events`, `index_state`, `rules`, `rule_versions`, `rule_overrides`, `rule_errors` |
 | `urd` | `siem-archiver` (`internal/urd`) | `segments`, `manifests`, `verifications`, `policy`, `policy_changes`, `exports`, `replays`, `group_membership`, `archiver_state` |
 

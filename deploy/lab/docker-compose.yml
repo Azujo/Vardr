@@ -311,6 +311,37 @@ services:
     shm_size: 256m          # równoległe zapytania PostgreSQL (domyślne 64 MB Dockera nie wystarczało, etap 8)
     logging: *logging
 
+  # Kopie zapasowe (siem-backup): harmonogram, zawartość, retencja i miejsce
+  # docelowe z panelu (Administracja → Kopie zapasowe). Kopie szyfrowane
+  # hasłem kopii (./backup.sh haslo init – plik w katalogu domowym, poza
+  # stosem), wysyłka rclone (SFTP, SMB, S3). Działa jako root: czyta dane
+  # Grafany i hasło kopii; pliki kopii oddaje użytkownikowi stosu (1000).
+  # Stan (klucz do szyfrowania sekretów, klucz SSH, known_hosts): ./backup-state.
+  backup:
+    build: { context: ., dockerfile: backup/Dockerfile }
+    image: siem/backup:lab
+    restart: unless-stopped
+    environment:
+      SIEM_BACKUP_DB_URL: postgres://saga_admin:${SAGA_ADMIN_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_BACKUP_TZ: ${SIEM_ANCHOR_TZ:-Europe/Warsaw}
+      SIEM_BACKUP_SERVER_NAME: ${SIEM_PUBLIC_SERVER:-}
+      # Dotychczasowa wysyłka z .env – przenoszona do panelu przy pierwszym starcie.
+      SIEM_BACKUP_REMOTE: ${SIEM_BACKUP_REMOTE:-}
+      SIEM_BACKUP_REMOTE_KEEP_DAYS: ${SIEM_BACKUP_REMOTE_KEEP_DAYS:-}
+    volumes:
+      - ./backup-state:/state
+      - ${SIEM_BACKUP_DIR:-/srv/heimdall/backup}:/backup
+      - ${HOME}/.heimdall-backup.pass:/secrets/backup.pass:ro
+      - ./certs:/stack/certs:ro
+      - ./.env:/stack/.env:ro
+      - ${SIEM_ARCHIVE_PATH:-./archive}:/archive:ro
+      - grafana-data:/grafana:ro
+      - ./metrics:/metrics
+    depends_on:
+      saga: { condition: service_healthy }
+    mem_limit: 512m
+    logging: *logging
+
   # Hliðskjálf – panel (siem-api + aplikacja React) pod HTTPS :8444.
   api:
     restart: unless-stopped

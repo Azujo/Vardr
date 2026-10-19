@@ -14,7 +14,7 @@ Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token d
 
 ## Moduły
 
-Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły detekcji), **Zdarzenia** (Wyszukiwarka, Tożsamości, Dekodery, Kwarantanna), **Agenci** (Lista agentów, Grupy agentów, Wdrażanie), **System** (Archiwum NIS2, Stan systemu) i **Administracja** (tylko administrator). Etykieta mówi, co jest na stronie; nazwa modułu z roadmapy jest podpisem pod nią.
+Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły detekcji), **Zdarzenia** (Wyszukiwarka, Tożsamości, Dekodery, Kwarantanna), **Agenci** (Lista agentów, Grupy agentów, Wdrażanie), **System** (Archiwum NIS2, Stan systemu) i **Administracja** (Użytkownicy, Powiadomienia, Kopie zapasowe, Dziennik audytu – tylko administrator). Etykieta mówi, co jest na stronie; nazwa modułu z roadmapy jest podpisem pod nią.
 
 | Moduł | Adres | Co tam jest |
 |---|---|---|
@@ -32,6 +32,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Himinbjörg** | `/system` | stan usług, kolejek, dysków i baz (z Prometheusa) |
 | **Użytkownicy** | `/admin/users` | konta, role, reset hasła |
 | **Dziennik audytu** | `/admin/audit` | kto, co i kiedy zmienił w panelu |
+| **Kopie zapasowe** | `/admin/backup` | zakładki: *Ustawienia* (harmonogram, zawartość, retencja, miejsce docelowe SFTP/SMB/S3 z poświadczeniami), *Historia* kopii, *Przywracanie* (lista kopii, sprawdzenie zawartości, przywrócenie bazy z konfiguracją i/lub Grafany z kopią obecnego stanu); kopia na żądanie, test połączenia |
 | **Powiadomienia** | `/admin/notifications` | kanały (Discord, webhook) z rodzajami wiadomości (alerty z filtrem poziomu i reguł, zdrowie, kotwica archiwum), test kanału |
 
 ## Wyszukiwanie zdarzeń (Mímir)

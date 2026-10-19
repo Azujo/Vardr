@@ -8,6 +8,7 @@ import HomePage from "./pages/HomePage";
 import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import BackupPage from "./pages/BackupPage";
 import AlertsPage from "./pages/AlertsPage";
 import AlertDetailPage from "./pages/AlertDetailPage";
 import RulesPage from "./pages/RulesPage";
@@ -57,6 +58,7 @@ export default function App() {
         {admin && <Route path="/admin/users" element={<UsersPage />} />}
         {admin && <Route path="/admin/audit" element={<AuditPage />} />}
         {admin && <Route path="/admin/notifications" element={<NotificationsPage />} />}
+        {admin && <Route path="/admin/backup" element={<BackupPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

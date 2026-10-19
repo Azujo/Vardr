@@ -876,12 +876,21 @@ Warunki logowań w skrypcie muszą być takie same jak w `server/internal/detect
 
 ### Kopie zapasowe
 
-Skrypt `backup.sh` (cron użytkownika `siem`, codziennie o 02:15) tworzy **jedną zaszyfrowaną paczkę** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` z:
+Kopie wykonuje usługa **siem-backup** (kontener `backup`) według ustawień z panelu: **Administracja → Kopie zapasowe**. Opis ustawień: [docs/operacje.md](docs/operacje.md#kopie-zapasowe).
 
-- zrzutem bazy Saga (`pg_dump`): konta, agenci, certyfikaty, grupy, spis i polityka archiwum, kanały powiadomień. Zrzut jest sprawdzany przez `pg_restore --list` przed zaszyfrowaniem;
-- `certs/` (w tym klucz CA agentów) i `.env`.
+- **Harmonogram:** co kilka godzin, codziennie albo co tydzień.
+- **Zawartość:**
+  - baza Saga (zrzut sprawdzany przez `pg_restore --list` przed zaszyfrowaniem);
+  - `certs/` z kluczem CA agentów i `.env`;
+  - przyrosty archiwum NIS2;
+  - dane Grafany.
+- **Retencja:** dni i najwyższa liczba kopii, osobno lokalnie i w miejscu docelowym.
+- **Miejsce docelowe:**
+  - SFTP: klucz SSH wygenerowany przez usługę, własny klucz albo hasło;
+  - SMB;
+  - S3.
 
-Szyfruje `gpg` (AES-256). Paczkę da się odszyfrować na dowolnym Linuksie albo na Windows z Gpg4win, bez Heimdalla. `k<id>` w nazwie to identyfikator hasła, którym ją zaszyfrowano.
+Każda kopia to **jedna zaszyfrowana paczka** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` (gpg, AES-256). Da się ją odszyfrować na dowolnym Linuksie albo na Windows z Gpg4win, bez Heimdalla. `k<id>` w nazwie to identyfikator hasła, którym ją zaszyfrowano.
 
 **Hasło kopii** (uruchamia administrator na VM, w `~/siem-lab`):
 
@@ -889,21 +898,21 @@ Szyfruje `gpg` (AES-256). Paczkę da się odszyfrować na dowolnym Linuksie albo
 ./backup.sh haslo init    # pierwsze hasło – pokazywane raz; zapisz je poza serwerem
 ./backup.sh haslo pokaz   # pokaż obecne hasło
 ./backup.sh haslo zmien   # nowe hasło dla kolejnych kopii (stare kopie otwiera tylko stare hasło)
+./backup.sh               # kopia teraz (to samo co „Zrób kopię teraz” w panelu)
 ```
 
-Hasło leży w `~/.heimdall-backup.pass` (tylko dla właściciela), poza katalogiem stosu i poza samą kopią. **Bez hasła kopii nie da się odtworzyć** – po utracie VM potrzebne jest hasło zapisane przez administratora. Bez hasła `backup.sh` nie robi kopii, a alert „brak udanej kopii” zgłasza to po 26 h.
+Hasło leży w `~/.heimdall-backup.pass` (tylko dla właściciela), poza katalogiem stosu i poza samą kopią; panel go nie zna. **Bez hasła kopii nie da się odtworzyć** – po utracie VM potrzebne jest hasło zapisane przez administratora. Bez hasła kopie nie powstają: panel pokazuje ostrzeżenie, a alert „brak udanej kopii” zgłasza to po 26 h.
 
-**Poza VM** (`SIEM_BACKUP_REMOTE` w `.env`, np. `heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup`): po każdej kopii skrypt wysyła przez SSH z kluczem `~/.ssh/heimdall_backup`:
+**Hasła i klucze do miejsca docelowego** wpisuje się w panelu. Panel szyfruje je kluczem publicznym usługi kopii (NaCl), więc po zapisie nie odczyta ich ani panel, ani baza – można je tylko zastąpić. Przy logowaniu SFTP kluczem usługi panel pokazuje klucz publiczny do dopisania w `authorized_keys` na serwerze kopii. Klucz serwera kopii jest zapamiętywany przy pierwszym połączeniu, a jego zmiana zatrzymuje wysyłkę.
 
-- `config/` – zaszyfrowane paczki kopii;
-- `urd/` – przyrosty archiwum NIS2: nowe segmenty i manifesty od poprzedniej wysyłki w paczce zaszyfrowanej tym samym hasłem. Segmenty się nie zmieniają, więc codzienna wysyłka to tylko dane z ostatniej doby.
+**W miejscu docelowym:**
 
-Na serwerze kopii paczki są trzymane 90 dni (`SIEM_BACKUP_REMOTE_KEEP_DAYS`), lokalnie 14 dni (`SIEM_BACKUP_KEEP_DAYS`, katalog `/srv/heimdall/backup`). Użytkownik na serwerze kopii potrzebuje tylko SSH z kluczem publicznym z `~/.ssh/heimdall_backup.pub` i prawa zapisu do katalogu kopii. Alert „kopia nie trafiła poza VM od ponad 26 h” pilnuje wysyłki.
+- `config/` – paczki kopii;
+- `urd/` – przyrosty archiwum NIS2: nowe segmenty i manifesty od poprzedniej wysyłki, zaszyfrowane tym samym hasłem. Wygasają tylko po dniach.
 
-```bash
-crontab -e   # wpis: 15 2 * * * /home/siem/siem-lab/backup.sh >> /home/siem/siem-lab/backup.log 2>&1
-./backup.sh  # kopia na żądanie
-```
+Alert „kopia nie trafiła poza VM od ponad 26 h” pilnuje wysyłki. Stan usługi (klucze, `known_hosts`) jest w `~/siem-lab/backup-state`.
+
+**Przywracanie z panelu** (zakładka *Przywracanie*): wybór kopii (lokalnej albo z miejsca docelowego), sprawdzenie zawartości, przywrócenie bazy Saga z konfiguracją i/lub danych Grafany. Przed przywróceniem powstaje kopia obecnego stanu. Usługi zatrzymuje i przywraca `restore.sh --zlecenie` (cron co minutę). Szczegóły: [docs/operacje.md](docs/operacje.md#kopie-zapasowe).
 
 **Odtworzenie całego systemu na czystej VM** (Docker zainstalowany, stos skopiowany `deploy.sh config` i usługi zbudowane):
 
@@ -913,7 +922,7 @@ rsync -a heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/urd/ urd/   # opc
 ./restore.sh heimdall-….tar.gpg urd/
 ```
 
-`restore.sh` pyta o hasło kopii, przywraca `certs/` i `.env`, bazę Saga i (z drugim argumentem) archiwum NIS2, a potem uruchamia stos. Kopia nie zawiera zdarzeń z ClickHouse (kilka dni) – można je odtworzyć z archiwum w panelu (Urd → Odtworzenie).
+`restore.sh` pyta o hasło kopii, przywraca to, co jest w kopii (`certs/` i `.env`, bazę Saga, dane Grafany), z drugim argumentem także archiwum NIS2, a potem uruchamia stos. Kopia nie zawiera zdarzeń z ClickHouse (kilka dni) – można je odtworzyć z archiwum w panelu (Urd → Odtworzenie).
 
 ### Alerty (Grafana)
 

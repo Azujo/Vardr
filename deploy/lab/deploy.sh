@@ -11,7 +11,7 @@
 #   web         frontend panelu (budowany w kontenerze Node na VM, wynik do
 #               panel/web/dist – potem cel api)
 #   rules       reguły detekcji z rules/ (sprawdzane przed wysłaniem)
-#   ingest normalizer writer archiver detector api
+#   ingest normalizer writer archiver detector api backup
 #               program dla Linuksa z wersją z gita (svc.Version), obraz
 #               i restart usługi
 #   agent       siem_agent.exe do paczek instalacyjnych panelu (agent-dist/)
@@ -35,18 +35,18 @@ version="$(git describe --tags --always --dirty)"
 declare -A pkg=(
   [ingest]=server/cmd/siem-ingest [normalizer]=server/cmd/siem-normalizer
   [writer]=server/cmd/siem-writer [archiver]=server/cmd/siem-archiver [api]=panel/cmd/siem-api
-  [detector]=server/cmd/siem-detector
+  [detector]=server/cmd/siem-detector [backup]=server/cmd/siem-backup
 )
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(config rules ingest normalizer writer archiver detector api)
+[ ${#targets[@]} -eq 0 ] && targets=(config rules ingest normalizer writer archiver detector api backup)
 
 services=()
 for t in "${targets[@]}"; do
   case "$t" in
   config)
     echo "== konfiguracja stosu"
-    tar -C deploy/lab --exclude=./bin --exclude=./certs --exclude=./archive --exclude=./metrics \
+    tar -C deploy/lab --exclude=./bin --exclude=./certs --exclude=./archive --exclude=./metrics --exclude=./backup-state \
       --exclude=./agent-dist --exclude=./export-tools --exclude=./.env --exclude='*.log' --exclude=./deploy.sh -cf - . |
       ssh -i "$key" -o BatchMode=yes "$host" "mkdir -p $dir && tar --overwrite -xf - -C $dir"
     # --overwrite zapisuje pliki w miejscu (ten sam i-węzeł): kontenery montujące
@@ -56,6 +56,14 @@ for t in "${targets[@]}"; do
     # Start stosu po restarcie VM (boot.sh) – wpis @reboot w crontabie użytkownika.
     remote "crontab -l 2>/dev/null | grep -q siem-lab/boot.sh || (crontab -l 2>/dev/null; echo '@reboot \$HOME/siem-lab/boot.sh') | crontab -" &&
       echo "   start po restarcie VM: crontab @reboot boot.sh"
+    # Kopie zapasowe: usługa siem-backup (harmonogram z panelu) zastąpiła wpis
+    # crona z backup.sh; plik hasła musi istnieć przed startem kontenera
+    # (inaczej Docker założyłby w jego miejscu katalog).
+    remote "touch ~/.heimdall-backup.pass && chmod 600 ~/.heimdall-backup.pass && mkdir -p backup-state metrics"
+    remote "crontab -l 2>/dev/null | grep -q 'siem-lab/backup.sh' && (crontab -l | grep -v 'siem-lab/backup.sh' | crontab -) && echo '   usunięto wpis crona backup.sh (harmonogram kopii jest teraz w panelu)'" || true
+    # Przywracanie zlecone w panelu wykonuje restore.sh (zatrzymuje usługi) – sprawdza zlecenie co minutę.
+    remote "crontab -l 2>/dev/null | grep -q 'restore.sh --zlecenie' || (crontab -l 2>/dev/null; echo '* * * * * \$HOME/siem-lab/restore.sh --zlecenie >> \$HOME/siem-lab/restore.log 2>&1') | crontab -" &&
+      echo "   przywracanie z panelu: crontab co minutę restore.sh --zlecenie"
     remote "docker compose ps -q prometheus | grep -q . && docker compose kill -s HUP prometheus >/dev/null" &&
       echo "   Prometheus przeładował konfigurację" || true
     remote "docker compose ps -q nats | grep -q . && docker compose kill -s HUP nats >/dev/null" &&
@@ -101,7 +109,7 @@ for t in "${targets[@]}"; do
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/heimdall-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
       ls -l agent-dist/heimdall-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
     ;;
-  ingest | normalizer | writer | archiver | detector | api)
+  ingest | normalizer | writer | archiver | detector | api | backup)
     echo "== $t ($version)"
     GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
       -ldflags="-s -w -X siem/internal/svc.Version=$version" -o "deploy/lab/bin/" "./${pkg[$t]}"

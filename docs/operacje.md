@@ -43,10 +43,10 @@ deploy/lab/deploy.sh detector api       # wybrane cele
 
 | Cel | Działanie |
 |---|---|
-| `config` | pliki stosu z `deploy/lab` (bez `certs/`, `.env`, `bin/`, danych); crontab `@reboot boot.sh` |
+| `config` | pliki stosu z `deploy/lab` (bez `certs/`, `.env`, `bin/`, danych); crontab `@reboot boot.sh`; plik hasła kopii i `backup-state/` |
 | `rules` | reguły (sprawdzane przed wysłaniem), przełączenie atomowe |
 | `web` | frontend panelu budowany w kontenerze Node na VM (potem cel `api`) |
-| `ingest`, `normalizer`, `writer`, `archiver`, `detector`, `api` | program dla Linuksa z wersją z gita, obraz i restart usługi |
+| `ingest`, `normalizer`, `writer`, `archiver`, `detector`, `api`, `backup` | program dla Linuksa z wersją z gita, obraz i restart usługi |
 | `collector`, `connector` | kolektor i konektor |
 | `agent` | `siem_agent.exe` i MSI do paczek panelu |
 | `tools` | `odczytaj.exe` do eksportów archiwum |
@@ -68,13 +68,40 @@ Zmienne: `SIEM_LAB_HOST` (`siem@192.168.88.98`), `SIEM_LAB_KEY` (`~/.ssh/siem_la
 
 ## Kopie zapasowe
 
-`backup.sh` (crontab codziennie 02:15) tworzy paczkę zaszyfrowaną gpg (AES-256): zrzut Sagi, `certs/` (z kluczem CA agentów) i `.env`. Paczka idzie poza VM (`SIEM_BACKUP_REMOTE`, przez SSH) razem z przyrostami archiwum NIS2.
+Kopie wykonuje usługa `siem-backup` (kontener `backup`), a ustawia się je w panelu: **Administracja → Kopie zapasowe**.
+
+| Ustawienie | Możliwości |
+|---|---|
+| harmonogram | co 1–12 godzin, codziennie albo co tydzień o podanej godzinie (czas serwera) |
+| zawartość | baza Saga, konfiguracja (`certs/` z kluczem CA agentów, `.env`), przyrosty archiwum NIS2 (tylko do miejsca docelowego), dane Grafany |
+| retencja | osobno lokalnie i w miejscu docelowym: dni oraz najwyżej N kopii (0 – bez limitu); najnowsza kopia zostaje zawsze; paczki archiwum wygasają tylko po dniach |
+| miejsce docelowe | tylko lokalnie, SFTP (klucz wygenerowany przez usługę, własny klucz albo hasło), SMB, S3 (MinIO, AWS, Backblaze…) |
+
+**Działanie:**
+
+- Panel zapisuje ustawienia w Sadze (zawsze z ponownym hasłem, do audytu). Usługa sprawdza je co 15 s.
+- Hasła i klucze do miejsca docelowego panel szyfruje kluczem publicznym usługi, więc nie odczyta ich ani panel, ani baza.
+- Kopia to paczka `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` zaszyfrowana hasłem kopii (gpg AES-256). Lokalnie leży w `SIEM_BACKUP_DIR` (lab: `/srv/heimdall/backup`), w miejscu docelowym w `config/`, a przyrosty archiwum w `urd/`.
+- Wysyłka idzie przez rclone. Klucz serwera SFTP jest zapamiętywany przy pierwszym połączeniu (odcisk widać w panelu); jego późniejsza zmiana zatrzymuje wysyłkę. Żeby zaakceptować nowy klucz, usuń wpis z `~/siem-lab/backup-state/known_hosts`.
+- Panel pokazuje historię kopii z wynikiem i ma przyciski „Zrób kopię teraz” i „Sprawdź połączenie”.
+- Stan usługi (klucz do sekretów, klucz SSH, `known_hosts`) jest w `~/siem-lab/backup-state`. Utrata tego katalogu oznacza nowe klucze: sekrety trzeba wpisać ponownie, a nowy klucz SSH dopisać na serwerze kopii.
+
+**Przywracanie z panelu** (zakładka *Przywracanie*):
+
+1. **Lista kopii.** Panel pokazuje kopie lokalne i w miejscu docelowym; lista odświeża się co 15 min i po każdej kopii.
+2. **Sprawdzenie zawartości.** Usługa odszyfrowuje kopię hasłem kopii (kopię z miejsca docelowego najpierw pobiera) i pokazuje, co w niej jest.
+3. **Przywróć.** Administrator wybiera części do przywrócenia: bazę Saga razem z konfiguracją (w `.env` są hasła ról bazy) i/lub dane Grafany. Potwierdza wpisaniem `PRZYWRÓĆ` i hasłem.
+4. **Przygotowanie.** Usługa kopii robi kopię obecnego stanu (domyślnie), sprawdza kopię i zostawia zlecenie w `<kopie>/.przywracanie/zlecenie`.
+5. **Przywrócenie.** `restore.sh --zlecenie` (cron co minutę, wpis dodaje `deploy.sh config`) zatrzymuje usługi korzystające z bazy (panel, detektor, archiwizator, usługa kopii), przywraca części i uruchamia stos. Wynik zapisuje w Sadze, a dziennik w `~/siem-lab/restore.log`.
+
+Po przywróceniu bazy panel jest w stanie z dnia kopii: konta i sesje też, więc trzeba się zalogować ponownie. Alerty, agenci i zmiany ustawień późniejsze niż kopia znikają. Zdarzeń w ClickHouse i archiwum NIS2 przywracanie nie zmienia; archiwum odtwarza się na czystym serwerze ręcznie (`restore.sh <kopia> <katalog urd>`). Usługa kopii nie ma dostępu do Dockera – zatrzymać usługi może tylko skrypt na serwerze.
 
 ```bash
-./backup.sh                 # kopia teraz
+./backup.sh                 # kopia teraz (zlecenie dla usługi, czeka na wynik)
 ./backup.sh haslo init      # pierwsze hasło (pokazywane raz – zapisz poza serwerem)
 ./backup.sh haslo pokaz | zmien
 ./restore.sh <heimdall-….tar.gpg> [katalog z paczkami urd-…]   # odtworzenie na czystej VM
+./restore.sh --zlecenie     # przywrócenie zlecone w panelu (uruchamia cron)
 ```
 
 Kopia nie zawiera zdarzeń w ClickHouse (kilka dni, odtwarzalne z archiwum przez replay) ani kolejek NATS (agenci dosyłają zaległe zdarzenia sami). Alerty Grafany pilnują, czy kopia powstała i trafiła poza VM w ciągu 26 h.

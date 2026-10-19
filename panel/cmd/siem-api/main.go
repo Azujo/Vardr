@@ -152,6 +152,7 @@ func serve(log *slog.Logger) error {
 	apiServer.Quarantine = quarantine
 	identities := &api.Identities{Store: db}
 	apiServer.Identities = identities
+	apiServer.Backups = db
 	if n, err := db.AbortRunningQuarantineJobs(ctx); err != nil {
 		return err
 	} else if n > 0 {

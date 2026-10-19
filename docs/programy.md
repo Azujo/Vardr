@@ -9,7 +9,7 @@ Każdy program serwera to jeden plik wykonywalny Go, konfigurowany zmiennymi śr
 
 Wersja programu pochodzi z gita (`git describe`, ustawiana przy budowaniu przez `deploy.sh`) i jest widoczna w logu startowym (`deploy.sh` wypisuje ją na końcu jako „gotowe: wersja …”).
 
-Spis: [siem_agent](#siem_agent--agent-windows) · [siem-collector](#siem-collector--kolektor-syslog) · [siem-connector](#siem-connector--konektor-api) · [siem-ingest](#siem-ingest) · [siem-normalizer](#siem-normalizer) · [siem-writer](#siem-writer) · [siem-detector](#siem-detector) · [siem-archiver](#siem-archiver) · [siem-api](#siem-api--panel-hliðskjálf) · [siem-loadgen](#siem-loadgen) · [narzędzia](#narzędzia)
+Spis: [siem_agent](#siem_agent--agent-windows) · [siem-collector](#siem-collector--kolektor-syslog) · [siem-connector](#siem-connector--konektor-api) · [siem-ingest](#siem-ingest) · [siem-normalizer](#siem-normalizer) · [siem-writer](#siem-writer) · [siem-detector](#siem-detector) · [siem-archiver](#siem-archiver) · [siem-backup](#siem-backup) · [siem-api](#siem-api--panel-hliðskjálf) · [siem-loadgen](#siem-loadgen) · [narzędzia](#narzędzia)
 
 ---
 
@@ -171,6 +171,27 @@ Kod: `server/cmd/siem-archiver`, `server/internal/archiver`, `internal/urd`. Urd
 | `SIEM_ARCHIVE_EXCLUDE_AGENTS` | – | prefiksy agentów pomijanych (np. `agt-load-` – generator) |
 
 Metryki: `siem_archive_*` (segmenty, bajty, weryfikacje, wolne miejsce).
+
+## siem-backup
+
+Kod: `server/cmd/siem-backup`, `server/internal/backup`, `internal/backupcfg`. Kopie zapasowe według ustawień z panelu ([operacje.md](operacje.md#kopie-zapasowe)). Kontener `backup` (obraz na bazie `postgres:18-alpine` z `pg_dump`, gpg, rclone i OpenSSH – `deploy/lab/backup/Dockerfile`) działa jako root, żeby czytać dane Grafany i hasło kopii; pliki kopii oddaje użytkownikowi stosu.
+
+```
+siem-backup serve     usługa (domyślnie)
+siem-backup run       kopia teraz – zlecenie dla działającej usługi, czeka na wynik (./backup.sh)
+```
+
+Co 15 s usługa zapisuje swój stan w Sadze (`backup_runner`), wykonuje zlecenia z panelu (`backup_requests`: kopia, test połączenia, nowy klucz SSH) i kopie z harmonogramu, wszystko po kolei. Wyniki trafiają do `backup_runs`, a metryki dla alertów Grafany do `metrics/backup.prom`.
+
+| Zmienna | Domyślnie | Znaczenie |
+|---|---|---|
+| `SIEM_BACKUP_DB_URL` | – | Saga (rola `saga_admin` – `pg_dump` całej bazy) |
+| `SIEM_BACKUP_TZ` | `Europe/Warsaw` | strefa harmonogramu |
+| `SIEM_BACKUP_DIR`, `_STATE_DIR`, `_PASS_FILE` | `/backup`, `/state`, `/secrets/backup.pass` | kopie lokalne, stan (klucze), hasło kopii |
+| `SIEM_BACKUP_STACK_DIR`, `_ARCHIVE_DIR`, `_GRAFANA_DIR`, `_METRICS_DIR` | `/stack`, `/archive`, `/grafana`, `/metrics` | źródła kopii i metryki |
+| `SIEM_BACKUP_UID`, `_GID` | 1000 | właściciel plików kopii |
+| `SIEM_BACKUP_SERVER_NAME` | nazwa kontenera | nazwa serwera w opisie kopii |
+| `SIEM_BACKUP_REMOTE`, `_REMOTE_KEEP_DAYS` | – | dawne ustawienia z `.env`, przenoszone do panelu przy pierwszym starcie |
 
 ## siem-api – panel Hliðskjálf
 
