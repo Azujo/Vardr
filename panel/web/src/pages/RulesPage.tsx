@@ -19,7 +19,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconFlask, IconHistory, IconFileCode, IconLink, IconPencil, IconTrash } from "@tabler/icons-react";
+import { IconDownload, IconFlask, IconHistory, IconFileCode, IconLink, IconPencil, IconTrash } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import {
   ApiError,
@@ -35,6 +35,7 @@ import { useAuth } from "../auth";
 import { AttackTags } from "../attack";
 import { lineDiff } from "../diff";
 import RuleTester from "./RuleTester";
+import SigmaImportHelp from "./SigmaImportHelp";
 
 const modeLabels: Record<string, string> = {
   stream: "w locie",
@@ -148,6 +149,7 @@ export default function RulesPage() {
   const [needPassword, setNeedPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState<{ id: string; title: string } | null>(null);
+  const [sigmaHelp, setSigmaHelp] = useState(false);
 
   const load = useCallback(() => {
     alertsApi
@@ -218,6 +220,11 @@ export default function RulesPage() {
             <Button variant="light" leftSection={<IconFlask size={16} />} onClick={() => setTestNew(true)}>
               Przetestuj nową regułę
             </Button>
+            {admin && (
+              <Button variant="subtle" leftSection={<IconDownload size={16} />} onClick={() => setSigmaHelp(true)}>
+                Import reguł SigmaHQ
+              </Button>
+            )}
           </Group>
         )}
       </Group>
@@ -420,6 +427,10 @@ export default function RulesPage() {
             </Group>
           </Stack>
         )}
+      </Modal>
+
+      <Modal opened={sigmaHelp} onClose={() => setSigmaHelp(false)} title="Import reguł SigmaHQ" size="xl">
+        {sigmaHelp && <SigmaImportHelp />}
       </Modal>
 
       <Modal opened={testNew} onClose={() => setTestNew(false)} title="Test nowej reguły" size="xl">

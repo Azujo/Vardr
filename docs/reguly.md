@@ -281,3 +281,73 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – domeny, serwery, konta poza firmą) nie ma reguł: nie zostawia śladów w logach organizacji. Reguły skanowania na FortiGate wymagają logowania odrzuconego ruchu w polityce zapory.
 | `correlation/new_account_privileged.yml` | korelacja: konto utworzone i w ciągu godziny dodane do grupy uprzywilejowanej |
 | `correlation/account_failures_many_sources.yml` | korelacja: nieudane logowania na jedno konto z ≥4 adresów w 15 min (z regułą bazową) |
+
+## Import reguł SigmaHQ
+
+[SigmaHQ](https://github.com/SigmaHQ/sigma) to otwarta baza kilku tysięcy reguł Sigma utrzymywana przez społeczność. Heimdall obsługuje podzbiór Sigmy, więc część reguł się wczyta, a część nie (np. nieobsługiwane modyfikatory albo źródła, których agent nie zbiera). Import jest ręczny: kopiujesz wybrane katalogi, sprawdzasz je parserem Heimdalla, odrzucasz te, które nie przechodzą, i wdrażasz resztę **wyłączoną**. Potem włączasz pojedyncze reguły w panelu, po teście na historii.
+
+Reguły trafiają do `rules/sigmahq/`. Testy Heimdalla (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, a `TestImportedRules` pilnuje, żeby zaimportowane reguły wczytywały się bez błędów i były w plikach wyłączone.
+
+### Kroki – PowerShell (w katalogu projektu)
+
+1. Pobranie (albo aktualizacja: `git -C ../sigma pull`):
+
+   ```powershell
+   git clone --depth 1 https://github.com/SigmaHQ/sigma.git ../sigma
+   ```
+
+2. Kopiowanie kategorii dla źródeł, które zbieramy (przy aktualizacji najpierw `Remove-Item -Recurse rules/sigmahq` – włączenia z panelu zostają, bo są zapisane po `id` reguły):
+
+   ```powershell
+   $dirs = 'windows/process_creation','windows/powershell/powershell_script','windows/builtin/security','windows/builtin/system','windows/builtin/windefend','windows/network_connection','windows/file/file_event','windows/dns_query','windows/registry/registry_set','cloud/azure/signin_logs','cloud/azure/audit_logs'; foreach ($d in $dirs) { $src = "../sigma/rules/$d"; if (Test-Path $src) { New-Item -ItemType Directory -Force "rules/sigmahq/$d" | Out-Null; Copy-Item "$src/*" "rules/sigmahq/$d/" -Recurse -Force } }
+   ```
+
+3. Tylko reguły dojrzałe (status `stable` i `test`):
+
+   ```powershell
+   Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | Where-Object { Select-String -Path $_.FullName -Pattern '^status: (experimental|deprecated|unsupported)' -Quiet } | Remove-Item
+   ```
+
+4. Sprawdzenie parserem i usunięcie reguł, których Heimdall nie obsługuje (drugie polecenie; potem pierwsze jeszcze raz – licznik błędów ma pokazać 0):
+
+   ```powershell
+   & "C:\Program Files\Go\bin\go.exe" run ./server/cmd/siem-detector check rules > check.txt; "OK: " + (Select-String -Path check.txt -Pattern '^OK').Count; "błędy: " + (Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+sigmahq/').Count
+   ```
+
+   ```powershell
+   Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+(sigmahq/[^\s:]+\.yml)' | ForEach-Object { "rules/" + $_.Matches[0].Groups[1].Value } | Sort-Object -Unique | Where-Object { Test-Path $_ } | Remove-Item
+   ```
+
+5. Wszystkie zaimportowane reguły wyłączone w plikach (bez tego włączyłyby się setki reguł naraz):
+
+   ```powershell
+   Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | ForEach-Object { [IO.File]::AppendAllText($_.FullName, "`nheimdall:`n  enabled: false`n") }
+   ```
+
+6. Wdrożenie (skrypt bashowy – przez Git Bash):
+
+   ```powershell
+   & "C:\Program Files\Git\bin\bash.exe" deploy/lab/deploy.sh rules
+   ```
+
+### Kroki – Git Bash
+
+```bash
+git clone --depth 1 https://github.com/SigmaHQ/sigma.git ../sigma
+for d in windows/process_creation windows/powershell/powershell_script windows/builtin/security windows/builtin/system windows/builtin/windefend windows/network_connection windows/file/file_event windows/dns_query windows/registry/registry_set cloud/azure/signin_logs cloud/azure/audit_logs; do [ -d "../sigma/rules/$d" ] && mkdir -p "rules/sigmahq/$d" && cp -r "../sigma/rules/$d/." "rules/sigmahq/$d/"; done
+grep -rlE '^status: (experimental|deprecated|unsupported)' rules/sigmahq | xargs -r rm
+go run ./server/cmd/siem-detector check rules > check.txt
+grep -vE '^(OK|UWAGA)' check.txt | sed -nE 's/^[^ ]+ +(sigmahq\/[^ :]+\.yml).*/rules\/\1/p' | sort -u | xargs -r rm
+find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nheimdall:\n  enabled: false\n" >> "$1"' _ {} \;
+deploy/lab/deploy.sh rules
+```
+
+### Włączanie reguł
+
+W panelu (*Reguły detekcji*) wybierz regułę, otwórz zakładkę **Test** i sprawdź ją na zdarzeniach z ostatnich 7 dni. Reguła bez fałszywych alarmów – włącz przełącznikiem (administrator, wpis w audycie). Ustawienie z panelu przetrwa ponowny import, bo jest zapisane po `id` reguły. Silniki oceniają tylko reguły włączone – wyłączone nie obciążają detekcji.
+
+Kategorie Sysmona spoza listy w kroku 2 (ładowanie bibliotek, dostęp do procesów, potoki, WMI) pomijamy: agent ich nie zbiera, a silnik ich nie obsługuje. Reguły na Event ID, których profil agenta nie zbiera, wczytają się, ale nie będą miały trafień – test na historii to pokaże (0 zdarzeń).
+
+### Licencja
+
+Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License): wolno je używać, zmieniać i rozpowszechniać, także komercyjnie, pod warunkiem zachowania autora (pole `author`), wskazania źródła i licencji. Nie usuwaj z reguł pól `author` i `references`. Jeśli dołączasz `rules/sigmahq/` do własnego repozytorium albo dystrybucji, dodaj w tym katalogu informację o źródle i licencji. Licencja reguł nie dotyczy kodu Heimdalla.
