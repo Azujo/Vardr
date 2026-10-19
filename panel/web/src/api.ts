@@ -1,6 +1,8 @@
 // Klient API siem-api. Sesja w ciasteczku HttpOnly (JS jej nie widzi),
 // token CSRF w pamięci – dołączany do każdego żądania zmieniającego stan.
 
+import type { WizEvent } from "./corrWizard";
+
 export type Role = "admin" | "analyst" | "viewer";
 
 export interface User {
@@ -889,7 +891,36 @@ export const rulesApi = {
       reason,
       password: password ?? "",
     }),
+  // Kreator korelacji: przykładowe zdarzenia z polami i pasującymi regułami.
+  wizardEvents: (events: { id: string; ts: string }[]) =>
+    request<{ events: WizEvent[]; missing: number }>("POST", "/api/v1/rules/wizard/events", { events }),
+  panelRule: (id: string) => request<{ rule: PanelRule }>("GET", `/api/v1/panel-rules/${encodeURIComponent(id)}`),
+  savePanelRule: (id: string, source: string, note: string) =>
+    request<{ ok: boolean; file: string; message: string }>("PUT", `/api/v1/panel-rules/${encodeURIComponent(id)}`, {
+      source,
+      note,
+    }),
+  deletePanelRule: (id: string, reason: string, password: string) =>
+    request<{ ok: boolean; message: string }>("POST", `/api/v1/panel-rules/${encodeURIComponent(id)}/delete`, {
+      reason,
+      password,
+    }),
 };
+
+export interface PanelRule {
+  id: string;
+  source: string;
+  created_by: string;
+  created_at: string;
+  updated_by: string;
+  updated_at: string;
+}
+
+// Reguły zapisane w panelu mają plik panel/<id korelacji>.yml.
+export function panelRuleId(file: string): string | null {
+  const m = /^panel\/(.+)\.yml$/.exec(file);
+  return m ? m[1] : null;
+}
 
 export interface AlertsSummary {
   open: number;

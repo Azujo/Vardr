@@ -179,6 +179,17 @@ heimdall:
 
 **Ograniczenia.** Bez warunków `lt`, `lte`, `eq`, `neq` (alert na „za mało” zdarzeń nie ma sensu przy ocenie nowych zdarzeń) i bez typu `value_sum`/`value_avg`. Reguła bazowa nie może być progowa (`heimdall.threshold`) – próg wyraża sama korelacja. Najwięcej 50 000 zdarzeń jednej korelacji w przebiegu; ponad limit przebieg kończy się błędem w dzienniku detektora – zawęź reguły bazowe albo skróć okno. Korelacje wbudowane („udane po nieudanych”, „nowy kraj”) zostają w kodzie, bo wymagają historii spoza okna.
 
+### Kreator korelacji w panelu
+
+*Reguły detekcji → Nowa korelacja (kreator)* (rola `analyst`; zapis – `admin`) składa regułę korelacyjną z przykładowych zdarzeń:
+
+1. **Zdarzenia.** Do 10 przykładów – z wyszukiwarki w kreatorze albo z Mímira (szczegóły zdarzenia → „Dodaj do kreatora korelacji”). Lista żyje w tej karcie przeglądarki.
+2. **Kroki.** Dla każdego zdarzenia kreator pokazuje wdrożone reguły, które do niego pasują (reguły progowe nie mogą być bazą), albo proponuje nową regułę bazową z zaznaczonych pól (domyślnie rodzaj zdarzenia: `EventID`, a dla urządzeń `event.action` i `event.outcome`). Zdarzenia z tym samym wyborem to jeden krok; kolejność kroków – według czasu przykładów.
+3. **Warunek.** Klucz to wartość, która występuje we wszystkich krokach (np. SID nowego konta jako `TargetSid` w 4720 i `MemberSid` w 4728 – kreator sam dopisze `aliases`). Jeden krok: wartość wspólna wszystkim przykładom, a do `value_count` pole, którego wartości się różnią. Typ i okno są podpowiadane (okno ≈ dwukrotność odstępu między przykładami).
+4. **Opis i test.** Tytuł, poziom, opis, instrukcja, `generate` (gdy korelacja używa wdrożonych reguł, kreator domyślnie zostawia ich alerty). Wygenerowany YAML można poprawić ręcznie i przetestować na historii jak każdą regułę.
+
+**Reguły z panelu** są zapisywane w Sadze (`gjallarhorn.panel_rules`), a detektor wczytuje je obok katalogu `rules/` jako plik `panel/<id korelacji>.yml` (w ciągu 30 s, bez wdrożenia). Mają historię wersji, włączanie i wyłączanie jak reguły z plików; administrator może je edytować (YAML) i usuwać (powód i hasło, audyt). Id reguł z panelu nie może powtarzać id reguł wdrożonych – przy konflikcie wygrywa plik z repozytorium. Dobrą regułę warto potem przenieść do repozytorium (`rules/correlation/`) i usunąć z panelu.
+
 ## Dobre praktyki
 
 - **Grupuj po tym, co analityk zablokuje albo sprawdzi:** konto (brute force), adres (spraying), osoba (`user.identity` – próby z wielu źródeł), komputer (podejrzane procesy).

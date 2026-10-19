@@ -1,0 +1,161 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Alert as MAlert, Button, Code, Group, Select, Stack, Table, Text, Textarea } from "@mantine/core";
+import { IconFlask } from "@tabler/icons-react";
+import { formatDate, rulesApi, type RuleTestResult } from "../api";
+
+// Test reguły na zdarzeniach z ostatnich godzin (bez wdrażania).
+export default function RuleTester({
+  initial,
+  onChange,
+  note,
+}: {
+  initial: string;
+  onChange?: (source: string) => void;
+  note?: ReactNode;
+}) {
+  const [source, setSourceState] = useState(initial);
+  const setSource = (v: string) => {
+    setSourceState(v);
+    onChange?.(v);
+  };
+  const [hours, setHours] = useState("24");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [res, setRes] = useState<RuleTestResult | null>(null);
+  const [sql, setSql] = useState("");
+  useEffect(() => setSourceState(initial), [initial]);
+
+  const run = async () => {
+    setBusy(true);
+    setErr("");
+    setRes(null);
+    try {
+      const r = await rulesApi.test(source, Number(hours));
+      if (!r.ok) setErr(r.error ?? "błąd");
+      else {
+        // Puste listy mogą przyjść jako null (starszy serwer) – bez tego strona się wywracała.
+        setRes(r.result ? { ...r.result, events: r.result.events ?? [], alerts: r.result.alerts ?? [] } : null);
+        setSql(r.sql ?? "");
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Stack gap="xs">
+      {note ?? (
+        <Text size="xs" c="dimmed">
+          Reguła (YAML) jest sprawdzana i wykonywana na zdarzeniach z ClickHouse – nic nie jest wdrażane ani zapisywane. Alerty
+          liczone tak jak w detektorze (łączenie, progi). Zmienioną regułę wdraża się plikiem w repozytorium (
+          <Code>deploy.sh rules</Code>).
+        </Text>
+      )}
+      <Textarea
+        autosize
+        minRows={10}
+        maxRows={24}
+        spellCheck={false}
+        styles={{ input: { fontFamily: "monospace", fontSize: 12 } }}
+        value={source}
+        onChange={(e) => setSource(e.currentTarget.value)}
+      />
+      <Group>
+        <Select
+          w={180}
+          allowDeselect={false}
+          value={hours}
+          onChange={(v) => setHours(v ?? "24")}
+          data={[
+            { value: "1", label: "ostatnia godzina" },
+            { value: "24", label: "ostatnie 24 h" },
+            { value: "72", label: "ostatnie 3 dni" },
+            { value: "168", label: "ostatnie 7 dni" },
+          ]}
+        />
+        <Button leftSection={<IconFlask size={16} />} loading={busy} onClick={() => void run()}>
+          Przetestuj
+        </Button>
+      </Group>
+      {err && (
+        <MAlert color="red" title="Reguła nie przeszła">
+          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+            {err}
+          </Text>
+        </MAlert>
+      )}
+      {res && (
+        <Stack gap="xs">
+          <MAlert color={res.alerts_total > 0 ? "orange" : "green"}>
+            <Text size="sm">
+              Pasujących zdarzeń: <b>{res.matched}</b> · alertów, które by powstały: <b>{res.alerts_total}</b>
+              {res.truncated ? " (z pierwszych 20 000 zdarzeń)" : ""} · {res.took_ms} ms
+            </Text>
+          </MAlert>
+          {res.alerts.length > 0 && (
+            <Table fz="xs" verticalSpacing={2} withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Klucz / komputer</Table.Th>
+                  <Table.Th>Zdarzenia</Table.Th>
+                  <Table.Th>Od</Table.Th>
+                  <Table.Th>Do</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {res.alerts.slice(0, 30).map((a, i) => (
+                  <Table.Tr key={i}>
+                    <Table.Td>
+                      {a.key
+                        ? Object.entries(a.key)
+                            .map(([k, v]) => `${k}=${v}`)
+                            .join(", ")
+                        : a.host}
+                    </Table.Td>
+                    <Table.Td>{a.events}</Table.Td>
+                    <Table.Td>{formatDate(a.first)}</Table.Td>
+                    <Table.Td>{formatDate(a.last)}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+          {res.events.length > 0 && (
+            <>
+              <Text size="sm" fw={500}>
+                Ostatnie pasujące zdarzenia
+              </Text>
+              <Table fz="xs" verticalSpacing={2} withTableBorder>
+                <Table.Tbody>
+                  {res.events.slice(0, 20).map((e) => (
+                    <Table.Tr key={e.event_id}>
+                      <Table.Td style={{ whiteSpace: "nowrap" }}>{formatDate(e.timestamp)}</Table.Td>
+                      <Table.Td>{e.code}</Table.Td>
+                      <Table.Td>{e.host}</Table.Td>
+                      <Table.Td>{e.user}</Table.Td>
+                      <Table.Td style={{ wordBreak: "break-all" }}>{e.summary}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </>
+          )}
+          {sql && (
+            <details>
+              <summary>
+                <Text span size="xs" c="dimmed">
+                  warunek SQL (silnik zapytań)
+                </Text>
+              </summary>
+              <Code block fz="xs">
+                {sql}
+              </Code>
+            </details>
+          )}
+        </Stack>
+      )}
+    </Stack>
+  );
+}

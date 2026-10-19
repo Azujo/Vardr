@@ -182,3 +182,24 @@ func TestEvaluateCorrelation(t *testing.T) {
 		t.Fatalf("ordered poza oknem: %v", g)
 	}
 }
+
+// Reguły z panelu (LoadSetWith): korelacja odwołuje się do reguły z pliku,
+// a powtórzone id przegrywa z plikiem.
+func TestLoadSetWithPanel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "created.yml"), []byte(baseCreated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	panel := []Source{{File: "panel/corr-new-admin.yml", Data: []byte(baseAdded + "---\n" + corrOrdered)},
+		{File: "panel/dup.yml", Data: []byte(baseCreated)}}
+	set, errs, err := LoadSetWith(dir, panel)
+	if err != nil || len(set.Correlations) != 1 || len(set.Rules) != 2 {
+		t.Fatalf("%+v %v %v", set, errs, err)
+	}
+	if len(errs) != 1 || errs[0].File != "panel/dup.yml" || !strings.Contains(errs[0].Err, "created.yml") {
+		t.Fatalf("duplikat id: %v", errs)
+	}
+	if c := set.Correlations[0]; c.File != "panel/corr-new-admin.yml" || c.Rules[0].File != "created.yml" {
+		t.Fatalf("powiązanie z plikiem: %s %s", c.File, c.Rules[0].File)
+	}
+}

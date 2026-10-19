@@ -257,18 +257,27 @@ func LoadDir(dir string) ([]*Rule, []LoadError, error) {
 	return set.Rules, errs, err
 }
 
+// Source to treść pliku reguł spoza katalogu (reguły zapisane w panelu).
+type Source struct {
+	File string // nazwa w panelu i w błędach, np. panel/<id>.yml
+	Data []byte
+}
+
 // LoadSet wczytuje reguły i korelacje z katalogu i podkatalogów. Plik może
 // mieć kilka dokumentów („---”: korelacja z regułami bazowymi). Zwraca
 // poprawne reguły i listę błędów; powtórzone id to błąd. Katalog może być
 // dowiązaniem (wdrożenie podmienia rules/current atomowo).
-func LoadSet(dir string) (*Set, []LoadError, error) {
+func LoadSet(dir string) (*Set, []LoadError, error) { return LoadSetWith(dir, nil) }
+
+// LoadSetWith jak LoadSet, a do tego reguły spoza katalogu (extra – po
+// plikach, więc przy powtórzonym id wygrywa plik z repozytorium).
+func LoadSetWith(dir string, extra []Source) (*Set, []LoadError, error) {
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, nil, err
 	}
-	set := &Set{}
+	var srcs []Source
 	var errs []LoadError
-	seen := map[string]string{}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -284,7 +293,22 @@ func LoadSet(dir string) (*Set, []LoadError, error) {
 			errs = append(errs, LoadError{rel, err.Error()})
 			return nil
 		}
-		docs := splitDocs(data)
+		srcs = append(srcs, Source{rel, data})
+		return nil
+	})
+	set, lerrs := LoadSources(append(srcs, extra...))
+	return set, append(errs, lerrs...), err
+}
+
+// LoadSources wczytuje reguły i korelacje z podanych treści (przy
+// powtórzonym id wygrywa wcześniejsza).
+func LoadSources(srcs []Source) (*Set, []LoadError) {
+	set := &Set{}
+	var errs []LoadError
+	seen := map[string]string{}
+	for _, src := range srcs {
+		rel := src.File
+		docs := splitDocs(src.Data)
 		for i, doc := range docs {
 			where := rel
 			if len(docs) > 1 {
@@ -318,8 +342,7 @@ func LoadSet(dir string) (*Set, []LoadError, error) {
 			}
 			seen[id] = where
 		}
-		return nil
-	})
+	}
 	sort.Slice(set.Rules, func(i, j int) bool { return set.Rules[i].ID < set.Rules[j].ID })
 	sort.Slice(set.Correlations, func(i, j int) bool { return set.Correlations[i].ID < set.Correlations[j].ID })
 	// Powiązanie korelacji z regułami bazowymi; generate: false – reguła bazowa
@@ -340,7 +363,7 @@ func LoadSet(dir string) (*Set, []LoadError, error) {
 	for r, g := range generate {
 		r.CorrelationOnly = !g
 	}
-	return set, errs, err
+	return set, errs
 }
 
 // IsThreshold mówi, czy reguła jest progowa.

@@ -165,11 +165,22 @@ func serve(log *slog.Logger) error {
 			log.Warn("odczyt ustawień reguł z panelu nieudany – zostają poprzednie", "err", err)
 			return
 		}
-		cur := detector.Fingerprint(dir) + "|" + sig
+		// Reguły zapisane w panelu (kreator korelacji) – obok plików.
+		prs, psig, err := store.PanelRules(ctx)
+		if err != nil {
+			m.Errors.WithLabelValues("panel_rules").Inc()
+			log.Warn("odczyt reguł z panelu nieudany – zostają poprzednie", "err", err)
+			return
+		}
+		cur := detector.Fingerprint(dir) + "|" + sig + "|" + psig
 		if cur == fp {
 			return
 		}
-		set, errs, err := detect.LoadSet(dir)
+		extra := make([]detect.Source, 0, len(prs))
+		for _, pr := range prs {
+			extra = append(extra, detect.Source{File: alerts.PanelRuleFile(pr.ID), Data: []byte(pr.Source)})
+		}
+		set, errs, err := detect.LoadSetWith(dir, extra)
 		if err != nil {
 			m.Errors.WithLabelValues("rules").Inc()
 			log.Error("odczyt katalogu reguł nieudany – zostają poprzednie", "dir", dir, "err", err)
@@ -201,7 +212,7 @@ func serve(log *slog.Logger) error {
 		fp = cur
 		m.Rules.Set(float64(n))
 		m.RuleErrors.Set(float64(len(errs)))
-		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "errors", len(errs))
+		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs), "errors", len(errs))
 	}
 	reload()
 	restore()

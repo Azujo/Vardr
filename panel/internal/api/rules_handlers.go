@@ -9,6 +9,7 @@ import (
 
 	"siem/internal/alerts"
 	"siem/internal/detect"
+	"siem/internal/model"
 	"siem/panel/internal/events"
 )
 
@@ -16,6 +17,7 @@ import (
 type RuleTester interface {
 	TestRule(ctx context.Context, r *detect.Rule, from, to time.Time) (events.RuleTestResult, error)
 	TestCorrelation(ctx context.Context, c *detect.Correlation, from, to time.Time) (events.RuleTestResult, error)
+	LoadEvents(ctx context.Context, refs []events.EventRef) ([]model.Event, error)
 }
 
 // RuleAdmin to wersje i ustawienia reguł (implementuje alerts.PG).
@@ -23,6 +25,9 @@ type RuleAdmin interface {
 	RuleVersions(ctx context.Context, rule string) ([]alerts.RuleVersion, error)
 	SetOverride(ctx context.Context, rule string, o alerts.Override) error
 	ClearOverride(ctx context.Context, rule string) (bool, error)
+	PanelRule(ctx context.Context, id string) (alerts.PanelRule, error)
+	SavePanelRule(ctx context.Context, id, source, by string, now time.Time) error
+	DeletePanelRule(ctx context.Context, id string) (bool, error)
 }
 
 // ruleTestSlots: najwyżej dwa testy reguł naraz (każdy to pełne zapytanie do
@@ -93,21 +98,10 @@ func (s *Server) testCorrelation(w http.ResponseWriter, r *http.Request, source 
 		return
 	}
 	// Reguły wdrożone – bazowe dla korelacji, której reguły nie ma w tekście.
-	var known []*detect.Rule
-	if s.Alerts != nil {
-		infos, _, err := s.Alerts.Rules(r.Context())
-		if err != nil {
-			s.alertsError(w, r, err)
-			return
-		}
-		for _, in := range infos {
-			if in.Source == "" || in.RemovedAt != nil {
-				continue
-			}
-			if rule, err := detect.Parse([]byte(in.Source), in.File); err == nil {
-				known = append(known, rule)
-			}
-		}
+	known, _, err := s.knownRules(r.Context(), "")
+	if err != nil {
+		s.alertsError(w, r, err)
+		return
 	}
 	set, err := detect.ParseText([]byte(source), "test.yml", known)
 	if err != nil {

@@ -9,7 +9,6 @@ import {
   Modal,
   PasswordInput,
   ScrollArea,
-  Select,
   Stack,
   Switch,
   Table,
@@ -20,28 +19,34 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconFlask, IconHistory, IconFileCode } from "@tabler/icons-react";
+import { IconFlask, IconHistory, IconFileCode, IconLink, IconPencil, IconTrash } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import {
   ApiError,
   alertsApi,
   formatDate,
   levelLabels,
+  panelRuleId,
   rulesApi,
   type RuleInfo,
-  type RuleTestResult,
   type RuleVersion,
 } from "../api";
 import { useAuth } from "../auth";
 import { lineDiff } from "../diff";
+import RuleTester from "./RuleTester";
 
 const modeLabels: Record<string, string> = {
   stream: "w locie",
   index_query: "zapytania",
   both: "oba silniki",
   system: "wbudowana",
-  correlation: "korelacja (wbudowana)",
+  correlation: "korelacja",
 };
+
+function modeLabel(r: RuleInfo): string {
+  if (r.mode === "correlation" && r.file === "(wbudowana)") return "korelacja (wbudowana)";
+  return modeLabels[r.mode] ?? r.mode;
+}
 
 function fmtDuration(s: number): string {
   if (s % 3600 === 0) return `${s / 3600} h`;
@@ -65,148 +70,6 @@ heimdall:
     count: 5
     window: 10m
 `;
-
-// Test reguły na zdarzeniach z ostatnich godzin (bez wdrażania).
-function RuleTester({ initial }: { initial: string }) {
-  const [source, setSource] = useState(initial);
-  const [hours, setHours] = useState("24");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [res, setRes] = useState<RuleTestResult | null>(null);
-  const [sql, setSql] = useState("");
-  useEffect(() => setSource(initial), [initial]);
-
-  const run = async () => {
-    setBusy(true);
-    setErr("");
-    setRes(null);
-    try {
-      const r = await rulesApi.test(source, Number(hours));
-      if (!r.ok) setErr(r.error ?? "błąd");
-      else {
-        // Puste listy mogą przyjść jako null (starszy serwer) – bez tego strona się wywracała.
-        setRes(r.result ? { ...r.result, events: r.result.events ?? [], alerts: r.result.alerts ?? [] } : null);
-        setSql(r.sql ?? "");
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Stack gap="xs">
-      <Text size="xs" c="dimmed">
-        Reguła (YAML) jest sprawdzana i wykonywana na zdarzeniach z ClickHouse – nic nie jest wdrażane ani zapisywane. Alerty liczone
-        tak jak w detektorze (łączenie, progi). Zmienioną regułę wdraża się plikiem w repozytorium (<Code>deploy.sh rules</Code>).
-      </Text>
-      <Textarea
-        autosize
-        minRows={10}
-        maxRows={24}
-        spellCheck={false}
-        styles={{ input: { fontFamily: "monospace", fontSize: 12 } }}
-        value={source}
-        onChange={(e) => setSource(e.currentTarget.value)}
-      />
-      <Group>
-        <Select
-          w={180}
-          allowDeselect={false}
-          value={hours}
-          onChange={(v) => setHours(v ?? "24")}
-          data={[
-            { value: "1", label: "ostatnia godzina" },
-            { value: "24", label: "ostatnie 24 h" },
-            { value: "72", label: "ostatnie 3 dni" },
-            { value: "168", label: "ostatnie 7 dni" },
-          ]}
-        />
-        <Button leftSection={<IconFlask size={16} />} loading={busy} onClick={() => void run()}>
-          Przetestuj
-        </Button>
-      </Group>
-      {err && (
-        <MAlert color="red" title="Reguła nie przeszła">
-          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
-            {err}
-          </Text>
-        </MAlert>
-      )}
-      {res && (
-        <Stack gap="xs">
-          <MAlert color={res.alerts_total > 0 ? "orange" : "green"}>
-            <Text size="sm">
-              Pasujących zdarzeń: <b>{res.matched}</b> · alertów, które by powstały: <b>{res.alerts_total}</b>
-              {res.truncated ? " (z pierwszych 20 000 zdarzeń)" : ""} · {res.took_ms} ms
-            </Text>
-          </MAlert>
-          {res.alerts.length > 0 && (
-            <Table fz="xs" verticalSpacing={2} withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Klucz / komputer</Table.Th>
-                  <Table.Th>Zdarzenia</Table.Th>
-                  <Table.Th>Od</Table.Th>
-                  <Table.Th>Do</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {res.alerts.slice(0, 30).map((a, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td>
-                      {a.key
-                        ? Object.entries(a.key)
-                            .map(([k, v]) => `${k}=${v}`)
-                            .join(", ")
-                        : a.host}
-                    </Table.Td>
-                    <Table.Td>{a.events}</Table.Td>
-                    <Table.Td>{formatDate(a.first)}</Table.Td>
-                    <Table.Td>{formatDate(a.last)}</Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          )}
-          {res.events.length > 0 && (
-            <>
-              <Text size="sm" fw={500}>
-                Ostatnie pasujące zdarzenia
-              </Text>
-              <Table fz="xs" verticalSpacing={2} withTableBorder>
-                <Table.Tbody>
-                  {res.events.slice(0, 20).map((e) => (
-                    <Table.Tr key={e.event_id}>
-                      <Table.Td style={{ whiteSpace: "nowrap" }}>{formatDate(e.timestamp)}</Table.Td>
-                      <Table.Td>{e.code}</Table.Td>
-                      <Table.Td>{e.host}</Table.Td>
-                      <Table.Td>{e.user}</Table.Td>
-                      <Table.Td style={{ wordBreak: "break-all" }}>{e.summary}</Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </>
-          )}
-          {sql && (
-            <details>
-              <summary>
-                <Text span size="xs" c="dimmed">
-                  warunek SQL (silnik zapytań)
-                </Text>
-              </summary>
-              <Code block fz="xs">
-                {sql}
-              </Code>
-            </details>
-          )}
-        </Stack>
-      )}
-    </Stack>
-  );
-}
 
 function Versions({ id }: { id: string }) {
   const [versions, setVersions] = useState<RuleVersion[]>([]);
@@ -283,6 +146,7 @@ export default function RulesPage() {
   const [password, setPassword] = useState("");
   const [needPassword, setNeedPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [del, setDel] = useState<{ id: string; title: string } | null>(null);
 
   const load = useCallback(() => {
     alertsApi
@@ -314,6 +178,23 @@ export default function RulesPage() {
       setBusy(false);
     }
   };
+  const applyDelete = async () => {
+    if (!del) return;
+    setBusy(true);
+    try {
+      const r = await rulesApi.deletePanelRule(del.id, reason, password);
+      notifications.show({ color: "green", message: r.message });
+      setDel(null);
+      setShow(null);
+      setReason("");
+      setPassword("");
+      load();
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
   const disabling = toggle ? toggle.rule.enabled && !(toggle.enabled ?? toggle.rule.file_enabled) : false;
 
   return (
@@ -324,13 +205,19 @@ export default function RulesPage() {
           <Text c="dimmed" size="sm" maw={820}>
             Reguły w formacie Sigma (YAML) z katalogu <Code>rules/</Code> w repozytorium – wdrażane poleceniem{" "}
             <Code>deploy.sh rules</Code>, detektor przeładowuje je w ciągu 30 s. Każda zmiana treści to nowa wersja (historia
-            w szczegółach). Administrator może regułę wyłączyć albo włączyć z panelu – z powodem i w audycie.
+            w szczegółach). Administrator może regułę wyłączyć albo włączyć z panelu – z powodem i w audycie. Reguły
+            korelacyjne z kreatora są zapisywane w panelu (plik <Code>panel/…</Code>).
           </Text>
         </div>
         {canTest && (
-          <Button variant="light" leftSection={<IconFlask size={16} />} onClick={() => setTestNew(true)}>
-            Przetestuj nową regułę
-          </Button>
+          <Group gap="xs">
+            <Button variant="light" leftSection={<IconLink size={16} />} component={Link} to="/rules/correlation">
+              Nowa korelacja (kreator)
+            </Button>
+            <Button variant="light" leftSection={<IconFlask size={16} />} onClick={() => setTestNew(true)}>
+              Przetestuj nową regułę
+            </Button>
+          </Group>
         )}
       </Group>
       {error && <MAlert color="red">{error}</MAlert>}
@@ -401,7 +288,7 @@ export default function RulesPage() {
                       {r.description}
                     </Text>
                   </Table.Td>
-                  <Table.Td>{modeLabels[r.mode] ?? r.mode}</Table.Td>
+                  <Table.Td>{modeLabel(r)}</Table.Td>
                   <Table.Td>
                     {r.threshold && (
                       <Text size="xs" fw={500}>
@@ -453,6 +340,35 @@ export default function RulesPage() {
             <Text size="xs" c="dimmed">
               id {show.id} · wersja {show.version} · wczytana {formatDate(show.loaded_at)}
             </Text>
+            {panelRuleId(show.file) && (
+              <Group gap="xs">
+                <Badge variant="light" color="grape">
+                  reguła z panelu (kreator korelacji)
+                </Badge>
+                {admin && (
+                  <>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconPencil size={14} />}
+                      component={Link}
+                      to={`/rules/correlation?edit=${encodeURIComponent(panelRuleId(show.file)!)}`}
+                    >
+                      Edytuj
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={() => setDel({ id: panelRuleId(show.file)!, title: show.title })}
+                    >
+                      Usuń
+                    </Button>
+                  </>
+                )}
+              </Group>
+            )}
             <Tabs value={tab} onChange={setTab}>
               <Tabs.List>
                 <Tabs.Tab value="source" leftSection={<IconFileCode size={14} />}>
@@ -479,6 +395,24 @@ export default function RulesPage() {
                 {tab === "test" && <RuleTester initial={show.source ?? ""} />}
               </Tabs.Panel>
             </Tabs>
+          </Stack>
+        )}
+      </Modal>
+
+      <Modal opened={!!del} onClose={() => setDel(null)} title={del ? `Usunięcie reguły „${del.title}”` : ""} centered>
+        {del && (
+          <Stack>
+            <MAlert color="orange">
+              Usunięta zostanie cała reguła z panelu (korelacja i jej reguły bazowe z tego samego zapisu). Historia wersji i alerty
+              zostają. Podaj powód (trafi do audytu) i potwierdź hasłem.
+            </MAlert>
+            <Textarea label="Powód" autosize minRows={2} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
+            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <Group justify="flex-end">
+              <Button color="red" loading={busy} disabled={reason.trim().length < 3 || !password} onClick={() => void applyDelete()}>
+                Usuń regułę
+              </Button>
+            </Group>
           </Stack>
         )}
       </Modal>

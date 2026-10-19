@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -255,6 +256,24 @@ func TestPostgresAlerts(t *testing.T) {
 	}
 	if ok, err := db.ClearOverride(ctx, "r-ps"); !ok || err != nil {
 		t.Fatalf("usunięcie ustawienia: %v %v", ok, err)
+	}
+	// Reguły z panelu (kreator korelacji): zapis, zmiana (podpis się zmienia), usunięcie.
+	if _, err := db.PanelRule(ctx, "corr-x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("brak reguły z panelu: %v", err)
+	}
+	if err := db.SavePanelRule(ctx, "corr-x", "title: a", "adam", now); err != nil {
+		t.Fatal(err)
+	}
+	_, sig1, _ := db.PanelRules(ctx)
+	if err := db.SavePanelRule(ctx, "corr-x", "title: b", "ewa", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	prs, sig2, err := db.PanelRules(ctx)
+	if err != nil || len(prs) != 1 || prs[0].Source != "title: b" || prs[0].CreatedBy != "adam" || prs[0].UpdatedBy != "ewa" || sig1 == sig2 {
+		t.Fatalf("reguły z panelu: %+v %q %q %v", prs, sig1, sig2, err)
+	}
+	if ok, err := db.DeletePanelRule(ctx, "corr-x"); !ok || err != nil {
+		t.Fatalf("usunięcie reguły z panelu: %v %v", ok, err)
 	}
 	// Retencja: zamknięte alerty (z oś czasu i zdarzeniami) znikają, otwarte zostają.
 	_, openBefore, _ := db.Alerts(ctx, Filter{Status: "open"})

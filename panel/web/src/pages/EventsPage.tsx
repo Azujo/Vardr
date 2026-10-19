@@ -21,9 +21,11 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { IconCheck, IconCopy, IconFilter, IconHelp, IconRefresh, IconSearch } from "@tabler/icons-react";
-import { useSearchParams } from "react-router-dom";
+import { IconCheck, IconCopy, IconFilter, IconHelp, IconLink, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { Link, useSearchParams } from "react-router-dom";
 import { eventsApi, formatNumber, type EventDetail, type EventRow } from "../api";
+import { useAuth } from "../auth";
+import { maxPicks, togglePick, usePicks } from "../corrPicks";
 
 const ranges: Record<string, { label: string; ms: number }> = {
   "15m": { label: "15 min", ms: 15 * 60e3 },
@@ -162,6 +164,10 @@ function EventDrawer({
       .catch((e) => setError(msg(e)));
   }, [row, source]);
   const xml = useMemo(() => (ev?.raw ? prettyXml(ev.raw) : ""), [ev]);
+  const { user } = useAuth();
+  const picks = usePicks();
+  const canWizard = (user?.role === "admin" || user?.role === "analyst") && source !== "replay";
+  const picked = ev ? picks.some((p) => p.id === ev.event_id) : false;
   const fieldEntries = Object.entries(ev?.fields ?? {}).sort(([a], [b]) => a.localeCompare(b));
 
   return (
@@ -170,6 +176,30 @@ function EventDrawer({
       {!ev && !error && <Loader />}
       {ev && (
         <Stack>
+          {canWizard && (
+            <Group gap="xs">
+              <Button
+                size="xs"
+                variant={picked ? "filled" : "light"}
+                leftSection={<IconLink size={14} />}
+                disabled={!picked && picks.length >= maxPicks}
+                onClick={() =>
+                  togglePick({
+                    id: ev.event_id,
+                    ts: ev.timestamp,
+                    label: `${ev.code || ev.action || ev.dataset} · ${ev.host}${ev.user ? ` · ${ev.user}` : ""}`,
+                  })
+                }
+              >
+                {picked ? "Usuń z kreatora korelacji" : "Dodaj do kreatora korelacji"}
+              </Button>
+              {picks.length > 0 && (
+                <Button size="xs" variant="subtle" component={Link} to="/rules/correlation">
+                  Otwórz kreator ({picks.length})
+                </Button>
+              )}
+            </Group>
+          )}
           <SimpleGrid cols={2} spacing="xs">
             {[
               ["Czas zdarzenia", fmtTime(ev.timestamp)],
@@ -286,6 +316,7 @@ export default function EventsPage() {
   const [selected, setSelected] = useState<EventRow | null>(null);
   const [fields, setFields] = useState<{ name: string; help: string }[]>([]);
   const [reload, setReload] = useState(0);
+  const picks = usePicks();
 
   useEffect(() => {
     eventsApi
@@ -380,12 +411,19 @@ export default function EventsPage() {
 
   return (
     <Stack>
-      <div>
-        <Title order={2}>Mímir – zdarzenia</Title>
-        <Text c="dimmed" size="sm">
-          Wyszukiwanie zdarzeń zebranych przez agentów. Kliknięcie wartości w tabeli dodaje filtr.
-        </Text>
-      </div>
+      <Group justify="space-between" align="flex-end">
+        <div>
+          <Title order={2}>Mímir – zdarzenia</Title>
+          <Text c="dimmed" size="sm">
+            Wyszukiwanie zdarzeń zebranych przez agentów. Kliknięcie wartości w tabeli dodaje filtr.
+          </Text>
+        </div>
+        {picks.length > 0 && (
+          <Button variant="light" leftSection={<IconLink size={16} />} component={Link} to="/rules/correlation">
+            Kreator korelacji ({picks.length})
+          </Button>
+        )}
+      </Group>
 
       <form
         onSubmit={(e) => {

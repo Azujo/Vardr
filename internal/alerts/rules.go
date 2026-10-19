@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -128,4 +129,66 @@ func recordVersions(ctx context.Context, tx pgx.Tx, rules []RuleInfo, now time.T
 		}
 	}
 	return nil
+}
+
+// PanelRule to reguła zapisana w panelu (kreator korelacji): YAML
+// z korelacją i regułami bazowymi, wczytywany przez detektor jako
+// panel/<id>.yml.
+type PanelRule struct {
+	ID        string    `json:"id"`
+	Source    string    `json:"source"`
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedBy string    `json:"updated_by"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PanelRuleFile to nazwa pliku reguły z panelu (widoczna w panelu i błędach).
+func PanelRuleFile(id string) string { return "panel/" + id + ".yml" }
+
+// PanelRules zwraca reguły zapisane w panelu i ich podpis (zmiana podpisu =
+// detektor przeładowuje reguły).
+func (p *PG) PanelRules(ctx context.Context) ([]PanelRule, string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT id, source, created_by, created_at, updated_by, updated_at
+		FROM gjallarhorn.panel_rules ORDER BY id`)
+	if err != nil {
+		return nil, "", notConfigured(err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[PanelRule])
+	if err != nil {
+		return nil, "", err
+	}
+	var sig strings.Builder
+	for _, r := range out {
+		fmt.Fprintf(&sig, "%s@%d;", r.ID, r.UpdatedAt.UnixNano())
+	}
+	return out, sig.String(), nil
+}
+
+// PanelRule zwraca jedną regułę z panelu.
+func (p *PG) PanelRule(ctx context.Context, id string) (PanelRule, error) {
+	rows, err := p.pool.Query(ctx, `SELECT id, source, created_by, created_at, updated_by, updated_at
+		FROM gjallarhorn.panel_rules WHERE id = $1`, id)
+	if err != nil {
+		return PanelRule{}, notConfigured(err)
+	}
+	r, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByPos[PanelRule])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r, ErrNotFound
+	}
+	return r, err
+}
+
+// SavePanelRule tworzy albo zmienia regułę z panelu.
+func (p *PG) SavePanelRule(ctx context.Context, id, source, by string, now time.Time) error {
+	_, err := p.pool.Exec(ctx, `INSERT INTO gjallarhorn.panel_rules (id, source, created_by, created_at, updated_by, updated_at)
+		VALUES ($1, $2, $3, $4, $3, $4) ON CONFLICT (id) DO UPDATE SET source = $2, updated_by = $3, updated_at = $4`,
+		id, source, by, now)
+	return notConfigured(err)
+}
+
+// DeletePanelRule usuwa regułę z panelu (detektor przestaje ją oceniać).
+func (p *PG) DeletePanelRule(ctx context.Context, id string) (bool, error) {
+	tag, err := p.pool.Exec(ctx, `DELETE FROM gjallarhorn.panel_rules WHERE id = $1`, id)
+	return tag.RowsAffected() > 0, notConfigured(err)
 }
