@@ -17,6 +17,7 @@ func TestEngineHits(t *testing.T) {
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
 	}
+	rules = ownRules(rules)
 	e := NewEngine()
 	alerting := 0
 	for _, r := range rules {
@@ -58,6 +59,7 @@ func TestRulesAttackTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	set = ownSet(set)
 	d := attack.Enterprise()
 	check := func(name string, tags []string, base bool) {
 		m := d.Map(tags)

@@ -17,6 +17,7 @@ func TestTacticRules(t *testing.T) {
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
 	}
+	rules = ownRules(rules)
 	events := buildCorpus()
 	sort.SliceStable(events, func(i, j int) bool { return events[i].Ingested.Before(events[j].Ingested) })
 	e := NewEngine()

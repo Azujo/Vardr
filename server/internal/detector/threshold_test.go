@@ -24,6 +24,7 @@ func repoEngine(t testing.TB) *Engine {
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
 	}
+	rules = ownRules(rules)
 	e := NewEngine()
 	e.SetRules(rules)
 	return e

@@ -433,6 +433,7 @@ func TestEngineCompatibility(t *testing.T) {
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
 	}
+	repo = ownRules(repo)
 	extra, errs, err := detect.LoadDir("testdata/compat")
 	if err != nil || len(errs) > 0 {
 		t.Fatal(err, errs)
