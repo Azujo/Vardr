@@ -47,17 +47,18 @@ function msg(e: unknown) {
 
 // Sekret tokenu pokazywany jeden raz, z paczką i poleceniem do wdrożenia masowego.
 function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; secret: string } | null; server: string; onClose: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   if (!data) return null;
   const cmd = `siem_agent.exe install -server ${server || location.hostname} -token ${data.secret}`;
-  const download = async () => {
-    setBusy(true);
+  const download = async (kind: "msi" | "zip") => {
+    setBusy(kind);
     try {
-      await enrollApi.downloadPackage(data.secret);
+      if (kind === "msi") await enrollApi.downloadMSI(data.secret);
+      else await enrollApi.downloadPackage(data.secret);
     } catch (e) {
       notifications.show({ color: "red", message: msg(e) });
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   };
   return (
@@ -79,13 +80,18 @@ function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; se
             )}
           </CopyButton>
         </Group>
-        <Button leftSection={<IconDownload size={18} />} loading={busy} onClick={() => void download()}>
-          Pobierz paczkę instalacyjną (ZIP)
+        <Button leftSection={<IconDownload size={18} />} loading={busy === "msi"} onClick={() => void download("msi")}>
+          Pobierz instalator (MSI)
         </Button>
         <Text size="sm" c="dimmed">
-          Paczka: program agenta, certyfikat CA, adres serwera, token i install.cmd – <b>bez klucza prywatnego</b>.
-          Agent wygeneruje klucz na komputerze i zarejestruje się sam.
+          Jeden plik z wpisanym adresem serwera i tokenem: podwójne kliknięcie instaluje i rejestruje agenta, a na komputerze
+          z agentem – aktualizuje go. Ten sam plik wdrożysz przez GPO, Intune albo SCCM bez parametrów. Plik zawiera token –
+          każdy, kto go dostanie, może zarejestrować komputer, dopóki token jest ważny (ustaw krótką ważność albo limit
+          instalacji). Agent generuje klucz <b>na komputerze</b>, w pliku nie ma klucza prywatnego.
         </Text>
+        <Button variant="subtle" size="xs" w="fit-content" loading={busy === "zip"} onClick={() => void download("zip")}>
+          paczka ZIP (program, CA, token, skrypty – instalacja bez MSI)
+        </Button>
         <div>
           <Text size="sm" fw={500} mb={4}>
             Wdrożenie masowe (GPO, Intune, SCCM) – polecenie uruchamiane jako SYSTEM lub administrator:
@@ -212,7 +218,13 @@ export default function DeployPage() {
       <Alert color="blue" variant="light" title="Jak to działa">
         <List size="sm" spacing={2}>
           <List.Item>Tworzysz token dla grupy komputerów (profil zdarzeń, ważność, limit instalacji).</List.Item>
-          <List.Item>Pobierasz paczkę ZIP albo kopiujesz polecenie do GPO lub Intune.</List.Item>
+          <List.Item>
+            Pobierasz instalator MSI (jeden plik – podwójne kliknięcie albo wdrożenie GPO/Intune) albo kopiujesz polecenie.
+          </List.Item>
+          <List.Item>
+            Aktualizacja zainstalowanych agentów: Huginn → „Pobierz aktualizację agenta (MSI)” – plik bez tokenu, nowa wersja
+            zastępuje starą, rejestracja zostaje.
+          </List.Item>
           <List.Item>
             Agent generuje klucz <b>na komputerze</b>, rejestruje się tokenem i dostaje certyfikat na 90 dni – odnawia go sam.
           </List.Item>

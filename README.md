@@ -81,7 +81,11 @@ Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\Program
 
 ### Instalator MSI (od wersji 0.6)
 
-`deploy.sh agent` buduje na serwerze `heimdall-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji), a panel dołącza go do paczki tokenu (Bifröst) razem z `install-msi.cmd`. Wdrożenie przez Intune, SCCM albo skrypt GPO, jako SYSTEM lub administrator:
+`deploy.sh agent` buduje na serwerze `heimdall-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji).
+
+**Jeden plik do podwójnego kliknięcia (od 0.7.3).** Panel przy tokenie (Bifröst → „Pobierz instalator (MSI)”) wydaje `heimdall-agent-<nazwa>.msi` z wpisanym adresem serwera i tokenem: instalator ma właściwości `SERVER` i `TOKEN` z wypełniaczami stałej długości, a panel podmienia je w pliku przy pobraniu (`internal/msipatch` – struktura MSI się nie zmienia, plik czyta `msiinfo`). Podwójne kliknięcie instaluje i rejestruje agenta, na komputerze z agentem – aktualizuje go (token jest wtedy pomijany). Ten sam plik wdraża się przez GPO, Intune albo SCCM bez parametrów. Plik zawiera token, więc działa jak token: krótka ważność albo limit instalacji. Do samej aktualizacji Huginn ma „Pobierz aktualizację agenta (MSI)” – bazowy instalator bez tokenu (nowego komputera nim nie zarejestrujesz – instalator zgłosi brak tokenu). Paczka ZIP zostaje jako opcja.
+
+Wdrożenie z parametrami (Intune, SCCM, skrypt GPO), jako SYSTEM lub administrator – parametry mają pierwszeństwo przed wartościami wpisanymi w plik:
 
 ```powershell
 msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…   # instalacja i rejestracja tokenem
@@ -366,7 +370,7 @@ Panel pokazuje dla każdego agenta:
 
 Agenci ze starszych wersji wysyłają zdarzenia, ale nie pojawiają się na liście, dopóki nie zostaną zaktualizowani. Generator ruchu też wysyła heartbeaty (`-heartbeat`, domyślnie włączone), więc listę da się sprawdzić na tysiącach agentów.
 
-**Bifröst – wdrażanie agentów tokenem:** administrator tworzy w panelu token rejestracyjny: nazwa, profil zdarzeń, ważność i limit instalacji. Token jest widoczny raz, a w bazie zostaje tylko jego skrót. Do tokenu panel daje paczkę ZIP (program agenta, główne CA, adres serwera, token, `install.cmd`) **bez klucza prywatnego** i gotowe polecenie do GPO lub Intune:
+**Bifröst – wdrażanie agentów tokenem:** administrator tworzy w panelu token rejestracyjny: nazwa, profil zdarzeń, ważność i limit instalacji. Token jest widoczny raz, a w bazie zostaje tylko jego skrót. Do tokenu panel daje instalator MSI z wpisanym adresem serwera i tokenem (jeden plik – instalacja albo aktualizacja podwójnym kliknięciem), paczkę ZIP (program agenta, główne CA, adres serwera, token, `install.cmd`) – oba **bez klucza prywatnego** – i gotowe polecenie do GPO lub Intune:
 
 ```bash
 siem_agent.exe install -server 192.168.88.98 -token hdt_…

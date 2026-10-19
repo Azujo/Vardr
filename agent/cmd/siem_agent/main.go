@@ -43,7 +43,7 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.7.2"
+const version = "0.7.3"
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
@@ -165,7 +165,8 @@ func main() {
 	case "upgrade":
 		err = upgrade(*cfgPath, token)
 	case "msi-install":
-		err = msiInstall(opts.server, opts.token)
+		// Wypełniacze z instalatora bez podmiany (aktualizacja bazowym MSI) – jak brak wartości.
+		err = msiInstall(contract.MSIValue(opts.server), contract.MSIValue(opts.token))
 	case "msi-uninstall":
 		err = msiUninstall(token, upgradeCode)
 	case "enroll":

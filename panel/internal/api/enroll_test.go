@@ -18,10 +18,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"siem/internal/contract"
+	"siem/internal/msipatch"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/enroll"
 )
@@ -161,6 +164,7 @@ func newEnrollEnv(t *testing.T) (*env, *[]string) {
 	}}
 	srv.now = func() time.Time { return e.clock }
 	e.h = srv.Handler()
+	e.agentDir = dir
 	e.addUser("admin", store.RoleAdmin, "haslo-admina-123", false)
 	return e, &revoked
 }
@@ -317,4 +321,53 @@ func keys(m map[string]string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// Jeden plik MSI: adres serwera i token wpisane w miejsce wypełniaczy.
+func TestEnrollMSI(t *testing.T) {
+	e, _ := newEnrollEnv(t)
+	admin := e.client("10.0.0.1")
+	admin.login("admin", "haslo-admina-123")
+	_, out, _ := admin.do("POST", "/api/v1/enroll-tokens", map[string]any{"name": "Księgowość", "profile": "workstation", "valid_hours": 24, "max_uses": 5})
+	secret := out["secret"].(string)
+	post := func() *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"secret": secret})
+		r := httptest.NewRequest("POST", "https://panel/api/v1/enroll-tokens/msi", bytes.NewReader(b))
+		r.AddCookie(admin.cookie)
+		r.Header.Set(csrfHeader, admin.csrf)
+		w := httptest.NewRecorder()
+		e.h.ServeHTTP(w, r)
+		return w
+	}
+	if w := post(); w.Code != 503 || !strings.Contains(w.Body.String(), "no_agent_msi") {
+		t.Fatalf("bez instalatora: %d %s", w.Code, w.Body.String())
+	}
+	msiPath := filepath.Join(e.agentDir, "heimdall-agent.msi")
+	base := msipatch.TestFile([]byte("x"+contract.MSIServerPlaceholder+"y"), []byte(strings.Repeat("-", 4200)+contract.MSITokenPlaceholder))
+	if err := os.WriteFile(msiPath, base, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w := post()
+	if w.Code != 200 || !strings.HasSuffix(w.Header().Get("Content-Disposition"), `.msi"`) {
+		t.Fatalf("instalator: %d %v", w.Code, w.Header())
+	}
+	body := w.Body.String()
+	if len(body) != len(base) || strings.Contains(body, "HEIMDALL_MSI_") || !strings.Contains(body, "192.168.88.98   ") || !strings.Contains(body, secret) {
+		t.Fatal("wartości nie wpisane do instalatora")
+	}
+	// Aktualizacja: bazowy plik bez zmian; instalator, którego nie da się załatać – błąd.
+	r := httptest.NewRequest("GET", "https://panel/api/v1/agent-update.msi", nil)
+	r.AddCookie(admin.cookie)
+	wu := httptest.NewRecorder()
+	e.h.ServeHTTP(wu, r)
+	if wu.Code != 200 || !bytes.Equal(wu.Body.Bytes(), base) {
+		t.Fatalf("aktualizacja: %d", wu.Code)
+	}
+	os.WriteFile(msiPath, []byte("to nie jest MSI"), 0o644)
+	if w := post(); w.Code != 503 || !strings.Contains(w.Body.String(), "msi_patch_failed") {
+		t.Fatalf("zły instalator: %d %s", w.Code, w.Body.String())
+	}
+	if !slices.Contains(e.st.actions(), "enroll_msi_downloaded") || !slices.Contains(e.st.actions(), "agent_update_msi_downloaded") {
+		t.Fatalf("audyt: %v", e.st.actions())
+	}
 }

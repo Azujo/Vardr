@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Badge,
+  Button,
   Card,
   Group,
   SegmentedControl,
@@ -13,9 +14,11 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { IconAlertTriangle, IconCircleCheck, IconPlugConnectedX, IconSearch, IconServer } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCircleCheck, IconDownload, IconPlugConnectedX, IconSearch, IconServer } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { Link } from "react-router-dom";
-import { agentsApi, ago, configStateLabels, formatNumber, type AgentView, type AgentsSummary } from "../api";
+import { agentsApi, ago, configStateLabels, enrollApi, formatNumber, type AgentView, type AgentsSummary } from "../api";
+import { useAuth } from "../auth";
 
 type Filter = "all" | "online" | "offline" | "problems";
 
@@ -49,6 +52,8 @@ export function StateBadge({ a }: { a: AgentView }) {
 }
 
 export default function AgentsPage() {
+  const { user } = useAuth();
+  const [downloading, setDownloading] = useState(false);
   const [agents, setAgents] = useState<AgentView[]>([]);
   const [summary, setSummary] = useState<AgentsSummary | null>(null);
   const [error, setError] = useState("");
@@ -86,14 +91,38 @@ export default function AgentsPage() {
     });
   }, [agents, query, filter]);
 
+  const updateMSI = async () => {
+    setDownloading(true);
+    try {
+      await enrollApi.downloadUpdateMSI();
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <Stack>
-      <div>
-        <Title order={2}>Huginn – agenci</Title>
-        <Text c="dimmed" size="sm">
-          Stan agentów z heartbeatu (co minutę). Agent bez sygnału przez 3 minuty jest oznaczany jako offline.
-        </Text>
-      </div>
+      <Group justify="space-between" align="flex-end">
+        <div>
+          <Title order={2}>Huginn – agenci</Title>
+          <Text c="dimmed" size="sm">
+            Stan agentów z heartbeatu (co minutę). Agent bez sygnału przez 3 minuty jest oznaczany jako offline.
+          </Text>
+        </div>
+        {user?.role === "admin" && (
+          <Tooltip
+            multiline
+            w={360}
+            label="Instalator najnowszej wersji agenta bez tokenu: podwójne kliknięcie na komputerze z agentem albo wdrożenie GPO/Intune podmienia wersję, rejestracja i ustawienia zostają. Nowych komputerów nim nie zarejestrujesz (Bifröst → token)."
+          >
+            <Button variant="light" leftSection={<IconDownload size={16} />} loading={downloading} onClick={() => void updateMSI()}>
+              Pobierz aktualizację agenta (MSI)
+            </Button>
+          </Tooltip>
+        )}
+      </Group>
       {error && <Alert color="red">{error}</Alert>}
 
       {summary && (

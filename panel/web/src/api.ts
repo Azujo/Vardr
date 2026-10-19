@@ -286,26 +286,33 @@ export const enrollApi = {
     request<{ revoked: number }>("POST", `/api/v1/agents/${encodeURIComponent(id)}/revoke`, { reason }),
 
   // Paczka ZIP: token w treści żądania (nie w adresie), plik zapisywany przez przeglądarkę.
-  downloadPackage: async (secret: string) => {
-    const res = await fetch("/api/v1/enroll-tokens/package", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
-      body: JSON.stringify({ secret }),
-      credentials: "same-origin",
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
-    }
-    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "heimdall-agent.zip";
-    const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  },
+  downloadPackage: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/package", { secret }, "heimdall-agent.zip"),
+  // Jeden plik MSI z adresem serwera i tokenem – instalacja albo aktualizacja podwójnym kliknięciem.
+  downloadMSI: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/msi", { secret }, "heimdall-agent.msi"),
+  // Bazowy instalator bez tokenu – aktualizacja zainstalowanych agentów.
+  downloadUpdateMSI: () => downloadFile("GET", "/api/v1/agent-update.msi", undefined, "heimdall-agent-aktualizacja.msi"),
 };
+
+// downloadFile pobiera plik z API (sesja w ciasteczku, CSRF przy POST) i zapisuje go w przeglądarce.
+async function downloadFile(method: string, path: string, body: unknown, fallback: string) {
+  const res = await fetch(path, {
+    method,
+    headers: method === "POST" ? { "Content-Type": "application/json", "X-CSRF-Token": csrfToken } : {},
+    body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallback;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
 
 // ---- Mímir: zdarzenia ----
 

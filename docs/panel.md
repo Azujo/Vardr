@@ -19,7 +19,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | Moduł | Adres | Co tam jest |
 |---|---|---|
 | **Start** | `/` | podsumowanie: otwarte alerty, agenci, archiwum NIS2, stan systemu |
-| **Huginn** | `/agents` | lista agentów: stan (online, bez łączności, zatrzymany bez tokenu), wersja, grupa, bufor, kanały; strona agenta z heartbeatem, limitami, stanem ochrony, dziennikiem prób sabotażu i tokenami deinstalacji; unieważnienie agenta |
+| **Huginn** | `/agents` | lista agentów: stan (online, bez łączności, zatrzymany bez tokenu), wersja, grupa, bufor, kanały; strona agenta z heartbeatem, limitami, stanem ochrony, dziennikiem prób sabotażu i tokenami deinstalacji; unieważnienie agenta; „Pobierz aktualizację agenta (MSI)” – instalator najnowszej wersji bez tokenu |
 | **Grupy agentów** | `/groups` | profil zdarzeń (stacja robocza, serwer, kontroler domeny), limity zasobów, ochrona, próg alarmu po utracie łączności, powiadomienie o powrocie |
 | **Mímir** | `/events` | wyszukiwarka zdarzeń z histogramem; szczegóły zdarzenia z polskim opisem i polami źródłowymi |
 | **Tożsamości** | `/identities` | osoby i ich konta, podpowiedzi połączeń, aliasy, domeny organizacji, konta wspólne urządzeń, „Sprawdź konto” |
@@ -28,7 +28,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Reguły detekcji** | `/rules` | lista reguł z plików i wbudowanych, treść, historia wersji, błędy wczytania, włączanie i wyłączanie, test reguły (także korelacyjnej) na zdarzeniach z ClickHouse, kreator korelacji z przykładowych zdarzeń (`/rules/correlation`) i reguły zapisane w panelu |
 | **Dekodery** | `/decoders` | dekodery syslog i API w kolejności sprawdzania, edycja z historią, test na próbkach albo na nierozpoznanych wiadomościach, kreator z próbek (zaznaczanie pól w wiadomości) |
 | **Kwarantanna** | `/quarantine` | zdarzenia nieznormalizowane pogrupowane według źródła i powodu, oryginały, kreator dekodera z wiadomości grupy, ponowne przetworzenie po poprawie dekodera |
-| **Bifröst** | `/deploy` | tokeny rejestracyjne i paczki instalacyjne agenta (ZIP z programem, CA i tokenem) |
+| **Bifröst** | `/deploy` | tokeny rejestracyjne; instalator MSI z wpisanym adresem serwera i tokenem (jeden plik – instalacja albo aktualizacja podwójnym kliknięciem, wdrożenie GPO/Intune bez parametrów) i paczka ZIP |
 | **Urd** | `/archive` | archiwum NIS2: stan, segmenty, weryfikacje, obsługa niezgodności (pliki nieznane spisowi – przyjęcie po sprawdzeniu sum albo kwarantanna, z przyczyną i hasłem; historia operacji), polityka (włączenie, retencja, grupy), eksporty dla audytora, odtworzenie do `siem.events_replay` |
 | **Himinbjörg** | `/system` | stan usług, kolejek, dysków i baz (z Prometheusa); linki do Grafany: pulpity „zdrowie potoku” i „przegląd zdarzeń”, aktywne alerty, reguły alertów, Explore – z wybranym zakresem czasu, a przy każdej grupie i problemie wykresy tej dziedziny |
 | **Użytkownicy** | `/admin/users` | konta, role, reset hasła |

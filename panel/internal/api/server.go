@@ -241,6 +241,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/enroll-tokens", s.authed(roleAdmin, 0, s.createToken))
 	mux.Handle("POST /api/v1/enroll-tokens/{id}/revoke", s.authed(roleAdmin, 0, s.revokeToken))
 	mux.Handle("POST /api/v1/enroll-tokens/package", s.authed(roleAdmin, 0, s.tokenPackage))
+	mux.Handle("POST /api/v1/enroll-tokens/msi", s.authed(roleAdmin, 0, s.tokenMSI))
+	mux.Handle("GET /api/v1/agent-update.msi", s.authed(roleAdmin, 0, s.agentUpdateMSI))
 
 	// Dla agentów (bez sesji panelu): rejestracja tokenem i odnowienie certyfikatu.
 	mux.HandleFunc("POST /enroll/v1/register", s.enrollRegister)

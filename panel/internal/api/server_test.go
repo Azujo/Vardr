@@ -206,6 +206,8 @@ type env struct {
 	st    *memStore
 	h     http.Handler
 	clock time.Time
+	// agentDir: katalog programu i instalatora agenta (testy wdrażania).
+	agentDir string
 }
 
 func newEnv(t *testing.T) *env {
