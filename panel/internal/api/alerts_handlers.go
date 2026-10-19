@@ -174,6 +174,10 @@ func (s *Server) getAlert(w http.ResponseWriter, r *http.Request) {
 		"attack": s.alertsAttack(ctx, append([]alerts.Alert{a}, rel...))}
 	if rule, err := s.Alerts.Rule(ctx, a.RuleID); err == nil {
 		resp["rule"] = rule
+		// Reguła z SigmaHQ: autor i źródło (licencja DRL 1.1).
+		if at := rule.SigmaHQAttribution(); at != nil {
+			resp["attribution"] = at
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -392,5 +396,12 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request) {
 	if errs == nil {
 		errs = []alerts.RuleError{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "errors": errs, "configured": true})
+	// Reguły z SigmaHQ: autor i źródło (licencja DRL 1.1) – pokazywane w panelu.
+	attributions := map[string]*alerts.Attribution{}
+	for _, ru := range rules {
+		if at := ru.SigmaHQAttribution(); at != nil {
+			attributions[ru.ID] = at
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "errors": errs, "configured": true, "attributions": attributions})
 }

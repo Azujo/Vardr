@@ -879,6 +879,16 @@ export interface AlertListFilter {
   tactic?: string;
 }
 
+// Autor i źródło reguły zaimportowanej z SigmaHQ (licencja DRL 1.1 wymaga
+// wskazania autora przy alertach z jej trafień).
+export interface RuleAttribution {
+  author: string;
+  source: string;
+  rule_url: string;
+  license: string;
+  license_url: string;
+}
+
 // ATT&CK reguły alertu (z tagów; klucz w odpowiedziach – id reguły).
 export interface AttackRef {
   id: string;
@@ -1001,6 +1011,7 @@ export const alertsApi = {
       activity: AlertActivity[];
       related: Alert[];
       attack?: Record<string, RuleAttack>;
+      attribution?: RuleAttribution;
     }>("GET", `/api/v1/alerts/${id}`),
   setStatus: (id: number, status: AlertStatus, reason?: string) =>
     request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),
@@ -1011,7 +1022,13 @@ export const alertsApi = {
     request<{ activity: AlertActivity[] }>("POST", `/api/v1/alerts/${id}/notes`, { text }),
   assignees: () =>
     request<{ assignees: { username: string; display_name: string }[] }>("GET", "/api/v1/alert-assignees"),
-  rules: () => request<{ rules: RuleInfo[]; errors: { file: string; error: string; seen_at: string }[]; configured: boolean }>("GET", "/api/v1/rules"),
+  rules: () =>
+    request<{
+      rules: RuleInfo[];
+      errors: { file: string; error: string; seen_at: string }[];
+      configured: boolean;
+      attributions?: Record<string, RuleAttribution>;
+    }>("GET", "/api/v1/rules"),
 };
 
 export const levelLabels: Record<AlertLevel, { label: string; color: string }> = {

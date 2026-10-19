@@ -28,11 +28,12 @@ import {
   levelLabels,
   panelRuleId,
   rulesApi,
+  type RuleAttribution,
   type RuleInfo,
   type RuleVersion,
 } from "../api";
 import { useAuth } from "../auth";
-import { AttackTags } from "../attack";
+import { AttackTags, AttributionLine } from "../attack";
 import { lineDiff } from "../diff";
 import RuleTester from "./RuleTester";
 import SigmaImportHelp from "./SigmaImportHelp";
@@ -150,12 +151,14 @@ export default function RulesPage() {
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState<{ id: string; title: string } | null>(null);
   const [sigmaHelp, setSigmaHelp] = useState(false);
+  const [attributions, setAttributions] = useState<Record<string, RuleAttribution>>({});
 
   const load = useCallback(() => {
     alertsApi
       .rules()
       .then((r) => {
         setRules(r.rules);
+        setAttributions(r.attributions ?? {});
         setErrors(r.errors);
         setConfigured(r.configured);
       })
@@ -339,6 +342,7 @@ export default function RulesPage() {
       <Modal opened={!!show} onClose={() => setShow(null)} title={show?.title} size="xl">
         {show && (
           <Stack gap="xs">
+            <AttributionLine a={attributions[show.id]} />
             <AttackTags tags={show.tags} />
             <Group gap={4}>
               {show.tags

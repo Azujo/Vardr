@@ -34,10 +34,11 @@ import {
   type AlertStatus,
   type EventDetail,
   type RuleAttack,
+  type RuleAttribution,
   type RuleInfo,
 } from "../api";
 import { useAuth } from "../auth";
-import { AttackBadges } from "../attack";
+import { AttackBadges, AttributionLine } from "../attack";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -133,6 +134,7 @@ export default function AlertDetailPage() {
   const [activity, setActivity] = useState<AlertActivity[]>([]);
   const [related, setRelated] = useState<Alert[]>([]);
   const [attack, setAttack] = useState<Record<string, RuleAttack>>({});
+  const [attribution, setAttribution] = useState<RuleAttribution | undefined>();
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const [note, setNote] = useState("");
 
@@ -146,6 +148,7 @@ export default function AlertDetailPage() {
         setActivity(r.activity);
         setRelated(r.related);
         setAttack(r.attack ?? {});
+        setAttribution(r.attribution);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
@@ -328,6 +331,7 @@ export default function AlertDetailPage() {
       {rule && (
         <Card withBorder>
           <Title order={4}>Reguła</Title>
+          <AttributionLine a={attribution} />
           {rule.description && (
             <Text size="sm" mt="xs" style={{ whiteSpace: "pre-line" }}>
               {rule.description}

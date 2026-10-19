@@ -1,8 +1,8 @@
 // MITRE ATT&CK w panelu: słownik (z serwera, raz na sesję), odczyt tagów
 // reguł (attack.t1110.001, attack.credential_access) i plakietki technik.
 import { useEffect, useState } from "react";
-import { Anchor, Badge, Group, Tooltip } from "@mantine/core";
-import { request, type RuleAttack } from "./api";
+import { Anchor, Badge, Group, Text, Tooltip } from "@mantine/core";
+import { request, type RuleAttack, type RuleAttribution } from "./api";
 
 export interface AttackTactic {
   id: string;
@@ -143,4 +143,21 @@ export function AttackTags({ tags, size = "sm" }: { tags: string[]; size?: "xs" 
   const d = useAttackDict();
   if (!d) return null;
   return <AttackBadges ra={mapTags(d, tags)} size={size} />;
+}
+
+// Autor i źródło reguły z SigmaHQ (licencja DRL 1.1).
+export function AttributionLine({ a }: { a?: RuleAttribution }) {
+  if (!a) return null;
+  return (
+    <Text size="xs" c="dimmed">
+      Autor reguły: {a.author} · źródło:{" "}
+      <Anchor href={a.rule_url} target="_blank" rel="noopener noreferrer" size="xs">
+        {a.source}
+      </Anchor>{" "}
+      · licencja{" "}
+      <Anchor href={a.license_url} target="_blank" rel="noopener noreferrer" size="xs">
+        {a.license}
+      </Anchor>
+    </Text>
+  );
 }

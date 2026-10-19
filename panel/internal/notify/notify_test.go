@@ -256,3 +256,28 @@ func TestAttackLine(t *testing.T) {
 		t.Fatal("bez tagów – pusto")
 	}
 }
+
+// Reguła z SigmaHQ: autor i źródło w wiadomości (DRL 1.1); reguła Heimdalla – bez.
+func TestAlertMessageAttribution(t *testing.T) {
+	rules := map[string]alerts.RuleInfo{
+		"sig": {ID: "sig", File: "sigmahq/windows/process_creation/x.yml", Source: "author: Jan Kowalski\n",
+			Tags: []string{"attack.t1059.001"}},
+		"own": {ID: "own", File: "windows/x.yml", Source: "author: Heimdall\n"},
+	}
+	s := &AlertSender{Rule: func(id string) (alerts.RuleInfo, bool) { r, ok := rules[id]; return r, ok }}
+	field := func(m Message, name string) string {
+		for _, f := range m.Fields {
+			if f.Name == name {
+				return f.Value
+			}
+		}
+		return ""
+	}
+	m := s.Message(alerts.Alert{RuleID: "sig", Level: "high", RuleTitle: "X"})
+	if v := field(m, "Autor reguły"); !strings.Contains(v, "Jan Kowalski") || !strings.Contains(v, "DRL") || field(m, "MITRE ATT&CK") == "" {
+		t.Fatalf("SigmaHQ: %+v", m.Fields)
+	}
+	if v := field(s.Message(alerts.Alert{RuleID: "own", Level: "high"}), "Autor reguły"); v != "" {
+		t.Fatalf("reguła Heimdalla z autorem: %q", v)
+	}
+}

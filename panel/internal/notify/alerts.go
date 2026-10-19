@@ -44,8 +44,9 @@ type AlertSender struct {
 	// o rozwiązaniu zawsze osobno. PerRule < 0 wyłącza limit.
 	PerRule int
 	Window  time.Duration
-	// RuleTags (opcjonalne): tagi reguły – techniki MITRE ATT&CK w wiadomości.
-	RuleTags func(ruleID string) []string
+	// Rule (opcjonalne): reguła alertu – techniki MITRE ATT&CK i, dla reguł
+	// z SigmaHQ, autor i źródło (licencja DRL 1.1) w wiadomości.
+	Rule func(ruleID string) (alerts.RuleInfo, bool)
 
 	digestRetry time.Time // po nieudanej wiadomości zbiorczej – nie częściej niż co minutę
 }
@@ -290,9 +291,15 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		add("Klucz alertu", strings.Join(parts, "\n"), false)
 	}
 	trusted("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
-	if a.RuleTags != nil {
-		if s := attackLine(a.RuleTags(al.RuleID)); s != "" {
-			trusted("MITRE ATT&CK", s, false)
+	if a.Rule != nil {
+		if r, ok := a.Rule(al.RuleID); ok {
+			if s := attackLine(r.Tags); s != "" {
+				trusted("MITRE ATT&CK", s, false)
+			}
+			// Autor z pliku reguły (treść spoza Heimdalla – jak pola zdarzenia).
+			if at := r.SigmaHQAttribution(); at != nil {
+				add("Autor reguły", at.Line(), false)
+			}
 		}
 	}
 	add("Co zrobić", strings.TrimSpace(al.Instructions), false)

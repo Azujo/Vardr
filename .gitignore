@@ -29,3 +29,8 @@ deploy/lab/metrics/
 
 # Programy dołączane do eksportów archiwum (budowane przez deploy.sh tools)
 deploy/lab/export-tools/
+
+# Reguły SigmaHQ – import opcjonalny, decyzja administratora (docs/reguly.md, „Import reguł SigmaHQ”);
+# licencja DRL 1.1, nie dystrybuujemy ich z repozytorium.
+rules/sigmahq/
+check.txt
