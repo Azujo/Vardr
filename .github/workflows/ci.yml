@@ -63,7 +63,7 @@ jobs:
           SIEM_TEST_CH_ADDR: 127.0.0.1:9000
           SIEM_TEST_CH_PASSWORD: test
           SIEM_TEST_PG_URL: postgres://postgres:test@127.0.0.1:5432/t?sslmode=disable
-        run: go test -count=1 -p 1 -v -run 'Compat|Chain|Postgres|PG' ./server/internal/detector ./internal/alerts ./internal/urd ./panel/internal/api/store
+        run: go test -count=1 -p 1 -v -run 'Compat|Chain|Correlations|Postgres|PG' ./server/internal/detector ./internal/alerts ./internal/urd ./panel/internal/api/store
 
       - name: Fuzzing parsera XML zdarzeń (60 s)
         run: go test -run '^$' -fuzz FuzzParseWinEvent -fuzztime 60s ./server/internal/normalize

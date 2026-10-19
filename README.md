@@ -2,56 +2,22 @@
 
 Heimdall – własny SIEM według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (nazewnictwo: załącznik D).
 
-Obecny stan:
+Obecny stan: **MVP gotowe (etapy 0–8, październik 2026)**. Działają agent Windows z ochroną przed wyłączeniem, kolektor syslog (FortiGate, MikroTik), konektor Entra ID, potok NATS → ClickHouse, detekcja Sigma w dwóch silnikach z korelacjami między źródłami, archiwum NIS2 z łańcuchem hashy i panel Hliðskjálf. Potok sprawdzono przy 7000 zdarzeń/s przez 8 h. Przebieg prac i znane luki: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
 
-- **ukończone etapy 1 i 1.5:** agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana. Potok jest wzmocniony i zmierzony: nadąża przy 10 000 zdarzeń/s;
-- **ukończony etap 2 z modułami 1–4 panelu Hliðskjálf:** logowanie i role, agenci (heartbeat, grupy z konfiguracją z serwera), wdrażanie tokenem z własnym CA agentów, wyszukiwarka zdarzeń;
-- **w toku:** etap 3 – archiwum NIS2 Urd. Archiwizator z łańcuchem hashy i weryfikacją integralności już działa.
+## Dokumentacja
 
-## Struktura
+Pełna dokumentacja jest w [docs/](docs/README.md):
 
-Repozytorium to jeden moduł Go podzielony na części. Kod w `agent/internal/`, `server/internal/` i `panel/internal/` jest prywatny dla swojej części: Go nie pozwala na import z innej części. Wspólne pakiety leżą w `internal/` w katalogu głównym.
+- [Architektura](docs/architektura.md) – składniki, przepływ zdarzenia, kolejki, bazy, detekcja, struktura repozytorium;
+- [Programy](docs/programy.md) – każdy program: polecenia, flagi, zmienne środowiskowe, porty, metryki;
+- [Panel](docs/panel.md) – moduły, role, język wyszukiwania, praca z alertem;
+- [Reguły detekcji](docs/reguly.md) – jak pisać, testować i wdrażać reguły; reguły wbudowane;
+- [Dekodery](docs/dekodery.md) – dekodery syslog i API, nowe urządzenie krok po kroku;
+- [Operacje](docs/operacje.md) – wdrażanie, kopie, retencja, migracje, diagnostyka;
+- [Testy obciążeniowe](docs/testy-obciazeniowe.md) – generator ruchu, monitor, sprzątanie, wyniki;
+- [Rozwój](docs/rozwoj.md) – budowanie, testy, CI, konwencje, jak dodać źródło, regułę albo migrację.
 
-```
-agent/                     Huginn – agent Windows (działa na komputerach)
-  cmd/siem_agent/          program agenta: instalator, usługa, konsola, status
-  internal/                config, core (paczkowanie i wysyłka), shipper (HTTPS + mTLS),
-                           winevt (Event Log), state, status, limits, logging,
-                           logwatch (ochrona przed nadpisaniem dziennika), secure, setup
-  configs/                 agent.example.yaml (profil z załącznika B), agent.lab.yaml (test)
-
-server/                    potok zdarzeń (kontenery na serwerze)
-  cmd/siem-ingest/         Bifröst: odbiór paczek (mTLS) → NATS
-  cmd/siem-normalizer/     Bragi: XML Windows → wspólny schemat
-  cmd/siem-writer/         Verðandi: zapis do ClickHouse (Mímir)
-  cmd/siem-archiver/       Urd: archiwum NIS2 (oryginalne paczki, łańcuch hashy)
-  cmd/siem-loadgen/        generator ruchu: symulacja tysięcy agentów
-  internal/                bus (NATS), queue, ingest, normalize, chwriter, model,
-                           metrics, archiver, loadgen (szablony zdarzeń)
-
-panel/                     Hliðskjálf – panel zarządzania
-  cmd/siem-api/            backend (HTTPS :8444) z wbudowanym frontendem
-  internal/api/            API, logowanie i sesje (auth), baza Saga (store, migracje)
-  web/                     frontend: React + TypeScript + Mantine
-
-internal/                  wspólne: contract (paczka agent → serwer, załącznik A),
-                           svc (konfiguracja, log, ponawianie), throttle, fleet,
-                           urd (format archiwum, manifesty, weryfikacja)
-tools/                     narzędzia laboratoryjne
-  cmd/siem-pki/            certyfikaty (CA, serwer, agenci, paczki instalacyjne)
-  cmd/siem-ingest-stub/    testowy endpoint /v1/ingest (mTLS → plik NDJSON)
-
-deploy/lab/                stos serwera: docker compose (NATS, ClickHouse, Saga,
-                           Prometheus, Grafana, usługi potoku, panel)
-docs/                      roadmapa
-```
-
-Katalogi lokalne, poza repozytorium:
-
-- `bin/`: zbudowane programy;
-- `certs/`: certyfikaty i klucze laboratorium;
-- `dist/`: paczki agentów z kluczami;
-- `data/`: dane testów.
+Ten plik zawiera instrukcje instalacji i szczegóły poszczególnych funkcji.
 
 ## Szybki start (laboratorium)
 
@@ -1025,6 +991,6 @@ bin\siem-loadgen.exe -url https://192.168.88.98:8443/v1/ingest -agents 500 -eps 
 
 Co 10 s generator pokazuje zdarzenia wygenerowane i przyjęte, odmowy, opóźnienie odpowiedzi i bufor agentów. Gdy bufor agenta się przepełni (`-backlog`, domyślnie 50 000), zdarzenia przepadają jak w nadpisanym dzienniku Windows i generator je liczy. Zdarzenia testowe mają `agent_id` z prefiksem `agt-load-` i znikają z bazy razem z retencją (5 dni).
 
-Domyślnie generator ma 3500 kont i 0,2% nieudanych logowań (zwykły dzień firmy); `-failures 5` to ciągły brute force na wszystkich kontach (scenariusz przeciążenia detekcji). Zdarzenia z prefiksem `agt-load-` nie trafiają do archiwum (`SIEM_ARCHIVE_EXCLUDE_AGENTS`). Po teście: `cd ~/siem-lab && bash loadtest-cleanup.sh` – usuwa zdarzenia, alerty, stan progów i agentów generatora (w tej kolejności, inaczej silnik zapytań odtworzy alerty z danych, które zostały).
+Domyślnie generator ma 3500 kont i 0,2% nieudanych logowań (zwykły dzień firmy); `-failures 5` to ciągły brute force na wszystkich kontach (scenariusz przeciążenia detekcji). Zdarzenia z prefiksem `agt-load-` nie trafiają do archiwum (`SIEM_ARCHIVE_EXCLUDE_AGENTS`). Po teście: `cd ~/siem-lab && bash loadtest-cleanup.sh` – usuwa zdarzenia, alerty, stan progów i agentów generatora (w tej kolejności, inaczej silnik zapytań odtworzy alerty z danych, które zostały). Monitor na czas testu (`loadtest-monitor.sh`), sprzątanie po dużym teście (`loadtest-droppart.sh`) i pełna procedura: [docs/testy-obciazeniowe.md](docs/testy-obciazeniowe.md).
 
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).
