@@ -1,0 +1,49 @@
+title: Logowania sieciowe NTLM jednego konta na wielu komputerach
+id: 6544f35a-30f7-4657-a686-fca254feeb5f
+status: experimental
+description: |
+  Jedno konto zalogowało się przez sieć z uwierzytelnieniem NTLM (4624,
+  typ 3) na co najmniej 5 różnych komputerach w 10 minut. Tak wygląda
+  rozprzestrzenianie się po sieci z wykradzionym skrótem hasła (pass the
+  hash) albo masowe łączenie się z udziałami administracyjnymi.
+author: Heimdall
+tags:
+  - attack.lateral_movement
+  - attack.t1021.002
+  - attack.t1550.002
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4624
+    LogonType: 3
+    AuthenticationPackageName: NTLM
+  computer_account:
+    TargetUserName|endswith: '$'
+  anonymous:
+    TargetUserName: 'ANONYMOUS LOGON'
+  local:
+    IpAddress:
+      - ''
+      - '-'
+      - '127.0.0.1'
+      - '::1'
+  condition: selection and not computer_account and not anonymous and not local
+falsepositives:
+  - Konta serwisowe skanerów, kopii zapasowych i inwentaryzacji (wyklucz je po nazwie)
+  - Administrator obsługujący wiele komputerów naraz
+level: medium
+heimdall:
+  group_by: [TargetUserName]
+  threshold:
+    count: 5
+    window: 10m
+    distinct: Computer
+  suppress: 1h
+  instructions: |
+    Konto {{TargetDomainName}}\{{TargetUserName}} zalogowało się przez NTLM
+    na {{count}} komputerach w {{window}}: {{values}}. Sprawdź adresy
+    źródłowe w zdarzeniach alertu. Jeśli to nie konto serwisowe – zablokuj
+    je, zmień hasło (dwukrotnie dla kont z uprawnieniami) i przejrzyj
+    komputery, na których się logowało.

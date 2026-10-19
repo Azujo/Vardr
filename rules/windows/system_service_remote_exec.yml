@@ -1,0 +1,41 @@
+title: Zdalne wykonanie przez usługę (PsExec, Impacket, udział ADMIN$)
+id: 94fed0e6-7f25-4dca-8b36-0a388ca470b1
+status: experimental
+description: |
+  Instalacja usługi typowej dla zdalnego wykonywania poleceń: PSEXESVC
+  (PsExec), usługi uruchamiające %COMSPEC% albo cmd.exe /Q /c (Impacket
+  psexec/smbexec), program z udziału ADMIN$ albo z adresu \\127.0.0.1.
+  To klasyczny sposób przemieszczania się po sieci z przejętym kontem.
+author: Heimdall
+tags:
+  - attack.lateral_movement
+  - attack.t1021.002
+  - attack.execution
+  - attack.t1569.002
+logsource:
+  product: windows
+  service: system
+detection:
+  install:
+    EventID: 7045
+  psexec:
+    ServiceName|startswith: 'PSEXESVC'
+  shell:
+    ImagePath|contains:
+      - '%COMSPEC%'
+      - 'cmd.exe /Q /c'
+      - 'cmd.exe /c echo'
+      - '\ADMIN$\'
+      - '\\127.0.0.1\'
+  condition: install and (psexec or shell)
+falsepositives:
+  - Administratorzy używający PsExec do zdalnej obsługi (warto to ograniczyć do wyznaczonych stacji)
+  - Narzędzia wdrażania oprogramowania działające jak PsExec
+level: high
+heimdall:
+  instructions: |
+    Na {{host.name}} zainstalowano usługę {{ServiceName}} uruchamiającą
+    {{ImagePath}}. Ustal, z którego komputera i na jakie konto przyszło
+    połączenie (logowania 4624 typu 3 na {{host.name}} tuż przed
+    zdarzeniem). Jeśli to nie zaplanowana praca – odetnij komputer
+    źródłowy i zablokuj użyte konto.

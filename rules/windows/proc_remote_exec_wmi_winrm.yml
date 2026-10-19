@@ -1,0 +1,43 @@
+title: Powłoka uruchomiona zdalnie przez WMI albo WinRM
+id: 65eed598-2db0-432e-9dd4-6bbeaf1f556e
+status: experimental
+description: |
+  Proces wmiprvse.exe (WMI) albo wsmprovhost.exe (PowerShell Remoting,
+  WinRM) uruchomił powłokę albo narzędzie systemowe. Tak wyglądają
+  polecenia wykonywane zdalnie z innego komputera – np. wmiexec z Impacket
+  albo Invoke-Command napastnika.
+author: Heimdall
+tags:
+  - attack.lateral_movement
+  - attack.t1021.006
+  - attack.execution
+  - attack.t1047
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  parent:
+    ParentImage|endswith:
+      - '\wmiprvse.exe'
+      - '\wsmprovhost.exe'
+  child:
+    Image|endswith:
+      - '\cmd.exe'
+      - '\powershell.exe'
+      - '\pwsh.exe'
+      - '\rundll32.exe'
+      - '\mshta.exe'
+      - '\regsvr32.exe'
+  condition: parent and child
+falsepositives:
+  - Systemy zarządzania (SCCM/Intune, monitoring) uruchamiające skrypty przez WMI
+  - Administratorzy używający PowerShell Remoting
+level: medium
+heimdall:
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} zdalnie uruchomiono {{CommandLine}} (rodzic:
+    {{ParentImage}}). Sprawdź logowania sieciowe (4624 typ 3) na ten
+    komputer tuż przed zdarzeniem – skąd i na jakie konto. Polecenia typu
+    „cmd.exe /Q /c … 1> \\127.0.0.1\ADMIN$\…” to wmiexec napastnika.

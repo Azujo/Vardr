@@ -1,0 +1,38 @@
+title: Skrypt PowerShell przechwytuje ekran, schowek albo klawiaturę
+id: b4ee06e9-dd71-4185-8f9e-4b8b76f8528a
+status: experimental
+description: |
+  Treść skryptu PowerShell (4104) zawiera funkcje do zrzutów ekranu
+  (CopyFromScreen), odczytu schowka albo przechwytywania klawiszy
+  (GetAsyncKeyState, SetWindowsHookEx). Używają ich narzędzia szpiegujące
+  i moduły zbierania danych w narzędziach ataku.
+author: Heimdall
+tags:
+  - attack.collection
+  - attack.t1113
+  - attack.t1115
+  - attack.t1056.001
+logsource:
+  product: windows
+  category: ps_script
+detection:
+  selection:
+    ScriptBlockText|contains:
+      - 'CopyFromScreen'
+      - 'Get-Clipboard'
+      - 'Windows.Forms.Clipboard'
+      - 'GetAsyncKeyState'
+      - 'SetWindowsHookEx'
+  condition: selection
+falsepositives:
+  - Skrypty pomocy zdalnej i automatyzacji pulpitu (rzadkie w PowerShell)
+level: high
+heimdall:
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} wykonano skrypt PowerShell ze zrzutem ekranu,
+    odczytem schowka albo przechwytywaniem klawiszy. Odczytaj pełną treść
+    skryptu w zdarzeniu (ScriptBlockText) i proces, który go uruchomił.
+    Jeśli to nie znane narzędzie – odizoluj komputer i zmień hasła
+    użytkownika (mogły zostać przechwycone).

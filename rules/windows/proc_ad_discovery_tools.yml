@@ -1,0 +1,56 @@
+title: Rozpoznanie Active Directory (zaufania, administratorzy domeny, BloodHound)
+id: 736fe6af-3ac1-4c08-b5df-5bb62a26c9b1
+status: experimental
+description: |
+  Polecenia i narzędzia mapujące domenę: nltest z /domain_trusts albo
+  /dclist, lista grupy administratorów domeny przez net, AdFind, dsquery
+  oraz zbieracz BloodHound (SharpHound). Napastnik szuka w ten sposób kont
+  uprzywilejowanych i drogi do kontrolera domeny.
+author: Heimdall
+tags:
+  - attack.discovery
+  - attack.t1482
+  - attack.t1087.002
+  - attack.t1069.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  nltest:
+    Image|endswith: '\nltest.exe'
+    CommandLine|contains:
+      - '/domain_trusts'
+      - '/all_trusts'
+      - '/dclist'
+      - '/trusted_domains'
+  net:
+    Image|endswith:
+      - '\net.exe'
+      - '\net1.exe'
+  net_admins:
+    CommandLine|contains:
+      - 'domain admins'
+      - 'enterprise admins'
+      - 'administratorzy domeny'
+  tools:
+    Image|endswith:
+      - '\adfind.exe'
+      - '\sharphound.exe'
+  tools_cmd:
+    CommandLine|contains:
+      - 'adfind'
+      - 'SharpHound'
+      - 'Invoke-BloodHound'
+      - '-CollectionMethod'
+      - 'trustdmp'
+  condition: nltest or (net and net_admins) or tools or tools_cmd
+falsepositives:
+  - Administratorzy domeny sprawdzający konfigurację (powinni to robić z wyznaczonych stacji)
+  - Audyt bezpieczeństwa z użyciem BloodHound (uzgodniony termin)
+level: high
+heimdall:
+  instructions: |
+    Na komputerze {{host.name}} uruchomiono rozpoznanie domeny:
+    {{CommandLine}}. Ustal, czy to uzgodniona praca administratora albo
+    audytora. Jeśli nie – odizoluj komputer, zablokuj konto, które
+    uruchomiło polecenie, i sprawdź jego logowania na innych komputerach.

@@ -1,0 +1,55 @@
+title: Seria poleceń rozpoznania systemu na jednym komputerze
+id: b87aa5d4-4827-449f-a0d0-6285452d5792
+status: experimental
+description: |
+  Co najmniej 4 różne narzędzia rozpoznania (whoami, net, nltest, systeminfo,
+  ipconfig, tasklist, quser, arp, netstat…) uruchomione na jednym komputerze
+  w ciągu 10 minut. Pojedyncze polecenie jest zwykłe, ale seria w krótkim
+  czasie to typowy pierwszy krok napastnika po przejęciu konta albo komputera.
+author: Heimdall
+tags:
+  - attack.discovery
+  - attack.t1082
+  - attack.t1016
+  - attack.t1033
+  - attack.t1087.001
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    Image|endswith:
+      - '\whoami.exe'
+      - '\net.exe'
+      - '\net1.exe'
+      - '\nltest.exe'
+      - '\systeminfo.exe'
+      - '\ipconfig.exe'
+      - '\tasklist.exe'
+      - '\quser.exe'
+      - '\qwinsta.exe'
+      - '\arp.exe'
+      - '\route.exe'
+      - '\netstat.exe'
+      - '\nslookup.exe'
+      - '\klist.exe'
+      - '\gpresult.exe'
+      - '\dsquery.exe'
+  condition: selection
+falsepositives:
+  - Administrator diagnozujący problem (zwykle na swoim komputerze, w godzinach pracy)
+  - Skrypty inwentaryzacji i logowania uruchamiane przy starcie sesji
+level: medium
+heimdall:
+  group_by: [host.name]
+  threshold:
+    count: 4
+    window: 10m
+    distinct: Image
+  suppress: 1h
+  instructions: |
+    Na komputerze {{host.name}} w {{window}} uruchomiono {{count}} różnych
+    narzędzi rozpoznania: {{values}}. Sprawdź w zdarzeniach alertu konto
+    i proces nadrzędny. Jeśli to nie administrator przy pracy – traktuj
+    komputer jako przejęty: odizoluj go, sprawdź logowania tego konta
+    i procesy uruchomione wcześniej (skąd przyszło polecenie).

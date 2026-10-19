@@ -257,5 +257,19 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 | `network/fortigate_vpn_brute_force.yml`, `fortigate_admin_login_failures.yml` | seria nieudanych logowań do VPN i panelu FortiGate |
 | `network/mikrotik_login_brute_force.yml` | seria nieudanych logowań do routera MikroTik |
 | `cross/password_spraying_multi_source.yml` | spraying z jednego adresu łącznie w AD, Entra, VPN i na routerze |
+| `windows/proc_discovery_burst.yml` | rozpoznanie: ≥4 różne narzędzia (whoami, net, nltest, systeminfo…) na komputerze w 10 min |
+| `windows/proc_ad_discovery_tools.yml` | rozpoznanie AD: nltest /domain_trusts, `net group "domain admins"`, AdFind, BloodHound |
+| `windows/system_service_remote_exec.yml` | przemieszczanie: usługa PsExec / Impacket (%COMSPEC%, ADMIN$) |
+| `windows/proc_remote_exec_wmi_winrm.yml` | przemieszczanie: powłoka uruchomiona przez WMI (wmiprvse) albo WinRM (wsmprovhost) |
+| `windows/security_ntlm_logon_many_hosts.yml` | przemieszczanie: logowania sieciowe NTLM jednego konta na ≥5 komputerach w 10 min |
+| `windows/ps_script_collection.yml` | zbieranie: PowerShell ze zrzutem ekranu, schowkiem, przechwytywaniem klawiszy |
+| `windows/proc_archive_with_password.yml` | zbieranie: archiwum 7-Zip/RAR z hasłem |
+| `windows/proc_lolbin_download.yml` | C2: pobranie pliku przez certutil albo bitsadmin |
+| `windows/proc_remote_access_tunnel.yml` | C2: AnyDesk, ScreenConnect, TeamViewer…, ngrok, chisel, plink -R |
+| `windows/proc_exfil_cloud_tools.yml` | wynoszenie: rclone copy/sync, MEGA, curl --upload-file |
+| `network/fortigate_port_scan.yml` | rozpoznanie: ≥20 odrzuconych portów z jednego adresu w 2 min |
+| `network/fortigate_host_sweep.yml` | rozpoznanie: ≥30 odrzuconych adresów docelowych z jednego adresu w 2 min |
+
+Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – domeny, serwery, konta poza firmą) nie ma reguł: nie zostawia śladów w logach organizacji. Reguły skanowania na FortiGate wymagają logowania odrzuconego ruchu w polityce zapory.
 | `correlation/new_account_privileged.yml` | korelacja: konto utworzone i w ciągu godziny dodane do grupy uprzywilejowanej |
 | `correlation/account_failures_many_sources.yml` | korelacja: nieudane logowania na jedno konto z ≥4 adresów w 15 min (z regułą bazową) |

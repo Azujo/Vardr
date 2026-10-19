@@ -1,0 +1,48 @@
+title: Wysyłanie danych narzędziem do chmury (rclone, MEGA, curl --upload-file)
+id: dccb69cd-3a68-4712-aee5-9087e23f9de8
+status: experimental
+description: |
+  rclone z poleceniem copy, sync albo move, klient MEGA (mega-put,
+  MEGAcmd) albo curl wysyłający plik (--upload-file, -T, -F z @). Grupy
+  ransomware przed zaszyfrowaniem wynoszą tak dane do chmury, żeby
+  szantażować ich ujawnieniem.
+author: Heimdall
+tags:
+  - attack.exfiltration
+  - attack.t1567.002
+  - attack.t1048
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  rclone_img:
+    Image|endswith: '\rclone.exe'
+  rclone_cmd:
+    CommandLine|contains:
+      - ' copy '
+      - ' sync '
+      - ' move '
+      - ' copyto '
+  mega:
+    Image|endswith:
+      - '\mega-put.exe'
+      - '\megacmdserver.exe'
+  curl:
+    Image|endswith: '\curl.exe'
+    CommandLine|contains:
+      - '--upload-file'
+      - ' -T '
+      - '=@'
+  condition: (rclone_img and rclone_cmd) or mega or curl
+falsepositives:
+  - Kopie zapasowe do chmury robione przez rclone na serwerze (wyklucz konto usługi)
+level: high
+heimdall:
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} uruchomiono wysyłanie danych: {{CommandLine}}. Ustal
+    cel (konto chmury, adres) i ilość danych – zapora pokaże ruch wychodzący
+    z tego komputera. Jeśli to nie znana kopia zapasowa: odetnij komputer
+    od internetu, zachowaj konfigurację rclone (zawiera dane dostępu do
+    konta napastnika) i uruchom procedurę incydentu z wyciekiem danych.

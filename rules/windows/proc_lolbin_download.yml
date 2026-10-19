@@ -1,0 +1,40 @@
+title: Pobranie pliku narzędziem systemowym (certutil, bitsadmin)
+id: 45f1f0fb-8052-4bf6-b3d3-fb05a6117cf0
+status: experimental
+description: |
+  certutil z -urlcache albo -verifyctl i adresem www, bitsadmin z
+  /transfer albo /addfile – wbudowane narzędzia Windows używane przez
+  napastników do pobierania kolejnych narzędzi z ich serwera, z pominięciem
+  przeglądarki i zabezpieczeń pobierania.
+author: Heimdall
+tags:
+  - attack.command_and_control
+  - attack.t1105
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  certutil:
+    Image|endswith: '\certutil.exe'
+    CommandLine|contains:
+      - 'urlcache'
+      - 'verifyctl'
+  url:
+    CommandLine|contains:
+      - 'http://'
+      - 'https://'
+  bitsadmin:
+    Image|endswith: '\bitsadmin.exe'
+    CommandLine|contains:
+      - '/transfer'
+      - '/addfile'
+  condition: (certutil and url) or bitsadmin
+falsepositives:
+  - Stare skrypty instalacyjne pobierające pliki przez bitsadmin
+level: high
+heimdall:
+  instructions: |
+    Na {{host.name}} pobrano plik narzędziem systemowym: {{CommandLine}}.
+    Sprawdź adres w poleceniu (reputacja, czy to serwer firmy), zapisany
+    plik i to, co zostało uruchomione chwilę później. Zablokuj adres na
+    zaporze, jeśli nie jest znany.

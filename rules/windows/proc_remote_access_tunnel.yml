@@ -1,0 +1,46 @@
+title: Narzędzie zdalnego dostępu albo tunelu (AnyDesk, ngrok, chisel)
+id: dc417c4c-fd8e-4e9f-8967-997dc4295798
+status: experimental
+description: |
+  Uruchomienie programu zdalnego dostępu (AnyDesk, ScreenConnect, Atera,
+  RustDesk, TeamViewer) albo narzędzia tunelującego (ngrok, chisel,
+  cloudflared, plink z przekierowaniem -R). Napastnicy instalują je jako
+  trwały kanał dostępu, który wygląda jak zwykłe oprogramowanie.
+author: Heimdall
+tags:
+  - attack.command_and_control
+  - attack.t1219
+  - attack.t1572
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  remote_access:
+    Image|endswith:
+      - '\anydesk.exe'
+      - '\rustdesk.exe'
+      - '\screenconnect.clientservice.exe'
+      - '\screenconnect.windowsclient.exe'
+      - '\ateraagent.exe'
+      - '\teamviewer.exe'
+      - '\teamviewer_service.exe'
+  tunnel:
+    Image|endswith:
+      - '\ngrok.exe'
+      - '\chisel.exe'
+      - '\cloudflared.exe'
+  plink:
+    Image|endswith: '\plink.exe'
+    CommandLine|contains: ' -R '
+  condition: remote_access or tunnel or plink
+falsepositives:
+  - Oprogramowanie zdalnej pomocy używane oficjalnie przez dział IT (wyklucz jego program po ścieżce)
+level: medium
+heimdall:
+  group_by: [host.name, Image]
+  suppress: 24h
+  instructions: |
+    Na {{host.name}} uruchomiono {{Image}}. Ustal, czy firma używa tego
+    programu i kto go zainstalował. Jeśli nie – odinstaluj go, zablokuj
+    jego domeny na zaporze i sprawdź, co działo się na komputerze od
+    pierwszego uruchomienia.

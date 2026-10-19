@@ -1,0 +1,36 @@
+title: FortiGate – przeszukiwanie sieci (jeden adres łączy się z wieloma hostami)
+id: 9c55e2e1-ad24-400b-9d3d-bb7159593ab4
+status: experimental
+description: |
+  Połączenia z jednego adresu do co najmniej 30 różnych adresów docelowych
+  w ciągu 2 minut, odrzucone przez zaporę. Tak wygląda szukanie aktywnych
+  komputerów w sieci (ping sweep, skanowanie podsieci) – przez napastnika
+  z zewnątrz albo z przejętego komputera wewnątrz.
+author: Heimdall
+tags:
+  - attack.reconnaissance
+  - attack.t1595.001
+  - attack.discovery
+  - attack.t1018
+logsource:
+  product: fortigate
+detection:
+  selection:
+    type: traffic
+    event.action: deny
+  condition: selection
+falsepositives:
+  - Systemy monitorowania i inwentaryzacji sieci
+level: medium
+heimdall:
+  group_by: [source.ip]
+  threshold:
+    count: 30
+    window: 2m
+    distinct: dstip
+  suppress: 1h
+  instructions: |
+    Adres {{source.ip}} próbował łączyć się z {{count}} różnymi adresami
+    w {{window}}. Jeśli to komputer wewnętrzny, a nie system monitorowania
+    – odizoluj go i sprawdź, co go uruchomiło. Adres z internetu –
+    zablokuj go na zaporze.

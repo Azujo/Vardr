@@ -1,0 +1,39 @@
+title: FortiGate – skanowanie portów z jednego adresu
+id: c443836f-8cb9-4a07-a788-12ab3b6a17e8
+status: experimental
+description: |
+  Zapora zablokowała połączenia z jednego adresu na co najmniej 20 różnych
+  portów w ciągu 2 minut. Z internetu to rozpoznanie przed atakiem
+  (szukanie usług do wykorzystania), z sieci wewnętrznej – skanowanie
+  przez przejęty komputer. Wymaga logowania odrzuconego ruchu w polityce
+  zapory (także domyślnej polityki deny).
+author: Heimdall
+tags:
+  - attack.reconnaissance
+  - attack.t1595.001
+  - attack.discovery
+  - attack.t1046
+logsource:
+  product: fortigate
+detection:
+  selection:
+    type: traffic
+    event.action: deny
+  condition: selection
+falsepositives:
+  - Autoryzowany skaner podatności (dodaj jego adres jako wyjątek)
+  - Masowe skanery internetu (Shodan, Censys) – zwykle niegroźne, ale pokazują, co jest wystawione
+level: medium
+heimdall:
+  group_by: [source.ip]
+  threshold:
+    count: 20
+    window: 2m
+    distinct: dstport
+  suppress: 1h
+  instructions: |
+    Adres {{source.ip}} próbował połączyć się na {{count}} różnych portów
+    w {{window}} (porty: {{values}}). Adres wewnętrzny – sprawdź ten
+    komputer (przejęty albo nieuzgodniony skaner). Adres z internetu –
+    zablokuj go i sprawdź, czy któreś połączenie na wystawione usługi
+    zostało przepuszczone (action=accept z tego adresu).
