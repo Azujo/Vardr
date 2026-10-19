@@ -37,7 +37,7 @@ type sim struct {
 func main() {
 	target := flag.String("target", "192.168.88.98:514", "kolektor syslog (host:port)")
 	proto := flag.String("proto", "udp", "udp albo tcp (ramki zakończone znakiem nowej linii)")
-	scenario := flag.String("scenario", "mix", "traffic | vpn-ok | vpn-brute | vpn-spray | admin-brute | utm | mix")
+	scenario := flag.String("scenario", "mix", "traffic | portscan | sweep | vpn-ok | vpn-brute | vpn-spray | admin-brute | utm | mix")
 	count := flag.Int("count", 0, "liczba wiadomości (0 – domyślna dla scenariusza)")
 	rate := flag.Duration("every", 100*time.Millisecond, "odstęp między wiadomościami")
 	dev := flag.String("devname", "FGT-HQ", "nazwa urządzenia (devname)")
@@ -65,6 +65,18 @@ func main() {
 	switch *scenario {
 	case "traffic":
 		lines = s.repeat(nonzero(*count, 20), s.traffic)
+	case "portscan":
+		// Skanowanie portów: atakujący → jeden adres, kolejne porty, odrzucone.
+		n := nonzero(*count, 25)
+		for i := range n {
+			lines = append(lines, s.deny("192.0.2.10", 20+i))
+		}
+	case "sweep":
+		// Przeszukiwanie sieci: atakujący → kolejne adresy podsieci, port 445.
+		n := nonzero(*count, 35)
+		for i := range n {
+			lines = append(lines, s.deny(fmt.Sprintf("10.10.20.%d", 1+i%254), 445))
+		}
 	case "vpn-ok":
 		lines = s.vpnOK(nonzero(*count, 3))
 	case "vpn-brute":
@@ -159,6 +171,15 @@ func (s *sim) traffic() string {
 		"dstip", dst, "dstport", port, "dstintf", "wan1", "dstintfrole", "wan", "sessionid", fmt.Sprint(100000+s.n),
 		"proto", proto, "action", action, "policyid", policy, "policytype", "policy", "service", svc,
 		"duration", fmt.Sprint(rand.IntN(300)), "sentbyte", fmt.Sprint(rand.IntN(90000)), "rcvdbyte", fmt.Sprint(rand.IntN(900000)))
+}
+
+// deny: odrzucone połączenie atakującego (skanowanie).
+func (s *sim) deny(dst string, port int) string {
+	return s.line(189, "0000000013", "traffic", "forward", "notice",
+		"srcip", s.attacker, "srcport", fmt.Sprint(40000+rand.IntN(20000)), "srcintf", "wan1", "srcintfrole", "wan",
+		"dstip", dst, "dstport", fmt.Sprint(port), "dstintf", "port2", "dstintfrole", "lan", "sessionid", fmt.Sprint(100000+s.n),
+		"proto", "6", "action", "deny", "policyid", "0", "policytype", "policy", "service", fmt.Sprintf("tcp/%d", port),
+		"duration", "0", "sentbyte", "0", "rcvdbyte", "0")
 }
 
 func (s *sim) vpnOK(n int) []string {

@@ -33,6 +33,10 @@ falsepositives:
   - Narzędzia wdrażania oprogramowania działające jak PsExec
 level: high
 heimdall:
+  # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
+  # jeden alert na komputer, kolejne trafienia dołączają do niego.
+  group_by: [host.name]
+  suppress: 1h
   instructions: |
     Na {{host.name}} zainstalowano usługę {{ServiceName}} uruchamiającą
     {{ImagePath}}. Ustal, z którego komputera i na jakie konto przyszło
