@@ -238,6 +238,9 @@ export const agentsApi = {
   get: (id: string) =>
     request<{ agent: AgentView; status: AgentStatusDoc }>("GET", `/api/v1/agents/${encodeURIComponent(id)}`),
   remove: (id: string) => request<void>("DELETE", `/api/v1/agents/${encodeURIComponent(id)}`),
+  // Ważne certyfikaty agentów spoza listy (administrator).
+  orphanCerts: () =>
+    request<{ certs: { serial: string; agent_id: string; hostname: string; not_after: string }[] }>("GET", "/api/v1/agents/orphan-certs"),
   uninstallTokens: (id: string) =>
     request<{ tokens: UninstallToken[] }>("GET", `/api/v1/agents/${encodeURIComponent(id)}/uninstall-tokens`),
   createUninstallToken: (id: string, body: { reason: string; hours?: number; password: string }) =>

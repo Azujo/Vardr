@@ -112,6 +112,18 @@ func (m *memStore) AgentCertBySerial(_ context.Context, serial string) (store.Ag
 	}
 	return store.AgentCert{}, store.ErrNotFound
 }
+func (m *memStore) OrphanAgentCerts(_ context.Context, now time.Time) ([]store.AgentCert, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []store.AgentCert
+	for _, c := range m.certs {
+		if _, listed := m.agents[c.AgentID]; !listed && c.RevokedAt == nil && c.NotAfter.After(now) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
 func (m *memStore) RevokeAgentCerts(_ context.Context, agentID, reason string) ([]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

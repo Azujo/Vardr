@@ -120,6 +120,29 @@ func (s *PG) AgentCertBySerial(ctx context.Context, serial string) (AgentCert, e
 	return c, err
 }
 
+// OrphanAgentCerts zwraca ważne (nieunieważnione, niewygasłe) certyfikaty
+// agentów, których nie ma na liście – np. usuniętych, zanim usunięcie
+// zaczęło unieważniać certyfikaty. To niewidoczny dostęp do serwera.
+func (s *PG) OrphanAgentCerts(ctx context.Context, now time.Time) ([]AgentCert, error) {
+	rows, err := s.pool.Query(ctx, `SELECT serial, agent_id, issued_at, not_after, token_id, renewed_from, hostname, remote_ip, revoked_at, revoke_reason
+		FROM agent_certs c WHERE revoked_at IS NULL AND not_after > $1
+		AND NOT EXISTS (SELECT 1 FROM agents a WHERE a.id = c.agent_id) ORDER BY agent_id, issued_at`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AgentCert
+	for rows.Next() {
+		var c AgentCert
+		if err := rows.Scan(&c.Serial, &c.AgentID, &c.IssuedAt, &c.NotAfter, &c.TokenID, &c.RenewedFrom, &c.Hostname,
+			&c.RemoteIP, &c.RevokedAt, &c.RevokeReason); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // RevokeAgentCerts unieważnia wszystkie ważne certyfikaty agenta i zwraca
 // ich numery seryjne (do rozesłania do siem-ingest).
 func (s *PG) RevokeAgentCerts(ctx context.Context, agentID, reason string) ([]string, error) {

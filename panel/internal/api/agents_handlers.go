@@ -387,6 +387,20 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"agent": v, "status": a.Status})
 }
 
+// orphanCerts: ważne certyfikaty agentów spoza listy (administrator je
+// unieważnia – POST /agents/{id}/revoke działa także bez wiersza agenta).
+func (s *Server) orphanCerts(w http.ResponseWriter, r *http.Request) {
+	certs, err := s.Store.OrphanAgentCerts(r.Context(), s.now())
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if certs == nil {
+		certs = []store.AgentCert{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"certs": certs})
+}
+
 func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	id := r.PathValue("id")
@@ -394,14 +408,30 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_id", "niepoprawny identyfikator agenta")
 		return
 	}
-	if err := s.Store.DeleteAgent(r.Context(), id); errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego agenta")
-		return
-	} else if err != nil {
+	// Usunięcie zawsze unieważnia certyfikaty: wiersz znika z listy, więc
+	// ważny certyfikat (i klucz, który mógł zostać na dysku) byłby
+	// niewidocznym dostępem do serwera. Agent, który nadal działa, nie
+	// wróci już na listę – potrzebna nowa rejestracja tokenem.
+	const reason = "agent usunięty w panelu"
+	serials, err := s.Store.RevokeAgentCerts(r.Context(), id, reason)
+	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.audit(r, &a.user, "agent_removed", id, nil)
+	if len(serials) > 0 && s.Enroll != nil && s.Enroll.Revoke != nil {
+		if err := s.Enroll.Revoke(r.Context(), serials, reason); err != nil {
+			s.internalError(w, r, fmt.Errorf("rozesłanie unieważnienia: %w", err))
+			return
+		}
+	}
+	if err := s.Store.DeleteAgent(r.Context(), id); errors.Is(err, store.ErrNotFound) && len(serials) == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego agenta")
+		return
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		s.internalError(w, r, err)
+		return
+	}
+	s.audit(r, &a.user, "agent_removed", id, map[string]any{"revoked_serials": serials})
 	w.WriteHeader(http.StatusNoContent)
 }
 

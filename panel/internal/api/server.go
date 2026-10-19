@@ -50,6 +50,7 @@ type Store interface {
 	RecordAgentCert(ctx context.Context, c store.AgentCert) error
 	AgentCertBySerial(ctx context.Context, serial string) (store.AgentCert, error)
 	RevokeAgentCerts(ctx context.Context, agentID, reason string) ([]string, error)
+	OrphanAgentCerts(ctx context.Context, now time.Time) ([]store.AgentCert, error)
 	ListGroups(ctx context.Context) ([]store.AgentGroup, error)
 	GroupByID(ctx context.Context, id int64) (store.AgentGroup, error)
 	CreateGroup(ctx context.Context, g store.AgentGroup) (store.AgentGroup, error)
@@ -155,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/audit", s.authed(roleAdmin, 0, s.listAudit))
 
 	mux.Handle("GET /api/v1/agents", s.authed(roleViewer, 0, s.listAgents))
+	mux.Handle("GET /api/v1/agents/orphan-certs", s.authed(roleAdmin, 0, s.orphanCerts))
 	mux.Handle("GET /api/v1/agents/{id}", s.authed(roleViewer, 0, s.getAgent))
 	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(roleAdmin, 0, s.deleteAgent))
 	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(roleAdmin, 0, s.revokeAgent))

@@ -109,7 +109,11 @@ export default function AgentDetailPage() {
   }, [id]);
 
   const remove = async () => {
-    if (!window.confirm(`Usunąć agenta ${id} z listy? Jeśli nadal działa, pojawi się ponownie po kolejnym heartbeacie.`))
+    if (
+      !window.confirm(
+        `Usunąć agenta ${id} z listy?\n\nJego certyfikaty zostaną unieważnione – agent nie wyśle już żadnych zdarzeń, nawet jeśli nadal działa. Powrót tylko przez nową rejestrację tokenem. Historia zdarzeń i alertów zostaje.`,
+      )
+    )
       return;
     try {
       await agentsApi.remove(id);

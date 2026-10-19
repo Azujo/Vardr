@@ -101,6 +101,29 @@ export default function AgentsPage() {
     });
   }, [agents, query, filter]);
 
+  const [orphans, setOrphans] = useState<{ serial: string; agent_id: string; hostname: string; not_after: string }[]>([]);
+  const loadOrphans = () => {
+    if (user?.role !== "admin") return;
+    agentsApi
+      .orphanCerts()
+      .then((r) => setOrphans(r.certs))
+      .catch(() => setOrphans([]));
+  };
+  useEffect(loadOrphans, [user]);
+  const revokeOrphan = async (id: string) => {
+    const reason = window.prompt(`Unieważnić certyfikaty usuniętego agenta ${id}?
+
+Powód:`, "agent usunięty z listy bez unieważnienia");
+    if (reason === null) return;
+    try {
+      const r = await enrollApi.revokeAgent(id, reason);
+      notifications.show({ color: "green", message: `Unieważniono certyfikaty: ${r.revoked}` });
+      loadOrphans();
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   const updateMSI = async () => {
     setDownloading(true);
     try {
@@ -134,6 +157,38 @@ export default function AgentsPage() {
         )}
       </Group>
       {error && <Alert color="red">{error}</Alert>}
+      {orphans.length > 0 && (
+        <Alert color="red" title={`Ważne certyfikaty agentów spoza listy (${orphans.length})`}>
+          <Text size="sm" mb="xs">
+            Te agenty usunięto z listy, ale ich certyfikaty są nadal ważne – ktoś z kluczem prywatnym mógłby wysyłać zdarzenia
+            w ich imieniu. Unieważnij je (wpis w audycie).
+          </Text>
+          <Table fz="sm" verticalSpacing={4}>
+            <Table.Tbody>
+              {[...new Set(orphans.map((c) => c.agent_id))].map((id) => {
+                const cs = orphans.filter((c) => c.agent_id === id);
+                return (
+                  <Table.Tr key={id}>
+                    <Table.Td>
+                      <Text size="sm" fw={500}>
+                        {cs[0].hostname || id}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {id} · certyfikaty: {cs.length} · ważny do {new Date(cs[cs.length - 1].not_after).toLocaleDateString()}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ta="right">
+                      <Button size="xs" color="red" variant="light" onClick={() => void revokeOrphan(id)}>
+                        Unieważnij
+                      </Button>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+        </Alert>
+      )}
 
       {summary && (
         <SimpleGrid cols={{ base: 2, md: 4 }}>

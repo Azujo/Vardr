@@ -248,7 +248,14 @@ func testEnrollment(t *testing.T, db *PG) {
 	if rs, err := db.RevokedSerials(ctx, now); err != nil || len(rs) != 2 {
 		t.Fatalf("unieważnione do rozesłania: %v %v", rs, err)
 	}
-}
+	// Osierocone: ważny certyfikat agenta spoza listy (unieważnione i wygasłe – nie).
+	if err := db.RecordAgentCert(ctx, AgentCert{Serial: "cc01", AgentID: "agt-usuniety", IssuedAt: now, NotAfter: now.Add(time.Hour), Hostname: "PCX"}); err != nil {
+		t.Fatal(err)
+	}
+	if orph, err := db.OrphanAgentCerts(ctx, now); err != nil || len(orph) != 1 || orph[0].Serial != "cc01" {
+		t.Fatalf("osierocone certyfikaty: %+v %v", orph, err)
+	}
+	}
 
 func testGroups(t *testing.T, db *PG) {
 	ctx := context.Background()

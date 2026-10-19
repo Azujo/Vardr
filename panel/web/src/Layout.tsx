@@ -43,6 +43,7 @@ import {
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "./auth";
 import ErrorBoundary from "./ErrorBoundary";
+import UpdateBanner from "./UpdateBanner";
 import { api, roleLabels } from "./api";
 
 interface Item {
@@ -212,6 +213,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       </AppShell.Navbar>
 
       <AppShell.Main>
+        <UpdateBanner />
         <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
       </AppShell.Main>
     </AppShell>

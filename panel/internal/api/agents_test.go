@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -96,10 +97,26 @@ func TestAgentsListAndDetail(t *testing.T) {
 	}
 	a := e.client("10.0.0.2")
 	a.login("admin", "haslo-admina-123")
+	e.st.certs = append(e.st.certs, store.AgentCert{Serial: "c0ff01", AgentID: "agt-off", NotAfter: e.clock.Add(90 * 24 * time.Hour)})
 	if code, _, _ := a.do("DELETE", "/api/v1/agents/agt-off", nil); code != 204 {
 		t.Fatalf("usunięcie: %d", code)
 	}
-	if got := e.st.actions(); got[len(got)-1] != "agent_removed" {
+	// Certyfikat agenta spoza listy (usuniętego przed poprawką) – widoczny i do unieważnienia.
+	e.st.certs = append(e.st.certs, store.AgentCert{Serial: "dead01", AgentID: "agt-usuniety", NotAfter: e.clock.Add(time.Hour)})
+	if code, out, _ := a.do("GET", "/api/v1/agents/orphan-certs", nil); code != 200 || len(out["certs"].([]any)) != 1 {
+		t.Fatalf("osierocone: %d %v", code, out)
+	}
+	if code, _, _ := c.do("GET", "/api/v1/agents/orphan-certs", nil); code != 403 {
+		t.Fatalf("osierocone dla viewer: %d", code)
+	}
+	if code, out, _ := a.do("POST", "/api/v1/agents/agt-usuniety/revoke", map[string]string{"reason": "test"}); code != 200 || out["revoked"] != 1.0 {
+		t.Fatalf("unieważnienie osieroconego: %d %v", code, out)
+	}
+	// Usunięcie unieważnia certyfikaty (agent z kluczem na dysku nie wróci).
+	if c := e.st.certs[slices.IndexFunc(e.st.certs, func(x store.AgentCert) bool { return x.Serial == "c0ff01" })]; c.RevokedAt == nil || c.RevokeReason != "agent usunięty w panelu" {
+		t.Fatalf("certyfikat po usunięciu: %+v", c)
+	}
+	if got := e.st.actions(); !slices.Contains(got, "agent_removed") || !slices.Contains(got, "agent_certs_revoked") {
 		t.Fatalf("audyt: %v", got)
 	}
 }
