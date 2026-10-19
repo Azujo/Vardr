@@ -255,7 +255,7 @@ func testEnrollment(t *testing.T, db *PG) {
 	if orph, err := db.OrphanAgentCerts(ctx, now); err != nil || len(orph) != 1 || orph[0].Serial != "cc01" {
 		t.Fatalf("osierocone certyfikaty: %+v %v", orph, err)
 	}
-	}
+}
 
 func testGroups(t *testing.T, db *PG) {
 	ctx := context.Background()
