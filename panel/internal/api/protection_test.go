@@ -175,6 +175,12 @@ func TestAgentViewProtection(t *testing.T) {
 	if !strings.Contains(v.Problems[0], "wyłączony") || v.Protection != "unknown" {
 		t.Fatalf("%+v", v)
 	}
+	// Wycofany (certyfikat unieważniony po deinstalacji tokenem) – stan, nie problem.
+	v = viewAgent(store.Agent{ID: "agt-1", LastSeen: now.Add(-time.Hour), CertRevoked: true,
+		Status: json.RawMessage(`{"stopping":"uninstall_token"}`)}, g, now)
+	if v.State != "retired" || len(v.Problems) != 0 {
+		t.Fatalf("wycofany: %+v", v)
+	}
 }
 
 func (m *memStore) hasAudit(action string) bool {

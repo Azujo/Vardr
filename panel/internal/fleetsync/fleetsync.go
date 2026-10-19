@@ -17,8 +17,13 @@ import (
 // Store to zapis stanu agentów.
 type Store interface {
 	UpsertAgents(ctx context.Context, agents []store.Agent) error
-	MarkUninstallTokensUsed(ctx context.Context, uses []store.TokenUse) error
+	MarkUninstallTokensUsed(ctx context.Context, uses []store.TokenUse) ([]store.TokenUse, error)
 }
+
+// Retire wycofuje agenta odinstalowanego tokenem z panelu: unieważnia jego
+// certyfikaty (agent nie wyśle już niczego, nawet jeśli klucz został na
+// dysku) – wywoływane raz, przy pierwszym zgłoszeniu deinstalacji.
+type Retire func(ctx context.Context, use store.TokenUse) error
 
 // TokenUses: tokeny deinstalacji użyte według raportu agenta (zatrzymanie
 // albo deinstalacja tokenem w status.protection.events).
@@ -55,9 +60,28 @@ func ToAgent(hb contract.ServerHeartbeat) store.Agent {
 	return a
 }
 
+// ApplyTokenUses oznacza użyte tokeny deinstalacji, a agenta, który zgłosił
+// pierwszy raz deinstalację tokenem wydanym w panelu, wycofuje (retire).
+func ApplyTokenUses(ctx context.Context, log *slog.Logger, st Store, retire Retire, uses []store.TokenUse) {
+	applied, err := st.MarkUninstallTokensUsed(ctx, uses)
+	if err != nil {
+		log.Warn("oznaczenie użytych tokenów deinstalacji nieudane", "err", err)
+	}
+	for _, u := range applied {
+		if u.Action != contract.TamperUninstallTok || retire == nil {
+			continue
+		}
+		if err := retire(ctx, u); err != nil {
+			log.Error("wycofanie odinstalowanego agenta nieudane – unieważnij certyfikat ręcznie", "agent", u.AgentID, "err", err)
+		} else {
+			log.Info("agent odinstalowany tokenem – certyfikaty unieważnione", "agent", u.AgentID, "token", u.TokenID)
+		}
+	}
+}
+
 // Run pobiera heartbeaty partiami i zapisuje je do zakończenia ctx.
 // Wiadomość jest potwierdzana dopiero po zapisie w bazie.
-func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Store) {
+func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Store, retire Retire) {
 	for ctx.Err() == nil {
 		batch, err := cons.Fetch(500, jetstream.FetchMaxWait(2*time.Second))
 		if err != nil {
@@ -85,9 +109,7 @@ func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Stor
 		wctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = st.UpsertAgents(wctx, agents)
 		if err == nil {
-			if uerr := st.MarkUninstallTokensUsed(wctx, uses); uerr != nil {
-				log.Warn("oznaczenie użytych tokenów deinstalacji nieudane", "err", uerr)
-			}
+			ApplyTokenUses(wctx, log, st, retire, uses)
 		}
 		cancel()
 		if err != nil {

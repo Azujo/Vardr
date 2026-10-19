@@ -20,7 +20,7 @@ import { Link } from "react-router-dom";
 import { agentsApi, ago, configStateLabels, enrollApi, formatNumber, type AgentView, type AgentsSummary } from "../api";
 import { useAuth } from "../auth";
 
-type Filter = "all" | "online" | "offline" | "problems";
+type Filter = "all" | "online" | "offline" | "problems" | "retired";
 
 function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
   return (
@@ -41,6 +41,14 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
 }
 
 export function StateBadge({ a }: { a: AgentView }) {
+  if (a.state === "retired")
+    return (
+      <Tooltip label="Certyfikat agenta unieważniony (deinstalacja tokenem albo unieważnienie w panelu) – agent nie może już wysyłać zdarzeń. Historia zostaje.">
+        <Badge color="dark" variant="light">
+          wycofany
+        </Badge>
+      </Tooltip>
+    );
   if (a.state === "offline") {
     if (a.stopping === "stop") return <Badge color="red">zatrzymany bez tokenu</Badge>;
     if (a.stopping && a.stopping !== "shutdown") return <Badge color="gray">zatrzymany</Badge>;
@@ -84,6 +92,8 @@ export default function AgentsPage() {
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return agents.filter((a) => {
+      // Wycofani (certyfikat unieważniony) – tylko w osobnym filtrze.
+      if ((filter === "retired") !== (a.state === "retired")) return false;
       if (filter === "online" && a.state !== "online") return false;
       if (filter === "offline" && a.state !== "offline") return false;
       if (filter === "problems" && a.problems.length === 0) return false;
@@ -161,6 +171,7 @@ export default function AgentsPage() {
             { value: "online", label: "Online" },
             { value: "offline", label: "Offline" },
             { value: "problems", label: "Problemy" },
+            ...(summary?.retired ? [{ value: "retired", label: `Wycofani (${summary.retired})` }] : []),
           ]}
         />
       </Group>

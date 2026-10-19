@@ -81,7 +81,7 @@ type agentView struct {
 	CertNotAfter *time.Time `json:"cert_not_after,omitempty"`
 	CertDaysLeft *int       `json:"cert_days_left,omitempty"`
 
-	State          string     `json:"state"` // online | offline
+	State          string     `json:"state"` // online | offline | retired (certyfikat unieważniony)
 	ServerHealthy  bool       `json:"server_healthy"`
 	LastAcceptedAt *time.Time `json:"last_accepted_at,omitempty"`
 	Accepted       int64      `json:"events_accepted"`
@@ -137,6 +137,12 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		default:
 			v.Problems = append(v.Problems, "agent zatrzymany ("+stoppingLabel(st.Stopping)+") "+humanAgo(now.Sub(a.LastSeen))+" temu")
 		}
+	}
+	// Wycofany: certyfikat unieważniony (deinstalacja tokenem albo panel) –
+	// agent nie może już nic wysłać; to nie problem, tylko stan.
+	if a.CertRevoked {
+		v.State, v.Problems = "retired", []string{}
+		return v
 	}
 	if a.CertNotAfter != nil {
 		days := int(a.CertNotAfter.Sub(now).Hours() / 24)
@@ -293,6 +299,7 @@ type agentsSummary struct {
 	Total    int `json:"total"`
 	Online   int `json:"online"`
 	Offline  int `json:"offline"`
+	Retired  int `json:"retired"`
 	Problems int `json:"with_problems"`
 }
 
@@ -315,12 +322,16 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	applySysmonBaseline(views)
 	var sum agentsSummary
 	for _, v := range views {
-		sum.Total++
-		if v.State == "online" {
+		switch v.State {
+		case "retired":
+			sum.Retired++
+			continue // poza liczbą agentów i problemami
+		case "online":
 			sum.Online++
-		} else {
+		default:
 			sum.Offline++
 		}
+		sum.Total++
 		if len(v.Problems) > 0 {
 			sum.Problems++
 		}

@@ -22,6 +22,9 @@ type Agent struct {
 	CertNotAfter *time.Time      `json:"cert_not_after,omitempty"`
 	CertSerial   string          `json:"cert_serial"`
 	Status       json.RawMessage `json:"status"`
+	// CertRevoked: ostatni certyfikat agenta unieważniony (agent wycofany –
+	// odinstalowany tokenem albo unieważniony w panelu). Tylko odczyt.
+	CertRevoked bool `json:"cert_revoked"`
 }
 
 // UpsertAgents zapisuje heartbeaty jednym przebiegiem. Starszy heartbeat,
@@ -48,13 +51,14 @@ func (s *PG) UpsertAgents(ctx context.Context, agents []Agent) error {
 	return s.pool.SendBatch(ctx, b).Close()
 }
 
-const agentCols = `id, hostname, os, version, remote_ip, first_seen, last_seen, started_at, cert_not_after, cert_serial, status`
+const agentCols = `id, hostname, os, version, remote_ip, first_seen, last_seen, started_at, cert_not_after, cert_serial, status,
+	EXISTS (SELECT 1 FROM agent_certs c WHERE c.serial = agents.cert_serial AND c.revoked_at IS NOT NULL)`
 
 func scanAgent(row pgx.Row) (Agent, error) {
 	var a Agent
 	var status []byte
 	err := row.Scan(&a.ID, &a.Hostname, &a.OS, &a.Version, &a.RemoteIP, &a.FirstSeen, &a.LastSeen,
-		&a.StartedAt, &a.CertNotAfter, &a.CertSerial, &status)
+		&a.StartedAt, &a.CertNotAfter, &a.CertSerial, &status, &a.CertRevoked)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}

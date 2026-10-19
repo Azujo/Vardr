@@ -272,6 +272,23 @@ func install(o installOptions) error {
 
 // uninstall usuwa usługę, wpis w PATH i program. Z -purge usuwa też dane,
 // konfigurację, certyfikaty i kopię stanu w rejestrze.
+// removeAgentKey usuwa klucz prywatny agenta przy deinstalacji. Panel
+// unieważnia certyfikat (deinstalacja tokenem), ale klucz nie może zostać na
+// dysku – sprzedany albo przekazany komputer, kopia dysku. Ponowna
+// instalacja na tym komputerze to nowa rejestracja tokenem.
+func removeAgentKey(cfgPath string) {
+	key := filepath.Join(dataDir, "certs", "agent.key")
+	if cfg, err := config.Load(cfgPath); err == nil && cfg.Server.KeyFile != "" {
+		key = cfg.Server.KeyFile
+	}
+	switch err := os.Remove(key); {
+	case err == nil:
+		fmt.Println("Usunięto klucz prywatny agenta:", key)
+	case !errors.Is(err, fs.ErrNotExist):
+		fmt.Println("UWAGA: nie usunięto klucza prywatnego", key+":", err)
+	}
+}
+
 func uninstall(cfgPath string, purge bool, token string) error {
 	if err := requireAdmin("Odinstalowanie agenta"); err != nil {
 		return err
@@ -289,6 +306,9 @@ func uninstall(cfgPath string, purge bool, token string) error {
 		fmt.Println("uwaga: PATH:", err)
 	}
 
+	if !purge {
+		removeAgentKey(cfgPath)
+	}
 	if purge {
 		if err := os.RemoveAll(dataDir); err != nil {
 			fmt.Println("uwaga: nie usunięto danych:", err)
@@ -302,7 +322,7 @@ func uninstall(cfgPath string, purge bool, token string) error {
 		_ = registry.DeleteKey(registry.LOCAL_MACHINE, `SOFTWARE\SiemAgent\Instances`)
 		_ = registry.DeleteKey(registry.LOCAL_MACHINE, `SOFTWARE\SiemAgent`)
 	} else {
-		fmt.Println("Dane i konfiguracja pozostały w", dataDir, "(usuń je opcją -purge).")
+		fmt.Println("Konfiguracja i bufor pozostały w", dataDir, "(usuń je opcją -purge); klucz prywatny usunięty.")
 	}
 
 	// Usunięcie folderu programu. Jeśli polecenie działa z tego folderu,

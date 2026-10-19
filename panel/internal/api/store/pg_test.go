@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -225,6 +226,20 @@ func testEnrollment(t *testing.T, db *PG) {
 	if again, _ := db.RevokeAgentCerts(ctx, "agt-pc9", "ponownie"); len(again) != 0 {
 		t.Fatalf("ponowne unieważnienie zwróciło %v", again)
 	}
+	// Lista agentów: bieżący certyfikat unieważniony – agent wycofany.
+	if err := db.UpsertAgents(ctx, []Agent{{ID: "agt-pc9", Hostname: "PC9", LastSeen: now, CertSerial: "aa02", Status: []byte(`{}`)},
+		{ID: "agt-pc8", Hostname: "PC8", LastSeen: now, CertSerial: "bb01", Status: []byte(`{}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	if ags, err := db.ListAgents(ctx); err != nil || len(ags) < 2 || !ags[slices.IndexFunc(ags, func(a Agent) bool { return a.ID == "agt-pc9" })].CertRevoked ||
+		ags[slices.IndexFunc(ags, func(a Agent) bool { return a.ID == "agt-pc8" })].CertRevoked {
+		t.Fatalf("wycofanie w liście agentów: %+v %v", ags, err)
+	}
+	for _, id := range []string{"agt-pc9", "agt-pc8"} { // reszta testu liczy agentów w grupach
+		if err := db.DeleteAgent(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
 	db.RevokeAgentCerts(ctx, "agt-old", "wygasły")
 	if c, err := db.AgentCertBySerial(ctx, "aa02"); err != nil || c.RevokedAt == nil || c.RevokeReason != "kradzież" || c.RenewedFrom != "aa01" {
 		t.Fatalf("certyfikat: %+v %v", c, err)
@@ -311,9 +326,14 @@ func testGroups(t *testing.T, db *PG) {
 	if err != nil || len(act) != 1 || act[0].Hash != h2 {
 		t.Fatalf("aktywne: %+v %v", act, err)
 	}
-	if err := db.MarkUninstallTokensUsed(ctx, []TokenUse{{AgentID: "agt-1", TokenID: act[0].ID, Action: "uninstall_token",
-		User: `AZUJO\jan`, At: time.Now()}}); err != nil {
-		t.Fatal(err)
+	use := TokenUse{AgentID: "agt-1", TokenID: act[0].ID, Action: "uninstall_token", User: `AZUJO\jan`, At: time.Now()}
+	foreign := TokenUse{AgentID: "agt-2", TokenID: act[0].ID, Action: "uninstall_token", At: time.Now()} // token innego agenta
+	if applied, err := db.MarkUninstallTokensUsed(ctx, []TokenUse{use, foreign}); err != nil || len(applied) != 1 || applied[0] != use {
+		t.Fatalf("użycie tokenu: %+v %v", applied, err)
+	}
+	// Kolejny heartbeat z tym samym zdarzeniem – nic nowego.
+	if applied, err := db.MarkUninstallTokensUsed(ctx, []TokenUse{use}); err != nil || len(applied) != 0 {
+		t.Fatalf("ponowne zgłoszenie: %+v %v", applied, err)
 	}
 	list, err := db.UninstallTokens(ctx, "agt-1", time.Now())
 	if err != nil || len(list) != 2 || list[0].State != "used" || list[0].UsedBy != `AZUJO\jan` || list[1].State != "revoked" {

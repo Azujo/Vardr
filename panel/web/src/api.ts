@@ -123,7 +123,7 @@ export interface AgentView {
   started_at?: string;
   cert_not_after?: string;
   cert_days_left?: number;
-  state: "online" | "offline";
+  state: "online" | "offline" | "retired";
   server_healthy: boolean;
   last_accepted_at?: string;
   events_accepted: number;
@@ -153,6 +153,7 @@ export interface AgentsSummary {
   total: number;
   online: number;
   offline: number;
+  retired?: number;
   with_problems: number;
 }
 

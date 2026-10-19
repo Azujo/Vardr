@@ -422,7 +422,23 @@ func serve(log *slog.Logger) error {
 				return
 			}
 			log.Info("odbiór heartbeatów agentów uruchomiony")
-			fleetsync.Run(ctx, log, cons, db)
+			// Deinstalacja tokenem z panelu: certyfikaty agenta unieważnione
+			// (klucz zostaje na dysku – bez certyfikatu jest bezużyteczny).
+			retire := func(ctx context.Context, u store.TokenUse) error {
+				reason := "deinstalacja tokenem " + u.TokenID
+				serials, err := db.RevokeAgentCerts(ctx, u.AgentID, reason)
+				if err != nil {
+					return err
+				}
+				if len(serials) > 0 {
+					if err := enrollment.Revoke(ctx, serials, reason); err != nil {
+						return err
+					}
+				}
+				return db.Audit(ctx, store.AuditEntry{Action: "agent_retired", Target: u.AgentID, Details: map[string]any{
+					"reason": "deinstalacja tokenem", "token": u.TokenID, "by": u.User, "serials": serials}})
+			}
+			fleetsync.Run(ctx, log, cons, db, retire)
 		}()
 	} else {
 		log.Warn("brak SIEM_NATS_URL – lista agentów nie będzie aktualizowana")

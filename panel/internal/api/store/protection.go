@@ -101,15 +101,30 @@ type TokenUse struct {
 	At      time.Time
 }
 
-// MarkUninstallTokensUsed oznacza tokeny jako użyte (raz – pierwsze zgłoszenie).
-func (s *PG) MarkUninstallTokensUsed(ctx context.Context, uses []TokenUse) error {
+// MarkUninstallTokensUsed oznacza tokeny jako użyte (raz – pierwsze
+// zgłoszenie) i zwraca te, które oznaczyło teraz: token wydany w panelu dla
+// tego agenta i jeszcze nieużyty. Ponowne zgłoszenie (kolejny heartbeat
+// z tym samym zdarzeniem) i token spoza panelu nic nie zwracają.
+func (s *PG) MarkUninstallTokensUsed(ctx context.Context, uses []TokenUse) ([]TokenUse, error) {
 	if len(uses) == 0 {
-		return nil
+		return nil, nil
 	}
 	b := &pgx.Batch{}
 	for _, u := range uses {
 		b.Queue(`UPDATE agent_uninstall_tokens SET used_at = $3, used_action = $4, used_by = left($5, 200)
 			WHERE agent_id = $1 AND token_id = $2 AND used_at IS NULL`, u.AgentID, u.TokenID, u.At, u.Action, u.User)
 	}
-	return s.pool.SendBatch(ctx, b).Close()
+	br := s.pool.SendBatch(ctx, b)
+	var applied []TokenUse
+	for _, u := range uses {
+		tag, err := br.Exec()
+		if err != nil {
+			br.Close()
+			return applied, err
+		}
+		if tag.RowsAffected() > 0 {
+			applied = append(applied, u)
+		}
+	}
+	return applied, br.Close()
 }

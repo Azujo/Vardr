@@ -179,6 +179,13 @@ func msiUninstall(token, upgradeCode string) (err error) {
 	if err := removeFromSystemPath(installDir); err != nil {
 		fmt.Println("uwaga: PATH:", err)
 	}
-	fmt.Println("Usługa usunięta; dane i certyfikaty zostały w", dataDir)
+	if upgradeCode != "" {
+		fmt.Println("Usługa usunięta; dane i certyfikaty zostały w", dataDir)
+		return nil
+	}
+	// Deinstalacja: klucz prywatny usunięty (panel unieważnia certyfikat
+	// po zgłoszeniu deinstalacji tokenem), konfiguracja i bufor zostają.
+	removeAgentKey(installCfg)
+	fmt.Println("Usługa usunięta; konfiguracja i bufor zostały w", dataDir)
 	return nil
 }
