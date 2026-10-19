@@ -48,8 +48,13 @@ type Rule struct {
 	False       []string `json:"falsepositives,omitempty"`
 	File        string   `json:"file"`
 	Source      string   `json:"source"` // treść YAML (do panelu)
+	// Name: nazwa Sigmy (odwołania z reguł korelacyjnych).
+	Name string `json:"name,omitempty"`
 
 	Heimdall Extensions `json:"heimdall"`
+	// CorrelationOnly: reguła bazowa korelacji z generate: false – zasila
+	// korelację, sama nie tworzy alertów.
+	CorrelationOnly bool `json:"correlation_only,omitempty"`
 
 	match Node
 }
@@ -106,6 +111,9 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 
 // Enabled mówi, czy reguła jest włączona.
 func (r *Rule) Enabled() bool { return r.Heimdall.Enabled == nil || *r.Heimdall.Enabled }
+
+// Alerts mówi, czy reguła sama tworzy alerty (włączona i nie tylko do korelacji).
+func (r *Rule) Alerts() bool { return r.Enabled() && !r.CorrelationOnly }
 
 // Match ocenia zdarzenie.
 func (r *Rule) Match(e Event) bool { return r.match.Eval(e) }
@@ -203,7 +211,7 @@ func Parse(data []byte, file string) (*Rule, error) {
 	return &Rule{
 		ID: r.ID, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file,
-		Source: string(data), Heimdall: r.Heimdall, match: and{ls, cond},
+		Source: string(data), Name: r.Name, Heimdall: r.Heimdall, match: and{ls, cond},
 	}, nil
 }
 
@@ -233,15 +241,32 @@ type LoadError struct {
 	Err  string `json:"error"`
 }
 
-// LoadDir wczytuje reguły (*.yml, *.yaml) z katalogu i podkatalogów.
-// Zwraca poprawne reguły i listę błędów; powtórzone id to błąd. Katalog
-// może być dowiązaniem (wdrożenie podmienia rules/current atomowo).
+// Set to reguły z katalogu: zwykłe (Sigma) i korelacyjne.
+type Set struct {
+	Rules        []*Rule
+	Correlations []*Correlation
+}
+
+// LoadDir wczytuje reguły (*.yml, *.yaml) z katalogu i podkatalogów (bez
+// korelacji – LoadSet).
 func LoadDir(dir string) ([]*Rule, []LoadError, error) {
+	set, errs, err := LoadSet(dir)
+	if set == nil {
+		return nil, errs, err
+	}
+	return set.Rules, errs, err
+}
+
+// LoadSet wczytuje reguły i korelacje z katalogu i podkatalogów. Plik może
+// mieć kilka dokumentów („---”: korelacja z regułami bazowymi). Zwraca
+// poprawne reguły i listę błędów; powtórzone id to błąd. Katalog może być
+// dowiązaniem (wdrożenie podmienia rules/current atomowo).
+func LoadSet(dir string) (*Set, []LoadError, error) {
 	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, nil, err
 	}
-	var rules []*Rule
+	set := &Set{}
 	var errs []LoadError
 	seen := map[string]string{}
 	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -259,21 +284,63 @@ func LoadDir(dir string) ([]*Rule, []LoadError, error) {
 			errs = append(errs, LoadError{rel, err.Error()})
 			return nil
 		}
-		r, err := Parse(data, rel)
-		if err != nil {
-			errs = append(errs, LoadError{rel, err.Error()})
-			return nil
+		docs := splitDocs(data)
+		for i, doc := range docs {
+			where := rel
+			if len(docs) > 1 {
+				where = fmt.Sprintf("%s (dokument %d)", rel, i+1)
+			}
+			var id string
+			if IsCorrelation(doc) {
+				c, err := ParseCorrelation(doc, rel)
+				if err != nil {
+					errs = append(errs, LoadError{where, err.Error()})
+					continue
+				}
+				id = c.ID
+				if prev, dup := seen[id]; dup {
+					errs = append(errs, LoadError{where, fmt.Sprintf("id %s użyte już w %s", id, prev)})
+					continue
+				}
+				set.Correlations = append(set.Correlations, c)
+			} else {
+				r, err := Parse(doc, rel)
+				if err != nil {
+					errs = append(errs, LoadError{where, err.Error()})
+					continue
+				}
+				id = r.ID
+				if prev, dup := seen[id]; dup {
+					errs = append(errs, LoadError{where, fmt.Sprintf("id %s użyte już w %s", id, prev)})
+					continue
+				}
+				set.Rules = append(set.Rules, r)
+			}
+			seen[id] = where
 		}
-		if prev, dup := seen[r.ID]; dup {
-			errs = append(errs, LoadError{rel, fmt.Sprintf("id %s użyte już w %s", r.ID, prev)})
-			return nil
-		}
-		seen[r.ID] = rel
-		rules = append(rules, r)
 		return nil
 	})
-	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
-	return rules, errs, err
+	sort.Slice(set.Rules, func(i, j int) bool { return set.Rules[i].ID < set.Rules[j].ID })
+	sort.Slice(set.Correlations, func(i, j int) bool { return set.Correlations[i].ID < set.Correlations[j].ID })
+	// Powiązanie korelacji z regułami bazowymi; generate: false – reguła bazowa
+	// zasila tylko korelację (chyba że któraś korelacja ma generate: true).
+	generate := map[*Rule]bool{}
+	var ok []*Correlation
+	for _, c := range set.Correlations {
+		if err := c.Resolve(set.Rules); err != nil {
+			errs = append(errs, LoadError{c.File, err.Error()})
+			continue
+		}
+		for _, r := range c.Rules {
+			generate[r] = generate[r] || c.Generate
+		}
+		ok = append(ok, c)
+	}
+	set.Correlations = ok
+	for r, g := range generate {
+		r.CorrelationOnly = !g
+	}
+	return set, errs, err
 }
 
 // IsThreshold mówi, czy reguła jest progowa.

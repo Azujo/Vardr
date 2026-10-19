@@ -175,3 +175,99 @@ func (s *Searcher) TestRule(ctx context.Context, r *detect.Rule, from, to time.T
 	res.TookMS = time.Since(t0).Milliseconds()
 	return res, nil
 }
+
+// TestCorrelation wykonuje regułę korelacyjną na zdarzeniach z (from, to]
+// (czas przyjęcia) tym samym zapytaniem i oceną co detektor.
+func (s *Searcher) TestCorrelation(ctx context.Context, c *detect.Correlation, from, to time.Time) (RuleTestResult, error) {
+	t0 := time.Now()
+	res := RuleTestResult{Events: []RuleTestEvent{}, Alerts: []RuleTestAlert{}}
+	rows, err := s.Conn.Query(ctx, c.EventsSQL("siem.events", from, to, maxTestRows+1))
+	if err != nil {
+		return res, fmt.Errorf("ClickHouse: %w", err)
+	}
+	byKey := map[string][]detect.CorrEvent{}
+	keyVals := map[string][]string{}
+	var order []string
+	for rows.Next() {
+		var ts time.Time
+		var fresh bool
+		var id, val string
+		var m []uint8
+		var k []any
+		if err := rows.Scan(&ts, &fresh, &id, &m, &k, &val); err != nil {
+			rows.Close()
+			return res, err
+		}
+		res.Matched++
+		ev := detect.CorrEvent{Time: ts, ID: id, Value: val, New: fresh}
+		for i, ok := range m {
+			if ok != 0 {
+				ev.Rules = append(ev.Rules, i)
+			}
+		}
+		kv := make([]string, len(k))
+		for i, x := range k {
+			kv[i] = fmt.Sprint(x)
+		}
+		ks := strings.Join(kv, "\x1f")
+		if _, ok := byKey[ks]; !ok {
+			order = append(order, ks)
+			keyVals[ks] = kv
+		}
+		byKey[ks] = append(byKey[ks], ev)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return res, err
+	}
+	res.Truncated = res.Matched > maxTestRows
+	var ids []string
+	for _, ks := range order {
+		evs := byKey[ks]
+		detect.SortCorrEvents(evs)
+		for _, g := range c.Evaluate(evs) {
+			a := RuleTestAlert{First: g[0].Time.UTC(), Last: g[len(g)-1].Time.UTC(), Events: len(g)}
+			if len(c.GroupBy) > 0 {
+				a.Key = map[string]string{}
+				for i, f := range c.GroupBy {
+					a.Key[f] = keyVals[ks][i]
+				}
+			}
+			res.Alerts = append(res.Alerts, a)
+			for _, e := range g {
+				if len(ids) < 50 {
+					ids = append(ids, e.ID)
+				}
+			}
+		}
+	}
+	sort.Slice(res.Alerts, func(i, j int) bool { return res.Alerts[i].Last.After(res.Alerts[j].Last) })
+	res.AlertsTotal = len(res.Alerts)
+	if len(res.Alerts) > 100 {
+		res.Alerts = res.Alerts[:100]
+	}
+	// Zdarzenia z alertów (do 50) – szczegóły do podglądu.
+	if len(ids) > 0 {
+		rows, err := s.Conn.Query(ctx, fmt.Sprintf(`SELECT %s FROM siem.events WHERE ingested > fromUnixTimestamp64Milli(%d, 'UTC')
+			AND event_id IN ? ORDER BY timestamp DESC LIMIT 1 BY event_id`, detect.EventColumns,
+			from.Add(-c.Timespan-detect.CorrelationLateness).UnixMilli()), ids)
+		if err != nil {
+			return res, fmt.Errorf("ClickHouse: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var e model.Event
+			if err := rows.Scan(detect.EventDest(&e)...); err != nil {
+				return res, err
+			}
+			sum := e.Message
+			if len([]rune(sum)) > 200 {
+				sum = string([]rune(sum)[:199]) + "…"
+			}
+			res.Events = append(res.Events, RuleTestEvent{Timestamp: e.Timestamp.UTC(), ID: e.ID, Host: e.HostName, User: e.UserName,
+				Code: e.Code, Summary: sum})
+		}
+	}
+	res.TookMS = time.Since(t0).Milliseconds()
+	return res, nil
+}

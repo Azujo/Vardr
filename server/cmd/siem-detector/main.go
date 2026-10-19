@@ -43,6 +43,9 @@ import (
 // corrDisabled: korelacje wyłączone w panelu (odświeżane przy przeładowaniu reguł).
 var corrDisabled atomic.Pointer[map[string]bool]
 
+// sigmaCorr: reguły korelacyjne Sigma z katalogu reguł (przeładowanie podmienia).
+var sigmaCorr atomic.Pointer[[]*detect.Correlation]
+
 func main() {
 	log := svc.Logger("detector")
 	cmd := "serve"
@@ -72,13 +75,20 @@ func main() {
 }
 
 func check(dir string) int {
-	rules, errs, err := detect.LoadDir(dir)
+	set, errs, err := detect.LoadSet(dir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	for _, r := range rules {
-		fmt.Printf("OK     %-8s %s  (%s)\n", r.Level, r.Title, r.File)
+	for _, r := range set.Rules {
+		note := ""
+		if r.CorrelationOnly {
+			note = "  [tylko korelacja]"
+		}
+		fmt.Printf("OK     %-8s %s  (%s)%s\n", r.Level, r.Title, r.File, note)
+	}
+	for _, c := range set.Correlations {
+		fmt.Printf("OK     %-8s %s  (%s)  [korelacja %s, %s]\n", c.Level, c.Title, c.File, c.Type, c.Timespan)
 	}
 	for _, e := range errs {
 		fmt.Printf("BŁĄD   %s: %s\n", e.File, e.Err)
@@ -159,13 +169,17 @@ func serve(log *slog.Logger) error {
 		if cur == fp {
 			return
 		}
-		rules, errs, err := detect.LoadDir(dir)
+		set, errs, err := detect.LoadSet(dir)
 		if err != nil {
 			m.Errors.WithLabelValues("rules").Inc()
 			log.Error("odczyt katalogu reguł nieudany – zostają poprzednie", "dir", dir, "err", err)
 			return
 		}
+		rules := set.Rules
 		fileEnabled := detector.ApplyOverrides(rules, ov)
+		sigmaInfos := detector.ApplyCorrelationOverrides(set.Correlations, ov)
+		sigma := set.Correlations
+		sigmaCorr.Store(&sigma)
 		for id, o := range ov {
 			log.Info("reguła ustawiona w panelu", "rule", id, "enabled", o.Enabled, "by", o.ChangedBy)
 		}
@@ -178,6 +192,7 @@ func serve(log *slog.Logger) error {
 		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule(), detector.TamperRule())
 		corrInfos, corrOff := detector.CorrelationInfos(ov)
 		infos = append(infos, corrInfos...)
+		infos = append(infos, sigmaInfos...)
 		corrDisabled.Store(&corrOff)
 		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
@@ -186,7 +201,7 @@ func serve(log *slog.Logger) error {
 		fp = cur
 		m.Rules.Set(float64(n))
 		m.RuleErrors.Set(float64(len(errs)))
-		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "errors", len(errs))
+		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "errors", len(errs))
 	}
 	reload()
 	restore()
@@ -634,11 +649,22 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 		to := time.Now().UTC().Add(-2 * time.Minute)
 		qctx, cancel := context.WithTimeout(ctx, 50*time.Second)
 		hits, err := c.Run(qctx, to.Add(-lookback), to)
-		cancel()
 		if err != nil {
 			m.Errors.WithLabelValues("correlation").Inc()
 			log.Warn("korelacje międzyźródłowe nieudane", "err", err)
-		} else {
+			hits = nil
+		}
+		// Reguły korelacyjne Sigma – błąd jednej nie zatrzymuje pozostałych.
+		if p := sigmaCorr.Load(); p != nil && len(*p) > 0 {
+			sh, errs := c.RunSigma(qctx, *p, to.Add(-lookback), to)
+			for _, e := range errs {
+				m.Errors.WithLabelValues("correlation").Inc()
+				log.Warn("reguła korelacyjna nieudana", "err", e)
+			}
+			hits = append(hits, sh...)
+		}
+		cancel()
+		if err == nil || len(hits) > 0 {
 			lookback = 15 * time.Minute
 			if len(hits) > 0 {
 				res, err := store.Record(ctx, hits, nil)

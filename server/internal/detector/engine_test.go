@@ -15,7 +15,13 @@ func TestEngineHits(t *testing.T) {
 		t.Fatal(err, errs)
 	}
 	e := NewEngine()
-	if n := e.SetRules(rules); n != len(rules) {
+	alerting := 0
+	for _, r := range rules {
+		if r.Alerts() {
+			alerting++
+		}
+	}
+	if n := e.SetRules(rules); n != alerting || n == len(rules) {
 		t.Fatalf("reguły w locie: %d", n)
 	}
 	ts := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)

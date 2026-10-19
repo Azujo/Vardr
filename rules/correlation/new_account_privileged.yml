@@ -1,0 +1,37 @@
+title: Nowe konto od razu dodane do grupy uprzywilejowanej
+id: fc22af54-b46e-449d-a6fd-e100cffa9153
+status: stable
+description: |
+  Konto utworzone (4720) i w ciągu godziny dodane do grupy administracyjnej
+  (4728/4732/4756). Typowy sposób utrwalenia dostępu: napastnik zakłada
+  własne konto i od razu nadaje mu uprawnienia. Zdarzenia łączone po SID
+  konta (TargetSid w 4720, MemberSid przy dodaniu do grupy).
+author: Heimdall
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1136
+  - attack.t1098
+level: critical
+correlation:
+  type: temporal_ordered
+  rules:
+    - 9f379649-a04b-43de-b3a0-25587cf713de # Utworzono konto użytkownika
+    - f406b909-37ba-4b21-b8c2-f4bd5cbf3192 # Dodanie konta do grupy uprzywilejowanej
+  group-by:
+    - account
+  timespan: 1h
+  aliases:
+    account:
+      9f379649-a04b-43de-b3a0-25587cf713de: TargetSid
+      f406b909-37ba-4b21-b8c2-f4bd5cbf3192: MemberSid
+  # Reguły bazowe nadal tworzą własne alerty.
+  generate: true
+falsepositives:
+  - Zakładanie kont administracyjnych przez dział IT (sprawdź zgłoszenie)
+heimdall:
+  instructions: |
+    Konto {{key}} utworzono i w ciągu {{window}} dodano do grupy
+    {{TargetUserName}} ({{count}} zdarzeń). Sprawdź, kto wykonał obie
+    operacje i czy było zgłoszenie. Jeśli nie – wyłącz konto, usuń je
+    z grupy i przejrzyj logowania tego konta oraz konta wykonującego.

@@ -31,7 +31,7 @@ func NewEngine() *Engine { return &Engine{th: NewThresholds()} }
 func (e *Engine) SetRules(all []*detect.Rule) int {
 	var active []*detect.Rule
 	for _, r := range all {
-		if r.Enabled() && (r.Heimdall.Mode == "stream" || r.Heimdall.Mode == "both") {
+		if r.Alerts() && (r.Heimdall.Mode == "stream" || r.Heimdall.Mode == "both") {
 			active = append(active, r)
 		}
 	}
@@ -212,7 +212,11 @@ func Infos(rules []*detect.Rule, fileEnabled map[string]bool) []alerts.RuleInfo 
 		if !ok {
 			fe = r.Enabled()
 		}
-		out = append(out, alerts.RuleInfo{Threshold: th, FileEnabled: fe, ID: r.ID, Title: r.Title, Level: r.Level, Description: r.Description, Tags: r.Tags,
+		desc := r.Description
+		if r.CorrelationOnly {
+			desc = "Reguła bazowa korelacji – sama nie tworzy alertów, zasila regułę korelacyjną (generate: false).\n\n" + desc
+		}
+		out = append(out, alerts.RuleInfo{Threshold: th, FileEnabled: fe, ID: r.ID, Title: r.Title, Level: r.Level, Description: desc, Tags: r.Tags,
 			File: r.File, Source: r.Source, Mode: r.Heimdall.Mode, Enabled: r.Enabled(), GroupBy: r.Heimdall.GroupBy,
 			SuppressS: int(time.Duration(r.Heimdall.Suppress) / time.Second), Instructions: r.Heimdall.Instructions})
 	}

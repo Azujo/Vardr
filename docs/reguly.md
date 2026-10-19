@@ -138,6 +138,47 @@ heimdall:
 
 **Zmienne w `instructions`:** `{{Pole}}` – wartość pola z (pierwszego) zdarzenia, np. `{{TargetUserName}}`, `{{IpAddress}}`, `{{host.name}}`; brak wartości daje „(brak)”. Reguły progowe mają dodatkowo `{{count}}` (liczba zdarzeń albo wartości), `{{window}}` (okno) i `{{values}}` (lista wartości przy `distinct`).
 
+## Reguły korelacyjne
+
+Reguła korelacyjna łączy trafienia kilku reguł (albo wiele trafień jednej) w jeden alert. Format to [Sigma Correlation](https://github.com/SigmaHQ/sigma-specification/blob/main/specification/sigma-correlation-rules-specification.md). Reguły bazowe i korelacja mogą być w jednym pliku (dokumenty YAML oddzielone `---`) albo w osobnych plikach. Korelacja wskazuje reguły bazowe przez `id` albo `name`.
+
+```yaml
+title: Nowe konto od razu dodane do grupy uprzywilejowanej
+id: fc22af54-b46e-449d-a6fd-e100cffa9153
+level: critical
+correlation:
+  type: temporal_ordered
+  rules:
+    - 9f379649-a04b-43de-b3a0-25587cf713de # Utworzono konto (4720)
+    - f406b909-37ba-4b21-b8c2-f4bd5cbf3192 # Dodano do grupy uprzywilejowanej
+  group-by: [account]
+  timespan: 1h
+  aliases:
+    account:
+      9f379649-a04b-43de-b3a0-25587cf713de: TargetSid
+      f406b909-37ba-4b21-b8c2-f4bd5cbf3192: MemberSid
+  generate: true
+heimdall:
+  instructions: Konto {{key}} utworzono i dodano do grupy {{TargetUserName}} w {{window}}.
+```
+
+| Typ | Kiedy alert | `condition` |
+|---|---|---|
+| `event_count` | co najmniej N trafień reguł bazowych w oknie | `gte: N` (albo `gt: N-1`) |
+| `value_count` | co najmniej N różnych wartości pola w oknie | `gte: N`, `field: <pole>` |
+| `temporal` | wszystkie reguły bazowe trafiły w oknie, kolejność dowolna | – |
+| `temporal_ordered` | wszystkie reguły bazowe trafiły w oknie, w kolejności z `rules` | – |
+
+- **`group-by`** – zdarzenia łączone są tylko przy tych samych wartościach pól (np. to samo konto). Bez `group-by` liczą się wszystkie zdarzenia razem.
+- **`aliases`** – gdy to samo „coś” ma w każdej regule bazowej inne pole (SID nowego konta to `TargetSid` w 4720, a `MemberSid` przy dodaniu do grupy). Alias jest nazwą w `group-by`, a pod nim reguła bazowa (`id` albo `name`) → pole.
+- **`timespan`** – okno od `1m` do `24h` (jednostki `s`, `m`, `h`, `d`).
+- **`generate`** – `false` (domyślnie): reguły bazowe same nie tworzą alertów (w panelu opis „Reguła bazowa korelacji”). `true`: reguły bazowe nadal alarmują, korelacja to dodatkowy alert o wyższym poziomie.
+- **`heimdall`** – w regule korelacyjnej tylko `enabled`, `suppress` (domyślnie większe z 1 h i `timespan`) i `instructions`. W instrukcji oprócz pól ostatniego zdarzenia są `{{count}}` (liczba zdarzeń), `{{window}}`, `{{rules}}` (tytuły reguł, które trafiły) i `{{key}}` (wartości `group-by`).
+
+**Jak działa.** Detektor co minutę (razem z korelacjami wbudowanymi) szuka w `siem.events` kluczy z nowo przyjętych zdarzeń reguł bazowych. Dla tych kluczy pobiera zdarzenia z okna `timespan` wstecz (plus godzina na zdarzenia spóźnione) i sprawdza warunek. Alert dostaje silnik `correlation` i zawiera wszystkie zdarzenia, które spełniły korelację. Ponowne przebiegi nie dublują zdarzeń (para reguła–zdarzenie jest w alercie raz), a kolejne trafienia tego samego klucza w oknie `suppress` dołączają do otwartego alertu.
+
+**Ograniczenia.** Bez warunków `lt`, `lte`, `eq`, `neq` (alert na „za mało” zdarzeń nie ma sensu przy ocenie nowych zdarzeń) i bez typu `value_sum`/`value_avg`. Reguła bazowa nie może być progowa (`heimdall.threshold`) – próg wyraża sama korelacja. Najwięcej 50 000 zdarzeń jednej korelacji w przebiegu; ponad limit przebieg kończy się błędem w dzienniku detektora – zawęź reguły bazowe albo skróć okno. Korelacje wbudowane („udane po nieudanych”, „nowy kraj”) zostają w kodzie, bo wymagają historii spoza okna.
+
 ## Dobre praktyki
 
 - **Grupuj po tym, co analityk zablokuje albo sprawdzi:** konto (brute force), adres (spraying), osoba (`user.identity` – próby z wielu źródeł), komputer (podejrzane procesy).
@@ -150,7 +191,7 @@ heimdall:
 ## Testowanie
 
 1. **Lokalnie:** `go run ./server/cmd/siem-detector check rules` wczytuje wszystkie reguły i wypisuje błędy (kod wyjścia 1).
-2. **W panelu** (*Reguły detekcji → Test reguły*, rola `analyst`): wklejona reguła jest uruchamiana na zdarzeniach z ClickHouse z ostatnich 1–168 godzin. Widać trafienia, a dla reguł progowych – alerty, które by powstały. Test korzysta z tych samych limitów co wyszukiwarka.
+2. **W panelu** (*Reguły detekcji → Test reguły*, rola `analyst`): wklejona reguła jest uruchamiana na zdarzeniach z ClickHouse z ostatnich 1–168 godzin. Widać trafienia, a dla reguł progowych – alerty, które by powstały. Regułę korelacyjną testuje się tak samo: wklejony tekst może zawierać też reguły bazowe (dokumenty po `---`), a brakujące są brane z wczytanych reguł; wynik to alerty z kluczem i zdarzeniami. Test korzysta z tych samych limitów co wyszukiwarka.
 3. **Test zgodności silników** (`server/internal/detector/compat_test.go`): korpus zdarzeń (`testdata/`) przechodzi przez oba silniki, a test sprawdza, że każda reguła z `rules/` daje te same trafienia w locie i w SQL. Nowa reguła powinna mieć zdarzenie w korpusie, które ją wywołuje. Uruchomienie: [rozwoj.md](rozwoj.md#testy).
 4. **W laboratorium:** wywołanie zdarzenia na prawdziwym źródle (np. nieudane logowania do DC, `fortisim -scenario vpn-brute`, `curl … entrasim/sim/scenario?name=spray`) i sprawdzenie alertu w Gjallarhornie.
 
@@ -195,3 +236,5 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 | `network/fortigate_vpn_brute_force.yml`, `fortigate_admin_login_failures.yml` | seria nieudanych logowań do VPN i panelu FortiGate |
 | `network/mikrotik_login_brute_force.yml` | seria nieudanych logowań do routera MikroTik |
 | `cross/password_spraying_multi_source.yml` | spraying z jednego adresu łącznie w AD, Entra, VPN i na routerze |
+| `correlation/new_account_privileged.yml` | korelacja: konto utworzone i w ciągu godziny dodane do grupy uprzywilejowanej |
+| `correlation/account_failures_many_sources.yml` | korelacja: nieudane logowania na jedno konto z ≥4 adresów w 15 min (z regułą bazową) |

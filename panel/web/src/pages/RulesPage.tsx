@@ -461,7 +461,7 @@ export default function RulesPage() {
                 <Tabs.Tab value="versions" leftSection={<IconHistory size={14} />}>
                   Wersje
                 </Tabs.Tab>
-                {canTest && show.mode !== "system" && show.mode !== "correlation" && (
+                {canTest && show.mode !== "system" && !(show.mode === "correlation" && show.file === "(wbudowana)") && (
                   <Tabs.Tab value="test" leftSection={<IconFlask size={14} />}>
                     Test
                   </Tabs.Tab>

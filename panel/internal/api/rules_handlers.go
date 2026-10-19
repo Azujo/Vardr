@@ -15,6 +15,7 @@ import (
 // RuleTester wykonuje regułę na zdarzeniach w ClickHouse (implementuje events.Searcher).
 type RuleTester interface {
 	TestRule(ctx context.Context, r *detect.Rule, from, to time.Time) (events.RuleTestResult, error)
+	TestCorrelation(ctx context.Context, c *detect.Correlation, from, to time.Time) (events.RuleTestResult, error)
 }
 
 // RuleAdmin to wersje i ustawienia reguł (implementuje alerts.PG).
@@ -41,6 +42,10 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Hours < 1 || req.Hours > 168 {
 		writeError(w, http.StatusBadRequest, "bad_hours", "okres testu: od 1 do 168 godzin")
+		return
+	}
+	if strings.Contains(req.Source, "correlation:") {
+		s.testCorrelation(w, r, req.Source, req.Hours)
 		return
 	}
 	rule, err := detect.Parse([]byte(req.Source), "test.yml")
@@ -77,6 +82,67 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": rule.SQL(),
 		"rule": map[string]any{"id": rule.ID, "title": rule.Title, "level": rule.Level, "group_by": rule.Heimdall.GroupBy,
 			"suppress_s": int(time.Duration(rule.Heimdall.Suppress) / time.Second), "threshold": th, "mode": rule.Heimdall.Mode}})
+}
+
+// testCorrelation: test reguły korelacyjnej (z regułami bazowymi w tym
+// samym tekście albo wdrożonymi) na zdarzeniach z ostatnich godzin.
+func (s *Server) testCorrelation(w http.ResponseWriter, r *http.Request, source string, hours int) {
+	a := current(r)
+	if s.RuleTester == nil {
+		writeError(w, http.StatusServiceUnavailable, "events_disabled", "wyszukiwarka zdarzeń wyłączona – test reguły niedostępny")
+		return
+	}
+	// Reguły wdrożone – bazowe dla korelacji, której reguły nie ma w tekście.
+	var known []*detect.Rule
+	if s.Alerts != nil {
+		infos, _, err := s.Alerts.Rules(r.Context())
+		if err != nil {
+			s.alertsError(w, r, err)
+			return
+		}
+		for _, in := range infos {
+			if in.Source == "" || in.RemovedAt != nil {
+				continue
+			}
+			if rule, err := detect.Parse([]byte(in.Source), in.File); err == nil {
+				known = append(known, rule)
+			}
+		}
+	}
+	set, err := detect.ParseText([]byte(source), "test.yml", known)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	if len(set.Correlations) != 1 {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "test: jedna reguła korelacyjna (reguły bazowe mogą być obok, rozdzielone ---)"})
+		return
+	}
+	c := set.Correlations[0]
+	select {
+	case ruleTestSlots <- struct{}{}:
+		defer func() { <-ruleTestSlots }()
+	default:
+		writeError(w, http.StatusTooManyRequests, "busy", "trwają inne testy reguł – spróbuj za chwilę")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), SearchTimeout)
+	defer cancel()
+	to := s.now().UTC()
+	res, err := s.RuleTester.TestCorrelation(ctx, c, to.Add(-time.Duration(hours)*time.Hour), to)
+	s.audit(r, &a.user, "rule_tested", c.ID, map[string]any{"title": c.Title, "hours": hours, "ok": err == nil, "correlation": true})
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "wykonanie w ClickHouse nieudane: " + err.Error()})
+		return
+	}
+	var base []string
+	for _, b := range c.Rules {
+		base = append(base, b.Title+" ("+b.ID+")")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": c.EventsSQL("siem.events", to.Add(-time.Duration(hours)*time.Hour), to, 20000),
+		"rule": map[string]any{"id": c.ID, "title": c.Title, "level": c.Level, "group_by": c.GroupBy, "mode": "correlation",
+			"suppress_s": int(time.Duration(c.Heimdall.Suppress) / time.Second), "correlation": map[string]any{"type": c.Type,
+				"timespan_s": int(c.Timespan / time.Second), "count": c.Count, "field": c.Field, "rules": base}}})
 }
 
 func (s *Server) ruleVersions(w http.ResponseWriter, r *http.Request) {

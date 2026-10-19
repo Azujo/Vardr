@@ -132,7 +132,7 @@ func resourceError(err error) bool {
 func IndexRules(all []*detect.Rule) []*detect.Rule {
 	var out []*detect.Rule
 	for _, r := range all {
-		if r.Enabled() && (r.Heimdall.Mode == "index_query" || r.Heimdall.Mode == "both") {
+		if r.Alerts() && (r.Heimdall.Mode == "index_query" || r.Heimdall.Mode == "both") {
 			out = append(out, r)
 		}
 	}

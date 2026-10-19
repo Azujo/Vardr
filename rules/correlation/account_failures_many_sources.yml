@@ -1,0 +1,53 @@
+title: Nieudane logowanie na konto użytkownika (baza korelacji)
+id: a5b9e480-4d89-4a13-bfea-37421fd12ed1
+name: windows_logon_failed_user
+status: stable
+description: |
+  Nieudane logowanie (4625) na konto użytkownika (bez kont komputerów
+  i pustych nazw). Sama nie tworzy alertów – zasila korelację niżej.
+author: Heimdall
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4625
+  computer_account:
+    TargetUserName|endswith: '$'
+  empty:
+    TargetUserName:
+      - ''
+      - '-'
+  condition: selection and not computer_account and not empty
+level: low
+---
+title: Nieudane logowania na jedno konto z wielu adresów
+id: 0afb58f4-2c6c-401f-8418-d95015d9a27b
+status: stable
+description: |
+  Nieudane logowania na to samo konto z co najmniej 4 różnych adresów IP
+  w ciągu 15 minut. Zapamiętane stare hasło daje zwykle jedno źródło; wiele
+  źródeł to rozproszone zgadywanie hasła albo użycie wykradzionego loginu.
+author: Heimdall
+tags:
+  - attack.credential_access
+  - attack.t1110
+level: high
+correlation:
+  type: value_count
+  rules:
+    - windows_logon_failed_user
+  group-by:
+    - TargetUserName
+  timespan: 15m
+  condition:
+    gte: 4
+    field: IpAddress
+falsepositives:
+  - Użytkownik z zapamiętanym starym hasłem na kilku urządzeniach (telefon, laptop, VPN)
+heimdall:
+  instructions: |
+    Konto {{TargetDomainName}}\{{TargetUserName}}: {{count}} nieudanych logowań
+    z różnych adresów w {{window}}. Sprawdź listę adresów w zdarzeniach alertu.
+    Adresy spoza sieci albo nieznane komputery – zablokuj źródła, sprawdź,
+    czy po serii było udane logowanie (4624), rozważ zmianę hasła.

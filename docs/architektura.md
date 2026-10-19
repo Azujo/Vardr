@@ -118,7 +118,7 @@ Pliki w `SIEM_ARCHIVE_PATH` (lab: `/srv/heimdall/archive`): oryginalne paczki ag
 |---|---|---|---|
 | silnik w locie | reguły Sigma na każdym zdarzeniu z `SIEM_EVENTS`; progi w pamięci (stan w `threshold_events`, odtwarzany po restarcie) | na bieżąco | `stream` |
 | silnik zapytań | te same reguły jako SQL na `siem.events` (zdarzenia przyjęte od punktu kontrolnego, z zakładką); nadrabia przerwy, spóźnione zdarzenia i limity pamięci progów | co minutę, 2 min za bieżącym czasem | `index_query` |
-| korelacje | „udane po nieudanych”, „nowy kraj” na `siem.auth_events` | co minutę, okno 15 min | `correlation` |
+| korelacje | wbudowane („udane po nieudanych”, „nowy kraj”) na `siem.auth_events`; reguły korelacyjne Sigma na `siem.events` | co minutę | `correlation` |
 | utrata łączności | heartbeat agenta starszy niż próg grupy | co 30 s | `system` |
 | sabotaż agenta | dziennik ochrony z heartbeatu, zatrzymania bez tokenu | co 30 s | `system` |
 | cisza źródła | urządzenie syslog albo chmura milczy dłużej niż zwykle | co 5 min | `system` |
