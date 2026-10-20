@@ -31,6 +31,7 @@ import {
   IconDeviceDesktop,
   IconHome,
   IconBuildingCommunity,
+  IconFlame,
   IconKey,
   IconLockAccess,
   IconShieldLock,
@@ -71,6 +72,7 @@ const sections: Section[] = [
     title: "Wykrywanie",
     items: [
       { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} />, perm: ["alerts", "read"] },
+      { to: "/incidents", label: "Incydenty", hint: "obsługa i zgłoszenia NIS2", icon: <IconFlame size={18} />, perm: ["incidents", "read"] },
       { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} />, perm: ["rules", "read"] },
       { to: "/attack", label: "MITRE ATT&CK", hint: "pokrycie technik", icon: <IconGridDots size={18} />, perm: ["rules", "read"] },
     ],

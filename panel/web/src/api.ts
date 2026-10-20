@@ -834,6 +834,136 @@ export interface ArchiveExport {
   agents: string[];
 }
 
+// ---- Incydenty i zgłoszenia NIS2 ----
+
+export type IncidentSeverity = "low" | "medium" | "high" | "critical";
+export type IncidentStatus = "open" | "investigating" | "contained" | "resolved" | "closed";
+export type TriState = "yes" | "no" | "unknown";
+export type ReportKind = "early_warning" | "notification" | "intermediate" | "final";
+
+export interface Incident {
+  id: number;
+  title: string;
+  description: string;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  assignee: string;
+  significant: boolean;
+  aware_at?: string;
+  malicious: TriState;
+  cross_border: TriState;
+  impact: string;
+  root_cause: string;
+  mitigation: string;
+  iocs: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+  alert_count: number;
+}
+
+export interface IncidentDeadline {
+  kind: ReportKind;
+  label: string;
+  due: string;
+  submitted_at?: string;
+}
+
+export interface IncidentAlert {
+  alert_id: number;
+  rule_id: string;
+  rule_title: string;
+  level: AlertLevel;
+  host_name: string;
+  agent_id: string;
+  user_name: string;
+  summary: string;
+  first_seen: string;
+  last_seen: string;
+  added_by: string;
+  added_at: string;
+}
+
+export interface IncidentActivity {
+  id: number;
+  at: string;
+  username: string;
+  kind: string;
+  text: string;
+  details?: Record<string, unknown>;
+}
+
+export interface IncidentReport {
+  kind: ReportKind;
+  content: string;
+  updated_by: string;
+  updated_at: string;
+  submitted_at?: string;
+  submitted_by?: string;
+  reference?: string;
+}
+
+export interface IncidentRef {
+  id: number;
+  title: string;
+  status: IncidentStatus;
+}
+
+export const incidentSeverityLabels: Record<IncidentSeverity, { label: string; color: string }> = {
+  low: { label: "niska", color: "gray" },
+  medium: { label: "średnia", color: "yellow" },
+  high: { label: "wysoka", color: "orange" },
+  critical: { label: "krytyczna", color: "red" },
+};
+
+export const incidentStatusLabels: Record<IncidentStatus, { label: string; color: string }> = {
+  open: { label: "otwarty", color: "red" },
+  investigating: { label: "analiza", color: "orange" },
+  contained: { label: "opanowany", color: "yellow" },
+  resolved: { label: "rozwiązany", color: "teal" },
+  closed: { label: "zamknięty", color: "gray" },
+};
+
+export const reportKindLabels: Record<ReportKind, string> = {
+  early_warning: "Wczesne ostrzeżenie (24 h)",
+  notification: "Zgłoszenie incydentu (72 h)",
+  intermediate: "Sprawozdanie pośrednie (na wezwanie)",
+  final: "Sprawozdanie końcowe (miesiąc)",
+};
+
+export const incidentsApi = {
+  list: (scope: string) =>
+    request<{ incidents: (Incident & { deadlines: IncidentDeadline[] })[]; now: string }>(
+      "GET",
+      `/api/v1/incidents?scope=${encodeURIComponent(scope)}`,
+    ),
+  create: (i: { title: string; description: string; severity: IncidentSeverity; alert_ids: number[] }) =>
+    request<{ incident: Incident }>("POST", "/api/v1/incidents", i),
+  get: (id: number) =>
+    request<{
+      incident: Incident;
+      alerts: IncidentAlert[];
+      activity: IncidentActivity[];
+      reports: IncidentReport[];
+      deadlines: IncidentDeadline[];
+      now: string;
+    }>("GET", `/api/v1/incidents/${id}`),
+  update: (id: number, patch: Partial<Incident> & { comment?: string }) =>
+    request<{ incident: Incident }>("PATCH", `/api/v1/incidents/${id}`, patch),
+  note: (id: number, text: string) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/notes`, { text }),
+  // Wpis o paczce dowodowej – działa też w zamkniętym incydencie.
+  evidence: (id: number, text: string) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/evidence`, { text }),
+  addAlerts: (id: number, alert_ids: number[]) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/alerts`, { alert_ids }),
+  removeAlert: (id: number, alertId: number) =>
+    request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/alerts/${alertId}/remove`, {}),
+  draft: (id: number, kind: ReportKind) => request<{ content: string }>("GET", `/api/v1/incidents/${id}/reports/${kind}/draft`),
+  saveReport: (id: number, kind: ReportKind, content: string) =>
+    request<{ ok: boolean }>("PUT", `/api/v1/incidents/${id}/reports/${kind}`, { content }),
+  submitReport: (id: number, kind: ReportKind, content: string, reference: string, submitted_at?: string) =>
+    request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/reports/${kind}/submit`, { content, reference, submitted_at }),
+};
+
 export const exportsApi = {
   list: () => request<{ exports: ArchiveExport[]; downloads: boolean }>("GET", "/api/v1/archive/exports"),
   create: (e: { from: string; to: string; reason: string; agents?: string[]; groups?: number[] }) =>
@@ -883,7 +1013,7 @@ export const replayStatusLabels: Record<ReplayStatus, { label: string; color: st
 
 // ---- Powiadomienia (kanały: Discord, webhook) ----
 
-export type NotifyEvent = "alert" | "health" | "anchor";
+export type NotifyEvent = "alert" | "incident" | "health" | "anchor";
 
 export interface AlertFilter {
   min_level?: AlertLevel;
@@ -945,6 +1075,7 @@ export const notifyApi = {
 
 export const notifyEventLabels: Record<string, string> = {
   alert: "alerty detekcji (Gjallarhorn)",
+  incident: "incydenty: poważne (NIS2) i terminy zgłoszeń",
   health: "alerty zdrowia systemu",
   anchor: "kotwica archiwum (codziennie)",
   test: "test",
@@ -1168,6 +1299,7 @@ export const alertsApi = {
       related: Alert[];
       attack?: Record<string, RuleAttack>;
       attribution?: RuleAttribution;
+      incidents?: IncidentRef[];
     }>("GET", `/api/v1/alerts/${id}`),
   setStatus: (id: number, status: AlertStatus, reason?: string) =>
     request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),

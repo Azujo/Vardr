@@ -34,6 +34,7 @@ var (
 // Modules: wszystkie moduły panelu (kolejność – macierz w panelu).
 var Modules = []Module{
 	{"alerts", "Alerty", "lista i szczegóły alertów; zmiana: obsługa (status, przypisanie, notatki)", []Level{read, {"write", "obsługa"}}},
+	{"incidents", "Incydenty i zgłoszenia NIS2", "obsługa: zakładanie, alerty, notatki, zgłoszenia do CSIRT", []Level{read, {"write", "obsługa"}}},
 	{"events", "Zdarzenia (Mímir)", "wyszukiwarka zdarzeń", []Level{read}},
 	{"rules", "Reguły detekcji i MITRE", "test: test reguły na historii i kreator korelacji; zmiana: włączanie, próby, reguły z panelu", []Level{read, test, write}},
 	{"agents", "Agenci i grupy (Huginn)", "zmiana: grupy, usuwanie agentów, tokeny deinstalacji", []Level{read, write}},
@@ -120,11 +121,11 @@ var Builtin = []struct {
 }{
 	{Admin, "Administrator", "pełny dostęp, także do kont, profili i ustawień bezpieczeństwa", all},
 	{Analyst, "Analityk", "praca z alertami i danymi: obsługa alertów, testy reguł i dekoderów, bez administracji", func() Set {
-		return Set{"alerts": "write", "events": "read", "rules": "test", "agents": "read", "archive": "read",
+		return Set{"alerts": "write", "incidents": "write", "events": "read", "rules": "test", "agents": "read", "archive": "read",
 			"decoders": "test", "quarantine": "read", "identities": "read", "system": "read"}
 	}},
 	{Viewer, "Obserwator", "tylko odczyt alertów, zdarzeń, reguł i stanu systemu", func() Set {
-		return Set{"alerts": "read", "events": "read", "rules": "read", "agents": "read", "archive": "read",
+		return Set{"alerts": "read", "incidents": "read", "events": "read", "rules": "read", "agents": "read", "archive": "read",
 			"decoders": "read", "quarantine": "read", "identities": "read", "system": "read"}
 	}},
 }

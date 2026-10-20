@@ -25,7 +25,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "profiles", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
@@ -356,6 +356,99 @@ func testGroups(t *testing.T, db *PG) {
 	testMFA(ctx, t, db)
 	testProfiles(ctx, t, db)
 	testLDAPUsers(ctx, t, db)
+	testIncidents(ctx, t, db)
+}
+
+// testIncidents: incydent z migawkami alertów, oś czasu, zmiana pól,
+// zgłoszenie (szkic → wysłane, potem zamrożone), przypomnienia bez powtórzeń.
+func testIncidents(ctx context.Context, t *testing.T, db *PG) {
+	now := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
+	al := IncidentAlert{AlertID: 11, RuleID: "r1", RuleTitle: "Brute force", Level: "high", HostName: "dc01", FirstSeen: now,
+		LastSeen: now, AddedBy: "adam", AddedAt: now}
+	x, err := db.CreateIncident(ctx, Incident{Title: "Atak", Severity: "high", CreatedBy: "adam", Assignee: "adam"}, []IncidentAlert{al}, now)
+	if err != nil || x.ID == 0 || x.Status != "open" || x.AlertCount != 1 || x.Malicious != "unknown" {
+		t.Fatalf("incydent: %+v %v", x, err)
+	}
+	al2 := al
+	al2.AlertID = 12
+	if err := db.AddIncidentAlerts(ctx, x.ID, []IncidentAlert{al, al2}, IncidentActivity{At: now, Username: "adam", Kind: "alerts_added"}); err != nil {
+		t.Fatal(err)
+	}
+	if as, _ := db.IncidentAlerts(ctx, x.ID); len(as) != 2 {
+		t.Fatalf("alerty: %+v", as)
+	}
+	if refs, _ := db.IncidentsForAlert(ctx, 12); len(refs) != 1 || refs[0].ID != x.ID {
+		t.Fatalf("incydenty alertu: %+v", refs)
+	}
+	x.Significant, x.AwareAt = true, &now
+	upd, err := db.UpdateIncident(ctx, x, []IncidentActivity{{At: now, Username: "adam", Kind: "field", Text: "significant"}}, now)
+	if err != nil || upd.ClosedAt != nil || !upd.Significant {
+		t.Fatalf("zmiana: %+v %v", upd, err)
+	}
+	if err := db.RemoveIncidentAlert(ctx, x.ID, 11, IncidentActivity{At: now, Username: "adam", Kind: "alert_removed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveIncidentReport(ctx, x.ID, "early_warning", "szkic", "adam", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SubmitIncidentReport(ctx, x.ID, "early_warning", "wysłane", "CSIRT-1", "adam", now, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveIncidentReport(ctx, x.ID, "early_warning", "zmiana", "ewa", now); !errors.Is(err, ErrSubmitted) {
+		t.Fatalf("zmiana wysłanego: %v", err)
+	}
+	if err := db.SubmitIncidentReport(ctx, x.ID, "early_warning", "x", "", "ewa", now, now); !errors.Is(err, ErrSubmitted) {
+		t.Fatalf("ponowne wysłanie: %v", err)
+	}
+	reps, _ := db.IncidentReports(ctx, x.ID)
+	if len(reps) != 1 || reps[0].Content != "wysłane" || reps[0].Reference != "CSIRT-1" || reps[0].SubmittedAt == nil {
+		t.Fatalf("zgłoszenia: %+v", reps)
+	}
+	// Zamknięcie – ostateczne: żadnej zmiany ani notatki, zgłoszenia też nie.
+	x.Status = "closed"
+	if upd, err := db.UpdateIncident(ctx, x, []IncidentActivity{{At: now, Username: "adam", Kind: "field", Text: "status"}}, now); err != nil || upd.ClosedAt == nil {
+		t.Fatalf("zamknięcie: %+v %v", upd, err)
+	}
+	x.Status = "open"
+	if _, err := db.UpdateIncident(ctx, x, nil, now); !errors.Is(err, ErrClosed) {
+		t.Fatalf("ponowne otwarcie: %v", err)
+	}
+	if err := db.AddIncidentActivity(ctx, x.ID, []IncidentActivity{{At: now, Username: "adam", Kind: "note", Text: "x"}}, now); !errors.Is(err, ErrClosed) {
+		t.Fatalf("notatka w zamkniętym: %v", err)
+	}
+	if err := db.SaveIncidentReport(ctx, x.ID, "final", "x", "adam", now); !errors.Is(err, ErrClosed) {
+		t.Fatalf("zgłoszenie w zamkniętym: %v", err)
+	}
+	if err := db.AddIncidentAlerts(ctx, x.ID, []IncidentAlert{al}, IncidentActivity{At: now, Username: "adam", Kind: "alerts_added"}); !errors.Is(err, ErrClosed) {
+		t.Fatalf("alert do zamkniętego: %v", err)
+	}
+	// Paczka dowodowa – także po zamknięciu.
+	if err := db.AddIncidentEvidence(ctx, x.ID, IncidentActivity{At: now, Username: "adam", Kind: "evidence", Text: "eksport #1"}); err != nil {
+		t.Fatalf("dowody w zamkniętym: %v", err)
+	}
+	if err := db.AddIncidentEvidence(ctx, 999999, IncidentActivity{At: now, Username: "adam", Kind: "evidence", Text: "x"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("dowody w nieistniejącym: %v", err)
+	}
+	act, _ := db.IncidentActivityLog(ctx, x.ID)
+	kinds := []string{}
+	for _, a := range act {
+		kinds = append(kinds, a.Kind)
+	}
+	if strings.Join(kinds, ",") != "created,alerts_added,field,alert_removed,report_submitted,field,evidence" {
+		t.Fatalf("oś czasu: %v", kinds)
+	}
+	if ok, _ := db.ReminderSent(ctx, x.ID, "notification", "soon", now); !ok {
+		t.Fatal("pierwsze przypomnienie")
+	}
+	if ok, _ := db.ReminderSent(ctx, x.ID, "notification", "soon", now); ok {
+		t.Fatal("powtórzone przypomnienie")
+	}
+	if list, _ := db.Incidents(ctx, "active"); len(list) != 0 {
+		t.Fatalf("aktywne: %+v", list)
+	}
+	if list, _ := db.Incidents(ctx, "closed"); len(list) != 1 || list[0].AlertCount != 1 {
+		t.Fatalf("zamknięte: %+v", list)
+	}
 }
 
 // testLDAPUsers: konto domenowe zakładane i aktualizowane po SID; login

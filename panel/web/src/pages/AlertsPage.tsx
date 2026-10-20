@@ -32,6 +32,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { AttackBadges } from "../attack";
+import AddToIncident from "./AddToIncident";
 
 const engineLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", system: "wbudowana", correlation: "korelacja" };
 
@@ -63,6 +64,7 @@ export default function AlertsPage() {
   const [error, setError] = useState("");
   const [more, setMore] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [toIncident, setToIncident] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reason, setReason] = useState("");
   const [search, setSearch] = useState(get("q"));
@@ -283,6 +285,11 @@ export default function AlertsPage() {
             <Button size="xs" variant="subtle" onClick={() => void bulk("open")}>
               Otwórz ponownie
             </Button>
+            {can("incidents", "write") && (
+              <Button size="xs" variant="light" color="red" onClick={() => setToIncident(true)}>
+                Do incydentu
+              </Button>
+            )}
           </Group>
         )}
       </Group>
@@ -383,6 +390,12 @@ export default function AlertsPage() {
         </Group>
       )}
 
+      <AddToIncident
+        alertIds={[...selected]}
+        defaultTitle={items.find((a) => selected.has(a.id))?.rule_title}
+        opened={toIncident}
+        onClose={() => setToIncident(false)}
+      />
       <Modal opened={closing} onClose={() => setClosing(false)} title={`Zamknij zaznaczone alerty (${selected.size})`} centered>
         <Stack>
           <Textarea

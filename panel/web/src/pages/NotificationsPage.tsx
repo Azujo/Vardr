@@ -36,7 +36,7 @@ import {
   type NotifyLogEntry,
 } from "../api";
 
-const allEvents: NotifyEvent[] = ["alert", "health", "anchor"];
+const allEvents: NotifyEvent[] = ["alert", "incident", "health", "anchor"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);

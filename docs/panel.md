@@ -9,6 +9,7 @@ Każde konto ma jeden **profil uprawnień** – macierz: moduł panelu → pozio
 | Moduł | Poziomy |
 |---|---|
 | Alerty | odczyt, obsługa (status, przypisanie, notatki) |
+| Incydenty i zgłoszenia NIS2 | odczyt, obsługa (zakładanie, alerty, notatki, zgłoszenia do CSIRT) |
 | Zdarzenia (Mímir) | odczyt |
 | Reguły detekcji i MITRE | odczyt, test (test na historii, kreator korelacji), zmiana (włączanie, próby, reguły z panelu) |
 | Agenci i grupy | odczyt, zmiana (grupy, usuwanie, tokeny deinstalacji) |
@@ -28,12 +29,32 @@ Każde konto ma jeden **profil uprawnień** – macierz: moduł panelu → pozio
 | Profil | Może |
 |---|---|
 | Obserwator (`viewer`) | czytać: agenci, zdarzenia, alerty, reguły, archiwum, dekodery, kwarantanna, tożsamości, stan systemu |
-| Analityk (`analyst`) | jak obserwator oraz obsługa alertów, test reguł i dekoderów |
+| Analityk (`analyst`) | jak obserwator oraz obsługa alertów i incydentów, test reguł i dekoderów |
 | Administrator (`admin`) | wszystko – także moduły dodane w przyszłych wersjach |
 
 **Profile własne** tworzy się w *Administracja → Profile uprawnień* (np. „Audytor NIS2”: archiwum – eksport; „Helpdesk”: agenci – odczyt). Profil z prawem zmiany w module „Użytkownicy i bezpieczeństwo” to **administrator panelu** (wymóg MFA „administratorzy” dotyczy właśnie jego). Zapis i usunięcie profilu wymagają hasła i trafiają do audytu; panel nie pozwoli na zmianę, po której żadne aktywne konto nie byłoby administratorem, ani na usunięcie profilu z przypisanymi kontami. Zmiana profilu działa od razu (najpóźniej po 30 s) – także dla zalogowanych.
 
 Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token deinstalacji agenta, zmiana dekodera) wymagają ponownego podania hasła i powodu. Wszystkie zmiany trafiają do **dziennika audytu**. Sesja wygasa po bezczynności, a konto jest czasowo blokowane po serii nieudanych logowań.
+
+## Incydenty i zgłoszenia NIS2
+
+Incydent (*Wykrywanie → Incydenty*) łączy alerty, ustalenia i działania w jedną historię: waga, status (otwarty → analiza → opanowany → rozwiązany → zamknięty; zmiana przyciskami dozwolonych przejść – praca może wracać, np. z opanowanego do analizy, ale **zamknięcie jest ostateczne**: wymaga podsumowania, a zamknięty incydent jest tylko do odczytu, także w bazie; incydent poważny zamyka się dopiero po wysłaniu sprawozdania końcowego), prowadzący, opis, skutki, przyczyna, działania ograniczające, wskaźniki naruszenia (IoC) i oś czasu (notatki i każda zmiana). Alerty dodaje się z listy alertów (zaznacz → *Do incydentu*: nowy albo istniejący) albo ze szczegółów alertu; incydent przechowuje ich **migawkę**, więc retencja alertów nie zubaża dokumentacji.
+
+**Incydent poważny (NIS2, art. 23 dyrektywy 2022/2555).** Po oznaczeniu incydentu jako poważnego i podaniu chwili stwierdzenia (domyślnie – chwila oznaczenia) panel liczy terminy zgłoszeń do właściwego CSIRT:
+
+| Zgłoszenie | Termin |
+|---|---|
+| Wczesne ostrzeżenie | 24 h od stwierdzenia |
+| Zgłoszenie incydentu | 72 h od stwierdzenia |
+| Sprawozdanie pośrednie | na wezwanie CSIRT |
+| Sprawozdanie końcowe | miesiąc od zgłoszenia incydentu |
+
+- Dla każdego zgłoszenia panel przygotowuje **szkic** z danych incydentu (opis, chwila stwierdzenia, podejrzenie działania złośliwego, wpływ transgraniczny, skutki, systemy i konta z alertów, IoC, lista wykryć, przyczyna, działania). Pola, których Vardr nie zna (nazwa podmiotu, osoba do kontaktu), są oznaczone „[uzupełnij]”.
+- Zgłoszenie wysyła się kanałem CSIRT (portal, e-mail) – poza Vardrem – a w panelu oznacza jako **wysłane** (chwila wysłania, numer sprawy). Treść zostaje zamrożona, termin przestaje się liczyć, wpis trafia do osi czasu i audytu.
+- **Przypomnienia** na kanałach powiadomień ze zdarzeniem „incydenty”: oznaczenie incydentu jako poważnego, 6 h przed terminem 24 h i 72 h, 3 dni przed terminem sprawozdania końcowego i po upływie terminu (każde raz).
+- **Paczka dowodowa**: przycisk w incydencie zleca eksport z archiwum NIS2 (Urd) – pełne godziny od pierwszego do ostatniego alertu ±1 h, tylko agenci z alertów; wymaga uprawnienia „Archiwum – eksport”, paczka czeka w *Archiwum NIS2 → Eksport dla audytora*. Działa także w zamkniętym incydencie (wpis trafia do osi czasu), podobnie jak kopiowanie i pobieranie zgłoszeń.
+
+Decyzja, czy incydent jest poważny, należy do organizacji (kryteria NIS2 i przepisów krajowych) – Vardr jej nie podejmuje, tylko pilnuje terminów i porządkuje dokumentację.
 
 ## Logowanie domenowe (Active Directory)
 

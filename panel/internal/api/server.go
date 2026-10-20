@@ -110,7 +110,9 @@ type Server struct {
 	profileCache profileCache
 	// LDAP (opcjonalne, wymaga MFAKey): logowanie kontem domenowym (LDAPS).
 	LDAP LDAPStore
-	ldap ldapState
+	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
+	Incidents IncidentStore
+	ldap      ldapState
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -169,6 +171,17 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/profiles", s.authed(can("users", "read"), 0, s.listProfiles))
 	mux.Handle("PUT /api/v1/profiles/{id}", s.authed(can("users", "write"), 0, s.saveProfile))
 	mux.Handle("POST /api/v1/profiles/{id}/delete", s.authed(can("users", "write"), 0, s.deleteProfile))
+	mux.Handle("GET /api/v1/incidents", s.authed(can("incidents", "read"), 0, s.listIncidents))
+	mux.Handle("POST /api/v1/incidents", s.authed(can("incidents", "write"), 0, s.createIncident))
+	mux.Handle("GET /api/v1/incidents/{id}", s.authed(can("incidents", "read"), 0, s.getIncident))
+	mux.Handle("PATCH /api/v1/incidents/{id}", s.authed(can("incidents", "write"), 0, s.updateIncident))
+	mux.Handle("POST /api/v1/incidents/{id}/notes", s.authed(can("incidents", "write"), 0, s.addIncidentNote))
+	mux.Handle("POST /api/v1/incidents/{id}/evidence", s.authed(can("archive", "export"), 0, s.addIncidentEvidence))
+	mux.Handle("POST /api/v1/incidents/{id}/alerts",s.authed(can("incidents", "write"), 0, s.addIncidentAlerts))
+	mux.Handle("POST /api/v1/incidents/{id}/alerts/{aid}/remove", s.authed(can("incidents", "write"), 0, s.removeIncidentAlert))
+	mux.Handle("GET /api/v1/incidents/{id}/reports/{kind}/draft", s.authed(can("incidents", "read"), 0, s.draftReport))
+	mux.Handle("PUT /api/v1/incidents/{id}/reports/{kind}", s.authed(can("incidents", "write"), 0, s.saveReport))
+	mux.Handle("POST /api/v1/incidents/{id}/reports/{kind}/submit", s.authed(can("incidents", "write"), 0, s.submitReport))
 	mux.Handle("GET /api/v1/settings/ldap", s.authed(can("users", "read"), 0, s.getLDAPSettings))
 	mux.Handle("PUT /api/v1/settings/ldap", s.authed(can("users", "write"), 0, s.saveLDAPSettings))
 	mux.Handle("POST /api/v1/settings/ldap/test", s.authed(can("users", "write"), 0, s.testLDAP))

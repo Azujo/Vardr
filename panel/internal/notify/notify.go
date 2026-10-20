@@ -25,11 +25,13 @@ import (
 const (
 	EventHealth = "health" // alerty zdrowia systemu (Grafana)
 	EventAnchor = "anchor" // codzienna kotwica archiwum Urd
-	EventTest   = "test"   // wiadomość testowa z panelu (tylko wskazany kanał)
+	// EventIncident: incydenty – nowy incydent poważny (NIS2) i terminy zgłoszeń.
+	EventIncident = "incident"
+	EventTest     = "test" // wiadomość testowa z panelu (tylko wskazany kanał)
 )
 
 // Events to zdarzenia do wyboru w panelu.
-var Events = []string{EventAlert, EventHealth, EventAnchor}
+var Events = []string{EventAlert, EventIncident, EventHealth, EventAnchor}
 
 // Rodzaje kanałów.
 const (

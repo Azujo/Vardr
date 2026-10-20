@@ -160,6 +160,7 @@ func serve(log *slog.Logger) error {
 	apiServer.Backups = db
 	apiServer.Profiles = db
 	apiServer.LDAP = db
+	apiServer.Incidents = db
 	// Drugi składnik logowania (TOTP): klucz szyfrujący sekrety z pliku
 	// (deploy.sh tworzy certs/mfa.key); bez klucza – logowanie samym hasłem.
 	if keyFile := svc.Env("SIEM_MFA_KEY_FILE", "/certs/mfa.key"); keyFile != "" {
@@ -222,7 +223,8 @@ func serve(log *slog.Logger) error {
 	anchor := &notify.Anchor{Svc: notifySvc, Archive: archive, Store: db, Log: log, Hour: anchorHour, Loc: loc}
 	apiServer.Notify = &api.Notifications{Store: db, Svc: notifySvc, Anchor: anchor, RelayConfigured: relayToken != ""}
 	go anchor.Run(ctx)
-	go apiServer.RunLDAPSync(ctx) // konta domenowe: grupy i wyłączenia w AD co 5 min
+	go apiServer.RunLDAPSync(ctx)          // konta domenowe: grupy i wyłączenia w AD co 5 min
+	go apiServer.RunIncidentReminders(ctx) // terminy zgłoszeń NIS2
 
 	// Gjallarhorn: alerty z detektora (schemat gjallarhorn) i wysyłka nowych
 	// alertów z outboxa na kanały powiadomień.

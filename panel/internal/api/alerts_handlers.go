@@ -171,6 +171,11 @@ func (s *Server) getAlert(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := map[string]any{"alert": a, "events": nonNilSlice(evs), "activity": nonNilSlice(act), "related": nonNilSlice(rel),
 		"attack": s.alertsAttack(ctx, append([]alerts.Alert{a}, rel...))}
+	if s.Incidents != nil && current(r).perms.Has("incidents", "read") {
+		if refs, err := s.Incidents.IncidentsForAlert(ctx, id); err == nil {
+			resp["incidents"] = nonNilSlice(refs)
+		}
+	}
 	if rule, err := s.Alerts.Rule(ctx, a.RuleID); err == nil {
 		resp["rule"] = rule
 		// Reguła z SigmaHQ: autor i źródło (licencja DRL 1.1).

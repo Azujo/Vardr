@@ -28,17 +28,20 @@ import {
   alertsApi,
   eventsApi,
   formatDate,
+  incidentStatusLabels,
   levelLabels,
   type Alert,
   type AlertActivity,
   type AlertStatus,
   type EventDetail,
   type RuleAttack,
+  type IncidentRef,
   type RuleAttribution,
   type RuleInfo,
 } from "../api";
 import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
+import AddToIncident from "./AddToIncident";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -135,6 +138,8 @@ export default function AlertDetailPage() {
   const [related, setRelated] = useState<Alert[]>([]);
   const [attack, setAttack] = useState<Record<string, RuleAttack>>({});
   const [attribution, setAttribution] = useState<RuleAttribution | undefined>();
+  const [incidents, setIncidents] = useState<IncidentRef[]>([]);
+  const [toIncident, setToIncident] = useState(false);
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const [note, setNote] = useState("");
 
@@ -149,6 +154,7 @@ export default function AlertDetailPage() {
         setRelated(r.related);
         setAttack(r.attack ?? {});
         setAttribution(r.attribution);
+        setIncidents(r.incidents ?? []);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [id]);
@@ -327,6 +333,36 @@ export default function AlertDetailPage() {
           </Button>
         )}
       </Group>
+
+      {(incidents.length > 0 || can("incidents", "write")) && (
+        <Card withBorder>
+          <Group justify="space-between">
+            <Title order={4}>Incydenty</Title>
+            {can("incidents", "write") && (
+              <Button size="xs" variant="light" color="red" onClick={() => setToIncident(true)}>
+                Do incydentu
+              </Button>
+            )}
+          </Group>
+          {incidents.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              Alert nie należy do żadnego incydentu.
+            </Text>
+          ) : (
+            incidents.map((i) => (
+              <Group key={i.id} gap="xs">
+                <Anchor component={Link} to={`/incidents/${i.id}`} size="sm">
+                  #{i.id} {i.title}
+                </Anchor>
+                <Badge size="sm" variant="light" color={incidentStatusLabels[i.status].color}>
+                  {incidentStatusLabels[i.status].label}
+                </Badge>
+              </Group>
+            ))
+          )}
+          <AddToIncident alertIds={[alert.id]} defaultTitle={alert.rule_title} opened={toIncident} onClose={() => setToIncident(false)} />
+        </Card>
+      )}
 
       {rule && (
         <Card withBorder>

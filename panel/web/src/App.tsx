@@ -18,6 +18,8 @@ import RuleTrialsPage from "./pages/RuleTrialsPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
 import ProfilesPage from "./pages/ProfilesPage";
 import LdapPage from "./pages/LdapPage";
+import IncidentsPage from "./pages/IncidentsPage";
+import IncidentDetailPage from "./pages/IncidentDetailPage";
 import DecodersPage from "./pages/DecodersPage";
 import QuarantinePage from "./pages/QuarantinePage";
 import IdentitiesPage from "./pages/IdentitiesPage";
@@ -54,6 +56,8 @@ export default function App() {
         <Route path="/archive" element={<ArchivePage />} />
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/:id" element={<AlertDetailPage />} />
+        <Route path="/incidents" element={<IncidentsPage />} />
+        <Route path="/incidents/:id" element={<IncidentDetailPage />} />
         <Route path="/rules" element={<RulesPage />} />
         <Route path="/rules/correlation" element={<CorrelationWizard />} />
         <Route path="/rules/trial" element={<RuleTrialsPage />} />
