@@ -14,8 +14,11 @@ import (
 )
 
 // Override to włączenie albo wyłączenie reguły z panelu (ponad plik).
+// Trial: tryb próbny – reguła wyłączona (Enabled = false), ale liczy
+// trafienia bez alertów (od ChangedAt).
 type Override struct {
 	Enabled   bool      `json:"enabled"`
+	Trial     bool      `json:"trial,omitempty"`
 	Reason    string    `json:"reason"`
 	ChangedBy string    `json:"changed_by"`
 	ChangedAt time.Time `json:"changed_at"`
@@ -33,7 +36,7 @@ type RuleVersion struct {
 // RuleOverrides zwraca ustawienia reguł z panelu i ich podpis (zmiana
 // podpisu = detektor przeładowuje reguły).
 func (p *PG) RuleOverrides(ctx context.Context) (map[string]Override, string, error) {
-	rows, err := p.pool.Query(ctx, `SELECT rule_id, enabled, reason, changed_by, changed_at FROM gjallarhorn.rule_overrides
+	rows, err := p.pool.Query(ctx, `SELECT rule_id, enabled, trial, reason, changed_by, changed_at FROM gjallarhorn.rule_overrides
 		ORDER BY rule_id`)
 	if err != nil {
 		return nil, "", notConfigured(err)
@@ -43,23 +46,39 @@ func (p *PG) RuleOverrides(ctx context.Context) (map[string]Override, string, er
 	for rows.Next() {
 		var id string
 		var o Override
-		if err := rows.Scan(&id, &o.Enabled, &o.Reason, &o.ChangedBy, &o.ChangedAt); err != nil {
+		if err := rows.Scan(&id, &o.Enabled, &o.Trial, &o.Reason, &o.ChangedBy, &o.ChangedAt); err != nil {
 			rows.Close()
 			return nil, "", err
 		}
 		out[id] = o
-		fmt.Fprintf(&sig, "%s=%t@%d;", id, o.Enabled, o.ChangedAt.UnixNano())
+		fmt.Fprintf(&sig, "%s=%t/%t@%d;", id, o.Enabled, o.Trial, o.ChangedAt.UnixNano())
 	}
 	rows.Close()
 	return out, sig.String(), rows.Err()
 }
 
-// SetOverride ustawia regułę jako włączoną albo wyłączoną z panelu.
+// SetOverride ustawia regułę jako włączoną, wyłączoną albo próbną z panelu.
+// Rozpoczęcie próby czyści jej wcześniejsze trafienia (liczenie od zera).
 func (p *PG) SetOverride(ctx context.Context, rule string, o Override) error {
-	_, err := p.pool.Exec(ctx, `INSERT INTO gjallarhorn.rule_overrides (rule_id, enabled, reason, changed_by, changed_at)
-		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (rule_id) DO UPDATE SET enabled = $2, reason = $3, changed_by = $4,
-		changed_at = $5`, rule, o.Enabled, o.Reason, o.ChangedBy, o.ChangedAt)
-	return notConfigured(err)
+	if o.Trial {
+		o.Enabled = false
+	}
+	return notConfigured(pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		var wasTrial bool
+		err := tx.QueryRow(ctx, `SELECT trial FROM gjallarhorn.rule_overrides WHERE rule_id = $1`, rule).Scan(&wasTrial)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		if o.Trial && !wasTrial {
+			if _, err := tx.Exec(ctx, `DELETE FROM gjallarhorn.rule_trial_hits WHERE rule_id = $1`, rule); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `INSERT INTO gjallarhorn.rule_overrides (rule_id, enabled, trial, reason, changed_by, changed_at)
+			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (rule_id) DO UPDATE SET enabled = $2, trial = $3, reason = $4,
+			changed_by = $5, changed_at = $6`, rule, o.Enabled, o.Trial, o.Reason, o.ChangedBy, o.ChangedAt)
+		return err
+	}))
 }
 
 // ClearOverride usuwa ustawienie z panelu (obowiązuje plik reguły).

@@ -212,14 +212,70 @@ func (m matcher) sql(val, present string) string {
 
 func (f fieldMatch) sql() string {
 	val, present := fieldSQL(f.field)
-	parts := make([]string, len(f.m))
-	for i, m := range f.m {
-		parts[i] = m.sql(val, present)
-	}
 	if f.all {
+		parts := make([]string, len(f.m))
+		for i, m := range f.m {
+			parts[i] = m.sql(val, present)
+		}
 		return joinSQL(parts, "AND", "1")
 	}
+	// Lista wartości (OR): wartości tego samego rodzaju w jednym wyrażeniu,
+	// a pole odczytane raz na grupę – reguły z setkami wartości (np. SigmaHQ
+	// z listą emoji) inaczej przekraczają max_query_size i pamięć zapytania.
+	lv := "lowerUTF8(" + val + ")"
+	byKind := map[string][]string{}
+	var parts []string
+	for _, m := range f.m {
+		switch m.kind {
+		case "eq", "contains", "startswith", "endswith":
+			byKind[m.kind] = append(byKind[m.kind], Quote(m.val))
+		default:
+			parts = append(parts, m.sql(val, present))
+		}
+	}
+	var grouped []string
+	for _, kind := range []string{"eq", "contains", "startswith", "endswith"} {
+		vals := byKind[kind]
+		switch {
+		case len(vals) == 0:
+		case len(vals) == 1:
+			grouped = append(grouped, matcherCond(kind, lv, vals[0]))
+		case kind == "eq":
+			grouped = append(grouped, fmt.Sprintf("%s IN (%s)", lv, strings.Join(vals, ", ")))
+		case kind == "contains":
+			// multiSearchAny: najwyżej 255 wzorców w jednym wywołaniu.
+			for i := 0; i < len(vals); i += 255 {
+				grouped = append(grouped, fmt.Sprintf("multiSearchAny(%s, [%s])", lv, strings.Join(vals[i:min(i+255, len(vals))], ", ")))
+			}
+		default:
+			fn := map[string]string{"startswith": "startsWith", "endswith": "endsWith"}[kind]
+			grouped = append(grouped, fmt.Sprintf("arrayExists(x -> %s(%s, x), [%s])", fn, lv, strings.Join(vals, ", ")))
+		}
+	}
+	if len(grouped) > 0 {
+		cond := strings.Join(grouped, " OR ")
+		if present == "1" {
+			parts = append(parts, "("+cond+")")
+		} else {
+			parts = append(parts, fmt.Sprintf("(%s AND (%s))", present, cond))
+		}
+	}
 	return joinSQL(parts, "OR", "0")
+}
+
+// matcherCond: warunek jednej wartości (eq, contains, startswith, endswith)
+// na wartości pola małymi literami.
+func matcherCond(kind, lv, quoted string) string {
+	switch kind {
+	case "eq":
+		return fmt.Sprintf("%s = %s", lv, quoted)
+	case "contains":
+		return fmt.Sprintf("position(%s, %s) > 0", lv, quoted)
+	case "startswith":
+		return fmt.Sprintf("startsWith(%s, %s)", lv, quoted)
+	default:
+		return fmt.Sprintf("endsWith(%s, %s)", lv, quoted)
+	}
 }
 
 func (f fieldExists) sql() string {

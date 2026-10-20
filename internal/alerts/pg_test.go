@@ -268,6 +268,48 @@ func TestPostgresAlerts(t *testing.T) {
 	if ok, err := db.ClearOverride(ctx, "r-ps"); !ok || err != nil {
 		t.Fatalf("usunięcie ustawienia: %v %v", ok, err)
 	}
+	// Tryb próbny: trafienia sumowane godzinami i komputerami, wyniki od
+	// początku próby; trafienia reguły spoza próby są pomijane.
+	if err := db.SetOverride(ctx, "r-ps", Override{Trial: true, Enabled: true, Reason: "ocena", ChangedBy: "adam", ChangedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if ov, _, _ := db.RuleOverrides(ctx); !ov["r-ps"].Trial || ov["r-ps"].Enabled {
+		t.Fatalf("próba: %+v", ov["r-ps"])
+	}
+	h0 := now.Truncate(time.Hour)
+	th := []TrialHit{
+		{RuleID: "r-ps", Hour: h0, Host: "pc1", Hits: 2, First: now, Last: now, SampleEventID: "e1", SampleSummary: "s1"},
+		{RuleID: "r-ps", Hour: h0, Host: "pc2", Hits: 1, First: now, Last: now, SampleEventID: "e2", SampleSummary: "s2"},
+		{RuleID: "r-none", Hour: h0, Host: "pc1", Hits: 9, First: now, Last: now, SampleEventID: "x", SampleSummary: "x"},
+	}
+	if err := db.RecordTrial(ctx, th); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordTrial(ctx, []TrialHit{{RuleID: "r-ps", Hour: h0, Host: "pc1", Hits: 3, First: now,
+		Last: now.Add(time.Minute), SampleEventID: "e3", SampleSummary: "s3"}}); err != nil {
+		t.Fatal(err)
+	}
+	ts, err := db.TrialStats(ctx)
+	if err != nil || len(ts) != 1 || ts[0].Hits != 6 || ts[0].Hosts != 2 || ts[0].TopHosts[0].Host != "pc1" ||
+		ts[0].TopHosts[0].Hits != 5 || ts[0].SampleEventID != "e3" || len(ts[0].Days) != 1 {
+		t.Fatalf("wyniki próby: %+v %v", ts, err)
+	}
+	// Ponowne ustawienie próby nie zeruje; nowa próba po wyjściu – od zera.
+	_ = db.SetOverride(ctx, "r-ps", Override{Trial: true, Reason: "dalej", ChangedBy: "adam", ChangedAt: now})
+	if ts, _ := db.TrialStats(ctx); ts[0].Hits != 6 {
+		t.Fatalf("próba trwa: %+v", ts)
+	}
+	_ = db.SetOverride(ctx, "r-ps", Override{Enabled: false, Reason: "koniec", ChangedBy: "adam", ChangedAt: now})
+	_ = db.SetOverride(ctx, "r-ps", Override{Trial: true, Reason: "znowu", ChangedBy: "adam", ChangedAt: now})
+	if ts, _ := db.TrialStats(ctx); ts[0].Hits != 0 || len(ts[0].TopHosts) != 0 {
+		t.Fatalf("nowa próba: %+v", ts)
+	}
+	if n, err := db.PruneTrial(ctx, now.Add(48*time.Hour)); err != nil || n != 0 {
+		t.Fatalf("sprzątanie prób: %d %v", n, err)
+	}
+	if ok, err := db.ClearOverride(ctx, "r-ps"); !ok || err != nil {
+		t.Fatalf("usunięcie próby: %v %v", ok, err)
+	}
 	// Reguły z panelu (kreator korelacji): zapis, zmiana (podpis się zmienia), usunięcie.
 	if _, err := db.PanelRule(ctx, "corr-x"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("brak reguły z panelu: %v", err)

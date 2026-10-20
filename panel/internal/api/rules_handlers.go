@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type RuleAdmin interface {
 	RuleVersions(ctx context.Context, rule string) ([]alerts.RuleVersion, error)
 	SetOverride(ctx context.Context, rule string, o alerts.Override) error
 	ClearOverride(ctx context.Context, rule string) (bool, error)
+	TrialStats(ctx context.Context) ([]alerts.TrialStat, error)
 	PanelRule(ctx context.Context, id string) (alerts.PanelRule, error)
 	SavePanelRule(ctx context.Context, id, source, by string, now time.Time) error
 	DeletePanelRule(ctx context.Context, id string) (bool, error)
@@ -163,9 +165,11 @@ func (s *Server) ruleVersions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"versions": nonNilSlice(vs)})
 }
 
-// setRuleEnabled włącza albo wyłącza regułę z panelu (ponad plik) albo
-// przywraca ustawienie z pliku (enabled = null). Wyłączenie osłabia detekcję:
-// wymaga powodu i ponownego podania hasła; detektor stosuje zmianę w 30 s.
+// setRuleEnabled włącza albo wyłącza regułę z panelu (ponad plik), ustawia
+// tryb próbny (trial – trafienia liczone bez alertów) albo przywraca
+// ustawienie z pliku (enabled = null). Wyłączenie (także przejście włączonej
+// reguły w próbę) osłabia detekcję: wymaga powodu i ponownego podania hasła;
+// detektor stosuje zmianę w 30 s.
 func (s *Server) setRuleEnabled(w http.ResponseWriter, r *http.Request) {
 	if !s.alertsEnabled(w) {
 		return
@@ -178,6 +182,7 @@ func (s *Server) setRuleEnabled(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
 		Enabled  *bool  `json:"enabled"`
+		Trial    bool   `json:"trial"`
 		Reason   string `json:"reason"`
 		Password string `json:"password"`
 	}
@@ -193,6 +198,14 @@ func (s *Server) setRuleEnabled(w http.ResponseWriter, r *http.Request) {
 	if rule.RemovedAt != nil || rule.Mode == "system" {
 		writeError(w, http.StatusBadRequest, "not_switchable", "tej reguły nie można przełączać z panelu")
 		return
+	}
+	if req.Trial && !trialCapable(rule) {
+		writeError(w, http.StatusBadRequest, "no_trial", "tryb próbny jest dla reguł Sigmy (bez korelacji i reguł wbudowanych)")
+		return
+	}
+	if req.Trial {
+		f := false
+		req.Enabled = &f
 	}
 	after := rule.FileEnabled
 	if req.Enabled != nil {
@@ -210,14 +223,136 @@ func (s *Server) setRuleEnabled(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled == nil {
 		_, err = s.RuleAdmin.ClearOverride(r.Context(), id)
 	} else {
-		err = s.RuleAdmin.SetOverride(r.Context(), id, alerts.Override{Enabled: *req.Enabled, Reason: req.Reason,
+		err = s.RuleAdmin.SetOverride(r.Context(), id, alerts.Override{Enabled: *req.Enabled, Trial: req.Trial, Reason: req.Reason,
 			ChangedBy: a.user.Username, ChangedAt: s.now()})
 	}
 	if errors.Is(err, alerts.ErrNotConfigured) || err != nil {
 		s.alertsError(w, r, err)
 		return
 	}
-	s.audit(r, &a.user, "rule_enabled_changed", id, map[string]any{"title": rule.Title, "enabled": after,
+	s.audit(r, &a.user, "rule_enabled_changed", id, map[string]any{"title": rule.Title, "enabled": after, "trial": req.Trial,
 		"from_file": req.Enabled == nil, "reason": req.Reason, "previous": rule.Enabled})
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": after, "message": "zmiana zacznie działać w ciągu 30 s (przeładowanie reguł w detektorze)"})
+	msg := "zmiana zacznie działać w ciągu 30 s (przeładowanie reguł w detektorze)"
+	if req.Trial {
+		msg = "tryb próbny zacznie działać w ciągu 30 s – trafienia bez alertów w „Próbach reguł”"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": after, "trial": req.Trial, "message": msg})
+}
+
+// trialCapable: tryb próbny dla reguł Sigmy ocenianych przez detektor
+// (bez korelacji, reguł wbudowanych i reguł bazowych korelacji).
+func trialCapable(r alerts.RuleInfo) bool {
+	return r.RemovedAt == nil && r.Mode != "system" && r.Mode != "correlation" &&
+		!strings.HasPrefix(r.Description, correlationOnlyPrefix)
+}
+
+// maxBulkRules: najwięcej reguł w jednej zmianie zbiorczej.
+const maxBulkRules = 5000
+
+// bulkRules zmienia wiele reguł naraz: włączenie, wyłączenie, tryb próbny
+// albo powrót do ustawienia z pliku. Zawsze z powodem i ponownym podaniem
+// hasła – hurtowe włączenie może zalać analityków alertami, a wyłączenie
+// osłabia detekcję. Reguł, których zmiana nie dotyczy, nie rusza.
+func (s *Server) bulkRules(w http.ResponseWriter, r *http.Request) {
+	if !s.alertsEnabled(w) {
+		return
+	}
+	if s.RuleAdmin == nil {
+		writeError(w, http.StatusServiceUnavailable, "rules_disabled", "zarządzanie regułami wyłączone w konfiguracji siem-api")
+		return
+	}
+	a := current(r)
+	var req struct {
+		IDs      []string `json:"ids"`
+		Action   string   `json:"action"` // enable | disable | trial | file
+		Reason   string   `json:"reason"`
+		Password string   `json:"password"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	req.Reason = strings.TrimSpace(req.Reason)
+	switch {
+	case req.Action != "enable" && req.Action != "disable" && req.Action != "trial" && req.Action != "file":
+		writeError(w, http.StatusBadRequest, "bad_action", "action: enable, disable, trial albo file")
+		return
+	case len(req.IDs) == 0 || len(req.IDs) > maxBulkRules:
+		writeError(w, http.StatusBadRequest, "bad_ids", "zaznacz od 1 do 5000 reguł")
+		return
+	case len([]rune(req.Reason)) < 3 || len(req.Reason) > 500:
+		writeError(w, http.StatusBadRequest, "bad_reason", "podaj powód zmiany (trafi do audytu)")
+		return
+	}
+	if !s.reauth(w, r, req.Password, "rules_bulk") {
+		return
+	}
+	rules, _, err := s.Alerts.Rules(r.Context())
+	if err != nil {
+		s.alertsError(w, r, err)
+		return
+	}
+	byID := make(map[string]alerts.RuleInfo, len(rules))
+	for _, ru := range rules {
+		byID[ru.ID] = ru
+	}
+	now := s.now()
+	var changed []string
+	skipped := 0
+	for _, id := range req.IDs {
+		ru, ok := byID[id]
+		if !ok || ru.RemovedAt != nil || ru.Mode == "system" || (req.Action == "trial" && !trialCapable(ru)) {
+			skipped++
+			continue
+		}
+		cur := "file"
+		if o := ru.Override; o != nil {
+			cur = map[bool]string{true: "enable", false: "disable"}[o.Enabled]
+			if o.Trial {
+				cur = "trial"
+			}
+		}
+		if cur == req.Action {
+			skipped++
+			continue
+		}
+		if req.Action == "file" {
+			_, err = s.RuleAdmin.ClearOverride(r.Context(), id)
+		} else {
+			err = s.RuleAdmin.SetOverride(r.Context(), id, alerts.Override{Enabled: req.Action == "enable", Trial: req.Action == "trial",
+				Reason: req.Reason, ChangedBy: a.user.Username, ChangedAt: now})
+		}
+		if err != nil {
+			break
+		}
+		changed = append(changed, id)
+	}
+	sample := changed
+	if len(sample) > 100 {
+		sample = sample[:100]
+	}
+	s.audit(r, &a.user, "rules_bulk_changed", req.Action, map[string]any{"action": req.Action, "changed": len(changed),
+		"skipped": skipped, "reason": req.Reason, "rules": sample, "ok": err == nil})
+	if err != nil {
+		s.alertsError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"changed": len(changed), "skipped": skipped,
+		"message": fmt.Sprintf("zmienione reguły: %d (bez zmian: %d) – detektor zastosuje zmiany w ciągu 30 s", len(changed), skipped)})
+}
+
+// trialRules: wyniki reguł w trybie próbnym (trafienia bez alertów).
+func (s *Server) trialRules(w http.ResponseWriter, r *http.Request) {
+	if !s.alertsEnabled(w) {
+		return
+	}
+	if s.RuleAdmin == nil {
+		writeError(w, http.StatusServiceUnavailable, "rules_disabled", "zarządzanie regułami wyłączone w konfiguracji siem-api")
+		return
+	}
+	stats, err := s.RuleAdmin.TrialStats(r.Context())
+	if err != nil {
+		s.alertsError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trials": nonNilSlice(stats), "now": s.now().UTC()})
 }

@@ -208,8 +208,17 @@ func serve(log *slog.Logger) error {
 		sigmaInfos := detector.ApplyCorrelationOverrides(set.Correlations, ov)
 		sigma := set.Correlations
 		sigmaCorr.Store(&sigma)
-		for id, o := range ov {
-			log.Info("reguła ustawiona w panelu", "rule", id, "enabled", o.Enabled, "by", o.ChangedBy)
+		trial := detector.TrialRules(rules, ov)
+		eng.SetTrial(trial)
+		if len(trial) > 0 && !streamOn {
+			log.Warn("reguły w trybie próbnym nie liczą trafień – próby działają w silniku w locie (SIEM_DETECTION_MODE=stream albo both)",
+				"trial", len(trial))
+		}
+		changed := 0
+		for _, o := range ov {
+			if !o.Trial {
+				changed++
+			}
 		}
 		n := eng.SetRules(rules)
 		var rerrs []alerts.RuleError
@@ -229,7 +238,8 @@ func serve(log *slog.Logger) error {
 		fp = cur
 		m.Rules.Set(float64(n))
 		m.RuleErrors.Set(float64(len(errs)))
-		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs), "errors", len(errs))
+		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs),
+			"overrides", changed, "trial", len(trial), "errors", len(errs))
 	}
 	reload()
 	restore()
@@ -315,6 +325,14 @@ func serve(log *slog.Logger) error {
 		if time.Since(lastReload) > 30*time.Second {
 			reload()
 			lastReload = time.Now()
+			// Trafienia reguł próbnych (bez alertów) – dopisanie do bazy.
+			if th := eng.TakeTrial(); len(th) > 0 {
+				if err := store.RecordTrial(ctx, th); err != nil {
+					m.Errors.WithLabelValues("trial").Inc()
+					log.Warn("zapis trafień reguł próbnych nieudany – ponowię", "entries", len(th), "err", err)
+					eng.GiveBackTrial(th)
+				}
+			}
 			keys, dropped := eng.SweepThresholds()
 			m.ThresholdKeys.Set(float64(keys))
 			if dropped > 0 {
@@ -663,6 +681,13 @@ func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 		}
 		if res.Alerts > 0 || res.Outbox > 0 {
 			log.Info("sprzątanie alertów", "closed_alerts", res.Alerts, "outbox", res.Outbox, "retention_days", days)
+		}
+		// Trafienia reguł próbnych – 35 dni (próba trwa zwykle tydzień–dwa).
+		if n, err := store.PruneTrial(ctx, now.AddDate(0, 0, -35)); err != nil {
+			m.Errors.WithLabelValues("retention").Inc()
+			log.Warn("sprzątanie trafień reguł próbnych nieudane", "err", err)
+		} else if n > 0 {
+			log.Info("sprzątanie trafień reguł próbnych", "rows", n)
 		}
 	}
 }

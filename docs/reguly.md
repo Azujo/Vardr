@@ -229,6 +229,27 @@ Skrypt najpierw sprawdza reguły (`siem-detector check`). Potem kopiuje je na VM
 
 **Włączanie i wyłączanie w panelu** (administrator, z powodem i hasłem) nadpisuje `enabled` z pliku i trafia do audytu. „Przywróć z pliku” cofa nadpisanie.
 
+Lista reguł ma wyszukiwarkę (tytuł, id, plik, tag) i filtry: źródło (własne, SigmaHQ, z panelu, wbudowane), stan i poziom. Administrator może zaznaczyć reguły – także wszystkie z filtra – i zmienić je **zbiorczo**: włączyć, wyłączyć, ustawić tryb próbny albo przywrócić ustawienie z pliku. Zmiana zbiorcza zawsze wymaga powodu i hasła i trafia do audytu jednym wpisem.
+
+### Tryb próbny
+
+Reguła w trybie próbnym jest oceniana na bieżących zdarzeniach, ale **nie tworzy alertów ani powiadomień** – detektor liczy tylko trafienia: godzinami i komputerami, z ostatnim zdarzeniem jako przykładem. Wyniki są na stronie *Reguły detekcji → Próby reguł*:
+
+| Ocena | Kiedy | Co zrobić |
+|---|---|---|
+| za krótko | próba trwa krócej niż dobę | poczekać |
+| cicha | 0 trafień | można włączyć |
+| rzadka | mniej niż 1 trafienie dziennie | przejrzeć przykłady, włączyć |
+| umiarkowana | 1–20 dziennie | sprawdzić, czy to prawdziwe zdarzenia; ewentualnie wyjątki w regule |
+| głośna | ponad 20 dziennie | bez dostrojenia nie włączać |
+
+Typowy przebieg dla reguł SigmaHQ: filtr *SigmaHQ*, poziom *wysoki* i *krytyczny* → zaznacz wszystkie → *Tryb próbny*; po tygodniu–dwóch w *Próbach reguł* zaznacz ciche i rzadkie → *Włącz*, głośne → *Wyłącz*.
+
+- Próby działają w silniku w locie (`SIEM_DETECTION_MODE` `stream` albo `both`). Reguły progowe liczą trafienia warunku, bez progu.
+- Włączona reguła ustawiona jako próbna przestaje alarmować na czas próby – dlatego wymaga powodu i hasła jak wyłączenie.
+- Trafienia leżą w `gjallarhorn.rule_trial_hits` 35 dni; ponowne rozpoczęcie próby liczy od zera.
+- Próba nie dotyczy korelacji, reguł wbudowanych i reguł bazowych korelacji.
+
 ## Reguły wbudowane
 
 Nie są plikami Sigmy – działają w kodzie detektora, ale są widoczne w panelu jak reguły (plik „(wbudowana)”):
@@ -346,7 +367,7 @@ deploy/lab/deploy.sh rules
 
 ### Włączanie reguł
 
-W panelu (*Reguły detekcji*) wybierz regułę, otwórz zakładkę **Test** i sprawdź ją na zdarzeniach z ostatnich 7 dni. Reguła bez fałszywych alarmów – włącz przełącznikiem (administrator, wpis w audycie). Ustawienie z panelu przetrwa ponowny import, bo jest zapisane po `id` reguły. Silniki oceniają tylko reguły włączone – wyłączone nie obciążają detekcji.
+Najwygodniej przez [tryb próbny](#tryb-próbny): zaznacz reguły SigmaHQ (np. poziom wysoki i krytyczny), ustaw próbę, a po tygodniu–dwóch włącz te, które okazały się ciche albo rzadkie. Pojedynczą regułę sprawdzisz też od razu na historii: zakładka **Test** w szczegółach reguły (zdarzenia z ostatnich 7 dni). Reguła bez fałszywych alarmów – włącz przełącznikiem (administrator, wpis w audycie). Ustawienie z panelu przetrwa ponowny import, bo jest zapisane po `id` reguły. Silniki oceniają tylko reguły włączone – wyłączone nie obciążają detekcji.
 
 Kategorie Sysmona spoza listy w kroku 2 (ładowanie bibliotek, dostęp do procesów, potoki, WMI) pomijamy: agent ich nie zbiera, a silnik ich nie obsługuje. Reguły na Event ID, których profil agenta nie zbiera, wczytają się, ale nie będą miały trafień – test na historii to pokaże (0 zdarzeń).
 

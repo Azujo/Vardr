@@ -203,6 +203,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/rules/test", s.authed(roleAnalyst, 0, s.testRule))
 	mux.Handle("GET /api/v1/rules/{id}/versions", s.authed(roleViewer, 0, s.ruleVersions))
 	mux.Handle("POST /api/v1/rules/{id}/enabled", s.authed(roleAdmin, 0, s.setRuleEnabled))
+	mux.Handle("POST /api/v1/rules/bulk", s.authed(roleAdmin, 0, s.bulkRules))
+	mux.Handle("GET /api/v1/rules/trial", s.authed(roleViewer, 0, s.trialRules))
 	mux.Handle("POST /api/v1/rules/wizard/events", s.authed(roleAnalyst, 0, s.wizardEvents))
 	mux.Handle("GET /api/v1/panel-rules/{id}", s.authed(roleViewer, 0, s.getPanelRule))
 	mux.Handle("PUT /api/v1/panel-rules/{id}", s.authed(roleAdmin, 0, s.savePanelRule))

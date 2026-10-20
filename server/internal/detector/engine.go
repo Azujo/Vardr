@@ -22,10 +22,20 @@ type Engine struct {
 	rules atomic.Pointer[[]*detect.Rule] // silnik w locie
 	all   atomic.Pointer[[]*detect.Rule] // wszystkie wczytane (silnik zapytań)
 	th    *Thresholds
+	trial *Trial // reguły próbne: trafienia bez alertów
 }
 
 // NewEngine tworzy silnik bez reguł.
-func NewEngine() *Engine { return &Engine{th: NewThresholds()} }
+func NewEngine() *Engine { return &Engine{th: NewThresholds(), trial: newTrial()} }
+
+// SetTrial podmienia reguły próbne (TrialRules).
+func (e *Engine) SetTrial(rules []*detect.Rule) { e.trial.set(rules) }
+
+// TakeTrial zwraca trafienia reguł próbnych od ostatniego wywołania.
+func (e *Engine) TakeTrial() []alerts.TrialHit { return e.trial.take() }
+
+// GiveBackTrial przywraca trafienia po nieudanym zapisie.
+func (e *Engine) GiveBackTrial(hits []alerts.TrialHit) { e.trial.giveBack(hits) }
 
 // SetRules podmienia reguły (tylko włączone, z trybem stream albo both).
 func (e *Engine) SetRules(all []*detect.Rule) int {
@@ -82,6 +92,7 @@ func (e *Engine) Evaluate(b *model.Batch) ([]alerts.Hit, []alerts.Observation) {
 	var obs []alerts.Observation
 	for i := range b.Events {
 		ev := detect.Event{Event: &b.Events[i]}
+		e.trial.observe(ev)
 		for _, r := range rules {
 			if !r.Match(ev) {
 				continue

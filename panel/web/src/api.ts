@@ -918,8 +918,26 @@ export interface RuleInfo {
   open_alerts: number;
   file_enabled: boolean;
   version: number;
-  override?: { enabled: boolean; reason: string; changed_by: string; changed_at: string };
+  override?: { enabled: boolean; trial?: boolean; reason: string; changed_by: string; changed_at: string };
 }
+
+// Wynik reguły w trybie próbnym (trafienia bez alertów, od początku próby).
+export interface TrialStat {
+  rule_id: string;
+  since: string;
+  changed_by: string;
+  reason: string;
+  hits: number;
+  hosts: number;
+  days: { day: string; hits: number }[];
+  top_hosts: { host: string; hits: number }[];
+  last_at?: string;
+  sample_event_id?: string;
+  sample_summary?: string;
+}
+
+// Zmiana zbiorcza reguł: włączenie, wyłączenie, tryb próbny, ustawienie z pliku.
+export type BulkRuleAction = "enable" | "disable" | "trial" | "file";
 
 export interface RuleVersion {
   version: number;
@@ -950,12 +968,21 @@ export const rulesApi = {
         threshold?: { count: number; window_s: number; distinct?: string } };
     }>("POST", "/api/v1/rules/test", { source, hours }),
   versions: (id: string) => request<{ versions: RuleVersion[] }>("GET", `/api/v1/rules/${encodeURIComponent(id)}/versions`),
-  setEnabled: (id: string, enabled: boolean | null, reason: string, password?: string) =>
+  setEnabled: (id: string, enabled: boolean | null, reason: string, password?: string, trial = false) =>
     request<{ enabled: boolean; message: string }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/enabled`, {
       enabled,
+      trial,
       reason,
       password: password ?? "",
     }),
+  bulk: (ids: string[], action: BulkRuleAction, reason: string, password: string) =>
+    request<{ changed: number; skipped: number; message: string }>("POST", "/api/v1/rules/bulk", {
+      ids,
+      action,
+      reason,
+      password,
+    }),
+  trials: () => request<{ trials: TrialStat[]; now: string }>("GET", "/api/v1/rules/trial"),
   // Kreator korelacji: przykładowe zdarzenia z polami i pasującymi regułami.
   wizardEvents: (events: { id: string; ts: string }[]) =>
     request<{ events: WizEvent[]; missing: number }>("POST", "/api/v1/rules/wizard/events", { events }),
