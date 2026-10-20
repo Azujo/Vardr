@@ -31,6 +31,7 @@ import {
   IconDeviceDesktop,
   IconHome,
   IconKey,
+  IconShieldLock,
   IconListCheck,
   IconListDetails,
   IconLogout,
@@ -180,6 +181,9 @@ export default function Layout({ children }: { children: ReactNode }) {
               <Menu.Dropdown>
                 <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
                   Zmień hasło
+                </Menu.Item>
+                <Menu.Item component={Link} to="/account/security" leftSection={<IconShieldLock size={16} />}>
+                  Bezpieczeństwo konta
                 </Menu.Item>
                 <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={() => void logout()}>
                   Wyloguj

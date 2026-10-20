@@ -22,7 +22,37 @@ export interface SessionInfo {
   user: User;
   csrf_token: string;
   server_version?: string;
+  mfa?: boolean; // sesja potwierdzona drugim składnikiem
 }
+
+// Wynik kroku logowania: sesja albo prośba o kod / konfigurację drugiego składnika.
+export type LoginFinal = SessionInfo & { mfa_method?: string; recovery_codes?: string[]; recovery_left?: number };
+export type LoginStep = LoginFinal | { mfa: "code" | "enroll"; challenge: string; username: string };
+
+export function isMFAStep(r: LoginStep): r is { mfa: "code" | "enroll"; challenge: string; username: string } {
+  return typeof (r as { mfa?: unknown }).mfa === "string";
+}
+
+// Konfiguracja aplikacji uwierzytelniającej (kod QR i sekret do wpisania).
+export interface MFASetup {
+  secret: string;
+  uri: string;
+  qr: string;
+  issuer: string;
+  account: string;
+}
+
+export interface MFAStatus {
+  available: boolean;
+  enabled: boolean;
+  enabled_at?: string;
+  recovery_left?: number;
+  policy: MFAPolicy;
+  required: boolean;
+  session_mfa: boolean;
+}
+
+export type MFAPolicy = "all" | "admins" | "none";
 
 export interface AuditEntry {
   id: number;
@@ -46,14 +76,14 @@ export class ApiError extends Error {
 }
 
 let csrfToken = "";
-let onUnauthenticated: () => void = () => {};
+let onUnauthenticated: (err: ApiError) => void = () => {};
 
 export function setCsrfToken(token: string) {
   csrfToken = token;
 }
 
 // Wywoływane, gdy sesja wygaśnie w trakcie pracy (powrót do logowania).
-export function setUnauthenticatedHandler(fn: () => void) {
+export function setUnauthenticatedHandler(fn: (err: ApiError) => void) {
   onUnauthenticated = fn;
 }
 
@@ -72,7 +102,8 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
-    if (res.status === 401 && path !== "/api/v1/auth/login" && path !== "/api/v1/auth/session") onUnauthenticated();
+    if (res.status === 401 && !path.startsWith("/api/v1/auth/login") && !path.startsWith("/api/v1/auth/mfa") && path !== "/api/v1/auth/session")
+      onUnauthenticated(err);
     throw err;
   }
   return data as T;
@@ -80,14 +111,28 @@ export async function request<T>(method: string, path: string, body?: unknown): 
 
 export const api = {
   session: () => request<SessionInfo>("GET", "/api/v1/auth/session"),
-  login: (username: string, password: string) =>
-    request<SessionInfo>("POST", "/api/v1/auth/login", { username, password }),
+  login: (username: string, password: string) => request<LoginStep>("POST", "/api/v1/auth/login", { username, password }),
+  loginMFA: (challenge: string, code: string) => request<LoginFinal>("POST", "/api/v1/auth/mfa", { challenge, code }),
+  loginEnroll: (challenge: string) => request<MFASetup>("POST", "/api/v1/auth/mfa/enroll", { challenge }),
+  loginEnrollConfirm: (challenge: string, code: string) =>
+    request<LoginFinal>("POST", "/api/v1/auth/mfa/enroll/confirm", { challenge, code }),
+  mfaStatus: () => request<MFAStatus>("GET", "/api/v1/account/mfa"),
+  mfaSetup: (password: string) => request<MFASetup>("POST", "/api/v1/account/mfa/setup", { password }),
+  mfaConfirm: (code: string) => request<{ recovery_codes: string[] }>("POST", "/api/v1/account/mfa/confirm", { code }),
+  mfaDisable: (password: string, code: string) => request<{ ok: boolean }>("POST", "/api/v1/account/mfa/disable", { password, code }),
+  mfaRecovery: (password: string, code: string) =>
+    request<{ recovery_codes: string[] }>("POST", "/api/v1/account/mfa/recovery", { password, code }),
+  resetUserMFA: (id: number, password: string) => request<{ ok: boolean }>("POST", `/api/v1/users/${id}/mfa/reset`, { password }),
+  securitySettings: () => request<{ mfa_available: boolean; mfa_policy: MFAPolicy }>("GET", "/api/v1/settings/security"),
+  setSecuritySettings: (mfa_policy: MFAPolicy, password: string) =>
+    request<{ mfa_policy: MFAPolicy }>("PUT", "/api/v1/settings/security", { mfa_policy, password }),
   logout: () => request<void>("POST", "/api/v1/auth/logout"),
   changePassword: (current_password: string, new_password: string) =>
     request<SessionInfo>("POST", "/api/v1/auth/password", { current_password, new_password }),
   health: () => request<{ status: string; database: string }>("GET", "/api/v1/health"),
 
-  users: () => request<{ users: User[] }>("GET", "/api/v1/users"),
+  users: () =>
+    request<{ users: User[]; mfa?: Record<string, string>; mfa_available?: boolean; mfa_policy?: MFAPolicy }>("GET", "/api/v1/users"),
   createUser: (u: { username: string; display_name: string; role: Role }) =>
     request<{ user: User; temp_password: string }>("POST", "/api/v1/users", u),
   updateUser: (id: number, patch: { display_name?: string; role?: Role; disabled?: boolean }) =>

@@ -65,6 +65,9 @@ for t in "${targets[@]}"; do
     # Plik hasła sprzed zmiany nazwy projektu (~/.heimdall-backup.pass) – przeniesienie.
     remote "if [ -f ~/.heimdall-backup.pass ] && [ ! -e ~/.vardr-backup.pass ]; then mv ~/.heimdall-backup.pass ~/.vardr-backup.pass; fi"
     remote "touch ~/.vardr-backup.pass && chmod 600 ~/.vardr-backup.pass && mkdir -p backup-state metrics"
+    # Klucz szyfrujący sekrety TOTP panelu (drugi składnik logowania) – raz,
+    # w certs/ (jest w kopii zapasowej; bez niego zapisane MFA przestaje działać).
+    remote "[ -s certs/mfa.key ] || (umask 077 && openssl rand -hex 32 > certs/mfa.key && echo '   utworzono certs/mfa.key (klucz MFA panelu)')"
     remote "crontab -l 2>/dev/null | grep -q 'siem-lab/backup.sh' && (crontab -l | grep -v 'siem-lab/backup.sh' | crontab -) && echo '   usunięto wpis crona backup.sh (harmonogram kopii jest teraz w panelu)'" || true
     # Przywracanie zlecone w panelu wykonuje restore.sh (zatrzymuje usługi) – sprawdza zlecenie co minutę.
     remote "crontab -l 2>/dev/null | grep -q 'restore.sh --zlecenie' || (crontab -l 2>/dev/null; echo '* * * * * \$HOME/siem-lab/restore.sh --zlecenie >> \$HOME/siem-lab/restore.log 2>&1') | crontab -" &&

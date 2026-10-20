@@ -9,6 +9,8 @@ import {
   Group,
   Menu,
   Modal,
+  PasswordInput,
+  SegmentedControl,
   Select,
   Stack,
   Table,
@@ -18,8 +20,17 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconCheck, IconCopy, IconDots, IconKey, IconLock, IconLockOpen, IconUserPlus } from "@tabler/icons-react";
-import { api, formatDate, roleLabels, type Role, type User } from "../api";
+import {
+  IconCheck,
+  IconCopy,
+  IconDots,
+  IconKey,
+  IconLock,
+  IconLockOpen,
+  IconShieldOff,
+  IconUserPlus,
+} from "@tabler/icons-react";
+import { api, formatDate, roleLabels, type MFAPolicy, type Role, type User } from "../api";
 import { useAuth } from "../auth";
 
 const roleOptions = (Object.keys(roleLabels) as Role[]).map((r) => ({ value: r, label: roleLabels[r] }));
@@ -67,13 +78,54 @@ export default function UsersPage() {
   const [temp, setTemp] = useState<{ user: User; temp_password: string } | null>(null);
   const [form, setForm] = useState({ username: "", display_name: "", role: "viewer" as Role });
   const [busy, setBusy] = useState(false);
+  const [mfa, setMfa] = useState<Record<string, string>>({});
+  const [mfaAvailable, setMfaAvailable] = useState(false);
+  const [policy, setPolicy] = useState<MFAPolicy>("all");
+  const [policyEdit, setPolicyEdit] = useState<MFAPolicy | null>(null);
+  const [mfaReset, setMfaReset] = useState<User | null>(null);
+  const [password, setPassword] = useState("");
 
   const load = useCallback(() => {
     api
       .users()
-      .then((r) => setUsers(r.users))
+      .then((r) => {
+        setUsers(r.users);
+        setMfa(r.mfa ?? {});
+        setMfaAvailable(!!r.mfa_available);
+        if (r.mfa_policy) setPolicy(r.mfa_policy);
+      })
       .catch((e) => setError(errorMessage(e)));
   }, []);
+  const savePolicy = async () => {
+    if (!policyEdit) return;
+    setBusy(true);
+    try {
+      await api.setSecuritySettings(policyEdit, password);
+      notifications.show({ color: "green", message: "Zapisano wymaganie drugiego składnika" });
+      setPolicyEdit(null);
+      setPassword("");
+      load();
+    } catch (err) {
+      notifications.show({ color: "red", message: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const resetMFA = async () => {
+    if (!mfaReset) return;
+    setBusy(true);
+    try {
+      await api.resetUserMFA(mfaReset.id, password);
+      notifications.show({ color: "green", message: `Drugi składnik konta ${mfaReset.username} usunięty` });
+      setMfaReset(null);
+      setPassword("");
+      load();
+    } catch (err) {
+      notifications.show({ color: "red", message: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(load, [load]);
 
   const create = async (e: React.FormEvent) => {
@@ -128,6 +180,33 @@ export default function UsersPage() {
         </Button>
       </Group>
       {error && <Alert color="red">{error}</Alert>}
+      {mfaAvailable ? (
+        <Group gap="sm" align="center">
+          <Text size="sm" fw={500}>
+            Drugi składnik logowania (TOTP) wymagany od:
+          </Text>
+          <SegmentedControl
+            size="xs"
+            value={policy}
+            onChange={(v) => {
+              if (v !== policy) {
+                setPassword("");
+                setPolicyEdit(v as MFAPolicy);
+              }
+            }}
+            data={[
+              { value: "all", label: "wszystkich" },
+              { value: "admins", label: "administratorów" },
+              { value: "none", label: "nikogo (dobrowolnie)" },
+            ]}
+          />
+        </Group>
+      ) : (
+        <Alert color="gray">
+          Drugi składnik logowania niedostępny – brak klucza MFA na serwerze (plik <Code>certs/mfa.key</Code>, tworzy go{" "}
+          <Code>deploy.sh config</Code>).
+        </Alert>
+      )}
 
       <Table.ScrollContainer minWidth={720}>
         <Table striped highlightOnHover verticalSpacing="sm">
@@ -137,6 +216,7 @@ export default function UsersPage() {
               <Table.Th>Nazwa</Table.Th>
               <Table.Th>Rola</Table.Th>
               <Table.Th>Stan</Table.Th>
+              <Table.Th>MFA</Table.Th>
               <Table.Th>Ostatnie logowanie</Table.Th>
               <Table.Th />
             </Table.Tr>
@@ -183,6 +263,19 @@ export default function UsersPage() {
                   </Group>
                 </Table.Td>
                 <Table.Td>
+                  {mfa[String(u.id)] ? (
+                    <Tooltip label={`włączone ${formatDate(mfa[String(u.id)])}`}>
+                      <Badge color="green" variant="light">
+                        TOTP
+                      </Badge>
+                    </Tooltip>
+                  ) : (
+                    <Badge color={policy === "all" || (policy === "admins" && u.role === "admin") ? "orange" : "gray"} variant="light">
+                      {policy === "all" || (policy === "admins" && u.role === "admin") ? "skonfiguruje przy logowaniu" : "brak"}
+                    </Badge>
+                  )}
+                </Table.Td>
+                <Table.Td>
                   <Text size="sm">{formatDate(u.last_login_at)}</Text>
                 </Table.Td>
                 <Table.Td>
@@ -196,6 +289,17 @@ export default function UsersPage() {
                       <Menu.Item leftSection={<IconKey size={16} />} onClick={() => void reset(u)}>
                         Nowe hasło startowe
                       </Menu.Item>
+                      {mfa[String(u.id)] && (
+                        <Menu.Item
+                          leftSection={<IconShieldOff size={16} />}
+                          onClick={() => {
+                            setPassword("");
+                            setMfaReset(u);
+                          }}
+                        >
+                          Resetuj drugi składnik
+                        </Menu.Item>
+                      )}
                       {u.id !== me?.id &&
                         (u.disabled ? (
                           <Menu.Item leftSection={<IconLockOpen size={16} />} onClick={() => void update(u, { disabled: false })}>
@@ -248,6 +352,35 @@ export default function UsersPage() {
         </form>
       </Modal>
       <TempPassword data={temp} onClose={() => setTemp(null)} />
+      <Modal opened={!!policyEdit} onClose={() => setPolicyEdit(null)} title="Wymaganie drugiego składnika" centered>
+        {policyEdit && (
+          <Stack>
+            <Text size="sm">
+              {policyEdit === "none"
+                ? "Drugi składnik będzie dobrowolny – do zalogowania wystarczy samo hasło."
+                : `Konta ${policyEdit === "all" ? "" : "administratorów "}bez drugiego składnika skonfigurują go przy najbliższym logowaniu; ich bieżące sesje bez drugiego składnika zostaną zakończone.`}
+            </Text>
+            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <Button color={policyEdit === "none" ? "red" : undefined} loading={busy} disabled={!password} onClick={() => void savePolicy()}>
+              Zapisz
+            </Button>
+          </Stack>
+        )}
+      </Modal>
+      <Modal opened={!!mfaReset} onClose={() => setMfaReset(null)} title={`Reset drugiego składnika – ${mfaReset?.username ?? ""}`} centered>
+        {mfaReset && (
+          <Stack>
+            <Text size="sm">
+              Np. przy zgubionym telefonie. Konto straci aplikację i kody zapasowe, jego sesje zostaną zakończone; przy
+              następnym logowaniu skonfiguruje aplikację od nowa (jeśli drugi składnik jest wymagany). Zmiana trafi do audytu.
+            </Text>
+            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <Button color="red" loading={busy} disabled={!password} onClick={() => void resetMFA()}>
+              Resetuj
+            </Button>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 }

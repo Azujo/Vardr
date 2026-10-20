@@ -72,6 +72,13 @@ func (s *Server) authed(need roleLevel, flags int, h http.HandlerFunc) http.Hand
 			clearCookie(w)
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "konto jest wyłączone")
 			return
+		case !sess.MFA && s.mfaEnabled() && s.mfaRequired(r.Context(), user):
+			// Polityka wymaga drugiego składnika, a sesja powstała bez niego
+			// (np. sprzed włączenia wymogu) – logowanie od nowa, z kodem.
+			_ = s.Store.DeleteSession(r.Context(), sess.ID)
+			clearCookie(w)
+			writeError(w, http.StatusUnauthorized, "mfa_required", "panel wymaga drugiego składnika logowania – zaloguj się ponownie")
+			return
 		}
 
 		// Żądania zmieniające stan muszą nieść token CSRF z sesji (obok
@@ -124,6 +131,8 @@ type sessionResponse struct {
 	CSRFToken string     `json:"csrf_token"`
 	// ServerVersion: wersja siem-api (ustawiana przy budowaniu, deploy.sh).
 	ServerVersion string `json:"server_version"`
+	// MFA: sesja potwierdzona drugim składnikiem.
+	MFA bool `json:"mfa"`
 }
 
 const badLogin = "nieprawidłowy login lub hasło albo konto tymczasowo zablokowane"
@@ -180,32 +189,68 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Store.RecordLoginSuccess(r.Context(), user.ID); err != nil {
-		s.internalError(w, r, err)
-		return
-	}
 	if rehash { // parametry hasha podniesione od czasu ustawienia hasła
 		if h, err := auth.HashPassword(req.Password); err == nil {
 			_ = s.Store.SetPassword(r.Context(), user.ID, h, user.MustChangePassword)
 		}
 	}
+	// Drugi składnik: konto go ma albo polityka wymaga – hasło sprawdzone,
+	// sesja dopiero po kodzie (albo po konfiguracji aplikacji).
+	if s.mfaEnabled() {
+		_, err := s.MFA.MFAState(r.Context(), user.ID)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			s.internalError(w, r, err)
+			return
+		}
+		enrolled := err == nil
+		if enrolled || s.mfaRequired(r.Context(), user) {
+			token := auth.NewToken()
+			s.newChallenge("login:"+auth.TokenID(token), &mfaChallenge{userID: user.ID, expires: now.Add(mfaChallengeTL), enroll: !enrolled})
+			step := "code"
+			if !enrolled {
+				step = "enroll"
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"mfa": step, "challenge": token, "username": user.Username})
+			return
+		}
+	}
+	s.finishLogin(w, r, user, false, nil)
+}
+
+// finishLogin zakłada sesję po udanym logowaniu (hasło, a gdy trzeba – kod).
+// extra: dodatkowe pola odpowiedzi i wpisu audytu (np. kody zapasowe – tylko
+// w odpowiedzi).
+func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, user store.User, mfa bool, extra map[string]any) {
+	now := s.now()
+	if err := s.Store.RecordLoginSuccess(r.Context(), user.ID); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
 	token := auth.NewToken()
 	sess := store.Session{
 		ID: auth.TokenID(token), UserID: user.ID, CSRF: auth.NewToken(),
-		CreatedAt: now, ExpiresAt: now.Add(s.IdleTimeout), IP: ip, UserAgent: truncate(r.UserAgent(), 256),
+		CreatedAt: now, ExpiresAt: now.Add(s.IdleTimeout), IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 256), MFA: mfa,
 	}
 	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	setCookie(w, token, s.MaxAge)
-	s.audit(r, &user, "login", user.Username, nil)
-	writeJSON(w, http.StatusOK, sessionResponse{User: user, CSRFToken: sess.CSRF, ServerVersion: svc.Version})
+	details := map[string]any{}
+	if m, ok := extra["mfa_method"]; ok {
+		details["mfa"] = m
+	}
+	s.audit(r, &user, "login", user.Username, details)
+	out := map[string]any{"user": user, "csrf_token": sess.CSRF, "server_version": svc.Version, "mfa": mfa}
+	for k, v := range extra {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version})
+	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version, MFA: a.session.MFA})
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +306,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "password_changed", a.user.Username, nil)
 	a.user.MustChangePassword = false
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version})
+	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version, MFA: a.session.MFA})
 }
 
 func truncate(s string, n int) string {

@@ -25,7 +25,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
@@ -351,5 +351,71 @@ func testGroups(t *testing.T, db *PG) {
 	}
 	if ok, err := db.RevokeUninstallToken(ctx, "agt-1", list[0].ID, "admin"); ok || err != nil {
 		t.Fatalf("unieważnienie użytego: %v %v", ok, err)
+	}
+
+	testMFA(ctx, t, db)
+}
+
+// testMFA: drugi składnik konta, kody zapasowe, krok kodu, sesja, ustawienia.
+func testMFA(ctx context.Context, t *testing.T, db *PG) {
+	u, err := db.CreateUser(ctx, User{Username: "mfa-user", Role: RoleViewer, PasswordHash: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
+	if _, err := db.MFAState(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("konto bez MFA: %v", err)
+	}
+	if err := db.EnableMFA(ctx, u.ID, []byte{1, 2, 3}, 100, []string{"a", "b"}, now); err != nil {
+		t.Fatal(err)
+	}
+	m, err := db.MFAState(ctx, u.ID)
+	if err != nil || m.LastStep != 100 || m.RecoveryLeft != 2 || string(m.SecretEnc) != "\x01\x02\x03" {
+		t.Fatalf("stan MFA: %+v %v", m, err)
+	}
+	if ok, _ := db.AdvanceMFAStep(ctx, u.ID, 100); ok {
+		t.Fatal("ten sam krok drugi raz")
+	}
+	if ok, _ := db.AdvanceMFAStep(ctx, u.ID, 101); !ok {
+		t.Fatal("późniejszy krok odrzucony")
+	}
+	if ok, left, err := db.UseRecoveryCode(ctx, u.ID, "a", now); !ok || left != 1 || err != nil {
+		t.Fatalf("kod zapasowy: %v %d %v", ok, left, err)
+	}
+	if ok, _, _ := db.UseRecoveryCode(ctx, u.ID, "a", now); ok {
+		t.Fatal("kod zapasowy drugi raz")
+	}
+	if err := db.ReplaceRecoveryCodes(ctx, u.ID, []string{"c", "d", "e"}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := db.MFAState(ctx, u.ID); m.RecoveryLeft != 3 {
+		t.Fatalf("nowe kody: %+v", m)
+	}
+	if us, err := db.MFAEnabledUsers(ctx); err != nil || !us[u.ID].Equal(now) {
+		t.Fatalf("konta z MFA: %v %v", us, err)
+	}
+	sess := Session{ID: "mfa-sess", UserID: u.ID, CSRF: "c", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	if err := db.CreateSession(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MarkSessionMFA(ctx, "mfa-sess"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _, err := db.SessionWithUser(ctx, "mfa-sess", now); err != nil || !s.MFA {
+		t.Fatalf("sesja z MFA: %+v %v", s, err)
+	}
+	if err := db.DisableMFA(ctx, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MFAState(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("po wyłączeniu: %v", err)
+	}
+	if _, err := db.Setting(ctx, "mfa_policy"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("brak ustawienia: %v", err)
+	}
+	_ = db.SetSetting(ctx, "mfa_policy", "admins", "adam", now)
+	_ = db.SetSetting(ctx, "mfa_policy", "all", "ewa", now)
+	if v, err := db.Setting(ctx, "mfa_policy"); v != "all" || err != nil {
+		t.Fatalf("ustawienie: %q %v", v, err)
 	}
 }

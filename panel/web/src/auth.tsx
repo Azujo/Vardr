@@ -1,10 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, setCsrfToken, setUnauthenticatedHandler, type SessionInfo, type User } from "./api";
+import { ApiError, api, setCsrfToken, setUnauthenticatedHandler, type SessionInfo, type User } from "./api";
 
 interface AuthState {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  // notice: powód wylogowania pokazywany na stronie logowania (np. nowy wymóg MFA).
+  notice: string;
   logout: () => Promise<void>;
   applySession: (s: SessionInfo) => void;
 }
@@ -14,30 +15,29 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
 
   const applySession = useCallback((s: SessionInfo) => {
     setCsrfToken(s.csrf_token);
     setUser(s.user);
+    setNotice("");
   }, []);
 
   useEffect(() => {
-    setUnauthenticatedHandler(() => {
+    setUnauthenticatedHandler((err) => {
       setCsrfToken("");
       setUser(null);
+      if (err.code === "mfa_required") setNotice(err.message);
     });
     api
       .session()
       .then(applySession)
-      .catch(() => setUser(null))
+      .catch((e) => {
+        setUser(null);
+        if (e instanceof ApiError && e.code === "mfa_required") setNotice(e.message);
+      })
       .finally(() => setLoading(false));
   }, [applySession]);
-
-  const login = useCallback(
-    async (username: string, password: string) => {
-      applySession(await api.login(username, password));
-    },
-    [applySession],
-  );
 
   const logout = useCallback(async () => {
     try {
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, login, logout, applySession }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, notice, logout, applySession }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

@@ -6,6 +6,8 @@
 //	siem-api                                    uruchomienie serwera (domyślnie)
 //	siem-api bootstrap-admin -username admin    pierwsze konto administratora
 //	siem-api reset-password -username jan       nowe hasło startowe dla konta
+//	siem-api reset-mfa -username jan            usunięcie drugiego składnika konta
+//	                                            (zgubiony telefon i kody zapasowe)
 //
 // Polecenia administracyjne wypisują hasło startowe na ekran – uruchamia je
 // administrator na serwerze (docker compose run --rm api …). Hasło trzeba
@@ -62,8 +64,10 @@ func main() {
 		err = bootstrapAdmin(os.Args[2:])
 	case "reset-password":
 		err = resetPassword(os.Args[2:])
+	case "reset-mfa":
+		err = resetMFA(os.Args[2:])
 	default:
-		fmt.Fprintf(os.Stderr, "nieznane polecenie %q (dostępne: serve, bootstrap-admin, reset-password)\n", cmd)
+		fmt.Fprintf(os.Stderr, "nieznane polecenie %q (dostępne: serve, bootstrap-admin, reset-password, reset-mfa)\n", cmd)
 		os.Exit(2)
 	}
 	if err != nil {
@@ -154,6 +158,17 @@ func serve(log *slog.Logger) error {
 	identities := &api.Identities{Store: db}
 	apiServer.Identities = identities
 	apiServer.Backups = db
+	// Drugi składnik logowania (TOTP): klucz szyfrujący sekrety z pliku
+	// (deploy.sh tworzy certs/mfa.key); bez klucza – logowanie samym hasłem.
+	if keyFile := svc.Env("SIEM_MFA_KEY_FILE", "/certs/mfa.key"); keyFile != "" {
+		if data, err := os.ReadFile(keyFile); err != nil {
+			log.Warn("brak klucza MFA – drugi składnik logowania wyłączony", "file", keyFile, "err", err)
+		} else if key, err := auth.ParseMFAKey(string(data)); err != nil {
+			return err
+		} else {
+			apiServer.MFA, apiServer.MFAKey = db, key
+		}
+	}
 	if n, err := db.AbortRunningQuarantineJobs(ctx); err != nil {
 		return err
 	} else if n > 0 {
@@ -539,6 +554,39 @@ func resetPassword(args []string) error {
 	_ = db.Audit(ctx, store.AuditEntry{Username: "(konsola)", Action: "password_reset", Target: u.Username,
 		Details: map[string]any{"via": "reset-password"}})
 	printTemp(u.Username, temp)
+	return nil
+}
+
+// resetMFA usuwa drugi składnik konta i zamyka jego sesje – awaryjnie, gdy
+// jedyny administrator zgubił telefon i kody zapasowe (w panelu reset robi
+// inny administrator). Przy wymogu MFA konto skonfiguruje aplikację od nowa
+// przy najbliższym logowaniu.
+func resetMFA(args []string) error {
+	fs := flag.NewFlagSet("reset-mfa", flag.ExitOnError)
+	username := fs.String("username", "", "login konta")
+	_ = fs.Parse(args)
+	if *username == "" {
+		return errors.New("podaj -username")
+	}
+	ctx := context.Background()
+	db, err := openStore(ctx, slog.New(slog.DiscardHandler))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	u, err := db.UserByUsername(ctx, *username)
+	if err != nil {
+		return fmt.Errorf("konto %s: %w", *username, err)
+	}
+	if err := db.DisableMFA(ctx, u.ID); err != nil {
+		return err
+	}
+	if err := db.DeleteUserSessions(ctx, u.ID, ""); err != nil {
+		return err
+	}
+	_ = db.Audit(ctx, store.AuditEntry{Username: "(konsola)", Action: "mfa_reset", Target: u.Username,
+		Details: map[string]any{"via": "reset-mfa"}})
+	fmt.Printf("\nKonto %s: drugi składnik usunięty, sesje zakończone. Przy logowaniu skonfiguruj aplikację od nowa.\n\n", u.Username)
 	return nil
 }
 

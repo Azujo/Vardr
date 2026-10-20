@@ -15,6 +15,7 @@ import CorrelationWizard from "./pages/CorrelationWizard";
 import AttackPage from "./pages/AttackPage";
 import RulesPage from "./pages/RulesPage";
 import RuleTrialsPage from "./pages/RuleTrialsPage";
+import AccountSecurityPage from "./pages/AccountSecurityPage";
 import DecodersPage from "./pages/DecodersPage";
 import QuarantinePage from "./pages/QuarantinePage";
 import IdentitiesPage from "./pages/IdentitiesPage";
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/identities" element={<IdentitiesPage />} />
         <Route path="/system" element={<SystemPage />} />
         <Route path="/account/password" element={<ChangePasswordPage />} />
+        <Route path="/account/security" element={<AccountSecurityPage />} />
         {admin && <Route path="/admin/users" element={<UsersPage />} />}
         {admin && <Route path="/admin/audit" element={<AuditPage />} />}
         {admin && <Route path="/admin/notifications" element={<NotificationsPage />} />}

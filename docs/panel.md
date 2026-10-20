@@ -12,6 +12,15 @@ Panel działa pod `https://<serwer>:8444` (w laboratorium `https://192.168.88.98
 
 Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token deinstalacji agenta, zmiana dekodera) wymagają ponownego podania hasła i powodu. Wszystkie zmiany trafiają do **dziennika audytu**. Sesja wygasa po bezczynności, a konto jest czasowo blokowane po serii nieudanych logowań.
 
+## Drugi składnik logowania (MFA)
+
+Po haśle panel prosi o 6-cyfrowy kod z aplikacji uwierzytelniającej (TOTP – Microsoft/Google Authenticator, Aegis, 1Password).
+
+- **Kogo obowiązuje** ustawia administrator w *Administracja → Użytkownicy*: wszystkich (domyślnie), tylko administratorów albo nikogo (dobrowolnie). Zmiana wymaga hasła i trafia do audytu. Po włączeniu wymogu sesje bez drugiego składnika są kończone, a konta bez aplikacji konfigurują ją przy najbliższym logowaniu (kod QR, potem kod z aplikacji). Wymogu nie włączy administrator, który sam nie ma drugiego składnika w bieżącej sesji – panel nie wyloguje go w połowie zmiany.
+- **Kody zapasowe**: przy włączeniu użytkownik dostaje 10 jednorazowych kodów (pokazywanych raz) na wypadek zgubionego telefonu. Nowe kody i dobrowolne wyłączenie – *Moje konto → Bezpieczeństwo konta* (hasło i kod).
+- **Zgubiony telefon bez kodów**: administrator wybiera przy koncie *Resetuj drugi składnik* (hasło, audyt) – konto skonfiguruje aplikację od nowa. Gdy dotyczy to jedynego administratora – na serwerze: `docker compose run --rm api reset-mfa -username <login>` (wpis w audycie).
+- **Ochrona**: kod działa raz (ten sam kod nie zaloguje drugi raz), tolerancja zegara ±30 s, 5 złych kodów kończy próbę logowania, a nieudane kody liczą się do blokady konta. Sekrety TOTP są w bazie zaszyfrowane (AES-256-GCM) kluczem z pliku `certs/mfa.key` na serwerze – `deploy.sh config` tworzy go raz; plik jest w kopii zapasowej (`certs/`). Utrata klucza unieważnia zapisane aplikacje – konta trzeba zresetować (w panelu albo `reset-mfa`) i skonfigurować od nowa.
+
 ## Moduły
 
 Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły detekcji), **Zdarzenia** (Wyszukiwarka, Tożsamości, Dekodery, Kwarantanna), **Agenci** (Lista agentów, Grupy agentów, Wdrażanie), **System** (Archiwum NIS2, Stan systemu) i **Administracja** (Użytkownicy, Powiadomienia, Kopie zapasowe, Dziennik audytu – tylko administrator). Etykieta mówi, co jest na stronie; nazwa modułu z roadmapy jest podpisem pod nią.

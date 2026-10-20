@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
@@ -22,7 +23,15 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	if users == nil {
 		users = []store.User{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	mfa := map[int64]time.Time{}
+	if s.mfaEnabled() {
+		if mfa, err = s.MFA.MFAEnabledUsers(r.Context()); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users, "mfa": mfa, "mfa_available": s.mfaEnabled(),
+		"mfa_policy": s.mfaPolicy(r.Context())})
 }
 
 // createdUser zawiera hasło startowe – pokazywane administratorowi jeden raz.

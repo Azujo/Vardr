@@ -100,6 +100,11 @@ type Server struct {
 	Identities *Identities
 	// Backups (opcjonalne): ustawienia i zlecenia kopii zapasowych (siem-backup).
 	Backups BackupStore
+	// MFA (opcjonalne) z kluczem MFAKey (32 bajty – szyfrowanie sekretów
+	// TOTP): drugi składnik logowania i polityka jego wymagania.
+	MFA    MFAStore
+	MFAKey []byte
+	mfa    mfaState
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -145,6 +150,17 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("POST /api/v1/auth/login", s.login)
+	mux.HandleFunc("POST /api/v1/auth/mfa", s.loginMFA)
+	mux.HandleFunc("POST /api/v1/auth/mfa/enroll", s.loginEnroll)
+	mux.HandleFunc("POST /api/v1/auth/mfa/enroll/confirm", s.loginEnrollConfirm)
+	mux.Handle("GET /api/v1/account/mfa", s.authed(roleViewer, 0, s.accountMFA))
+	mux.Handle("POST /api/v1/account/mfa/setup", s.authed(roleViewer, 0, s.accountMFASetup))
+	mux.Handle("POST /api/v1/account/mfa/confirm", s.authed(roleViewer, 0, s.accountMFAConfirm))
+	mux.Handle("POST /api/v1/account/mfa/disable", s.authed(roleViewer, 0, s.accountMFADisable))
+	mux.Handle("POST /api/v1/account/mfa/recovery", s.authed(roleViewer, 0, s.accountMFARecovery))
+	mux.Handle("POST /api/v1/users/{id}/mfa/reset", s.authed(roleAdmin, 0, s.resetUserMFA))
+	mux.Handle("GET /api/v1/settings/security", s.authed(roleAdmin, 0, s.securitySettings))
+	mux.Handle("PUT /api/v1/settings/security", s.authed(roleAdmin, 0, s.setSecuritySettings))
 	mux.Handle("GET /api/v1/auth/session", s.authed(roleViewer, allowPasswordChange, s.session))
 	mux.Handle("POST /api/v1/auth/logout", s.authed(roleViewer, allowPasswordChange, s.logout))
 	mux.Handle("POST /api/v1/auth/password", s.authed(roleViewer, allowPasswordChange, s.changePassword))
