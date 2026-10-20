@@ -285,8 +285,15 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, password, op str
 		writeError(w, http.StatusForbidden, "reauth_failed", "konto jest czasowo zablokowane po nieudanych próbach – spróbuj później")
 		return false
 	}
-	ok, _, err := auth.VerifyPassword(a.user.PasswordHash, password)
-	if err != nil {
+	var ok bool
+	var err error
+	if a.user.Source == store.SourceLDAP {
+		// Konto domenowe: hasło sprawdza kontroler domeny.
+		if ok, err = s.ldapReauth(r.Context(), a.user, password); err != nil {
+			writeError(w, http.StatusServiceUnavailable, "ldap_unavailable", "nie udało się sprawdzić hasła w domenie: "+err.Error())
+			return false
+		}
+	} else if ok, _, err = auth.VerifyPassword(a.user.PasswordHash, password); err != nil {
 		s.internalError(w, r, err)
 		return false
 	}

@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
+	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/nats-io/nats.go v1.54.0
 	github.com/prometheus/client_golang v1.24.1
@@ -14,10 +15,12 @@ require (
 )
 
 require (
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/ClickHouse/ch-go v0.74.0 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect

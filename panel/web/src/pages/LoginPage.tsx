@@ -124,6 +124,7 @@ export default function LoginPage() {
               <Stack>
                 <TextInput
                   label="Login"
+                  description="konto panelu albo domenowe (jan.kowalski)"
                   autoComplete="username"
                   autoFocus
                   required

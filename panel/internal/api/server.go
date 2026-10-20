@@ -108,6 +108,9 @@ type Server struct {
 	// Profiles (opcjonalne): profile uprawnień; bez nich – tylko wbudowane.
 	Profiles     ProfileStore
 	profileCache profileCache
+	// LDAP (opcjonalne, wymaga MFAKey): logowanie kontem domenowym (LDAPS).
+	LDAP LDAPStore
+	ldap ldapState
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -166,6 +169,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/v1/profiles", s.authed(can("users", "read"), 0, s.listProfiles))
 	mux.Handle("PUT /api/v1/profiles/{id}", s.authed(can("users", "write"), 0, s.saveProfile))
 	mux.Handle("POST /api/v1/profiles/{id}/delete", s.authed(can("users", "write"), 0, s.deleteProfile))
+	mux.Handle("GET /api/v1/settings/ldap", s.authed(can("users", "read"), 0, s.getLDAPSettings))
+	mux.Handle("PUT /api/v1/settings/ldap", s.authed(can("users", "write"), 0, s.saveLDAPSettings))
+	mux.Handle("POST /api/v1/settings/ldap/test", s.authed(can("users", "write"), 0, s.testLDAP))
+	mux.Handle("POST /api/v1/settings/ldap/groups", s.authed(can("users", "write"), 0, s.ldapGroups))
+	mux.Handle("POST /api/v1/settings/ldap/check", s.authed(can("users", "write"), 0, s.checkLDAPAccount))
 	mux.Handle("GET /api/v1/settings/security", s.authed(can("users", "read"), 0, s.securitySettings))
 	mux.Handle("PUT /api/v1/settings/security", s.authed(can("users", "write"), 0, s.setSecuritySettings))
 	mux.Handle("GET /api/v1/auth/session", s.authed(loggedIn, allowPasswordChange, s.session))

@@ -17,6 +17,7 @@ import RulesPage from "./pages/RulesPage";
 import RuleTrialsPage from "./pages/RuleTrialsPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
 import ProfilesPage from "./pages/ProfilesPage";
+import LdapPage from "./pages/LdapPage";
 import DecodersPage from "./pages/DecodersPage";
 import QuarantinePage from "./pages/QuarantinePage";
 import IdentitiesPage from "./pages/IdentitiesPage";
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/account/security" element={<AccountSecurityPage />} />
         {can("users", "read") && <Route path="/admin/users" element={<UsersPage />} />}
         {can("users", "read") && <Route path="/admin/profiles" element={<ProfilesPage />} />}
+        {can("users", "read") && <Route path="/admin/ldap" element={<LdapPage />} />}
         {can("audit", "read") && <Route path="/admin/audit" element={<AuditPage />} />}
         {can("notify", "read") && <Route path="/admin/notifications" element={<NotificationsPage />} />}
         {can("backup", "read") && <Route path="/admin/backup" element={<BackupPage />} />}

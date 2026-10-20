@@ -237,7 +237,16 @@ export default function UsersPage() {
             {users.map((u) => (
               <Table.Tr key={u.id}>
                 <Table.Td>
-                  <Text fw={500}>{u.username}</Text>
+                  <Group gap={6}>
+                    <Text fw={500}>{u.username}</Text>
+                    {u.source === "ldap" && (
+                      <Tooltip label="konto domenowe – hasło i profil z Active Directory">
+                        <Badge size="xs" color="cyan" variant="light">
+                          AD
+                        </Badge>
+                      </Tooltip>
+                    )}
+                  </Group>
                 </Table.Td>
                 <Table.Td>{u.display_name || "—"}</Table.Td>
                 <Table.Td>
@@ -247,7 +256,8 @@ export default function UsersPage() {
                     data={roleOptions}
                     value={u.role}
                     allowDeselect={false}
-                    disabled={!canWrite}
+                    disabled={!canWrite || u.source === "ldap"}
+                    title={u.source === "ldap" ? "profil konta domenowego wynika z grup AD" : undefined}
                     aria-label={`Profil ${u.username}`}
                     onChange={(v) => v && v !== u.role && void update(u, { role: v as Role })}
                   />
@@ -300,9 +310,11 @@ export default function UsersPage() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
-                      <Menu.Item leftSection={<IconKey size={16} />} onClick={() => void reset(u)}>
-                        Nowe hasło startowe
-                      </Menu.Item>
+                      {u.source !== "ldap" && (
+                        <Menu.Item leftSection={<IconKey size={16} />} onClick={() => void reset(u)}>
+                          Nowe hasło startowe
+                        </Menu.Item>
+                      )}
                       {mfa[String(u.id)] && (
                         <Menu.Item
                           leftSection={<IconShieldOff size={16} />}

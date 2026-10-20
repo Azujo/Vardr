@@ -30,6 +30,7 @@ import {
   IconDatabaseSearch,
   IconDeviceDesktop,
   IconHome,
+  IconBuildingCommunity,
   IconKey,
   IconLockAccess,
   IconShieldLock,
@@ -103,6 +104,7 @@ const sections: Section[] = [
     items: [
       { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} />, perm: ["users", "read"] },
       { to: "/admin/profiles", label: "Profile uprawnień", hint: "macierz dostępu", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
+      { to: "/admin/ldap", label: "Logowanie domenowe", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
       { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
       { to: "/admin/backup", label: "Kopie zapasowe", hint: "harmonogram i miejsce", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
       { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },
@@ -180,9 +182,11 @@ export default function Layout({ children }: { children: ReactNode }) {
                 </UnstyledButton>
               </Menu.Target>
               <Menu.Dropdown>
-                <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
-                  Zmień hasło
-                </Menu.Item>
+                {user?.source !== "ldap" && (
+                  <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
+                    Zmień hasło
+                  </Menu.Item>
+                )}
                 <Menu.Item component={Link} to="/account/security" leftSection={<IconShieldLock size={16} />}>
                   Bezpieczeństwo konta
                 </Menu.Item>

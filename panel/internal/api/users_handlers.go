@@ -123,6 +123,10 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if target.Source == store.SourceLDAP && req.Role != nil && *req.Role != target.Role {
+		writeError(w, http.StatusBadRequest, "ldap_account", "profil konta domenowego wynika z grup AD (Logowanie domenowe → powiązania)")
+		return
+	}
 	if id == a.user.ID && req.Disabled != nil && *req.Disabled {
 		writeError(w, http.StatusConflict, "self", "nie można wyłączyć własnego konta")
 		return
@@ -181,6 +185,10 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.internalError(w, r, err)
+		return
+	}
+	if target.Source == store.SourceLDAP {
+		writeError(w, http.StatusBadRequest, "ldap_account", "hasło konta domenowego zmienia się w Active Directory")
 		return
 	}
 	temp := auth.TempPassword()

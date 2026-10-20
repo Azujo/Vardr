@@ -17,6 +17,7 @@ export interface User {
   last_login_at?: string;
   created_at: string;
   updated_at: string;
+  source?: "local" | "ldap"; // ldap – konto domenowe (hasło i profil z AD)
 }
 
 export interface SessionInfo {
@@ -42,6 +43,41 @@ export interface PermModule {
   label: string;
   help: string;
   levels: { key: string; label: string }[];
+}
+
+// Logowanie domenowe (AD przez LDAPS).
+export interface LDAPMapping {
+  sid: string;
+  name: string;
+  dn: string;
+  profile: string;
+}
+
+export interface LDAPConfig {
+  enabled: boolean;
+  urls: string[];
+  ca_pem: string;
+  tls_server_name: string;
+  bind_dn: string;
+  base_dn: string;
+  groups_base_dn: string;
+  mappings: LDAPMapping[];
+}
+
+export interface LDAPGroup {
+  sid: string;
+  dn: string;
+  name: string;
+  description: string;
+  members: number;
+}
+
+export interface LDAPAccountCheck {
+  found: boolean;
+  account?: { dn: string; sid: string; login: string; upn: string; display_name: string; disabled: boolean };
+  groups: number;
+  matched: LDAPMapping[];
+  profile?: string;
 }
 
 export interface Profile {
@@ -172,6 +208,15 @@ export const api = {
     request<{ user: User; temp_password: string }>("POST", `/api/v1/users/${id}/reset-password`),
 
   permissions: () => request<{ modules: PermModule[] }>("GET", "/api/v1/permissions"),
+  ldapSettings: () => request<{ available: boolean; config?: LDAPConfig; has_password?: boolean }>("GET", "/api/v1/settings/ldap"),
+  saveLdapSettings: (config: LDAPConfig, bind_password: string, password: string) =>
+    request<{ ok: boolean }>("PUT", "/api/v1/settings/ldap", { config, bind_password, password }),
+  ldapTest: (config: LDAPConfig, bind_password: string) =>
+    request<{ ok: boolean; message?: string; error?: string }>("POST", "/api/v1/settings/ldap/test", { config, bind_password }),
+  ldapGroups: (config: LDAPConfig, bind_password: string) =>
+    request<{ groups: LDAPGroup[] }>("POST", "/api/v1/settings/ldap/groups", { config, bind_password }),
+  ldapCheck: (config: LDAPConfig, bind_password: string, login: string) =>
+    request<LDAPAccountCheck>("POST", "/api/v1/settings/ldap/check", { config, bind_password, login }),
   profiles: () => request<{ profiles: Profile[]; editable: boolean }>("GET", "/api/v1/profiles"),
   saveProfile: (id: string, p: { name: string; description: string; permissions: Permissions; password: string }) =>
     request<{ id: string }>("PUT", `/api/v1/profiles/${encodeURIComponent(id)}`, p),

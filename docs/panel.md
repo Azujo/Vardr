@@ -35,6 +35,24 @@ Każde konto ma jeden **profil uprawnień** – macierz: moduł panelu → pozio
 
 Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token deinstalacji agenta, zmiana dekodera) wymagają ponownego podania hasła i powodu. Wszystkie zmiany trafiają do **dziennika audytu**. Sesja wygasa po bezczynności, a konto jest czasowo blokowane po serii nieudanych logowań.
 
+## Logowanie domenowe (Active Directory)
+
+Konta AD logują się do panelu swoim loginem i hasłem (`jan.kowalski`, `FIRMA\jan.kowalski` albo `jan@firma.pl`). Ustawienia: *Administracja → Logowanie domenowe*.
+
+1. **Połączenie** – tylko **LDAPS** (port 636, z weryfikacją certyfikatu kontrolera): adresy kontrolerów (kolejne – zapasowe), certyfikat CA (PEM, np. urzędu z AD CS; puste – zaufane certyfikaty systemu), opcjonalnie nazwa z certyfikatu (gdy adres to IP), **konto usługowe tylko do odczytu** i baza kont (np. `DC=firma,DC=pl`). Hasło konta usługowego jest zapisane zaszyfrowane (klucz `certs/mfa.key`); przycisk *Sprawdź połączenie* testuje logowanie nim.
+2. **Grupy i profile** – administrator tworzy w AD grupy dla panelu we własnym OU (nazwy dowolne), wpisuje OU, a panel pokazuje grupy; każdej można przypisać profil uprawnień. **Kolejność powiązań decyduje** – konto dostaje profil pierwszej pasującej grupy. Grupy są rozpoznawane po **SID** (zmiana nazwy grupy w AD niczego nie psuje, grupa o tej samej nazwie gdzie indziej nie przejmie dostępu); członkostwo zagnieżdżone też się liczy (`tokenGroups`).
+3. **Sprawdzenie konta** – login bez hasła: grupy konta i profil, który dostanie przy logowaniu.
+
+Zachowanie:
+
+- Pierwsze logowanie zakłada konto w panelu (oznaczone „AD” w *Użytkownikach*); kolejne aktualizują login, nazwę i profil. Konto jest powiązane po SID – zmiana loginu w AD nie tworzy drugiego.
+- Członkostwo jest sprawdzane przy logowaniu i **co 5 minut**: konto usunięte albo wyłączone w AD albo bez grupy z powiązania traci sesje (wpis w audycie), zmiana grupy zmienia profil od razu.
+- Hasło konta domenowego zmienia się w AD (w panelu nie ma „Zmień hasło” ani resetu hasła); profil wynika z grup (nie da się go zmienić w *Użytkownikach*). Administrator panelu może konto domenowe **wyłączyć** – wtedy nie zaloguje się mimo grupy w AD.
+- Ponowne podanie hasła przy operacjach wrażliwych sprawdza hasło w AD. Drugi składnik (TOTP) obowiązuje jak dla kont lokalnych.
+- Login zajęty przez konto lokalne – logowanie domenowe odmawia (administrator zmienia jedno z kont).
+- Puste hasło jest zawsze odrzucane (w LDAP oznaczałoby logowanie anonimowe). Test połączenia z nowym adresem kontrolera wymaga ponownego wpisania hasła konta usługowego – zapisane hasło trafia tylko do zapisanych adresów.
+- **Konto lokalne administratora zostaje** jako awaryjne (AD niedostępne – logowanie domenowe zgłasza błąd, konta lokalne działają).
+
 ## Drugi składnik logowania (MFA)
 
 Po haśle panel prosi o 6-cyfrowy kod z aplikacji uwierzytelniającej (TOTP – Microsoft/Google Authenticator, Aegis, 1Password).

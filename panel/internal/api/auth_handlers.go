@@ -157,6 +157,20 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 
 	user, err := s.Store.UserByUsername(r.Context(), req.Username)
+	// Konto domenowe (albo nieznane lokalnie przy włączonym logowaniu
+	// domenowym, także FIRMA\jan i jan@firma.pl) – sprawdza AD.
+	if errors.Is(err, store.ErrNotFound) || (err == nil && user.Source == store.SourceLDAP) {
+		if cfg := s.ldapActive(r.Context()); cfg != nil {
+			s.ldapLogin(w, r, cfg, req.Username, req.Password)
+			return
+		}
+	}
+	if err == nil && user.Source == store.SourceLDAP {
+		auth.DummyVerify(req.Password)
+		s.audit(r, &user, "login_failed", user.Username, map[string]any{"reason": "ldap_disabled"})
+		writeError(w, http.StatusUnauthorized, "bad_credentials", badLogin)
+		return
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		auth.DummyVerify(req.Password) // ten sam czas odpowiedzi co dla istniejącego konta
 		s.audit(r, nil, "login_failed", req.Username, map[string]any{"reason": "unknown_user"})
@@ -196,8 +210,14 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			_ = s.Store.SetPassword(r.Context(), user.ID, h, user.MustChangePassword)
 		}
 	}
-	// Drugi składnik: konto go ma albo polityka wymaga – hasło sprawdzone,
-	// sesja dopiero po kodzie (albo po konfiguracji aplikacji).
+	s.afterPassword(w, r, user)
+}
+
+// afterPassword: hasło (lokalne albo domenowe) sprawdzone. Drugi składnik:
+// konto go ma albo polityka wymaga – sesja dopiero po kodzie (albo po
+// konfiguracji aplikacji); inaczej sesja od razu.
+func (s *Server) afterPassword(w http.ResponseWriter, r *http.Request, user store.User) {
+	now := s.now()
 	if s.mfaEnabled() {
 		_, err := s.MFA.MFAState(r.Context(), user.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -270,6 +290,10 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
+	if a.user.Source == store.SourceLDAP {
+		writeError(w, http.StatusBadRequest, "ldap_account", "hasło konta domenowego zmienia się w Active Directory")
+		return
+	}
 	var req struct {
 		Current string `json:"current_password"`
 		New     string `json:"new_password"`

@@ -355,6 +355,36 @@ func testGroups(t *testing.T, db *PG) {
 
 	testMFA(ctx, t, db)
 	testProfiles(ctx, t, db)
+	testLDAPUsers(ctx, t, db)
+}
+
+// testLDAPUsers: konto domenowe zakładane i aktualizowane po SID; login
+// zajęty przez konto lokalne – konflikt; wyłączenie w panelu zostaje.
+func testLDAPUsers(ctx context.Context, t *testing.T, db *PG) {
+	u, err := db.UpsertLDAPUser(ctx, User{Username: "jan.kowalski", DisplayName: "Jan", Role: RoleViewer,
+		ExternalID: "S-1-5-21-1-1105", LDAPDN: "CN=Jan,DC=x"})
+	if err != nil || u.Source != SourceLDAP || u.ExternalID != "S-1-5-21-1-1105" || u.MustChangePassword {
+		t.Fatalf("konto domenowe: %+v %v", u, err)
+	}
+	disabled := true
+	_, _ = db.UpdateUser(ctx, u.ID, UserPatch{Disabled: &disabled})
+	u2, err := db.UpsertLDAPUser(ctx, User{Username: "jan.k", DisplayName: "Jan K", Role: RoleAnalyst,
+		ExternalID: "S-1-5-21-1-1105", LDAPDN: "CN=Jan K,DC=x"})
+	if err != nil || u2.ID != u.ID || u2.Username != "jan.k" || u2.Role != RoleAnalyst || !u2.Disabled || u2.LDAPDN != "CN=Jan K,DC=x" {
+		t.Fatalf("aktualizacja po SID: %+v %v", u2, err)
+	}
+	if x, err := db.UserByExternalID(ctx, "S-1-5-21-1-1105"); err != nil || x.ID != u.ID {
+		t.Fatalf("po SID: %+v %v", x, err)
+	}
+	if _, err := db.CreateUser(ctx, User{Username: "lokalny", Role: RoleViewer, PasswordHash: "h"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpsertLDAPUser(ctx, User{Username: "lokalny", Role: RoleViewer, ExternalID: "S-1-5-21-1-1106"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("login zajęty przez konto lokalne: %v", err)
+	}
+	if l, _ := db.UserByUsername(ctx, "lokalny"); l.Source != SourceLocal {
+		t.Fatalf("konto lokalne: %+v", l)
+	}
 }
 
 // testProfiles: profile wbudowane z migracji, własny profil, klucz obcy kont.

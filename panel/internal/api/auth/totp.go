@@ -203,3 +203,30 @@ func gcm(key []byte) (cipher.AEAD, error) {
 }
 
 func aad(userID int64) []byte { return []byte("vardr-totp-v1:" + strconv.FormatInt(userID, 10)) }
+
+// SealData szyfruje inne sekrety panelu tym samym kluczem (np. hasło konta
+// usługowego LDAP); purpose to dane powiązane – szyfrogramu nie da się użyć
+// w innym miejscu.
+func SealData(key, data []byte, purpose string) ([]byte, error) {
+	g, err := gcm(key)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, g.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return g.Seal(nonce, nonce, data, []byte("vardr-data-v1:"+purpose)), nil
+}
+
+// OpenData odszyfrowuje sekret zapisany przez SealData.
+func OpenData(key, sealed []byte, purpose string) ([]byte, error) {
+	g, err := gcm(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(sealed) < g.NonceSize() {
+		return nil, errors.New("sekret: uszkodzony zapis")
+	}
+	return g.Open(nil, sealed[:g.NonceSize()], sealed[g.NonceSize():], []byte("vardr-data-v1:"+purpose))
+}

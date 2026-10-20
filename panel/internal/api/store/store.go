@@ -43,7 +43,18 @@ type User struct {
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
+	// Source: local – hasło w panelu; ldap – konto domenowe (hasło i
+	// profil z AD). ExternalID: SID konta w AD, LDAPDN: jego DN.
+	Source     string `json:"source"`
+	ExternalID string `json:"-"`
+	LDAPDN     string `json:"-"`
 }
+
+// Źródła kont.
+const (
+	SourceLocal = "local"
+	SourceLDAP  = "ldap"
+)
 
 // Session to sesja zalogowanego użytkownika.
 type Session struct {
@@ -107,12 +118,12 @@ func (s *PG) Close() { s.pool.Close() }
 func (s *PG) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 const userCols = `id, username, display_name, password_hash, role, disabled, must_change_password,
-	failed_logins, locked_until, last_login_at, created_at, updated_at`
+	failed_logins, locked_until, last_login_at, created_at, updated_at, source, coalesce(external_id, ''), ldap_dn`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Disabled, &u.MustChangePassword,
-		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.Source, &u.ExternalID, &u.LDAPDN)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -220,13 +231,13 @@ func (s *PG) SessionWithUser(ctx context.Context, id string, now time.Time) (Ses
 	var ss Session
 	row := s.pool.QueryRow(ctx, `SELECT s.id, s.user_id, s.csrf, s.created_at, s.last_seen_at, s.expires_at, s.ip, s.user_agent, s.mfa,
 			u.id, u.username, u.display_name, u.password_hash, u.role, u.disabled, u.must_change_password,
-			u.failed_logins, u.locked_until, u.last_login_at, u.created_at, u.updated_at
+			u.failed_logins, u.locked_until, u.last_login_at, u.created_at, u.updated_at, u.source, coalesce(u.external_id, ''), u.ldap_dn
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.id = $1 AND s.expires_at > $2`, id, now)
 	var u User
 	err := row.Scan(&ss.ID, &ss.UserID, &ss.CSRF, &ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt, &ss.IP, &ss.UserAgent, &ss.MFA,
 		&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Disabled, &u.MustChangePassword,
-		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt)
+		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.Source, &u.ExternalID, &u.LDAPDN)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ss, u, ErrNotFound
 	}
