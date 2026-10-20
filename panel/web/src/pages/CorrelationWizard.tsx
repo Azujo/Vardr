@@ -285,7 +285,7 @@ function keyLabel(k: KeyCandidate, steps: number): string {
 
 // Edycja zapisanej reguły z panelu: tylko YAML, test i zapis.
 function EditPanelRule({ id }: { id: string }) {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const navigate = useNavigate();
   const [source, setSource] = useState<string | null>(null);
   const [edited, setEdited] = useState("");
@@ -334,7 +334,7 @@ function EditPanelRule({ id }: { id: string }) {
               </Text>
             }
           />
-          {user?.role === "admin" && (
+          {can("rules", "write") && (
             <Group align="flex-end">
               <TextInput style={{ flex: 1 }} label="Opis zmiany (audyt)" value={note} onChange={(e) => setNote(e.currentTarget.value)} />
               <Button leftSection={<IconDeviceFloppy size={16} />} loading={busy} onClick={() => void save()}>
@@ -356,8 +356,8 @@ export default function CorrelationWizard() {
 }
 
 function Wizard() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("rules", "write");
   const navigate = useNavigate();
   const picks = usePicks();
   const [active, setActive] = useState(0);

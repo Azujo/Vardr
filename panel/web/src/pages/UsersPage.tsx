@@ -30,10 +30,9 @@ import {
   IconShieldOff,
   IconUserPlus,
 } from "@tabler/icons-react";
-import { api, formatDate, roleLabels, type MFAPolicy, type Role, type User } from "../api";
+import { api, formatDate, roleLabels, type MFAPolicy, type Profile, type Role, type User } from "../api";
 import { useAuth } from "../auth";
 
-const roleOptions = (Object.keys(roleLabels) as Role[]).map((r) => ({ value: r, label: roleLabels[r] }));
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
@@ -71,7 +70,13 @@ function TempPassword({ data, onClose }: { data: { user: User; temp_password: st
 }
 
 export default function UsersPage() {
-  const { user: me } = useAuth();
+  const { user: me, can } = useAuth();
+  const canWrite = can("users", "write");
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const roleOptions = profiles.length
+    ? profiles.map((p) => ({ value: p.id, label: p.name }))
+    : Object.entries(roleLabels).map(([value, label]) => ({ value, label }));
+  const isAdminProfile = (id: string) => profiles.find((p) => p.id === id)?.admin ?? id === "admin";
   const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -95,6 +100,10 @@ export default function UsersPage() {
         if (r.mfa_policy) setPolicy(r.mfa_policy);
       })
       .catch((e) => setError(errorMessage(e)));
+    api
+      .profiles()
+      .then((r) => setProfiles(r.profiles))
+      .catch(() => setProfiles([]));
   }, []);
   const savePolicy = async () => {
     if (!policyEdit) return;
@@ -172,12 +181,14 @@ export default function UsersPage() {
         <div>
           <Title order={2}>Użytkownicy</Title>
           <Text c="dimmed" size="sm">
-            Konta panelu i ich role. Każda zmiana trafia do dziennika audytu.
+            Konta panelu i ich profile uprawnień (Administracja → Profile uprawnień). Każda zmiana trafia do dziennika audytu.
           </Text>
         </div>
-        <Button leftSection={<IconUserPlus size={18} />} onClick={() => setCreateOpen(true)}>
-          Nowe konto
-        </Button>
+        {canWrite && (
+          <Button leftSection={<IconUserPlus size={18} />} onClick={() => setCreateOpen(true)}>
+            Nowe konto
+          </Button>
+        )}
       </Group>
       {error && <Alert color="red">{error}</Alert>}
       {mfaAvailable ? (
@@ -187,6 +198,7 @@ export default function UsersPage() {
           </Text>
           <SegmentedControl
             size="xs"
+            disabled={!canWrite}
             value={policy}
             onChange={(v) => {
               if (v !== policy) {
@@ -214,7 +226,7 @@ export default function UsersPage() {
             <Table.Tr>
               <Table.Th>Login</Table.Th>
               <Table.Th>Nazwa</Table.Th>
-              <Table.Th>Rola</Table.Th>
+              <Table.Th>Profil</Table.Th>
               <Table.Th>Stan</Table.Th>
               <Table.Th>MFA</Table.Th>
               <Table.Th>Ostatnie logowanie</Table.Th>
@@ -231,11 +243,12 @@ export default function UsersPage() {
                 <Table.Td>
                   <Select
                     size="xs"
-                    w={150}
+                    w={180}
                     data={roleOptions}
                     value={u.role}
                     allowDeselect={false}
-                    aria-label={`Rola ${u.username}`}
+                    disabled={!canWrite}
+                    aria-label={`Profil ${u.username}`}
                     onChange={(v) => v && v !== u.role && void update(u, { role: v as Role })}
                   />
                 </Table.Td>
@@ -270,8 +283,8 @@ export default function UsersPage() {
                       </Badge>
                     </Tooltip>
                   ) : (
-                    <Badge color={policy === "all" || (policy === "admins" && u.role === "admin") ? "orange" : "gray"} variant="light">
-                      {policy === "all" || (policy === "admins" && u.role === "admin") ? "skonfiguruje przy logowaniu" : "brak"}
+                    <Badge color={policy === "all" || (policy === "admins" && isAdminProfile(u.role)) ? "orange" : "gray"} variant="light">
+                      {policy === "all" || (policy === "admins" && isAdminProfile(u.role)) ? "skonfiguruje przy logowaniu" : "brak"}
                     </Badge>
                   )}
                 </Table.Td>
@@ -279,6 +292,7 @@ export default function UsersPage() {
                   <Text size="sm">{formatDate(u.last_login_at)}</Text>
                 </Table.Td>
                 <Table.Td>
+                  {canWrite && (
                   <Menu position="bottom-end">
                     <Menu.Target>
                       <ActionIcon variant="subtle" aria-label={`Akcje ${u.username}`}>
@@ -316,6 +330,7 @@ export default function UsersPage() {
                         ))}
                     </Menu.Dropdown>
                   </Menu>
+                  )}
                 </Table.Td>
               </Table.Tr>
             ))}
@@ -339,7 +354,7 @@ export default function UsersPage() {
               onChange={(e) => setForm({ ...form, display_name: e.currentTarget.value })}
             />
             <Select
-              label="Rola"
+              label="Profil uprawnień"
               data={roleOptions}
               value={form.role}
               allowDeselect={false}

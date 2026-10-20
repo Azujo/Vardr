@@ -55,8 +55,8 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	case !usernamePattern.MatchString(req.Username):
 		writeError(w, http.StatusBadRequest, "bad_username", "login: 2–64 znaki, litery, cyfry, kropka, myślnik, podkreślenie")
 		return
-	case !store.ValidRole(req.Role):
-		writeError(w, http.StatusBadRequest, "bad_role", "rola musi być jedną z: admin, analyst, viewer")
+	case !s.profileExists(r.Context(), req.Role):
+		writeError(w, http.StatusBadRequest, "bad_role", "nieznany profil uprawnień")
 		return
 	case len(req.DisplayName) > 128:
 		writeError(w, http.StatusBadRequest, "bad_display_name", "nazwa wyświetlana jest za długa")
@@ -103,8 +103,8 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &req) {
 		return
 	}
-	if req.Role != nil && !store.ValidRole(*req.Role) {
-		writeError(w, http.StatusBadRequest, "bad_role", "rola musi być jedną z: admin, analyst, viewer")
+	if req.Role != nil && !s.profileExists(r.Context(), *req.Role) {
+		writeError(w, http.StatusBadRequest, "bad_role", "nieznany profil uprawnień")
 		return
 	}
 	if req.DisplayName != nil {
@@ -127,11 +127,12 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "self", "nie można wyłączyć własnego konta")
 		return
 	}
-	// Ostatni aktywny administrator nie może stracić roli ani zostać wyłączony.
-	losesAdmin := target.Role == store.RoleAdmin && !target.Disabled &&
-		((req.Role != nil && *req.Role != store.RoleAdmin) || (req.Disabled != nil && *req.Disabled))
+	// Ostatni aktywny administrator (profil z zarządzaniem kontami) nie może
+	// stracić tego profilu ani zostać wyłączony.
+	losesAdmin := s.permsOf(r.Context(), target.Role).Admin() && !target.Disabled &&
+		((req.Role != nil && !s.permsOf(r.Context(), *req.Role).Admin()) || (req.Disabled != nil && *req.Disabled))
 	if losesAdmin {
-		n, err := s.Store.CountActiveAdmins(r.Context())
+		n, err := s.activeAdmins(r.Context(), nil)
 		if err != nil {
 			s.internalError(w, r, err)
 			return

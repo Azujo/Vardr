@@ -31,6 +31,7 @@ import {
   IconDeviceDesktop,
   IconHome,
   IconKey,
+  IconLockAccess,
   IconShieldLock,
   IconListCheck,
   IconListDetails,
@@ -53,6 +54,7 @@ interface Item {
   hint?: string;
   icon: ReactNode;
   disabled?: boolean;
+  perm?: [string, string]; // wymagane uprawnienie (moduł, poziom)
 }
 
 // Menu w grupach według tego, czym się zajmuje użytkownik. Etykieta mówi,
@@ -60,7 +62,6 @@ interface Item {
 interface Section {
   title?: string;
   items: Item[];
-  adminOnly?: boolean;
 }
 
 const sections: Section[] = [
@@ -68,50 +69,50 @@ const sections: Section[] = [
   {
     title: "Wykrywanie",
     items: [
-      { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} /> },
-      { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} /> },
-      { to: "/attack", label: "MITRE ATT&CK", hint: "pokrycie technik", icon: <IconGridDots size={18} /> },
+      { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} />, perm: ["alerts", "read"] },
+      { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} />, perm: ["rules", "read"] },
+      { to: "/attack", label: "MITRE ATT&CK", hint: "pokrycie technik", icon: <IconGridDots size={18} />, perm: ["rules", "read"] },
     ],
   },
   {
     title: "Zdarzenia",
     items: [
-      { to: "/events", label: "Wyszukiwarka", hint: "Mímir", icon: <IconDatabaseSearch size={18} /> },
-      { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} /> },
-      { to: "/decoders", label: "Dekodery", hint: "syslog i API", icon: <IconCode size={18} /> },
-      { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} /> },
+      { to: "/events", label: "Wyszukiwarka", hint: "Mímir", icon: <IconDatabaseSearch size={18} />, perm: ["events", "read"] },
+      { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} />, perm: ["identities", "read"] },
+      { to: "/decoders", label: "Dekodery", hint: "syslog i API", icon: <IconCode size={18} />, perm: ["decoders", "read"] },
+      { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} />, perm: ["quarantine", "read"] },
     ],
   },
   {
     title: "Agenci",
     items: [
-      { to: "/agents", label: "Lista agentów", hint: "Huginn", icon: <IconDeviceDesktop size={18} /> },
-      { to: "/groups", label: "Grupy agentów", hint: "profile, limity, ochrona", icon: <IconAdjustments size={18} /> },
-      { to: "/deploy", label: "Wdrażanie", hint: "Bifröst – tokeny i paczki", icon: <IconBolt size={18} /> },
+      { to: "/agents", label: "Lista agentów", hint: "Huginn", icon: <IconDeviceDesktop size={18} />, perm: ["agents", "read"] },
+      { to: "/groups", label: "Grupy agentów", hint: "profile, limity, ochrona", icon: <IconAdjustments size={18} />, perm: ["agents", "read"] },
+      { to: "/deploy", label: "Wdrażanie", hint: "Bifröst – tokeny i paczki", icon: <IconBolt size={18} />, perm: ["deploy", "write"] },
     ],
   },
   {
     title: "System",
     items: [
-      { to: "/archive", label: "Archiwum NIS2", hint: "Urd", icon: <IconArchive size={18} /> },
-      { to: "/system", label: "Stan systemu", hint: "Himinbjörg", icon: <IconActivityHeartbeat size={18} /> },
+      { to: "/archive", label: "Archiwum NIS2", hint: "Urd", icon: <IconArchive size={18} />, perm: ["archive", "read"] },
+      { to: "/system", label: "Stan systemu", hint: "Himinbjörg", icon: <IconActivityHeartbeat size={18} />, perm: ["system", "read"] },
     ],
   },
   {
     title: "Administracja",
-    adminOnly: true,
     items: [
-      { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} /> },
-      { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} /> },
-      { to: "/admin/backup", label: "Kopie zapasowe", hint: "harmonogram i miejsce", icon: <IconDatabaseExport size={18} /> },
-      { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} /> },
+      { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} />, perm: ["users", "read"] },
+      { to: "/admin/profiles", label: "Profile uprawnień", hint: "macierz dostępu", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
+      { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
+      { to: "/admin/backup", label: "Kopie zapasowe", hint: "harmonogram i miejsce", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
+      { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },
     ],
   },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [opened, { toggle, close }] = useDisclosure();
-  const { user, logout } = useAuth();
+  const { user, logout, can, profile } = useAuth();
   const { pathname } = useLocation();
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light");
@@ -171,7 +172,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                         {user?.display_name || user?.username}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {user && roleLabels[user.role]}
+                        {user && (profile?.name ?? roleLabels[user.role] ?? user.role)}
                       </Text>
                     </div>
                     <IconChevronDown size={14} />
@@ -197,7 +198,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       <AppShell.Navbar p="xs">
         <AppShell.Section grow component={ScrollArea} type="scroll">
           {sections
-            .filter((sec) => !sec.adminOnly || user?.role === "admin")
+            .map((sec) => ({ ...sec, items: sec.items.filter((it) => !it.perm || can(it.perm[0], it.perm[1])) }))
+            .filter((sec) => sec.items.length > 0)
             .map((sec, i) => (
               <div key={sec.title ?? i}>
                 {sec.title && (

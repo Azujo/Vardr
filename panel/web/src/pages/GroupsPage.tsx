@@ -89,8 +89,8 @@ function LimitInput({
 }
 
 export default function GroupsPage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("agents", "write");
   const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [error, setError] = useState("");
   const [edit, setEdit] = useState<{ id?: number; form: Form } | null>(null);

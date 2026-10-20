@@ -104,8 +104,8 @@ function EntryRow({ e }: { e: QuarantineEntry }) {
 }
 
 export default function QuarantinePage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("quarantine", "write");
   const [hours, setHours] = useState("168");
   const [source, setSource] = useState("");
   const [reason, setReason] = useState("");
@@ -287,7 +287,7 @@ export default function QuarantinePage() {
                     <Text size="xs">{formatDate(g.last)}</Text>
                   </Table.Td>
                   <Table.Td>
-                    {g.source.startsWith("syslog:") && user?.role !== "viewer" && (
+                    {g.source.startsWith("syslog:") && can("decoders", "test") && (
                       <Button
                         size="compact-xs"
                         variant="subtle"

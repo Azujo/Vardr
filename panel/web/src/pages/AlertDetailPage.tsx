@@ -123,7 +123,7 @@ function renderInstructions(text: string, ev: EventDetail | null): string {
 
 export default function AlertDetailPage() {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [events, setEvents] = useState<{ event_id: string; event_time: string }[]>([]);
   const [rule, setRule] = useState<RuleInfo | undefined>();
@@ -203,7 +203,7 @@ export default function AlertDetailPage() {
 
   if (error) return <MAlert color="red">{error}</MAlert>;
   if (!alert) return null;
-  const canEdit = user?.role === "admin" || user?.role === "analyst";
+  const canEdit = can("alerts", "write");
   const lv = levelLabels[alert.level];
   // Zdarzenia z okolicy alertu w Mímirze: komputer, ±15 min od pierwszego i ostatniego zdarzenia.
   const around = alert.host_name

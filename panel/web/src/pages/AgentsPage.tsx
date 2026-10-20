@@ -60,7 +60,7 @@ export function StateBadge({ a }: { a: AgentView }) {
 }
 
 export default function AgentsPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [downloading, setDownloading] = useState(false);
   const [agents, setAgents] = useState<AgentView[]>([]);
   const [summary, setSummary] = useState<AgentsSummary | null>(null);
@@ -103,7 +103,7 @@ export default function AgentsPage() {
 
   const [orphans, setOrphans] = useState<{ serial: string; agent_id: string; hostname: string; not_after: string }[]>([]);
   const loadOrphans = () => {
-    if (user?.role !== "admin") return;
+    if (!can("agents", "write")) return;
     agentsApi
       .orphanCerts()
       .then((r) => setOrphans(r.certs))
@@ -144,7 +144,7 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
             Stan agentów z heartbeatu (co minutę). Agent bez sygnału przez 3 minuty jest oznaczany jako offline.
           </Text>
         </div>
-        {user?.role === "admin" && (
+        {can("agents", "write") && (
           <Tooltip
             multiline
             w={360}

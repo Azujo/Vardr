@@ -167,9 +167,9 @@ function Versions({ id }: { id: string }) {
 }
 
 export default function RulesPage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
-  const canTest = admin || user?.role === "analyst";
+  const { can } = useAuth();
+  const admin = can("rules", "write");
+  const canTest = can("rules", "test");
   const [rules, setRules] = useState<RuleInfo[]>([]);
   const [errors, setErrors] = useState<{ file: string; error: string }[]>([]);
   const [configured, setConfigured] = useState(true);

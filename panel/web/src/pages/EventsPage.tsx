@@ -164,9 +164,9 @@ function EventDrawer({
       .catch((e) => setError(msg(e)));
   }, [row, source]);
   const xml = useMemo(() => (ev?.raw ? prettyXml(ev.raw) : ""), [ev]);
-  const { user } = useAuth();
+  const { can } = useAuth();
   const picks = usePicks();
-  const canWizard = (user?.role === "admin" || user?.role === "analyst") && source !== "replay";
+  const canWizard = can("rules", "test") && source !== "replay";
   const picked = ev ? picks.some((p) => p.id === ev.event_id) : false;
   const fieldEntries = Object.entries(ev?.fields ?? {}).sort(([a], [b]) => a.localeCompare(b));
 

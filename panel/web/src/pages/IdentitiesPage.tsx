@@ -31,8 +31,8 @@ function eventsLink(identity: string) {
 }
 
 export default function IdentitiesPage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("identities", "write");
   const [tab, setTab] = useState<string | null>("people");
   const [domains, setDomains] = useState<string[]>([]);
   const [savedDomains, setSavedDomains] = useState<string[]>([]);

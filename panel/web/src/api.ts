@@ -3,7 +3,8 @@
 
 import type { WizEvent } from "./corrWizard";
 
-export type Role = "admin" | "analyst" | "viewer";
+// Rola konta = identyfikator profilu uprawnień (wbudowane: admin, analyst, viewer).
+export type Role = string;
 
 export interface User {
   id: number;
@@ -23,6 +24,36 @@ export interface SessionInfo {
   csrf_token: string;
   server_version?: string;
   mfa?: boolean; // sesja potwierdzona drugim składnikiem
+  profile?: { id: string; name: string };
+  permissions?: Permissions;
+}
+
+// Uprawnienia profilu: moduł → najwyższy poziom (wyższy obejmuje niższe).
+export type Permissions = Record<string, string>;
+const levelRank: Record<string, number> = { read: 0, test: 1, export: 1, write: 2 };
+
+export function hasPerm(p: Permissions | undefined, mod: string, level: string): boolean {
+  const got = p?.[mod];
+  return got !== undefined && (levelRank[got] ?? -1) >= (levelRank[level] ?? 99);
+}
+
+export interface PermModule {
+  key: string;
+  label: string;
+  help: string;
+  levels: { key: string; label: string }[];
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  description: string;
+  permissions: Permissions;
+  builtin: boolean;
+  users: number;
+  admin: boolean;
+  updated_by?: string;
+  updated_at?: string;
 }
 
 // Wynik kroku logowania: sesja albo prośba o kod / konfigurację drugiego składnika.
@@ -140,14 +171,22 @@ export const api = {
   resetPassword: (id: number) =>
     request<{ user: User; temp_password: string }>("POST", `/api/v1/users/${id}/reset-password`),
 
+  permissions: () => request<{ modules: PermModule[] }>("GET", "/api/v1/permissions"),
+  profiles: () => request<{ profiles: Profile[]; editable: boolean }>("GET", "/api/v1/profiles"),
+  saveProfile: (id: string, p: { name: string; description: string; permissions: Permissions; password: string }) =>
+    request<{ id: string }>("PUT", `/api/v1/profiles/${encodeURIComponent(id)}`, p),
+  deleteProfile: (id: string, password: string) =>
+    request<{ ok: boolean }>("POST", `/api/v1/profiles/${encodeURIComponent(id)}/delete`, { password }),
+
   audit: (before?: number) =>
     request<{ entries: AuditEntry[] }>("GET", `/api/v1/audit?limit=100${before ? `&before=${before}` : ""}`),
 };
 
-export const roleLabels: Record<Role, string> = {
+// Nazwy profili wbudowanych (gdy lista profili jeszcze się nie wczytała).
+export const roleLabels: Record<string, string> = {
   admin: "Administrator",
   analyst: "Analityk",
-  viewer: "Tylko odczyt",
+  viewer: "Obserwator",
 };
 
 export function formatDate(iso?: string): string {

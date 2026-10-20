@@ -60,8 +60,8 @@ function aroundLink(t: TrialStat): string {
 }
 
 export default function RuleTrialsPage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
+  const { can } = useAuth();
+  const admin = can("rules", "write");
   const [trials, setTrials] = useState<TrialStat[]>([]);
   const [rules, setRules] = useState<Record<string, RuleInfo>>({});
   const [now, setNow] = useState(Date.now());

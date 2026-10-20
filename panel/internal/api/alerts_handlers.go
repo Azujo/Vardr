@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"siem/internal/alerts"
-	"siem/panel/internal/api/store"
 )
 
 // AlertStore to alerty i reguły Gjallarhorna (implementuje alerts.PG).
@@ -353,7 +352,7 @@ type assignee struct {
 	DisplayName string `json:"display_name"`
 }
 
-// assignees: aktywni analitycy i administratorzy.
+// assignees: aktywne konta, które mogą obsługiwać alerty.
 func (s *Server) assignees(ctx context.Context) ([]assignee, error) {
 	users, err := s.Store.ListUsers(ctx)
 	if err != nil {
@@ -361,7 +360,7 @@ func (s *Server) assignees(ctx context.Context) ([]assignee, error) {
 	}
 	out := []assignee{}
 	for _, u := range users {
-		if !u.Disabled && (u.Role == store.RoleAnalyst || u.Role == store.RoleAdmin) {
+		if !u.Disabled && s.permsOf(ctx, u.Role).Has("alerts", "write") {
 			out = append(out, assignee{Username: u.Username, DisplayName: u.DisplayName})
 		}
 	}

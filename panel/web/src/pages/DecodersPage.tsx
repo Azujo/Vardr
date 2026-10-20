@@ -410,9 +410,9 @@ function Versions({ id }: { id: string }) {
 }
 
 export default function DecodersPage() {
-  const { user } = useAuth();
-  const admin = user?.role === "admin";
-  const canTest = admin || user?.role === "analyst";
+  const { can } = useAuth();
+  const admin = can("decoders", "write");
+  const canTest = can("decoders", "test");
   const [list, setList] = useState<DecoderInfo[]>([]);
   const [delivery, setDelivery] = useState(true);
   const [samplesOn, setSamplesOn] = useState(false);

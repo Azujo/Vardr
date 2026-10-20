@@ -37,8 +37,8 @@ const engineLabels: Record<string, string> = { stream: "w locie", index_query: "
 
 // Gjallarhorn – lista alertów (najnowsze pierwsze) z filtrami i akcjami zbiorczymi.
 export default function AlertsPage() {
-  const { user } = useAuth();
-  const canEdit = user?.role === "admin" || user?.role === "analyst";
+  const { can } = useAuth();
+  const canEdit = can("alerts", "write");
   const [params, setParams] = useSearchParams();
   const get = (k: string) => params.get(k) ?? "";
   const status = params.get("status") ?? "open";

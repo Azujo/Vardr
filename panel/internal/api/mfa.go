@@ -94,7 +94,7 @@ func (s *Server) mfaRequired(ctx context.Context, u store.User) bool {
 	case mfaAll:
 		return true
 	case mfaAdmins:
-		return u.Role == store.RoleAdmin
+		return s.permsOf(ctx, u.Role).Admin()
 	}
 	return false
 }

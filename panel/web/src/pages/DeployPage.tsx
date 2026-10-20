@@ -118,7 +118,7 @@ function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; se
 }
 
 export default function DeployPage() {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const [tokens, setTokens] = useState<EnrollToken[]>([]);
   const [enabled, setEnabled] = useState(true);
   const [server, setServer] = useState("");
@@ -140,8 +140,8 @@ export default function DeployPage() {
       .catch((e) => setError(msg(e)));
   }, []);
   useEffect(() => {
-    if (user?.role === "admin") load();
-  }, [load, user]);
+    if (can("deploy", "write")) load();
+  }, [load, can]);
   useEffect(() => {
     groupsApi
       .list()
@@ -153,10 +153,10 @@ export default function DeployPage() {
       .catch(() => setGroups([]));
   }, []);
 
-  if (user?.role !== "admin") {
+  if (!can("deploy", "write")) {
     return (
       <Alert color="blue" title="Bifröst – wdrażanie agentów">
-        Tokeny rejestracyjne i paczki instalacyjne tworzy administrator.
+        Tokeny rejestracyjne i paczki instalacyjne tworzy osoba z uprawnieniem „Wdrażanie agentów – zmiana”.
       </Alert>
     );
   }

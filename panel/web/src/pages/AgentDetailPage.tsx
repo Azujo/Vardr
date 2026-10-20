@@ -68,7 +68,7 @@ function duration(ns?: number): string {
 
 export default function AgentDetailPage() {
   const { id = "" } = useParams();
-  const { user } = useAuth();
+  const { can } = useAuth();
   const navigate = useNavigate();
   const [agent, setAgent] = useState<AgentView | null>(null);
   const [status, setStatus] = useState<AgentStatusDoc>({});
@@ -176,7 +176,7 @@ Powód:`,
             {agent.id} · {agent.os || "system nieznany"} · agent {agent.version || "?"}
           </Text>
         </div>
-        {user?.role === "admin" && (
+        {can("agents", "write") && (
           <Group gap="xs">
             <Button variant="light" color="red" leftSection={<IconCertificateOff size={16} />} onClick={() => void revokeCert()}>
               Unieważnij certyfikat
@@ -225,7 +225,7 @@ Powód:`,
               {agent.config_applied ? ` · zastosowana ${agent.config_applied}` : ""}
             </Text>
           </div>
-          {user?.role === "admin" ? (
+          {can("agents", "write") ? (
             <Select
               label="Grupa"
               w={240}
@@ -265,7 +265,7 @@ Powód:`,
         </SimpleGrid>
       </Card>
 
-      <AgentProtection agent={agent} status={status} admin={user?.role === "admin"} />
+      <AgentProtection agent={agent} status={status} admin={can("agents", "write")} />
 
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder>

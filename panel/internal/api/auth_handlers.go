@@ -11,28 +11,8 @@ import (
 	"siem/internal/svc"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
+	"siem/panel/internal/perm"
 )
-
-// Poziomy ról (wyższa obejmuje niższe).
-type roleLevel int
-
-const (
-	roleViewer roleLevel = iota + 1
-	roleAnalyst
-	roleAdmin
-)
-
-func levelOf(role string) roleLevel {
-	switch role {
-	case store.RoleAdmin:
-		return roleAdmin
-	case store.RoleAnalyst:
-		return roleAnalyst
-	case store.RoleViewer:
-		return roleViewer
-	}
-	return 0
-}
 
 // Flagi dla authed.
 const allowPasswordChange = 1 // dostępne także przed wymaganą zmianą hasła
@@ -42,6 +22,7 @@ type ctxKey struct{}
 type authCtx struct {
 	session store.Session
 	user    store.User
+	perms   perm.Set // uprawnienia profilu konta
 }
 
 func current(r *http.Request) authCtx {
@@ -49,8 +30,9 @@ func current(r *http.Request) authCtx {
 	return a
 }
 
-// authed wymaga ważnej sesji, odpowiedniej roli i – dla zmian – tokenu CSRF.
-func (s *Server) authed(need roleLevel, flags int, h http.HandlerFunc) http.Handler {
+// authed wymaga ważnej sesji, uprawnienia profilu konta (moduł, poziom;
+// loggedIn – samo zalogowanie) i – dla zmian – tokenu CSRF.
+func (s *Server) authed(req need, flags int, h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(cookieName)
 		if err != nil || c.Value == "" {
@@ -94,7 +76,8 @@ func (s *Server) authed(need roleLevel, flags int, h http.HandlerFunc) http.Hand
 			writeError(w, http.StatusForbidden, "password_change_required", "najpierw zmień hasło startowe")
 			return
 		}
-		if levelOf(user.Role) < need {
+		perms := s.permsOf(r.Context(), user.Role)
+		if req != loggedIn && !perms.Has(req.mod, req.level) {
 			writeError(w, http.StatusForbidden, "forbidden", "brak uprawnień do tej operacji")
 			return
 		}
@@ -109,7 +92,7 @@ func (s *Server) authed(need roleLevel, flags int, h http.HandlerFunc) http.Hand
 				s.Log.Warn("przedłużenie sesji nieudane", "err", err)
 			}
 		}
-		ctx := context.WithValue(r.Context(), ctxKey{}, authCtx{session: sess, user: user})
+		ctx := context.WithValue(r.Context(), ctxKey{}, authCtx{session: sess, user: user, perms: perms})
 		h(w, r.WithContext(ctx))
 	})
 }
@@ -133,6 +116,25 @@ type sessionResponse struct {
 	ServerVersion string `json:"server_version"`
 	// MFA: sesja potwierdzona drugim składnikiem.
 	MFA bool `json:"mfa"`
+	// Profil konta i jego uprawnienia (panel ukrywa niedostępne moduły).
+	Profile     profileRef `json:"profile"`
+	Permissions perm.Set   `json:"permissions"`
+}
+
+type profileRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// sessionInfo: odpowiedź z kontem, profilem i uprawnieniami.
+func (s *Server) sessionInfo(ctx context.Context, u store.User, csrf string, mfa bool) sessionResponse {
+	p := s.profiles(ctx)[u.Role]
+	name := p.Name
+	if name == "" {
+		name = u.Role
+	}
+	return sessionResponse{User: u, CSRFToken: csrf, ServerVersion: svc.Version, MFA: mfa,
+		Profile: profileRef{ID: u.Role, Name: name}, Permissions: s.permsOf(ctx, u.Role)}
 }
 
 const badLogin = "nieprawidłowy login lub hasło albo konto tymczasowo zablokowane"
@@ -241,7 +243,9 @@ func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, user store.
 		details["mfa"] = m
 	}
 	s.audit(r, &user, "login", user.Username, details)
-	out := map[string]any{"user": user, "csrf_token": sess.CSRF, "server_version": svc.Version, "mfa": mfa}
+	si := s.sessionInfo(r.Context(), user, sess.CSRF, mfa)
+	out := map[string]any{"user": user, "csrf_token": sess.CSRF, "server_version": svc.Version, "mfa": mfa,
+		"profile": si.Profile, "permissions": si.Permissions}
 	for k, v := range extra {
 		out[k] = v
 	}
@@ -250,7 +254,7 @@ func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, user store.
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version, MFA: a.session.MFA})
+	writeJSON(w, http.StatusOK, s.sessionInfo(r.Context(), a.user, a.session.CSRF, a.session.MFA))
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -306,7 +310,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, &a.user, "password_changed", a.user.Username, nil)
 	a.user.MustChangePassword = false
-	writeJSON(w, http.StatusOK, sessionResponse{User: a.user, CSRFToken: a.session.CSRF, ServerVersion: svc.Version, MFA: a.session.MFA})
+	writeJSON(w, http.StatusOK, s.sessionInfo(r.Context(), a.user, a.session.CSRF, a.session.MFA))
 }
 
 func truncate(s string, n int) string {

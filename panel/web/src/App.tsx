@@ -16,6 +16,7 @@ import AttackPage from "./pages/AttackPage";
 import RulesPage from "./pages/RulesPage";
 import RuleTrialsPage from "./pages/RuleTrialsPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
+import ProfilesPage from "./pages/ProfilesPage";
 import DecodersPage from "./pages/DecodersPage";
 import QuarantinePage from "./pages/QuarantinePage";
 import IdentitiesPage from "./pages/IdentitiesPage";
@@ -28,7 +29,7 @@ import GroupsPage from "./pages/GroupsPage";
 import ArchivePage from "./pages/ArchivePage";
 
 export default function App() {
-  const { user, loading } = useAuth();
+  const { user, loading, can } = useAuth();
 
   if (loading) {
     return (
@@ -40,7 +41,6 @@ export default function App() {
   if (!user) return <LoginPage />;
   if (user.must_change_password) return <ChangePasswordPage forced />;
 
-  const admin = user.role === "admin";
   return (
     <Layout>
       <Routes>
@@ -63,10 +63,11 @@ export default function App() {
         <Route path="/system" element={<SystemPage />} />
         <Route path="/account/password" element={<ChangePasswordPage />} />
         <Route path="/account/security" element={<AccountSecurityPage />} />
-        {admin && <Route path="/admin/users" element={<UsersPage />} />}
-        {admin && <Route path="/admin/audit" element={<AuditPage />} />}
-        {admin && <Route path="/admin/notifications" element={<NotificationsPage />} />}
-        {admin && <Route path="/admin/backup" element={<BackupPage />} />}
+        {can("users", "read") && <Route path="/admin/users" element={<UsersPage />} />}
+        {can("users", "read") && <Route path="/admin/profiles" element={<ProfilesPage />} />}
+        {can("audit", "read") && <Route path="/admin/audit" element={<AuditPage />} />}
+        {can("notify", "read") && <Route path="/admin/notifications" element={<NotificationsPage />} />}
+        {can("backup", "read") && <Route path="/admin/backup" element={<BackupPage />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

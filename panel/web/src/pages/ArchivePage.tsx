@@ -216,7 +216,7 @@ function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]
 }
 
 export default function ArchivePage() {
-  const { user } = useAuth();
+  const { can } = useAuth();
   const [data, setData] = useState<ArchiveOverview | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -266,7 +266,7 @@ export default function ArchivePage() {
             powiązany z poprzednim hashem (łańcuch). Weryfikacja wykrywa zmianę, usunięcie lub dodanie danych.
           </Text>
         </div>
-        {user?.role === "admin" && data && data.compliance !== "not_configured" && (
+        {can("archive", "write") && data && data.compliance !== "not_configured" && (
           <Button
             leftSection={<IconShieldCheck size={18} />}
             onClick={() => void verify()}
@@ -303,7 +303,7 @@ export default function ArchivePage() {
       )}
 
       {lv && !lv.ok && !!lv.unknown?.length && (
-        user?.role === "admin" ? (
+        can("archive", "write") ? (
           <UnknownFiles verification={lv} pending={pendingDecision} onDone={load} />
         ) : (
           <Alert color="orange" variant="light">
@@ -393,8 +393,8 @@ export default function ArchivePage() {
             <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
             <Tabs.Tab value="recoveries">Obsługa niezgodności ({recoveries.length})</Tabs.Tab>
             <Tabs.Tab value="policy">Polityka</Tabs.Tab>
-            {user?.role === "admin" && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
-            {user?.role === "admin" && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
+            {can("archive", "export") && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
+            {can("archive", "write") && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="manifests" pt="sm">
             {data.manifests?.length ? (
@@ -429,14 +429,14 @@ export default function ArchivePage() {
             )}
           </Tabs.Panel>
           <Tabs.Panel value="policy" pt="sm">
-            <ArchivePolicy admin={user?.role === "admin"} onChanged={load} />
+            <ArchivePolicy admin={can("archive", "write")} onChanged={load} />
           </Tabs.Panel>
-          {user?.role === "admin" && (
+          {can("archive", "export") && (
             <Tabs.Panel value="exports" pt="sm">
               <ArchiveExports />
             </Tabs.Panel>
           )}
-          {user?.role === "admin" && (
+          {can("archive", "write") && (
             <Tabs.Panel value="replays" pt="sm">
               <ArchiveReplays />
             </Tabs.Panel>

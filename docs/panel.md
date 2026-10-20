@@ -2,13 +2,36 @@
 
 Panel działa pod `https://<serwer>:8444` (w laboratorium `https://192.168.88.98:8444`). Pierwsze konto administratora zakłada się na serwerze: `docker compose run --rm api bootstrap-admin -username admin` (hasło startowe pojawia się raz; przy pierwszym logowaniu panel wymusza jego zmianę).
 
-## Role
+## Profile uprawnień
 
-| Rola | Może |
+Każde konto ma jeden **profil uprawnień** – macierz: moduł panelu → poziom dostępu. Poziomy w module są uporządkowane, wyższy obejmuje niższe (np. reguły: odczyt < test < zmiana; archiwum: odczyt < eksport < zmiana).
+
+| Moduł | Poziomy |
 |---|---|
-| `viewer` | czytać: agenci, zdarzenia, alerty, reguły, archiwum, stan systemu |
-| `analyst` | jak `viewer` oraz praca z alertami (stan, przypisanie, notatki), test reguł i dekoderów |
-| `admin` | wszystko: konta, grupy agentów, wdrażanie, dekodery, tożsamości, polityka archiwum, powiadomienia, włączanie i wyłączanie reguł |
+| Alerty | odczyt, obsługa (status, przypisanie, notatki) |
+| Zdarzenia (Mímir) | odczyt |
+| Reguły detekcji i MITRE | odczyt, test (test na historii, kreator korelacji), zmiana (włączanie, próby, reguły z panelu) |
+| Agenci i grupy | odczyt, zmiana (grupy, usuwanie, tokeny deinstalacji) |
+| Wdrażanie agentów | odczyt, zmiana (tokeny rejestracji, instalatory MSI) |
+| Archiwum NIS2 (Urd) | odczyt, eksport (paczki dla audytora), zmiana (polityka, weryfikacja, odtworzenie) |
+| Dekodery syslog | odczyt, test, zmiana |
+| Kwarantanna | odczyt, ponowne przetwarzanie |
+| Tożsamości | odczyt, zmiana |
+| Stan systemu | odczyt |
+| Powiadomienia | odczyt, zmiana |
+| Kopie zapasowe | odczyt, zmiana |
+| Użytkownicy i bezpieczeństwo | odczyt, zmiana (konta, profile, wymóg MFA) |
+| Dziennik audytu | odczyt |
+
+**Profile wbudowane** odpowiadają dawnym rolom i nie da się ich zmienić ani usunąć (można je skopiować jako punkt wyjścia):
+
+| Profil | Może |
+|---|---|
+| Obserwator (`viewer`) | czytać: agenci, zdarzenia, alerty, reguły, archiwum, dekodery, kwarantanna, tożsamości, stan systemu |
+| Analityk (`analyst`) | jak obserwator oraz obsługa alertów, test reguł i dekoderów |
+| Administrator (`admin`) | wszystko – także moduły dodane w przyszłych wersjach |
+
+**Profile własne** tworzy się w *Administracja → Profile uprawnień* (np. „Audytor NIS2”: archiwum – eksport; „Helpdesk”: agenci – odczyt). Profil z prawem zmiany w module „Użytkownicy i bezpieczeństwo” to **administrator panelu** (wymóg MFA „administratorzy” dotyczy właśnie jego). Zapis i usunięcie profilu wymagają hasła i trafiają do audytu; panel nie pozwoli na zmianę, po której żadne aktywne konto nie byłoby administratorem, ani na usunięcie profilu z przypisanymi kontami. Zmiana profilu działa od razu (najpóźniej po 30 s) – także dla zalogowanych.
 
 Operacje wrażliwe (wyłączenie reguły, osłabienie polityki archiwum, token deinstalacji agenta, zmiana dekodera) wymagają ponownego podania hasła i powodu. Wszystkie zmiany trafiają do **dziennika audytu**. Sesja wygasa po bezczynności, a konto jest czasowo blokowane po serii nieudanych logowań.
 

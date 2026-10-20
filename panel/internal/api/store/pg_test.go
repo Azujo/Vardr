@@ -26,7 +26,7 @@ func TestPostgresStore(t *testing.T) {
 	}
 	defer db.Close()
 	for _, tbl := range []string{"panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
-		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "schema_migrations"} {
+		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "profiles", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
 		}
@@ -354,6 +354,48 @@ func testGroups(t *testing.T, db *PG) {
 	}
 
 	testMFA(ctx, t, db)
+	testProfiles(ctx, t, db)
+}
+
+// testProfiles: profile wbudowane z migracji, własny profil, klucz obcy kont.
+func testProfiles(ctx context.Context, t *testing.T, db *PG) {
+	now := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
+	ps, err := db.Profiles(ctx)
+	if err != nil || len(ps) != 3 || !ps[0].Builtin {
+		t.Fatalf("profile wbudowane: %+v %v", ps, err)
+	}
+	if err := db.SaveProfile(ctx, Profile{ID: "admin", Name: "Zmiana"}, "x", now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("zmiana wbudowanego: %v", err)
+	}
+	if err := db.SaveProfile(ctx, Profile{ID: "audytor", Name: "Audytor", Permissions: map[string]string{"archive": "export"}}, "adam", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SaveProfile(ctx, Profile{ID: "inny", Name: "audytor"}, "adam", now); !errors.Is(err, ErrConflict) {
+		t.Fatalf("ta sama nazwa: %v", err)
+	}
+	if _, err := db.CreateUser(ctx, User{Username: "bez-profilu", Role: "nie-ma", PasswordHash: "h"}); err == nil {
+		t.Fatal("konto z nieistniejącym profilem")
+	}
+	u, err := db.CreateUser(ctx, User{Username: "audytor1", Role: "audytor", PasswordHash: "h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteProfile(ctx, "audytor"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("usunięcie używanego: %v", err)
+	}
+	if n, _ := db.ProfileUsers(ctx); n["audytor"] != 1 {
+		t.Fatalf("konta profilu: %v", n)
+	}
+	viewer := RoleViewer
+	if _, err := db.UpdateUser(ctx, u.ID, UserPatch{Role: &viewer}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteProfile(ctx, "audytor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteProfile(ctx, "viewer"); !errors.Is(err, ErrConflict) && !errors.Is(err, ErrNotFound) {
+		t.Fatalf("usunięcie wbudowanego: %v", err)
+	}
 }
 
 // testMFA: drugi składnik konta, kody zapasowe, krok kodu, sesja, ustawienia.

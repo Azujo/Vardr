@@ -158,6 +158,7 @@ func serve(log *slog.Logger) error {
 	identities := &api.Identities{Store: db}
 	apiServer.Identities = identities
 	apiServer.Backups = db
+	apiServer.Profiles = db
 	// Drugi składnik logowania (TOTP): klucz szyfrujący sekrety z pliku
 	// (deploy.sh tworzy certs/mfa.key); bez klucza – logowanie samym hasłem.
 	if keyFile := svc.Env("SIEM_MFA_KEY_FILE", "/certs/mfa.key"); keyFile != "" {
