@@ -4,8 +4,8 @@ status: stable
 description: |
   Dziennik Security został wyczyszczony. Napastnicy czyszczą dziennik, żeby
   zatrzeć ślady; w normalnej pracy prawie się to nie zdarza. Zdarzenia sprzed
-  wyczyszczenia są w Heimdallu (i w archiwum Urd), o ile agent zdążył je wysłać.
-author: Heimdall
+  wyczyszczenia są w Vardrze (i w archiwum Urd), o ile agent zdążył je wysłać.
+author: Vardr
 tags:
   - attack.defense_impairment
   - attack.t1685.005
@@ -19,7 +19,7 @@ detection:
 falsepositives:
   - Rzadkie, planowane czyszczenie dziennika przez administratora
 level: high
-heimdall:
+vardr:
   instructions: |
     Dziennik wyczyścił {{SubjectDomainName}}\{{SubjectUserName}} na komputerze
     {{Computer}}. Ustal, czy czyszczenie było planowane, i przejrzyj w Mímirze

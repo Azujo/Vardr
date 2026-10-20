@@ -7,7 +7,7 @@ description: |
   (szukanie usług do wykorzystania), z sieci wewnętrznej – skanowanie
   przez przejęty komputer. Wymaga logowania odrzuconego ruchu w polityce
   zapory (także domyślnej polityki deny).
-author: Heimdall
+author: Vardr
 tags:
   - attack.reconnaissance
   - attack.t1595.001
@@ -24,7 +24,7 @@ falsepositives:
   - Autoryzowany skaner podatności (dodaj jego adres jako wyjątek)
   - Masowe skanery internetu (Shodan, Censys) – zwykle niegroźne, ale pokazują, co jest wystawione
 level: medium
-heimdall:
+vardr:
   group_by: [source.ip]
   threshold:
     count: 20

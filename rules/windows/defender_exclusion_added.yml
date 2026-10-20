@@ -5,7 +5,7 @@ description: |
   Zmiana ustawień Defendera (5007) dodająca wykluczenie – ścieżki,
   rozszerzenia, procesu albo adresu. Wykluczony katalog nie jest skanowany,
   więc napastnik może w nim bezpiecznie trzymać swoje narzędzia.
-author: Heimdall
+author: Vardr
 tags:
   - attack.defense_impairment
   - attack.t1685
@@ -20,7 +20,7 @@ detection:
 falsepositives:
   - Wykluczenia wymagane przez oprogramowanie (bazy danych, kopie zapasowe) dodawane przez administratora
 level: high
-heimdall:
+vardr:
   group_by: [host.name]
   suppress: 1h
   instructions: |

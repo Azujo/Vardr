@@ -160,7 +160,7 @@ func apply(e *model.Event, t map[string]string) {
 	}
 }
 
-// reserved: pola ustawiane przez Heimdalla (nagłówek syslog, dekoder,
+// reserved: pola ustawiane przez Vardra (nagłówek syslog, dekoder,
 // ponowne przetworzenie) – treść wiadomości ani definicja dekodera ich nie
 // nadpisze.
 func reserved(k string) bool {

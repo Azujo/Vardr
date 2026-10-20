@@ -1,5 +1,5 @@
 // Command entrasim to symulator Microsoft Graph (logi Entra ID) dla
-// laboratorium – konektor Heimdalla łączy się z nim tak jak z prawdziwym
+// laboratorium – konektor Vardra łączy się z nim tak jak z prawdziwym
 // API (internal/entrasim). Generuje tło (zwykłe logowania użytkowników)
 // i scenariusze ataków na żądanie:
 //

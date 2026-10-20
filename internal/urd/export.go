@@ -35,8 +35,16 @@ const (
 // MaxExportRange ogranicza zakres jednego eksportu.
 const MaxExportRange = 31 * 24 * time.Hour
 
-// ExportFormat identyfikuje wersję paczki eksportu.
-const ExportFormat = "heimdall-urd-export/2"
+// ExportFormat identyfikuje wersję paczki eksportu. /3 różni się od /2
+// tylko nazwą (pola vardr.* zamiast heimdall.*); starsze paczki są nadal
+// sprawdzane i czytane.
+const ExportFormat = "vardr-urd-export/3"
+
+// Wcześniejsze formaty eksportu (sprzed zmiany nazwy na Vardr).
+const (
+	exportFormatV1 = "heimdall-urd-export/1" // bez czytelnych zdarzeń do porównania
+	exportFormatV2 = "heimdall-urd-export/2"
+)
 
 // ExportJob to zlecenie eksportu dla audytora: pełne godziny archiwizacji
 // [From, To), oryginalne segmenty z łańcuchem manifestów.
@@ -185,7 +193,7 @@ type ExportOptions struct {
 //
 //   - segments/ i chain/ – oryginały i łańcuch manifestów (dowód),
 //   - zdarzenia/ – te same zdarzenia w czytelnej postaci (NDJSON z polami ECS
-//     i oryginalnym XML, CSV dla arkusza) – do odczytu bez Heimdalla,
+//     i oryginalnym XML, CSV dla arkusza) – do odczytu bez Vardra,
 //   - narzedzia/ – niezależny skrypt sprawdzający (Python, biblioteka standardowa).
 //
 // Każdy segment jest przy zapisie porównywany z sumą z manifestu – uszkodzone
@@ -665,7 +673,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 		}
 	}
 
-	if info.Format != ExportFormat && info.Format != "heimdall-urd-export/1" {
+	if info.Format != ExportFormat && info.Format != exportFormatV2 && info.Format != exportFormatV1 {
 		p.add("nieznany format paczki: %q", info.Format)
 	}
 	c.ExportID, c.From, c.To = info.ExportID, info.From.Format(time.RFC3339), info.To.Format(time.RFC3339)
@@ -752,7 +760,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	}
 	c.Agents = info.Agents
 	c.Events = origDigest.n
-	if info.Format != "heimdall-urd-export/1" && !readDigest.same(origDigest) {
+	if info.Format != exportFormatV1 && !readDigest.same(origDigest) {
 		p.add("czytelne zdarzenia (%d) nie odpowiadają oryginałom (%d) – zdarzenia/ zmienione albo niekompletne", readDigest.n, origDigest.n)
 	}
 
@@ -761,7 +769,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	return c
 }
 
-const exportReadme = `Heimdall – eksport archiwum NIS2 (Urd)
+const exportReadme = `Vardr – eksport archiwum NIS2 (Urd)
 ======================================
 
 Paczka zawiera logi w dwóch postaciach: CZYTELNEJ (do analizy w dowolnym
@@ -793,7 +801,7 @@ nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
         event.original      PEŁNY oryginalny zapis zdarzenia (XML Windows
                             albo wiadomość syslog z urządzenia)
         log.source.address  adres urządzenia, które wysłało syslog (kolektor)
-        heimdall.batch_sha256      suma paczki agenta, z której pochodzi zdarzenie
+        vardr.batch_sha256      suma paczki agenta, z której pochodzi zdarzenie
       Odczyt: zcat plik.ndjson.gz | less, jq, 7-Zip; import do Elastic,
       Splunk, OpenSearch, Sentinel itp. jako NDJSON/JSON lines.
 
@@ -817,7 +825,7 @@ nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
               kotwica (SHA-256 najnowszego manifestu)
   SHA256SUMS  sumy SHA-256 wszystkich plików paczki
 
-3. Sprawdzenie – bez Heimdalla
+3. Sprawdzenie – bez Vardra
 ------------------------------
   python3 narzedzia/odczytaj_segmenty.py <ta_paczka.tar>
       (Python 3.8+, tylko biblioteka standardowa) sprawdza:
@@ -846,5 +854,5 @@ z oryginałami wybranych agentów.
 
 Zakres eksportu dotyczy godzin archiwizacji (czasu przyjęcia paczek przez
 serwer), nie czasu zdarzeń. Pola znormalizowane (host.name, user.name itd.)
-wylicza Heimdall; rozstrzygający jest zawsze oryginał w event.original.
+wylicza Vardr; rozstrzygający jest zawsze oryginał w event.original.
 `

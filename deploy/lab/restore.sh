@@ -1,10 +1,10 @@
 #!/bin/bash
-# Przywrócenie Heimdalla z kopii zapasowej.
+# Przywrócenie Vardra z kopii zapasowej.
 #
-#   ./restore.sh <heimdall-….tar.gpg> [katalog z paczkami urd-….tar.gpg]
+#   ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg]
 #       odtworzenie na czystej VM (Docker zainstalowany, stos skopiowany:
 #       deploy/lab/deploy.sh config + usługi) – wszystko, co jest w kopii;
-#       gpg zapyta o hasło kopii (albo plik z hasłem w HEIMDALL_BACKUP_PASS_FILE)
+#       gpg zapyta o hasło kopii (albo plik z hasłem w VARDR_BACKUP_PASS_FILE)
 #
 #   ./restore.sh --zlecenie
 #       przywrócenie zlecone w panelu (Administracja → Kopie zapasowe →
@@ -34,8 +34,9 @@ umask 077
 [ -f docker-compose.yml ] || { echo "uruchom w katalogu stosu (docker-compose.yml)" >&2; exit 2; }
 
 pass_args=()
-if [ -n "${HEIMDALL_BACKUP_PASS_FILE:-}" ]; then
-  pass_args=(--batch --pinentry-mode loopback --passphrase-file "$HEIMDALL_BACKUP_PASS_FILE")
+pass_file="${VARDR_BACKUP_PASS_FILE:-${HEIMDALL_BACKUP_PASS_FILE:-}}"  # HEIMDALL_: dawna nazwa zmiennej
+if [ -n "$pass_file" ]; then
+  pass_args=(--batch --pinentry-mode loopback --passphrase-file "$pass_file")
 fi
 decrypt() { gpg --quiet "${pass_args[@]}" --decrypt "$1"; }
 log() { echo "$(date -u +%FT%TZ) $*"; }
@@ -132,7 +133,7 @@ if [ "${1:-}" = --zlecenie ]; then
   field() { grep -m1 "^$1=" "$job" | cut -d= -f2-; }
   id=$(field id) file=$(field file) parts=$(field parts) by=$(field by)
   mv "$job" "$job.wykonywane"
-  if ! [[ $id =~ ^[0-9]+$ && $file =~ ^(\.przywracanie/)?heimdall-[0-9]{8}-[0-9]{4}-k[0-9a-f]{8}\.tar\.gpg$ && $parts =~ ^(saga|config|grafana)(,(saga|config|grafana))*$ ]]; then
+  if ! [[ $id =~ ^[0-9]+$ && $file =~ ^(\.przywracanie/)?(vardr|heimdall)-[0-9]{8}-[0-9]{4}-k[0-9a-f]{8}\.tar\.gpg$ && $parts =~ ^(saga|config|grafana)(,(saga|config|grafana))*$ ]]; then
     log "BŁĄD: niepoprawne zlecenie przywracania" >&2
     exit 1
   fi
@@ -195,7 +196,7 @@ fi
 backup="${1:-}"
 urd_dir="${2:-}"
 if [ -z "$backup" ] || [ ! -f "$backup" ]; then
-  echo "użycie: ./restore.sh <heimdall-….tar.gpg> [katalog z paczkami urd-….tar.gpg] | ./restore.sh --zlecenie" >&2
+  echo "użycie: ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg] | ./restore.sh --zlecenie" >&2
   exit 2
 fi
 

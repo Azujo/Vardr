@@ -41,7 +41,7 @@ func SilenceRule() alerts.RuleInfo {
 			"Alert zamyka się sam, gdy zdarzenia wrócą.",
 		Source: "# Reguła wbudowana w siem-detector (server/internal/detector/silence.go),\n" +
 			"# oceniana co 5 minut w ClickHouse na zdarzeniach spoza Windows.\n",
-		Instructions: "Sprawdź, czy urządzenie działa i nadal ma ustawiony serwer syslog Heimdalla (kolektor), albo – dla " +
+		Instructions: "Sprawdź, czy urządzenie działa i nadal ma ustawiony serwer syslog Vardra (kolektor), albo – dla " +
 			"chmury – stan konektora i uprawnień aplikacji. Wyłączenie logowania bez zgłoszenia traktuj jak próbę ukrycia " +
 			"działań: przejrzyj ostatnie zdarzenia źródła (logowania administratorów, zmiany konfiguracji)."}
 }

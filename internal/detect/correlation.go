@@ -56,7 +56,7 @@ type Correlation struct {
 	Field    string                       `json:"field,omitempty"`   // value_count
 	Aliases  map[string]map[string]string `json:"aliases,omitempty"` // alias → ref reguły → pole
 	Generate bool                         `json:"generate"`
-	Heimdall Extensions                   `json:"heimdall"`
+	Vardr    Extensions                   `json:"vardr"`
 }
 
 // Typy korelacji.
@@ -94,7 +94,8 @@ type rawCorrelation struct {
 		Aliases   map[string]map[string]string `yaml:"aliases"`
 		Generate  *bool                        `yaml:"generate"`
 	} `yaml:"correlation"`
-	Heimdall Extensions `yaml:"heimdall"`
+	Vardr  Extensions  `yaml:"vardr"`
+	Legacy *Extensions `yaml:"heimdall"` // dawna nazwa klucza
 }
 
 // IsCorrelation mówi, czy dokument YAML jest regułą korelacyjną.
@@ -127,6 +128,9 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 		return nil, fmt.Errorf("YAML: %w", err)
 	}
 	c := r.Correlation
+	if err := useLegacy(&r.Vardr, r.Legacy); err != nil {
+		return nil, err
+	}
 	switch {
 	case r.Title == "":
 		return nil, errors.New("brak title")
@@ -154,7 +158,7 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 	}
 	out := &Correlation{ID: r.ID, Name: r.Name, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file, Source: string(data),
-		Type: c.Type, RuleRefs: c.Rules, GroupBy: c.GroupBy, Timespan: ts, Aliases: c.Aliases, Heimdall: r.Heimdall}
+		Type: c.Type, RuleRefs: c.Rules, GroupBy: c.GroupBy, Timespan: ts, Aliases: c.Aliases, Vardr: r.Vardr}
 	if c.Generate != nil {
 		out.Generate = *c.Generate
 	}
@@ -192,13 +196,13 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 			return nil, errors.New("correlation.condition: korelacja czasowa nie ma warunku liczbowego")
 		}
 	}
-	if h := r.Heimdall; h.Mode != "" || len(h.GroupBy) > 0 || h.Threshold != nil {
-		return nil, errors.New("heimdall: w korelacji tylko instructions, suppress i enabled (klucz i okno są w correlation)")
+	if h := r.Vardr; h.Mode != "" || len(h.GroupBy) > 0 || h.Threshold != nil {
+		return nil, errors.New("vardr: w korelacji tylko instructions, suppress i enabled (klucz i okno są w correlation)")
 	}
-	if out.Heimdall.Suppress == 0 {
-		out.Heimdall.Suppress = Duration(max(time.Hour, ts))
+	if out.Vardr.Suppress == 0 {
+		out.Vardr.Suppress = Duration(max(time.Hour, ts))
 	}
-	out.Heimdall.Instructions = Unwrap(out.Heimdall.Instructions)
+	out.Vardr.Instructions = Unwrap(out.Vardr.Instructions)
 	return out, nil
 }
 
@@ -256,7 +260,7 @@ func (c *Correlation) Resolve(rules []*Rule) error {
 }
 
 // Enabled mówi, czy korelacja jest włączona.
-func (c *Correlation) Enabled() bool { return c.Heimdall.Enabled == nil || *c.Heimdall.Enabled }
+func (c *Correlation) Enabled() bool { return c.Vardr.Enabled == nil || *c.Vardr.Enabled }
 
 // KeyField zwraca pole klucza (group-by) dla i-tej reguły bazowej (alias albo to samo pole).
 func (c *Correlation) KeyField(group string, i int) string {
@@ -335,11 +339,11 @@ func (c *Correlation) Evaluate(evs []CorrEvent) [][]CorrEvent {
 			th.Distinct = c.Field
 		}
 		s := corrSeries(evs)
-		marks, _, found := ThresholdMarks(s, th, time.Duration(c.Heimdall.Suppress))
+		marks, _, found := ThresholdMarks(s, th, time.Duration(c.Vardr.Suppress))
 		if !found {
 			return nil
 		}
-		for _, sp := range Components(s, marks, time.Duration(c.Heimdall.Suppress)) {
+		for _, sp := range Components(s, marks, time.Duration(c.Vardr.Suppress)) {
 			groups = append(groups, evs[sp.From:sp.To])
 		}
 	case "temporal":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Heimdall – niezależny odczyt i sprawdzenie eksportu archiwum NIS2 (Urd).
+"""Vardr – niezależny odczyt i sprawdzenie eksportu archiwum NIS2 (Urd).
 
-Wymaga tylko Pythona 3.8+ (biblioteka standardowa), bez Heimdalla.
+Wymaga tylko Pythona 3.8+ (biblioteka standardowa), bez Vardra.
 
   python3 odczytaj_segmenty.py paczka.tar
       sprawdza sumy SHA256SUMS, łańcuch manifestów, segmenty względem
@@ -46,7 +46,7 @@ def records(data):
 
 
 class Digest:
-    """Skrót zbioru zdarzeń niezależny od kolejności (jak w Heimdallu)."""
+    """Skrót zbioru zdarzeń niezależny od kolejności (jak w Vardrze)."""
 
     def __init__(self):
         self.n, self.a, self.b = 0, 0, 0
@@ -150,9 +150,11 @@ def main():
         with gzip.open(tar.extractfile(members[name])) as f:
             for line in io.TextIOWrapper(f, encoding="utf-8"):
                 r = json.loads(line)
-                if r.get("heimdall.error"):
+                # Pola vardr.*; eksporty sprzed zmiany nazwy projektu mają heimdall.*.
+                p = "vardr." if "vardr.event_id" in r or "vardr.error" in r else "heimdall."
+                if r.get(p + "error"):
                     continue
-                readable.add(r["heimdall.batch_sha256"], r["heimdall.event_id"], r.get("event.original", ""))
+                readable.add(r[p + "batch_sha256"], r[p + "event_id"], r.get("event.original", ""))
     if readable != original:
         problems.append(f"czytelne zdarzenia ({readable.n}) nie odpowiadają oryginałom ({original.n})")
 

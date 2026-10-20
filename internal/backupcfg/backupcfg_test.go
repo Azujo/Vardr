@@ -43,8 +43,8 @@ func TestLastSlotAndDue(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	ok := Default()
-	ok.Target = Target{Method: MethodSFTP, Host: "192.168.88.180", User: "heimdall", Auth: AuthServerKey, Path: "/mnt/tank/heimdall/"}
-	if err := ok.Validate(); err != nil || ok.Target.Path != "/mnt/tank/heimdall" {
+	ok.Target = Target{Method: MethodSFTP, Host: "192.168.88.180", User: "vardr", Auth: AuthServerKey, Path: "/mnt/tank/vardr/"}
+	if err := ok.Validate(); err != nil || ok.Target.Path != "/mnt/tank/vardr" {
 		t.Fatalf("poprawne SFTP: %v %q", err, ok.Target.Path)
 	}
 	for name, mod := range map[string]func(*Config){

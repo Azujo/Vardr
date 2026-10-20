@@ -6,7 +6,7 @@ description: |
   w ciągu 2 minut, odrzucone przez zaporę. Tak wygląda szukanie aktywnych
   komputerów w sieci (ping sweep, skanowanie podsieci) – przez napastnika
   z zewnątrz albo z przejętego komputera wewnątrz.
-author: Heimdall
+author: Vardr
 tags:
   - attack.reconnaissance
   - attack.t1595.001
@@ -22,7 +22,7 @@ detection:
 falsepositives:
   - Systemy monitorowania i inwentaryzacji sieci
 level: medium
-heimdall:
+vardr:
   group_by: [source.ip]
   threshold:
     count: 30

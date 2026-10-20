@@ -6,7 +6,7 @@ description: |
   (CopyFromScreen), odczytu schowka albo przechwytywania klawiszy
   (GetAsyncKeyState, SetWindowsHookEx). Używają ich narzędzia szpiegujące
   i moduły zbierania danych w narzędziach ataku.
-author: Heimdall
+author: Vardr
 tags:
   - attack.collection
   - attack.t1113
@@ -27,7 +27,7 @@ detection:
 falsepositives:
   - Skrypty pomocy zdalnej i automatyzacji pulpitu (rzadkie w PowerShell)
 level: high
-heimdall:
+vardr:
   group_by: [host.name]
   suppress: 1h
   instructions: |

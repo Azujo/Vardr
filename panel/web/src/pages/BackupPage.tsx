@@ -496,7 +496,7 @@ export default function BackupPage() {
                         ? "katalog w udziale (puste – główny katalog udziału)"
                         : "prefiks w kubełku (puste – główny)"
                   }
-                  placeholder={t.method === "sftp" ? "/mnt/tank/heimdall_backup" : "heimdall"}
+                  placeholder={t.method === "sftp" ? "/mnt/tank/vardr_backup" : "vardr"}
                   maw={520}
                   value={t.path ?? ""}
                   onChange={(e) => set((c) => (c.target.path = e.currentTarget.value))}

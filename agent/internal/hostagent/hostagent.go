@@ -1,4 +1,4 @@
-// Package hostagent to wspólny szkielet agentów serwerowych Heimdalla –
+// Package hostagent to wspólny szkielet agentów serwerowych Vardra –
 // kolektora syslog (siem-collector) i konektora API (siem-connector):
 // konfiguracja, rejestracja tokenem i praca jak agent Windows (mTLS,
 // paczki, bufor dyskowy, heartbeat w panelu, odnawianie certyfikatu).

@@ -5,9 +5,9 @@ description: |
   Defender wykrył zagrożenie, ale działanie (kwarantanna, usunięcie)
   się nie powiodło (1008, 1118, 1119). Złośliwy plik może nadal być na
   komputerze i działać.
-author: Heimdall
+author: Vardr
 tags:
-  - heimdall.attack_dynamic
+  - vardr.attack_dynamic
 logsource:
   product: windows
   service: windefend
@@ -21,7 +21,7 @@ detection:
 falsepositives:
   - Plik zablokowany przez inny program w chwili usuwania (Defender ponowi próbę po restarcie)
 level: critical
-heimdall:
+vardr:
   group_by: [host.name]
   suppress: 24h
   instructions: |

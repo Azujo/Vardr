@@ -12,7 +12,7 @@ func TestExpired(t *testing.T) {
 	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
 	f := func(day int) remoteFile {
 		ts := time.Date(2026, 10, day, 2, 15, 0, 0, time.UTC)
-		return remoteFile{Name: "heimdall-" + ts.Format("20060102-1504") + "-k1234abcd.tar.gpg", ModTime: now} // czas wysyłki – bez znaczenia
+		return remoteFile{Name: "vardr-" + ts.Format("20060102-1504") + "-k1234abcd.tar.gpg", ModTime: now} // czas wysyłki – bez znaczenia
 	}
 	files := []remoteFile{f(19), f(18), f(10), f(5), f(1)}
 	name := func(day int) string { return f(day).Name }

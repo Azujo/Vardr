@@ -30,7 +30,7 @@ type Sender struct {
 	// Status zwraca bieżący stan agenta (status.json).
 	Status func() any
 	// Clock (opcjonalne) dostaje odchylenie zegara agenta względem serwera
-	// (z nagłówka X-Heimdall-Time) i niepewność pomiaru (połowa czasu żądania).
+	// (z nagłówka X-Vardr-Time) i niepewność pomiaru (połowa czasu żądania).
 	Clock func(offset, uncertainty time.Duration, at time.Time)
 	Log   *slog.Logger
 
@@ -128,7 +128,11 @@ func (s *Sender) Send(ctx context.Context) error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	if s.Clock != nil {
-		if srv, err := time.Parse(time.RFC3339Nano, resp.Header.Get(contract.HeaderServerTime)); err == nil {
+		hdr := resp.Header.Get(contract.HeaderServerTime)
+		if hdr == "" {
+			hdr = resp.Header.Get(contract.LegacyHeaderServerTime) // serwer sprzed zmiany nazwy
+		}
+		if srv, err := time.Parse(time.RFC3339Nano, hdr); err == nil {
 			rtt := t1.Sub(t0)
 			mid := t0.Add(rtt / 2)
 			s.Clock(mid.Sub(srv), rtt/2, t1)

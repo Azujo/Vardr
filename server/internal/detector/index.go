@@ -132,7 +132,7 @@ func resourceError(err error) bool {
 func IndexRules(all []*detect.Rule) []*detect.Rule {
 	var out []*detect.Rule
 	for _, r := range all {
-		if r.Alerts() && (r.Heimdall.Mode == "index_query" || r.Heimdall.Mode == "both") {
+		if r.Alerts() && (r.Vardr.Mode == "index_query" || r.Vardr.Mode == "both") {
 			out = append(out, r)
 		}
 	}
@@ -273,7 +273,7 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 // nowe zdarzenia.
 func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Event, keys map[string][]string,
 	lo, hi time.Time) ([]alerts.Hit, int, error) {
-	span := time.Duration(r.Heimdall.Threshold.Window) + time.Duration(r.Heimdall.Suppress)
+	span := time.Duration(r.Vardr.Threshold.Window) + time.Duration(r.Vardr.Suppress)
 	keySQL := r.GroupKeySQL()
 	byKey := map[string][]*entry{}
 	evs := map[string]detect.Event{} // ostatnie zdarzenie klucza – do opisu alertu
@@ -284,7 +284,7 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 	// (limit długości zapytania): przy kilkudziesięciu tysiącach kluczy (np.
 	// nieudane logowania z wielu adresów) przebieg robił ~100 zapytań, każde
 	// skanujące miliony wierszy, i nie kończył się (etap 8).
-	width := max(1, len(r.Heimdall.GroupBy))
+	width := max(1, len(r.Vardr.GroupBy))
 	cols := make([]func(*ext.Table) error, width)
 	names := make([]string, width)
 	for i := range width {
@@ -311,8 +311,8 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 	// pola opisu, klucz i wartość pola Distinct (te same małe litery co
 	// GroupKey/DistinctValue). Pełne zdarzenia z mapą fields – do 20 000 na
 	// klucz – zajmowały detektorowi większość czasu na odśmiecanie (etap 8).
-	parts := make([]string, len(r.Heimdall.GroupBy))
-	for i, f := range r.Heimdall.GroupBy {
+	parts := make([]string, len(r.Vardr.GroupBy))
+	for i, f := range r.Vardr.GroupBy {
 		parts[i] = "lowerUTF8(" + detect.FieldSQL(f) + ")"
 	}
 	keyCol := "''"
@@ -320,7 +320,7 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 		keyCol = "arrayStringConcat([" + strings.Join(parts, ", ") + "], '\x1f')"
 	}
 	valCol := "''"
-	if d := r.Heimdall.Threshold.Distinct; d != "" {
+	if d := r.Vardr.Threshold.Distinct; d != "" {
 		valCol = "lowerUTF8(" + detect.FieldSQL(d) + ")"
 	}
 	q := fmt.Sprintf(`SELECT event_id, timestamp, agent_id, host_name, user_name, %s, %s, %s
@@ -333,7 +333,7 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 	if err != nil {
 		return nil, n, err
 	}
-	distinct := r.Heimdall.Threshold.Distinct != ""
+	distinct := r.Vardr.Threshold.Distinct != ""
 	for rows.Next() {
 		var o alerts.Observation
 		var k string

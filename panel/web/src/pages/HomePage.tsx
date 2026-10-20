@@ -55,7 +55,7 @@ export default function HomePage() {
     <Stack>
       <div>
         <Title order={2}>Witaj, {user?.display_name || user?.username}</Title>
-        <Text c="dimmed">Heimdall strzeże mostu – tu widać, co dzieje się w sieci.</Text>
+        <Text c="dimmed">Vardr czuwa – tu widać, co dzieje się w sieci.</Text>
       </div>
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>

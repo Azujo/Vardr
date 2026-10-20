@@ -52,6 +52,9 @@ for t in "${targets[@]}"; do
     # --overwrite zapisuje pliki w miejscu (ten sam i-węzeł): kontenery montujące
     # pojedynczy plik (prometheus.yml, nats.conf, siem.xml) widzą nową treść;
     # podmiana pliku zostawiłaby im starą wersję.
+    # Reguły alertów Grafany przemianowane (heimdall.yaml → vardr.yaml, te same uid) –
+    # tar nie usuwa starego pliku, a dwa pliki z tymi samymi uid to błąd provisioningu.
+    remote "rm -f grafana/provisioning/alerting/heimdall.yaml"
     remote "docker compose config -q" && echo "   docker-compose.yml poprawny"
     # Start stosu po restarcie VM (boot.sh) – wpis @reboot w crontabie użytkownika.
     remote "crontab -l 2>/dev/null | grep -q siem-lab/boot.sh || (crontab -l 2>/dev/null; echo '@reboot \$HOME/siem-lab/boot.sh') | crontab -" &&
@@ -106,8 +109,8 @@ for t in "${targets[@]}"; do
     remote "docker image inspect siem/wixl:lab >/dev/null 2>&1 || docker build -q -t siem/wixl:lab msi >/dev/null; \
       docker run --rm -u 1000:1000 -v \$PWD/msi:/src:ro -v \$PWD/agent-dist:/out \
         -v \$PWD/agent-dist/siem_agent.exe:/w/siem_agent.exe:ro -v \$PWD/certs/ca.crt:/w/ca.crt:ro \
-        siem/wixl:lab -a x64 -D Version=$agent_version -o /out/heimdall-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
-      ls -l agent-dist/heimdall-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
+        siem/wixl:lab -a x64 -D Version=$agent_version -o /out/vardr-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
+      ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
     ;;
   ingest | normalizer | writer | archiver | detector | api | backup)
     echo "== $t ($version)"

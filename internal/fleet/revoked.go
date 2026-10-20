@@ -19,7 +19,7 @@ const RevokedBucket = "SIEM_REVOKED_CERTS"
 func EnsureRevoked(ctx context.Context, js jetstream.JetStream) (jetstream.KeyValue, error) {
 	return js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:      RevokedBucket,
-		Description: "Unieważnione certyfikaty agentów Heimdall",
+		Description: "Unieważnione certyfikaty agentów Vardr",
 		History:     1,
 		Storage:     jetstream.FileStorage,
 	})

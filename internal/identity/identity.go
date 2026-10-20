@@ -173,7 +173,7 @@ const (
 func Ensure(ctx context.Context, js jetstream.JetStream) (jetstream.KeyValue, error) {
 	return js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:       Bucket,
-		Description:  "Tożsamości osób (domeny organizacji, aliasy kont) z panelu Heimdall",
+		Description:  "Tożsamości osób (domeny organizacji, aliasy kont) z panelu Vardr",
 		History:      1,
 		Storage:      jetstream.FileStorage,
 		MaxValueSize: 4 << 20,

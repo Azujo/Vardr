@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Instalator MSI agenta Heimdall (Huginn). Buduje go deploy.sh (cel agent)
+  Instalator MSI agenta Vardr (Huginn). Buduje go deploy.sh (cel agent)
   narzędziem wixl na serwerze – z CA tej instalacji (ca.crt).
 
   Cicha instalacja (GPO/Intune/SCCM, jako administrator albo SYSTEM):
-    msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…
+    msiexec /i vardr-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…
   Aktualizacja: ten sam plik w nowszej wersji (bez TOKEN – rejestracja zostaje).
   Odinstalowanie chronionego agenta (ochrona w grupie – domyślnie włączona)
   wymaga jednorazowego tokenu z panelu (Huginn → agent → Token deinstalacji):
-    msiexec /x heimdall-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX
+    msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX
   Bez tokenu deinstalacja jest wycofywana, a panel dostaje alert.
   Dane i certyfikaty zostają w %ProgramData%\SiemAgent.
   Przebieg instalacji agenta: %ProgramData%\SiemAgent\msi.log.
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="Heimdall Agent (Huginn)" Language="1033" Version="$(var.Version)"
-           Manufacturer="Heimdall SIEM" UpgradeCode="6F1C2A3B-4D5E-4F60-8A71-92B3C4D5E6F7">
+  <Product Id="*" Name="Vardr Agent (Huginn)" Language="1033" Version="$(var.Version)"
+           Manufacturer="Vardr SIEM" UpgradeCode="6F1C2A3B-4D5E-4F60-8A71-92B3C4D5E6F7">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
-             Description="Heimdall SIEM agent (Windows Event Log)" Comments="Wersja $(var.Version)"/>
+             Description="Vardr SIEM agent (Windows Event Log)" Comments="Wersja $(var.Version)"/>
     <Media Id="1" Cabinet="agent.cab" EmbedCab="yes"/>
     <!-- Nowe wydanie agenta = nowy numer wersji: wixl nie obsługuje AllowSameVersionUpgrades, więc
          przebudowany instalator tej samej wersji instaluje się obok poprzedniego (dwa produkty). -->
-    <MajorUpgrade DowngradeErrorMessage="Zainstalowana jest nowsza wersja agenta Heimdall."/>
+    <MajorUpgrade DowngradeErrorMessage="Zainstalowana jest nowsza wersja agenta Vardr."/>
     <!-- Wypełniacze stałej długości: panel przy pobraniu instalatora wpisuje
          w ich miejsce adres serwera i token (internal/msipatch) – jeden plik
          MSI do podwójnego kliknięcia. Parametry SERVER= TOKEN= w msiexec mają
          pierwszeństwo; niepodmieniony wypełniacz agent traktuje jak brak. -->
-    <Property Id="SERVER" Value="HEIMDALL_MSI_SERVER_============================================================================================================"/>
-    <Property Id="TOKEN" Value="HEIMDALL_MSI_TOKEN_============================================="/>
+    <Property Id="SERVER" Value="VARDR_MSI_SERVER_==============================================================================================================="/>
+    <Property Id="TOKEN" Value="VARDR_MSI_TOKEN_================================================"/>
     <!-- Token nie trafia do dziennika instalatora. -->
     <Property Id="MsiHiddenProperties" Value="TOKEN;UNINSTALL_TOKEN"/>
     <Property Id="ARPNOMODIFY" Value="1"/>

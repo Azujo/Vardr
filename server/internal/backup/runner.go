@@ -1,4 +1,4 @@
-// Package backup to usługa kopii zapasowych Heimdalla (siem-backup):
+// Package backup to usługa kopii zapasowych Vardra (siem-backup):
 // wykonuje kopie według ustawień z panelu (internal/backupcfg, tabele
 // backup_* w Sadze), szyfruje je hasłem kopii (gpg, jak dotychczasowy
 // backup.sh – restore.sh otwiera obie), trzyma kopie lokalnie z retencją

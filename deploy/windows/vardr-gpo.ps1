@@ -1,15 +1,15 @@
-﻿# Heimdall – polityka audytu Windows w GPO (roadmapa, załącznik B; README,
+﻿# Vardr – polityka audytu Windows w GPO (roadmapa, załącznik B; README,
 # sekcja „Polityka audytu”). Uruchom na kontrolerze domeny jako administrator
 # domeny. Skrypt można uruchamiać wielokrotnie – aktualizuje istniejące GPO.
 #
 # Tworzy i podłącza:
-#   „Heimdall - polityka audytu” (cała domena):
+#   „Vardr - polityka audytu” (cała domena):
 #     - zaawansowana polityka inspekcji (audit.csv) – logowania, Kerberos,
 #       konta i grupy, tworzenie procesów, zmiany polityk, usługi;
 #     - linia poleceń w zdarzeniu 4688, logowanie bloków skryptów PowerShell (4104),
 #     - wymuszenie podkategorii inspekcji (zastępuje starą politykę),
 #     - dziennik Security 256 MB, PowerShell/Operational 64 MB;
-#   „Heimdall - dzienniki DC” (OU Domain Controllers): dziennik Security 1 GB.
+#   „Vardr - dzienniki DC” (OU Domain Controllers): dziennik Security 1 GB.
 #
 # Po zmianie: gpupdate /force na komputerach (albo do 90 minut).
 #Requires -Modules GroupPolicy, ActiveDirectory
@@ -19,8 +19,17 @@ $domain = Get-ADDomain
 $domainDN = $domain.DistinguishedName
 $sysvol = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)\Policies"
 
-function Ensure-Gpo($name, $target, $comment) {
+function Ensure-Gpo($name, $target, $comment, $legacy) {
     $g = Get-GPO -Name $name -ErrorAction SilentlyContinue
+    # GPO utworzone przed zmianą nazwy projektu (Heimdall -> Vardr): zmiana nazwy zamiast drugiego GPO.
+    if (-not $g -and $legacy) {
+        $g = Get-GPO -Name $legacy -ErrorAction SilentlyContinue
+        if ($g) {
+            $g.DisplayName = $name
+            $g.Description = $comment
+            Write-Host "zmieniono nazwę GPO: $legacy -> $name"
+        }
+    }
     if (-not $g) {
         $g = New-GPO -Name $name -Comment $comment
         Write-Host "utworzono GPO: $name"
@@ -33,7 +42,7 @@ function Ensure-Gpo($name, $target, $comment) {
 }
 
 # ---- GPO dla całej domeny ----
-$gpo = Ensure-Gpo "Heimdall - polityka audytu" $domainDN "Polityka audytu dla agentów Heimdall (deploy/windows/heimdall-gpo.ps1)"
+$gpo = Ensure-Gpo "Vardr - polityka audytu" $domainDN "Polityka audytu dla agentów Vardr (deploy/windows/vardr-gpo.ps1)" "Heimdall - polityka audytu"
 $key = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit"
 Set-GPRegistryValue -Guid $gpo.Id -Key $key -ValueName ProcessCreationIncludeCmdLine_Enabled -Type DWord -Value 1 | Out-Null
 Set-GPRegistryValue -Guid $gpo.Id -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging" `
@@ -86,7 +95,7 @@ $ini = Join-Path $sysvol "{$($gpo.Id)}\GPT.INI"
 Write-Host "  audit.csv: $($audit.Count) podkategorii, wersja GPO $version"
 
 # ---- Kontrolery domeny: większy dziennik Security ----
-$dc = Ensure-Gpo "Heimdall - dzienniki DC" $domain.DomainControllersContainer "Dziennik Security 1 GB na kontrolerach domeny (Heimdall)"
+$dc = Ensure-Gpo "Vardr - dzienniki DC" $domain.DomainControllersContainer "Dziennik Security 1 GB na kontrolerach domeny (Vardr)" "Heimdall - dzienniki DC"
 Set-GPRegistryValue -Guid $dc.Id -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security" -ValueName MaxSize -Type DWord -Value 1048576 | Out-Null
 # Link OU Domain Controllers ma pierwszeństwo przed linkiem domeny.
 Write-Host "gotowe – uruchom gpupdate /force na komputerach"

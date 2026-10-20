@@ -67,7 +67,7 @@ detection:
   selection:
     EventID: 4625
   condition: selection
-heimdall:
+vardr:
   group_by: [TargetUserName]
   threshold:
     count: 5

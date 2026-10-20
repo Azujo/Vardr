@@ -25,7 +25,7 @@ const Bucket = "SIEM_DECODERS"
 func Ensure(ctx context.Context, js jetstream.JetStream) (jetstream.KeyValue, error) {
 	return js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:       Bucket,
-		Description:  "Dekodery syslog zmienione w panelu Heimdall",
+		Description:  "Dekodery syslog zmienione w panelu Vardr",
 		History:      1,
 		Storage:      jetstream.FileStorage,
 		MaxValueSize: 256 << 10,

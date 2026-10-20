@@ -55,7 +55,12 @@ type Event struct {
 // Response to odpowiedź serwera na paczkę.
 // HeaderServerTime: czas serwera (RFC 3339, ns) w odpowiedzi na heartbeat –
 // agent wylicza z niego odchylenie swojego zegara.
-const HeaderServerTime = "X-Heimdall-Time"
+// Serwer wysyła też dawny nagłówek (LegacyHeaderServerTime) dla agentów
+// sprzed zmiany nazwy na Vardr (do 0.7.4).
+const (
+	HeaderServerTime       = "X-Vardr-Time"
+	LegacyHeaderServerTime = "X-Heimdall-Time"
+)
 
 type Response struct {
 	BatchID string `json:"batch_id"`

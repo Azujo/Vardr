@@ -24,7 +24,7 @@ var readerScript []byte
 
 // Readable to zdarzenie w czytelnej części eksportu (zdarzenia/*.ndjson.gz):
 // pola zgodne z ECS (Elastic Common Schema), żeby paczkę dało się wczytać do
-// innego systemu bez Heimdalla, oraz oryginalny XML Windows w event.original.
+// innego systemu bez Vardra, oraz oryginalny XML Windows w event.original.
 type Readable struct {
 	Timestamp   string `json:"@timestamp,omitempty"`
 	HostName    string `json:"host.name,omitempty"`
@@ -43,13 +43,42 @@ type Readable struct {
 	Peer        string `json:"log.source.address,omitempty"` // nadawca syslog (kolektor)
 	AgentID     string `json:"agent.id"`
 	Ingested    string `json:"event.ingested"`
+	EventID     string `json:"vardr.event_id"`
+	BatchID     string `json:"vardr.batch_id"`
+	BatchSHA256 string `json:"vardr.batch_sha256"`
+	Truncated   bool   `json:"vardr.truncated,omitempty"`
+	TimeQuality string `json:"vardr.time_quality,omitempty"`
+	Error       string `json:"vardr.error,omitempty"` // paczka nieczytelna
+	Original    string `json:"event.original,omitempty"`
+}
+
+// legacyReadable: pola własne pod dawną nazwą (eksporty heimdall-urd-export/1
+// i /2, sprzed zmiany nazwy na Vardr).
+type legacyReadable struct {
 	EventID     string `json:"heimdall.event_id"`
 	BatchID     string `json:"heimdall.batch_id"`
 	BatchSHA256 string `json:"heimdall.batch_sha256"`
-	Truncated   bool   `json:"heimdall.truncated,omitempty"`
-	TimeQuality string `json:"heimdall.time_quality,omitempty"`
-	Error       string `json:"heimdall.error,omitempty"` // paczka nieczytelna
-	Original    string `json:"event.original,omitempty"`
+	Truncated   bool   `json:"heimdall.truncated"`
+	TimeQuality string `json:"heimdall.time_quality"`
+	Error       string `json:"heimdall.error"`
+}
+
+// UnmarshalJSON czyta też starsze eksporty (pola heimdall.*).
+func (r *Readable) UnmarshalJSON(data []byte) error {
+	type plain Readable
+	if err := json.Unmarshal(data, (*plain)(r)); err != nil {
+		return err
+	}
+	if r.EventID != "" || r.BatchSHA256 != "" || r.Error != "" {
+		return nil
+	}
+	var l legacyReadable
+	if err := json.Unmarshal(data, &l); err != nil {
+		return err
+	}
+	r.EventID, r.BatchID, r.BatchSHA256, r.Truncated, r.TimeQuality, r.Error =
+		l.EventID, l.BatchID, l.BatchSHA256, l.Truncated, l.TimeQuality, l.Error
+	return nil
 }
 
 // Enricher uzupełnia pola znormalizowane (archiwizator podaje normalizator

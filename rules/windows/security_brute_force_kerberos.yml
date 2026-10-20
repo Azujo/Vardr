@@ -6,7 +6,7 @@ description: |
   (4771, kod 0x18) na to samo konto w ciągu 5 minut. Zdarzenie zapisuje
   kontroler domeny – tak wygląda zgadywanie hasła narzędziami typu kerbrute,
   które nie zostawiają 4625 na komputerach.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110.001
@@ -23,7 +23,7 @@ detection:
 falsepositives:
   - Urządzenie (telefon, drukarka) z zapamiętanym starym hasłem użytkownika
 level: medium
-heimdall:
+vardr:
   group_by: [TargetUserName]
   threshold:
     count: 10

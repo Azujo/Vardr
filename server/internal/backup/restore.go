@@ -21,8 +21,19 @@ import (
 // minutę) na podstawie pliku zlecenia w <kopie>/.przywracanie/ – usługa
 // kopii nie ma dostępu do Dockera.
 
-// backupName: nazwy kopii (żadna inna nazwa nie trafia do poleceń).
-var backupName = regexp.MustCompile(`^heimdall-[0-9]{8}-[0-9]{4}-k[0-9a-f]{8}\.tar\.gpg$`)
+// backupName: nazwy kopii (żadna inna nazwa nie trafia do poleceń);
+// heimdall- to kopie sprzed zmiany nazwy na Vardr.
+var backupName = regexp.MustCompile(`^(vardr|heimdall)-[0-9]{8}-[0-9]{4}-k[0-9a-f]{8}\.tar\.gpg$`)
+
+// backupFiles: kopie w katalogu (obecne i sprzed zmiany nazwy).
+func backupFiles(dir string) []string {
+	var out []string
+	for _, p := range []string{"vardr-*.tar.gpg", "heimdall-*.tar.gpg"} {
+		m, _ := filepath.Glob(filepath.Join(dir, p))
+		out = append(out, m...)
+	}
+	return out
+}
 
 // restoreDir: kopie pobrane z miejsca docelowego i zlecenie dla restore.sh.
 func (r *Runner) restoreDir() string { return filepath.Join(r.BackupDir, ".przywracanie") }
@@ -38,7 +49,7 @@ type listedFile struct {
 func (r *Runner) listFiles(ctx context.Context, cfg backupcfg.Config) (string, error) {
 	r.listed = time.Now()
 	// Kopie pobrane do sprawdzenia albo przywrócenia – po dobie zbędne.
-	if old, _ := filepath.Glob(filepath.Join(r.restoreDir(), "heimdall-*.tar.gpg")); len(old) > 0 {
+	if old := backupFiles(r.restoreDir()); len(old) > 0 {
 		for _, f := range old {
 			if fi, err := os.Stat(f); err == nil && time.Since(fi.ModTime()) > 24*time.Hour {
 				_ = os.Remove(f)
@@ -46,7 +57,7 @@ func (r *Runner) listFiles(ctx context.Context, cfg backupcfg.Config) (string, e
 		}
 	}
 	var files []listedFile
-	matches, _ := filepath.Glob(filepath.Join(r.BackupDir, "heimdall-*.tar.gpg"))
+	matches := backupFiles(r.BackupDir)
 	for _, m := range matches {
 		if fi, err := os.Stat(m); err == nil && backupName.MatchString(fi.Name()) {
 			files = append(files, listedFile{"local", fi.Name(), fi.Size(), fi.ModTime()})

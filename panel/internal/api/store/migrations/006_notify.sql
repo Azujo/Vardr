@@ -1,4 +1,4 @@
--- Kanały powiadomień (Discord, webhook): dokąd Heimdall wysyła wiadomości –
+-- Kanały powiadomień (Discord, webhook): dokąd Vardr wysyła wiadomości –
 -- alerty zdrowia systemu z Grafany, codzienną kotwicę archiwum, a później
 -- alerty detekcji. Adres webhooka jest sekretem: API go nie zwraca.
 CREATE TABLE notify_channels (

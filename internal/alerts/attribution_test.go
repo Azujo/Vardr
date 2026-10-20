@@ -6,9 +6,9 @@ import (
 )
 
 func TestSigmaHQAttribution(t *testing.T) {
-	own := RuleInfo{File: "windows/security_log_cleared.yml", Source: "author: Heimdall\n"}
+	own := RuleInfo{File: "windows/security_log_cleared.yml", Source: "author: Vardr\n"}
 	if own.SigmaHQAttribution() != nil {
-		t.Fatal("reguła Heimdalla bez wskazania SigmaHQ")
+		t.Fatal("reguła Vardra bez wskazania SigmaHQ")
 	}
 	r := RuleInfo{File: "sigmahq/windows/process_creation/proc_creation_win_x.yml",
 		Source: "title: X\nauthor: Jan Kowalski, Anna Nowak\nlevel: high\n"}

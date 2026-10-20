@@ -6,7 +6,7 @@ description: |
   typ 3) na co najmniej 5 różnych komputerach w 10 minut. Tak wygląda
   rozprzestrzenianie się po sieci z wykradzionym skrótem hasła (pass the
   hash) albo masowe łączenie się z udziałami administracyjnymi.
-author: Heimdall
+author: Vardr
 tags:
   - attack.lateral_movement
   - attack.t1021.002
@@ -34,7 +34,7 @@ falsepositives:
   - Konta serwisowe skanerów, kopii zapasowych i inwentaryzacji (wyklucz je po nazwie)
   - Administrator obsługujący wiele komputerów naraz
 level: medium
-heimdall:
+vardr:
   group_by: [TargetUserName]
   threshold:
     count: 5

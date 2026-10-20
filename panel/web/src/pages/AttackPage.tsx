@@ -56,7 +56,7 @@ function cellState(c: Cell): State {
   return c.alerts > 0 ? "alerts" : "covered";
 }
 
-// Platformy, które zbiera Heimdall (Windows, Entra ID, urządzenia sieciowe).
+// Platformy, które zbiera Vardr (Windows, Entra ID, urządzenia sieciowe).
 const platforms = [
   { value: "", label: "wszystkie platformy" },
   { value: "Windows", label: "Windows" },

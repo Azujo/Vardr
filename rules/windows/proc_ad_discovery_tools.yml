@@ -6,7 +6,7 @@ description: |
   /dclist, lista grupy administratorów domeny przez net, AdFind, dsquery
   oraz zbieracz BloodHound (SharpHound). Napastnik szuka w ten sposób kont
   uprzywilejowanych i drogi do kontrolera domeny.
-author: Heimdall
+author: Vardr
 tags:
   - attack.discovery
   - attack.t1482
@@ -48,7 +48,7 @@ falsepositives:
   - Administratorzy domeny sprawdzający konfigurację (powinni to robić z wyznaczonych stacji)
   - Audyt bezpieczeństwa z użyciem BloodHound (uzgodniony termin)
 level: high
-heimdall:
+vardr:
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

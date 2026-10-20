@@ -7,7 +7,7 @@
 //
 //	go run ./tools/cmd/attackgen <enterprise-attack.json> > internal/attack/enterprise.json
 //
-// Słownik zawiera tylko to, czego potrzebuje Heimdall: taktyki w kolejności
+// Słownik zawiera tylko to, czego potrzebuje Vardr: taktyki w kolejności
 // macierzy, techniki z nazwą, taktykami i platformami, techniki wycofane
 // (z następcą, gdy MITRE go wskazało).
 package main

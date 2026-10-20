@@ -6,7 +6,7 @@ description: |
   MEGAcmd) albo curl wysyłający plik (--upload-file, -T, -F z @). Grupy
   ransomware przed zaszyfrowaniem wynoszą tak dane do chmury, żeby
   szantażować ich ujawnieniem.
-author: Heimdall
+author: Vardr
 tags:
   - attack.exfiltration
   - attack.t1567.002
@@ -37,7 +37,7 @@ detection:
 falsepositives:
   - Kopie zapasowe do chmury robione przez rclone na serwerze (wyklucz konto usługi)
 level: high
-heimdall:
+vardr:
   group_by: [host.name]
   suppress: 1h
   instructions: |

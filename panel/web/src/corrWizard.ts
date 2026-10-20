@@ -438,7 +438,7 @@ export function buildYAML(st: WizardState, steps: Step[]): string {
     if (st.type === "value_count") c.push(`    field: ${q(st.field)}`);
   }
   c.push(`  generate: ${st.generate ? "true" : "false"}`);
-  if (st.instructions.trim()) c.push("heimdall:", "  instructions: |", block(st.instructions, "    "));
+  if (st.instructions.trim()) c.push("vardr:", "  instructions: |", block(st.instructions, "    "));
   docs.push(c.join("\n"));
   return docs.join("\n---\n") + "\n";
 }

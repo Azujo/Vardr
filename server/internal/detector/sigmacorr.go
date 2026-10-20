@@ -49,7 +49,7 @@ func CorrelationRuleInfo(c *detect.Correlation) alerts.RuleInfo {
 	desc += ". Reguły bazowe: " + strings.Join(refs, "; ") + "."
 	return alerts.RuleInfo{ID: c.ID, Title: c.Title, Level: c.Level, Description: desc, Tags: c.Tags, File: c.File, Source: c.Source,
 		Mode: "correlation", Enabled: c.Enabled(), FileEnabled: c.Enabled(), GroupBy: c.GroupBy,
-		SuppressS: int(time.Duration(c.Heimdall.Suppress) / time.Second), Instructions: c.Heimdall.Instructions}
+		SuppressS: int(time.Duration(c.Vardr.Suppress) / time.Second), Instructions: c.Vardr.Instructions}
 }
 
 // ApplyCorrelationOverrides stosuje ustawienia z panelu (włączenie) do
@@ -60,7 +60,7 @@ func ApplyCorrelationOverrides(cs []*detect.Correlation, ov map[string]alerts.Ov
 		file := c.Enabled()
 		if o, ok := ov[c.ID]; ok {
 			e := o.Enabled
-			c.Heimdall.Enabled = &e
+			c.Vardr.Enabled = &e
 		}
 		info := CorrelationRuleInfo(c)
 		info.FileEnabled = file
@@ -194,12 +194,12 @@ func (c *Correlator) runOne(ctx context.Context, cr *detect.Correlation, from, t
 		}
 		summary := fmt.Sprintf("%s: %d zdarzeń w %s (%s) – %s", keyText, len(f.group),
 			fmtSpan(f.group[len(f.group)-1].Time.Sub(f.group[0].Time)), strings.Join(used, "; "), cr.Title)
-		instr := detect.RenderWith(cr.Heimdall.Instructions, detect.Event{Event: &lastEv}, map[string]string{
+		instr := detect.RenderWith(cr.Vardr.Instructions, detect.Event{Event: &lastEv}, map[string]string{
 			"count": fmt.Sprint(len(f.group)), "window": fmtWindow(cr.Timespan), "rules": strings.Join(used, "; "), "key": keyText})
 		for _, e := range f.group {
 			d := details[e.ID]
 			hits = append(hits, alerts.Hit{RuleID: cr.ID, RuleTitle: cr.Title, Level: cr.Level, Engine: "correlation",
-				GroupFields: gf, GroupKey: strings.Join(f.key, "\x1f"), Suppress: time.Duration(cr.Heimdall.Suppress),
+				GroupFields: gf, GroupKey: strings.Join(f.key, "\x1f"), Suppress: time.Duration(cr.Vardr.Suppress),
 				EventID: e.ID, EventTime: e.Time, AgentID: d.AgentID, HostName: d.HostName, UserName: d.UserName, SourceIP: d.SourceIP,
 				Identity: d.Identity, Summary: summary, Instructions: instr})
 		}

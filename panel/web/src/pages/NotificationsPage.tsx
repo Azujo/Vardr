@@ -105,7 +105,7 @@ function AlertFilterEditor({
   );
 }
 
-// Kanały powiadomień: dokąd Heimdall wysyła wiadomości poza system.
+// Kanały powiadomień: dokąd Vardr wysyła wiadomości poza system.
 export default function NotificationsPage() {
   const [channels, setChannels] = useState<NotifyChannel[]>([]);
   const [log, setLog] = useState<NotifyLogEntry[]>([]);
@@ -217,7 +217,7 @@ export default function NotificationsPage() {
         <div>
           <Title order={2}>Powiadomienia</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Kanały, na które Heimdall wysyła wiadomości poza system: alerty zdrowia (z Grafany) i codzienną kotwicę archiwum
+            Kanały, na które Vardr wysyła wiadomości poza system: alerty zdrowia (z Grafany) i codzienną kotwicę archiwum
             Urd {anchorHour >= 0 && `(o ${anchorHour}:00)`} – hash najnowszego manifestu, którego kopia u odbiorcy jest
             niezależnym dowodem nienaruszalności archiwum. Później te same kanały dostaną alerty detekcji. Adres webhooka jest
             sekretem: panel pokazuje tylko jego początek i koniec.
@@ -387,7 +387,7 @@ export default function NotificationsPage() {
               description={
                 form.kind === "discord"
                   ? "https://discord.com/api/webhooks/… – traktuj jak hasło"
-                  : "https://… – Heimdall wysyła POST z JSON {event, severity, title, text, fields, at}"
+                  : "https://… – Vardr wysyła POST z JSON {event, severity, title, text, fields, at}"
               }
               required
               value={form.url}

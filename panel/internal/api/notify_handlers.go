@@ -304,7 +304,7 @@ func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.Notify.Svc.SendTo(r.Context(), c, notify.Message{Event: notify.EventTest, Severity: notify.SevInfo,
-		Title: "Test kanału „" + c.Name + "”", Text: "Wiadomość testowa z panelu Heimdall (wysłał " + a.user.Username + ").", At: s.now()})
+		Title: "Test kanału „" + c.Name + "”", Text: "Wiadomość testowa z panelu Vardr (wysłał " + a.user.Username + ").", At: s.now()})
 	s.audit(r, &a.user, "notify_channel_tested", c.Name, map[string]any{"ok": err == nil})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "send_failed", "wysyłka nieudana: "+err.Error())

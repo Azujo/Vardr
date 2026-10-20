@@ -6,7 +6,7 @@ description: |
   Sysmon). Windows zapisuje wtedy zdarzenie 104 w dzienniku System. Atakujący
   czyszczą dzienniki, żeby usunąć ślady – dziennik Security obejmuje osobna
   reguła (1102).
-author: Heimdall
+author: Vardr
 tags:
   - attack.defense_impairment
   - attack.t1685.005
@@ -21,10 +21,10 @@ detection:
 falsepositives:
   - Czyszczenie dzienników przez administratora albo narzędzia porządkujące
 level: high
-heimdall:
+vardr:
   instructions: |
     {{SubjectDomainName}}\{{SubjectUserName}} wyczyścił dziennik na komputerze
     {{Computer}} (nazwa dziennika w polach zdarzenia). Ustal, czy było to
     planowane; jeśli nie – przejrzyj w Mímirze zdarzenia z tego komputera
-    sprzed wyczyszczenia (Heimdall ma ich kopię) i traktuj komputer jako
+    sprzed wyczyszczenia (Vardr ma ich kopię) i traktuj komputer jako
     podejrzany.

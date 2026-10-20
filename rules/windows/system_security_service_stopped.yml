@@ -4,10 +4,10 @@ status: stable
 description: |
   Usługa Sysmon została zatrzymana (7036) albo nieoczekiwanie przerwała
   działanie (7031, 7034). Tekst stanu w 7036 zależy od języka Windows –
-  reguła zna angielski i polski. Zatrzymanie samego agenta Heimdalla zgłasza
+  reguła zna angielski i polski. Zatrzymanie samego agenta Vardra zgłasza
   reguła wbudowana „Próba sabotażu agenta” (agent odróżnia zatrzymanie
   tokenem z panelu od zatrzymania bez tokenu i zabicia procesu).
-author: Heimdall
+author: Vardr
 tags:
   - attack.defense_impairment
   - attack.t1685
@@ -37,7 +37,7 @@ falsepositives:
   - Aktualizacja Sysmona
   - Planowane prace administracyjne
 level: medium
-heimdall:
+vardr:
   group_by: [Computer, param1]
   suppress: 1h
   instructions: |

@@ -1,11 +1,11 @@
-# Reguły alertów Heimdalla (Grafana, alerting zunifikowany) – zdrowie potoku,
+# Reguły alertów Vardra (Grafana, alerting zunifikowany) – zdrowie potoku,
 # archiwum NIS2 i kopii zapasowych. Do czasu modułu alertów (Gjallarhorn,
 # etap 4) to jedyne powiadomienia o awariach. Grafana przekazuje je do
 # siem-api (contact.yaml), a ten na kanały ustawione w panelu (Powiadomienia).
 apiVersion: 1
 groups:
   - orgId: 1
-    name: Heimdall – zdrowie
+    name: Vardr – zdrowie
     folder: SIEM
     interval: 1m
     rules:
@@ -207,7 +207,7 @@ groups:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: prometheus-siem
-            model: { refId: A, instant: true, expr: 'time() - max(heimdall_backup_remote_last_success_timestamp_seconds)' }
+            model: { refId: A, instant: true, expr: 'time() - max(vardr_backup_remote_last_success_timestamp_seconds or heimdall_backup_remote_last_success_timestamp_seconds)' }
           - refId: C
             datasourceUid: __expr__
             model:
@@ -230,7 +230,7 @@ groups:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
             datasourceUid: prometheus-siem
-            model: { refId: A, instant: true, expr: '(time() - max(heimdall_backup_last_success_timestamp_seconds)) or vector(1e9)' }
+            model: { refId: A, instant: true, expr: '(time() - max(vardr_backup_last_success_timestamp_seconds or heimdall_backup_last_success_timestamp_seconds)) or vector(1e9)' }
           - refId: C
             datasourceUid: __expr__
             model:

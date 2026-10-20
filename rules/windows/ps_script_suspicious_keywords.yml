@@ -5,7 +5,7 @@ description: |
   Blok skryptu PowerShell (zdarzenie 4104) zawiera funkcje typowe dla narzędzi
   ataku: pobieranie i uruchamianie kodu z sieci, wstrzykiwanie kodu do pamięci,
   wyłączanie zabezpieczeń (AMSI), znane moduły ofensywne.
-author: Heimdall
+author: Vardr
 tags:
   - attack.execution
   - attack.t1059.001
@@ -35,7 +35,7 @@ detection:
 falsepositives:
   - Skrypty administracyjne i narzędzia bezpieczeństwa używające tych funkcji
 level: medium
-heimdall:
+vardr:
   group_by: [Computer]
   suppress: 1h
   instructions: |

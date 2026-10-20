@@ -31,7 +31,7 @@ func NewEngine() *Engine { return &Engine{th: NewThresholds()} }
 func (e *Engine) SetRules(all []*detect.Rule) int {
 	var active []*detect.Rule
 	for _, r := range all {
-		if r.Alerts() && (r.Heimdall.Mode == "stream" || r.Heimdall.Mode == "both") {
+		if r.Alerts() && (r.Vardr.Mode == "stream" || r.Vardr.Mode == "both") {
 			active = append(active, r)
 		}
 	}
@@ -106,19 +106,19 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 		RuleID: r.ID, RuleTitle: r.Title, Level: r.Level, Engine: "stream",
 		EventID: ev.ID, EventTime: ev.Timestamp, AgentID: ev.AgentID, HostName: ev.HostName,
 		UserName: ev.UserName, SourceIP: ev.SourceIP, Identity: ev.Identity, Summary: summary(r, ev),
-		Instructions: detect.Render(r.Heimdall.Instructions, ev),
+		Instructions: detect.Render(r.Vardr.Instructions, ev),
 	}
 	if h.EventTime.IsZero() {
 		h.EventTime = ev.Ingested
 	}
-	if len(r.Heimdall.GroupBy) > 0 || r.IsThreshold() {
+	if len(r.Vardr.GroupBy) > 0 || r.IsThreshold() {
 		h.GroupFields = map[string]string{}
-		for _, f := range r.Heimdall.GroupBy {
+		for _, f := range r.Vardr.GroupBy {
 			v, _ := ev.Get(f)
 			h.GroupFields[f] = v
 		}
 		h.GroupKey = strings.Join(r.GroupKey(ev), "\x1f")
-		h.Suppress = time.Duration(r.Heimdall.Suppress)
+		h.Suppress = time.Duration(r.Vardr.Suppress)
 	} else {
 		h.GroupKey = ev.ID
 	}
@@ -194,7 +194,7 @@ func ApplyOverrides(rules []*detect.Rule, ov map[string]alerts.Override) map[str
 		file[r.ID] = r.Enabled()
 		if o, ok := ov[r.ID]; ok {
 			e := o.Enabled
-			r.Heimdall.Enabled = &e
+			r.Vardr.Enabled = &e
 		}
 	}
 	return file
@@ -206,7 +206,7 @@ func Infos(rules []*detect.Rule, fileEnabled map[string]bool) []alerts.RuleInfo 
 	out := make([]alerts.RuleInfo, 0, len(rules))
 	for _, r := range rules {
 		var th *alerts.Threshold
-		if t := r.Heimdall.Threshold; t != nil {
+		if t := r.Vardr.Threshold; t != nil {
 			th = &alerts.Threshold{Count: t.Count, WindowS: int(time.Duration(t.Window) / time.Second), Distinct: t.Distinct}
 		}
 		fe, ok := fileEnabled[r.ID]
@@ -218,8 +218,8 @@ func Infos(rules []*detect.Rule, fileEnabled map[string]bool) []alerts.RuleInfo 
 			desc = "Reguła bazowa korelacji – sama nie tworzy alertów, zasila regułę korelacyjną (generate: false).\n\n" + desc
 		}
 		out = append(out, alerts.RuleInfo{Threshold: th, FileEnabled: fe, ID: r.ID, Title: r.Title, Level: r.Level, Description: desc, Tags: r.Tags,
-			File: r.File, Source: r.Source, Mode: r.Heimdall.Mode, Enabled: r.Enabled(), GroupBy: r.Heimdall.GroupBy,
-			SuppressS: int(time.Duration(r.Heimdall.Suppress) / time.Second), Instructions: r.Heimdall.Instructions})
+			File: r.File, Source: r.Source, Mode: r.Vardr.Mode, Enabled: r.Enabled(), GroupBy: r.Vardr.GroupBy,
+			SuppressS: int(time.Duration(r.Vardr.Suppress) / time.Second), Instructions: r.Vardr.Instructions})
 	}
 	return out
 }

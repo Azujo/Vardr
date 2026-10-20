@@ -1,4 +1,4 @@
-// Command siem-backup to usługa kopii zapasowych Heimdalla (kontener
+// Command siem-backup to usługa kopii zapasowych Vardra (kontener
 // backup w stosie): kopie według ustawień z panelu (Administracja → Kopie
 // zapasowe), szyfrowane hasłem kopii, z retencją lokalną i zdalną, wysyłka
 // przez rclone (SFTP, SMB, S3) razem z przyrostami archiwum NIS2.

@@ -22,7 +22,7 @@ type Attribution struct {
 }
 
 // SigmaHQAttribution zwraca autora i źródło reguły z SigmaHQ (nil dla
-// reguł Heimdalla i wbudowanych). Autor z treści reguły (pole author).
+// reguł Vardra i wbudowanych). Autor z treści reguły (pole author).
 func (r RuleInfo) SigmaHQAttribution() *Attribution {
 	if !strings.HasPrefix(r.File, SigmaHQDir) {
 		return nil

@@ -65,7 +65,7 @@ func TestBackupAPI(t *testing.T) {
 		t.Fatalf("kopie dla analityka: %d", code)
 	}
 	cfg := backupcfg.Default()
-	cfg.Target = backupcfg.Target{Method: backupcfg.MethodSFTP, Host: "192.168.88.180", User: "heimdall", Auth: backupcfg.AuthPassword, Path: "/mnt/kopie"}
+	cfg.Target = backupcfg.Target{Method: backupcfg.MethodSFTP, Host: "192.168.88.180", User: "vardr", Auth: backupcfg.AuthPassword, Path: "/mnt/kopie"}
 	body := func(c backupcfg.Config, secrets map[string]string, pw string) map[string]any {
 		return map[string]any{"config": c, "secrets": secrets, "password": pw}
 	}
@@ -109,7 +109,7 @@ func TestBackupAPI(t *testing.T) {
 		t.Fatalf("zapis bez zmiany sekretu: %d", code)
 	}
 	s3 := cfg
-	s3.Target = backupcfg.Target{Method: backupcfg.MethodS3, Bucket: "kopie-heimdall", AccessKey: "AKIA123"}
+	s3.Target = backupcfg.Target{Method: backupcfg.MethodS3, Bucket: "kopie-vardr", AccessKey: "AKIA123"}
 	if code, _, _ := admin.do("PUT", "/api/v1/backup", body(s3, map[string]string{"s3_secret": "sekret"}, "haslo-adama-123")); code != 200 ||
 		len(mb.sealed) != 1 || mb.sealed[backupcfg.SecretS3Key].KeyID == "" {
 		t.Fatalf("S3: %d %v", code, mb.sealed)

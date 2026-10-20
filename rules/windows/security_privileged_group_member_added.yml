@@ -6,7 +6,7 @@ description: |
   albo na komputerze (Domain Admins, Enterprise Admins, Schema Admins,
   Administratorzy, Backup/Account/Server Operators). Grupy rozpoznawane po SID,
   więc reguła działa niezależnie od języka Windows.
-author: Heimdall
+author: Vardr
 tags:
   - attack.persistence
   - attack.privilege_escalation
@@ -34,7 +34,7 @@ detection:
 falsepositives:
   - Zaplanowane zmiany uprawnień przez administratorów
 level: high
-heimdall:
+vardr:
   instructions: |
     {{SubjectDomainName}}\{{SubjectUserName}} dodał {{MemberName}} do grupy
     {{TargetUserName}}. Sprawdź, czy zmiana była zgłoszona. Jeśli nie – usuń

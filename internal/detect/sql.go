@@ -30,11 +30,11 @@ func FieldSQL(field string) string {
 // GroupKeySQL zwraca wyrażenie klucza alertu (jak GroupKey – małe litery,
 // pola w kolejności GroupBy) jako krotkę tekstów.
 func (r *Rule) GroupKeySQL() string {
-	if len(r.Heimdall.GroupBy) == 0 {
+	if len(r.Vardr.GroupBy) == 0 {
 		return "tuple('')"
 	}
-	parts := make([]string, len(r.Heimdall.GroupBy))
-	for i, f := range r.Heimdall.GroupBy {
+	parts := make([]string, len(r.Vardr.GroupBy))
+	for i, f := range r.Vardr.GroupBy {
 		parts[i] = "lowerUTF8(" + FieldSQL(f) + ")"
 	}
 	return "tuple(" + strings.Join(parts, ", ") + ")"

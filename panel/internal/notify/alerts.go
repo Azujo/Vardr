@@ -296,7 +296,7 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 			if s := attackLine(r.Tags); s != "" {
 				trusted("MITRE ATT&CK", s, false)
 			}
-			// Autor z pliku reguły (treść spoza Heimdalla – jak pola zdarzenia).
+			// Autor z pliku reguły (treść spoza Vardra – jak pola zdarzenia).
 			if at := r.SigmaHQAttribution(); at != nil {
 				add("Autor reguły", at.Line(), false)
 			}

@@ -6,7 +6,7 @@ description: |
   (PsExec), usługi uruchamiające %COMSPEC% albo cmd.exe /Q /c (Impacket
   psexec/smbexec), program z udziału ADMIN$ albo z adresu \\127.0.0.1.
   To klasyczny sposób przemieszczania się po sieci z przejętym kontem.
-author: Heimdall
+author: Vardr
 tags:
   - attack.lateral_movement
   - attack.t1021.002
@@ -32,7 +32,7 @@ falsepositives:
   - Administratorzy używający PsExec do zdalnej obsługi (warto to ograniczyć do wyznaczonych stacji)
   - Narzędzia wdrażania oprogramowania działające jak PsExec
 level: high
-heimdall:
+vardr:
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

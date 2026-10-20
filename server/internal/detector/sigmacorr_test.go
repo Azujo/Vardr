@@ -72,7 +72,7 @@ correlation:
     account:
       user_created: TargetSid
       group_added: MemberSid
-heimdall:
+vardr:
   instructions: "Konto {{TargetUserName}}: {{count}} zdarzeń ({{rules}})."
 ---
 title: Nieudane logowanie
@@ -161,7 +161,7 @@ correlation:
 	}
 	// Wyłączona korelacja – pomijana.
 	off := false
-	set.Correlations[0].Heimdall.Enabled = &off
+	set.Correlations[0].Vardr.Enabled = &off
 	if hits, _ := c.RunSigma(ctx, set.Correlations[:1], now.Add(-time.Hour), now.Add(time.Minute)); len(hits) != 0 {
 		t.Fatalf("wyłączona: %v", hits)
 	}

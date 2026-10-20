@@ -1,6 +1,6 @@
 # SIEM – własny system SIEM
 
-Heimdall – własny SIEM według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (nazewnictwo: załącznik D).
+Vardr – własny SIEM według roadmapy [docs/ROADMAP.md](docs/ROADMAP.md) (nazewnictwo: załącznik D).
 
 Obecny stan: **MVP gotowe (etapy 0–8, październik 2026)**. Działają agent Windows z ochroną przed wyłączeniem, kolektor syslog (FortiGate, MikroTik), konektor Entra ID, potok NATS → ClickHouse, detekcja Sigma w dwóch silnikach z korelacjami między źródłami, archiwum NIS2 z łańcuchem hashy i panel Hliðskjálf. Potok sprawdzono przy 7000 zdarzeń/s przez 8 h. Przebieg prac i znane luki: [docs/PODSUMOWANIE.md](docs/PODSUMOWANIE.md).
 
@@ -81,16 +81,16 @@ Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\Program
 
 ### Instalator MSI (od wersji 0.6)
 
-`deploy.sh agent` buduje na serwerze `heimdall-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji).
+`deploy.sh agent` buduje na serwerze `vardr-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji).
 
-**Jeden plik do podwójnego kliknięcia (od 0.7.3).** Panel przy tokenie (Bifröst → „Pobierz instalator (MSI)”) wydaje `heimdall-agent-<nazwa>.msi` z wpisanym adresem serwera i tokenem: instalator ma właściwości `SERVER` i `TOKEN` z wypełniaczami stałej długości, a panel podmienia je w pliku przy pobraniu (`internal/msipatch` – struktura MSI się nie zmienia, plik czyta `msiinfo`). Podwójne kliknięcie instaluje i rejestruje agenta, na komputerze z agentem – aktualizuje go (token jest wtedy pomijany). Ten sam plik wdraża się przez GPO, Intune albo SCCM bez parametrów. Plik zawiera token, więc działa jak token: krótka ważność albo limit instalacji. Do samej aktualizacji Huginn ma „Pobierz aktualizację agenta (MSI)” – bazowy instalator bez tokenu (nowego komputera nim nie zarejestrujesz – instalator zgłosi brak tokenu). Paczka ZIP zostaje jako opcja.
+**Jeden plik do podwójnego kliknięcia (od 0.7.3).** Panel przy tokenie (Bifröst → „Pobierz instalator (MSI)”) wydaje `vardr-agent-<nazwa>.msi` z wpisanym adresem serwera i tokenem: instalator ma właściwości `SERVER` i `TOKEN` z wypełniaczami stałej długości, a panel podmienia je w pliku przy pobraniu (`internal/msipatch` – struktura MSI się nie zmienia, plik czyta `msiinfo`). Podwójne kliknięcie instaluje i rejestruje agenta, na komputerze z agentem – aktualizuje go (token jest wtedy pomijany). Ten sam plik wdraża się przez GPO, Intune albo SCCM bez parametrów. Plik zawiera token, więc działa jak token: krótka ważność albo limit instalacji. Do samej aktualizacji Huginn ma „Pobierz aktualizację agenta (MSI)” – bazowy instalator bez tokenu (nowego komputera nim nie zarejestrujesz – instalator zgłosi brak tokenu). Paczka ZIP zostaje jako opcja.
 
 Wdrożenie z parametrami (Intune, SCCM, skrypt GPO), jako SYSTEM lub administrator – parametry mają pierwszeństwo przed wartościami wpisanymi w plik:
 
 ```powershell
-msiexec /i heimdall-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…   # instalacja i rejestracja tokenem
-msiexec /i heimdall-agent.msi /qn                                    # aktualizacja do nowszej wersji (rejestracja zostaje)
-msiexec /x heimdall-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # odinstalowanie chronionego agenta
+msiexec /i vardr-agent.msi /qn SERVER=192.168.88.98 TOKEN=hdt_…   # instalacja i rejestracja tokenem
+msiexec /i vardr-agent.msi /qn                                    # aktualizacja do nowszej wersji (rejestracja zostaje)
+msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # odinstalowanie chronionego agenta
 ```
 
 MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `siem_agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
@@ -214,7 +214,7 @@ bez obciążenia ~1,4 s zamiast ~1,1 s.
 
 ## Polityka audytu (dla profilu z załącznika B)
 
-**Gotowy skrypt:** [deploy/windows/heimdall-gpo.ps1](deploy/windows/heimdall-gpo.ps1) – uruchomiony na kontrolerze domeny (administrator domeny) tworzy i podłącza GPO „Heimdall - polityka audytu” (cała domena: zaawansowana polityka inspekcji, linia poleceń w 4688, logowanie bloków PowerShell, dziennik Security 256 MB) oraz „Heimdall - dzienniki DC” (Security 1 GB na kontrolerach domeny). Można go uruchamiać wielokrotnie. Sprawdzony w laboratorium (Windows Server 2025, Windows 11): nieudane logowania (4625, 4776, 4768), zmiany kont i grup (4720, 4732, 4733, 4726), procesy z linią poleceń (4688) i PowerShell (4104) docierają do Mímira.
+**Gotowy skrypt:** [deploy/windows/vardr-gpo.ps1](deploy/windows/vardr-gpo.ps1) – uruchomiony na kontrolerze domeny (administrator domeny) tworzy i podłącza GPO „Vardr - polityka audytu” (cała domena: zaawansowana polityka inspekcji, linia poleceń w 4688, logowanie bloków PowerShell, dziennik Security 256 MB) oraz „Vardr - dzienniki DC” (Security 1 GB na kontrolerach domeny). Można go uruchamiać wielokrotnie. Sprawdzony w laboratorium (Windows Server 2025, Windows 11): nieudane logowania (4625, 4776, 4768), zmiany kont i grup (4720, 4732, 4733, 4726), procesy z linią poleceń (4688) i PowerShell (4104) docierają do Mímira.
 
 **Sysmon:** [deploy/windows/sysmon.ps1](deploy/windows/sysmon.ps1) instaluje albo aktualizuje Sysmona (program z podpisem Microsoftu, konfiguracja domyślnie SwiftOnSecurity albo z udziału `-Source \\domena\NETLOGON\sysmon`). Nadaje się na skrypt startowy komputera w GPO i można go uruchamiać wielokrotnie. Agent (od 0.6.2) niczego nie instaluje – raportuje stan Sysmona (wersja, skrót konfiguracji), a w grupie agentów z opcją „Wymagany Sysmon” panel zgłasza komputery bez Sysmona, z zatrzymanym Sysmonem albo z inną konfiguracją niż większość grupy.
 
@@ -242,7 +242,7 @@ Paczka, której nie udało się wysłać od razu (brak sieci, serwer przeciążo
 - **Po zapełnieniu** (`buffer.on_full` albo grupa w panelu): `pause` (domyślnie) – nowe zdarzenia czekają w dzienniku Windows jak bez bufora; `drop_oldest` – usuwane są najstarsze paczki z bufora, a liczba utraconych zdarzeń trafia do statusu i panelu.
 - Stan bufora widać w `siem_agent status` i w panelu (Huginn → agent). Panel zgłasza problem, gdy paczki czekają dłużej niż 5 minut, gdy bufor jest pełny i gdy coś utracono.
 
-**Zegar:** agent przy każdym heartbeacie mierzy odchylenie swojego zegara od serwera (nagłówek `X-Heimdall-Time`) i co 5 minut sprawdza usługę czasu Windows (W32Time). Panel zgłasza odchylenie ponad 60 s i wyłączoną usługę czasu (zatrzymana jest normalna poza domeną – Windows uruchamia ją na żądanie).
+**Zegar:** agent przy każdym heartbeacie mierzy odchylenie swojego zegara od serwera (nagłówek `X-Vardr-Time`) i co 5 minut sprawdza usługę czasu Windows (W32Time). Panel zgłasza odchylenie ponad 60 s i wyłączoną usługę czasu (zatrzymana jest normalna poza domeną – Windows uruchamia ją na żądanie).
 
 ## Rozmiar dzienników Windows
 
@@ -467,7 +467,7 @@ Reguły w formacie **Sigma (YAML)** leżą w repozytorium w katalogu [rules/](ru
 - **Silnik zapytań** (profil pełny): reguły kompilowane do SQL i wykonywane co minutę na `siem.events` w ClickHouse (konto `siem_detector` tylko do odczytu, z limitami). Każdy przebieg ocenia zdarzenia **przyjęte** od punktu kontrolnego (w Sadze, zapisywany razem z alertami) do „teraz − 2 min”, z 5-minutową zakładką – więc łapie też zdarzenia spóźnione z bufora agenta. Wszystkie reguły w jednym zapytaniu; dla progów drugie zapytanie dociąga kontekst kluczy, a okna liczy ten sam kod co silnik w locie.
 - **Wybór silników:** `SIEM_DETECTION_MODE` = `stream` (profil wydajnościowy), `index_query` (pełny – konsument strumienia jest wtedy usuwany) albo `both` (laboratorium). Przy `both` alerty się nie dublują – para (reguła, zdarzenie) trafia do alertu raz, a pole „Silnik” w alercie mówi, który ją znalazł. Parametry: `SIEM_INDEX_INTERVAL` (1m), `SIEM_INDEX_DELAY` (2m), `SIEM_INDEX_OVERLAP` (5m), `SIEM_INDEX_LOOKBACK` (1h, pierwszy start).
 - **Zgodność silników** sprawdza test na prawdziwym ClickHouse (w CI przy każdym pushu): ten sam korpus zdarzeń i reguły z `rules/` oraz `server/internal/detector/testdata/compat` (wszystkie modyfikatory) muszą dać te same dopasowania w Go i w SQL i te same trafienia progów, niezależnie od kolejności napływu. Znane różnice: słowa kluczowe przeszukują surowy XML, który w ClickHouse żyje krócej (`SIEM_RAW_TTL_DAYS`); czas zdarzenia w ClickHouse ma dokładność milisekund.
-- **Alerty** zapisuje w Sadze (schemat `gjallarhorn`, rola `siem_detector`). Para (reguła, zdarzenie) trafia do alertu najwyżej raz, więc ponowne dostarczenie i restart nie dublują alertów. Reguła z `heimdall.group_by` łączy trafienia z tymi samymi wartościami pól w oknie `heimdall.suppress` (domyślnie 1 h) w jeden alert z licznikiem.
+- **Alerty** zapisuje w Sadze (schemat `gjallarhorn`, rola `siem_detector`). Para (reguła, zdarzenie) trafia do alertu najwyżej raz, więc ponowne dostarczenie i restart nie dublują alertów. Reguła z `vardr.group_by` łączy trafienia z tymi samymi wartościami pól w oknie `vardr.suppress` (domyślnie 1 h) w jeden alert z licznikiem.
 - **Powiadomienia:** alert i wpis w outboxie powstają w jednej transakcji; panel wysyła je na kanały z zaznaczonym „alerty detekcji” (Powiadomienia), z ponawianiem (najwyżej 30 prób, ok. doby). Każdy kanał ma **filtr alertów**: od jakiego poziomu i z których reguł (wszystkie / tylko wybrane / wszystkie poza wybranymi) – np. Discord tylko „wysoki” i „krytyczny”, a webhook do systemu zgłoszeń wszystko. Zawężenie filtru wymaga ponownego podania hasła (jak wyłączenie kanału). Wartości ze zdarzeń są w Discordzie escapowane (atakujący nie podsunie linku w treści polecenia).
 - **Retencja alertów:** detektor co 6 h usuwa alerty zamknięte dawniej niż `SIEM_ALERT_RETENTION_DAYS` (domyślnie 365 dni, 0 = bez usuwania) razem z ich zdarzeniami i osią czasu oraz wysłane powiadomienia starsze niż 30 dni. Otwarte i analizowane alerty zostają zawsze.
 - **Burza alertów:** najwyżej 5 osobnych powiadomień o nowych alertach jednej reguły w 10 min (`SIEM_ALERT_NOTIFY_PER_RULE`, `SIEM_ALERT_NOTIFY_WINDOW` w siem-api; 0 = bez limitu). Kolejne nie przepadają: po oknie przychodzi jedna wiadomość „[ZBIORCZO] reguła – N alertów” z przykładowymi komputerami i linkiem do listy w panelu. Alerty krytyczne i wiadomości o rozwiązaniu idą zawsze osobno.
@@ -480,9 +480,9 @@ Reguły w formacie **Sigma (YAML)** leżą w repozytorium w katalogu [rules/](ru
   - zaznaczanie wielu alertów: „Weź do analizy”, „Zamknij” (jeden powód dla wszystkich), „Otwórz ponownie”;
   - szczegóły: przypisanie analityka („Biorę do analizy” przypisuje do siebie), oś czasu (zmiany stanu, przypisania, notatki – także automatyczne zamknięcia przez system), notatki, powiązane alerty (ten sam komputer albo konto, ±24 h), przycisk „zdarzenia z tego komputera ±15 min” w Mímirze;
   - każda zmiana trafia na oś czasu alertu i do audytu panelu; przypisać można tylko aktywnego analityka albo administratora.
-- **Obsługiwany podzbiór Sigmy:** `logsource` Windows (service: security, system, application, sysmon, powershell…; category: process_creation – Sysmon 1 i Security 4688, ps_script, network_connection, file_event, dns_query, registry_set), selekcje (mapy, listy, słowa kluczowe), modyfikatory `contains`, `startswith`, `endswith`, `all`, `re`, `cidr`, `exists`, maski `*`/`?`, warunki `and/or/not`, `1 of`/`all of`. Reszta (agregacje `| count()`, `timeframe`, inne modyfikatory) jest jawnie odrzucana – progi definiuje się rozszerzeniem `heimdall.threshold`.
-- **Rozszerzenia Heimdalla** (klucz `heimdall:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie i na Discordzie; zmienne `{{Pole}}`, np. `{{SubjectUserName}}`, `{{Computer}}`, są zastępowane wartościami ze zdarzenia przy tworzeniu alertu), `enabled`, `threshold`.
-- **Reguły progowe** (`heimdall.threshold`: `count`, `window`, opcjonalnie `distinct`): alert powstaje, gdy w dowolnym oknie `window` (liczonym po czasie zdarzenia, więc spóźnione zdarzenia z bufora agenta też się liczą) jest co najmniej `count` pasujących zdarzeń – albo `count` różnych wartości pola `distinct` – z tym samym kluczem `group_by`. Do alertu trafiają wszystkie zdarzenia z tego okna oraz – łańcuchowo – kolejne (i wcześniejsze) zdarzenia tego klucza, dopóki przerwa nie przekroczy `suppress` (co najmniej długość okna); zdarzenia już będące w alercie przedłużają łańcuch, nawet gdy samo okno wypadło z pamięci. W instrukcji działają dodatkowo `{{count}}`, `{{window}}` i `{{values}}` (lista różnych wartości). Stan progów jest zapisywany razem z alertami (`gjallarhorn.threshold_events`), więc restart detektora nie zeruje liczników. Silnik w locie trzyma zdarzenia klucza z okna + max(`suppress`, 1 h); zdarzenie spóźnione bardziej liczy się tylko z tym, co zostało w pamięci – takie przypadki nadrabia silnik zapytań. Przykłady: [brute force](rules/windows/security_brute_force_logon.yml), [password spraying](rules/windows/security_password_spraying.yml).
+- **Obsługiwany podzbiór Sigmy:** `logsource` Windows (service: security, system, application, sysmon, powershell…; category: process_creation – Sysmon 1 i Security 4688, ps_script, network_connection, file_event, dns_query, registry_set), selekcje (mapy, listy, słowa kluczowe), modyfikatory `contains`, `startswith`, `endswith`, `all`, `re`, `cidr`, `exists`, maski `*`/`?`, warunki `and/or/not`, `1 of`/`all of`. Reszta (agregacje `| count()`, `timeframe`, inne modyfikatory) jest jawnie odrzucana – progi definiuje się rozszerzeniem `vardr.threshold`.
+- **Rozszerzenia Vardra** (klucz `vardr:` w regule): `mode` (stream / index_query / both), `group_by`, `suppress`, `instructions` (pokazywane w alercie i na Discordzie; zmienne `{{Pole}}`, np. `{{SubjectUserName}}`, `{{Computer}}`, są zastępowane wartościami ze zdarzenia przy tworzeniu alertu), `enabled`, `threshold`.
+- **Reguły progowe** (`vardr.threshold`: `count`, `window`, opcjonalnie `distinct`): alert powstaje, gdy w dowolnym oknie `window` (liczonym po czasie zdarzenia, więc spóźnione zdarzenia z bufora agenta też się liczą) jest co najmniej `count` pasujących zdarzeń – albo `count` różnych wartości pola `distinct` – z tym samym kluczem `group_by`. Do alertu trafiają wszystkie zdarzenia z tego okna oraz – łańcuchowo – kolejne (i wcześniejsze) zdarzenia tego klucza, dopóki przerwa nie przekroczy `suppress` (co najmniej długość okna); zdarzenia już będące w alercie przedłużają łańcuch, nawet gdy samo okno wypadło z pamięci. W instrukcji działają dodatkowo `{{count}}`, `{{window}}` i `{{values}}` (lista różnych wartości). Stan progów jest zapisywany razem z alertami (`gjallarhorn.threshold_events`), więc restart detektora nie zeruje liczników. Silnik w locie trzyma zdarzenia klucza z okna + max(`suppress`, 1 h); zdarzenie spóźnione bardziej liczy się tylko z tym, co zostało w pamięci – takie przypadki nadrabia silnik zapytań. Przykłady: [brute force](rules/windows/security_brute_force_logon.yml), [password spraying](rules/windows/security_password_spraying.yml).
 - **Utrata łączności z agentem** (reguła wbudowana, nie Sigma): detektor co 30 s porównuje ostatni heartbeat agentów z progiem ich grupy – panel → *Grupy agentów* → „Alarm po utracie łączności” (5–10 080 min; puste = bez alarmu, np. stacje wyłączane na noc). Jedna przerwa = jeden alert (`engine = system`); gdy agent wróci, alert zamyka się sam z adnotacją. Agenci wycofani (wszystkie certyfikaty unieważnione) są pomijani. Uzupełnia ją reguła Sigma na zatrzymanie usługi agenta albo Sysmona (System 7036/7031/7034) – zdarzenie dociera po ponownym starcie agenta i mówi, kiedy dokładnie usługę zatrzymano.
 - **Reguły w repozytorium (scenariusze z roadmapy, sekcja 11):** brute force (4625, Kerberos 4771), password spraying, dodanie do grupy uprzywilejowanej, wyczyszczenie dziennika Security (1102) i innych dzienników (System 104), PowerShell z zakodowanym poleceniem i podejrzane skrypty (4104), usługa z podejrzanej lokalizacji (7045), nowe konto (4720), zatrzymanie usług bezpieczeństwa, utrata łączności z agentem. Urządzenia sieciowe (etap 6): seria nieudanych logowań do VPN i panelu FortiGate oraz do routera MikroTik – opis w sekcji „Kolektor syslog i dekodery”. Entra ID czeka na integrację.
 
@@ -505,12 +505,12 @@ siem-normalizer: nagłówek syslog (RFC 3164 / 5424 / sam <PRI>) → pierwszy pa
 MikroTik RouterOS 7 (od 7.17; starsze wersje: `bsd-syslog=yes` zamiast `remote-log-format`):
 
 ```
-/system logging action add name=heimdall target=remote remote=<adres kolektora> remote-port=514 remote-log-format=syslog syslog-time-format=bsd-syslog syslog-facility=local0
-/system logging add topics=info action=heimdall
-/system logging add topics=warning action=heimdall
-/system logging add topics=error action=heimdall
-/system logging add topics=critical action=heimdall
-/system logging add topics=account action=heimdall
+/system logging action add name=vardr target=remote remote=<adres kolektora> remote-port=514 remote-log-format=syslog syslog-time-format=bsd-syslog syslog-facility=local0
+/system logging add topics=info action=vardr
+/system logging add topics=warning action=vardr
+/system logging add topics=error action=vardr
+/system logging add topics=critical action=vardr
+/system logging add topics=account action=vardr
 ```
 
 FortiGate (FortiOS 7):
@@ -763,7 +763,7 @@ Panel tylko składa zlecenie zmiany. Rozpatruje je archiwizator, w ciągu minuty
 - retencja musi mieścić się w granicach `SIEM_ARCHIVE_MIN_RETENTION_DAYS`–`SIEM_ARCHIVE_MAX_RETENTION_DAYS` (domyślnie 30–3650 dni). Archiwizator nigdy nie usuwa danych przed minimum, nawet gdyby ktoś zapisał w bazie krótszą retencję;
 - wyłączenie dotyczy tylko **nowych** paczek; zarchiwizowane dane zostają do końca retencji, a manifesty powstają dalej (także puste), więc przerwa jest widoczna w łańcuchu.
 
-Każde zlecenie, anulowanie i nieudane potwierdzenie hasłem trafia do audytu, a błędne hasło liczy się do blokady konta jak przy logowaniu. Stan zgodności pokazuje „archiwizacja WYŁĄCZONA” i „zaplanowane osłabienie polityki”, a Grafana ma alerty `heimdall-archive-disabled` i `heimdall-archive-policy-scheduled`. Metryki: `siem_archive_policy_enabled`, `siem_archive_policy_scheduled_weakening`, `siem_archive_policy_retention_days`, `siem_archive_skipped_total{reason}`.
+Każde zlecenie, anulowanie i nieudane potwierdzenie hasłem trafia do audytu, a błędne hasło liczy się do blokady konta jak przy logowaniu. Stan zgodności pokazuje „archiwizacja WYŁĄCZONA” i „zaplanowane osłabienie polityki”, a Grafana ma alerty `vardr-archive-disabled` i `vardr-archive-policy-scheduled`. Metryki: `siem_archive_policy_enabled`, `siem_archive_policy_scheduled_weakening`, `siem_archive_policy_retention_days`, `siem_archive_skipped_total{reason}`.
 
 Rola panelu w bazie może tylko złożyć zlecenie i je anulować; nie zmieni obowiązującej polityki ani stanu zlecenia. Archiwizator czyta z tabel panelu wyłącznie przypisania agentów do grup.
 
@@ -800,7 +800,7 @@ Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIV
 
 ### Eksport dla audytora (Urd)
 
-Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczkę da się w całości odczytać i sprawdzić **bez Heimdalla**, np. przy zgłoszeniu incydentu do CSIRT albo organu nadzoru. Zawiera:
+Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczkę da się w całości odczytać i sprawdzić **bez Vardra**, np. przy zgłoszeniu incydentu do CSIRT albo organu nadzoru. Zawiera:
 
 - **Zdarzenia do odczytu** (`zdarzenia/`):
   - `RRRR-MM-DD_GG.ndjson.gz`: jedno zdarzenie w linii, pola według Elastic Common Schema (`@timestamp`, `host.name`, `event.code`, `user.name`, `source.ip`…). Pełny oryginalny XML Windows jest w `event.original`. Plik da się wczytać do Elastic, Splunk czy Sentinel albo przeglądać przez `zcat` i `jq`.
@@ -830,7 +830,7 @@ Sprawdzenie paczki bez dostępu do systemu:
 siem-archiver check-export urd-eksport-1-2026100710-2026100716.tar
 ```
 
-Polecenie Heimdalla sprawdza to samo co skrypt, czyli:
+Polecenie Vardra sprawdza to samo co skrypt, czyli:
 
 - sumy plików;
 - ciągłość łańcucha;
@@ -895,7 +895,7 @@ Kopie wykonuje usługa **siem-backup** (kontener `backup`) według ustawień z p
   - SMB;
   - S3.
 
-Każda kopia to **jedna zaszyfrowana paczka** `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` (gpg, AES-256). Da się ją odszyfrować na dowolnym Linuksie albo na Windows z Gpg4win, bez Heimdalla. `k<id>` w nazwie to identyfikator hasła, którym ją zaszyfrowano.
+Każda kopia to **jedna zaszyfrowana paczka** `vardr-RRRRMMDD-GGMM-k<id>.tar.gpg` (gpg, AES-256). Da się ją odszyfrować na dowolnym Linuksie albo na Windows z Gpg4win, bez Vardra. `k<id>` w nazwie to identyfikator hasła, którym ją zaszyfrowano.
 
 **Hasło kopii** (uruchamia administrator na VM, w `~/siem-lab`):
 
@@ -922,16 +922,16 @@ Alert „kopia nie trafiła poza VM od ponad 26 h” pilnuje wysyłki. Stan usł
 **Odtworzenie całego systemu na czystej VM** (Docker zainstalowany, stos skopiowany `deploy.sh config` i usługi zbudowane):
 
 ```bash
-scp heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/config/heimdall-….tar.gpg .
+scp heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/config/vardr-….tar.gpg .
 rsync -a heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/urd/ urd/   # opcjonalnie: archiwum NIS2
-./restore.sh heimdall-….tar.gpg urd/
+./restore.sh vardr-….tar.gpg urd/
 ```
 
 `restore.sh` pyta o hasło kopii, przywraca to, co jest w kopii (`certs/` i `.env`, bazę Saga, dane Grafany), z drugim argumentem także archiwum NIS2, a potem uruchamia stos. Kopia nie zawiera zdarzeń z ClickHouse (kilka dni) – można je odtworzyć z archiwum w panelu (Urd → Odtworzenie).
 
 ### Alerty (Grafana)
 
-Do czasu modułu alertów (Gjallarhorn, etap 4) awarie zgłasza Grafana. Reguły są w `grafana/provisioning/alerting/heimdall.yaml`, folder SIEM, grupa „Heimdall – zdrowie”:
+Do czasu modułu alertów (Gjallarhorn, etap 4) awarie zgłasza Grafana. Reguły są w `grafana/provisioning/alerting/vardr.yaml`, folder SIEM, grupa „Vardr – zdrowie”:
 
 - weryfikacja archiwum wykryła niezgodności;
 - archiwizator nie działa;

@@ -295,7 +295,7 @@ func TestEnrollPackage(t *testing.T) {
 	r.Header.Set(csrfHeader, admin.csrf)
 	w := httptest.NewRecorder()
 	e.h.ServeHTTP(w, r)
-	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Disposition"), "heimdall-agent-serwery-iis.zip") {
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Disposition"), "vardr-agent-serwery-iis.zip") {
 		t.Fatalf("paczka: %d %v", w.Code, w.Header())
 	}
 	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
@@ -354,7 +354,7 @@ func TestEnrollMSI(t *testing.T) {
 	if w := post(); w.Code != 503 || !strings.Contains(w.Body.String(), "no_agent_msi") {
 		t.Fatalf("bez instalatora: %d %s", w.Code, w.Body.String())
 	}
-	msiPath := filepath.Join(e.agentDir, "heimdall-agent.msi")
+	msiPath := filepath.Join(e.agentDir, "vardr-agent.msi")
 	base := msipatch.TestFile([]byte("x"+contract.MSIServerPlaceholder+"y"), []byte(strings.Repeat("-", 4200)+contract.MSITokenPlaceholder))
 	if err := os.WriteFile(msiPath, base, 0o644); err != nil {
 		t.Fatal(err)
@@ -364,7 +364,7 @@ func TestEnrollMSI(t *testing.T) {
 		t.Fatalf("instalator: %d %v", w.Code, w.Header())
 	}
 	body := w.Body.String()
-	if len(body) != len(base) || strings.Contains(body, "HEIMDALL_MSI_") || !strings.Contains(body, "192.168.88.98   ") || !strings.Contains(body, secret) {
+	if len(body) != len(base) || strings.Contains(body, "VARDR_MSI_") || !strings.Contains(body, "192.168.88.98   ") || !strings.Contains(body, secret) {
 		t.Fatal("wartości nie wpisane do instalatora")
 	}
 	// Aktualizacja: bazowy plik bez zmian; instalator, którego nie da się załatać – błąd.

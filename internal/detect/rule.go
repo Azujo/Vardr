@@ -1,5 +1,5 @@
 // Package detect to reguły detekcji Gjallarhorna: format Sigma (YAML)
-// z rozszerzeniami Heimdalla, kompilacja do drzewa warunków i ocena
+// z rozszerzeniami Vardra, kompilacja do drzewa warunków i ocena
 // znormalizowanego zdarzenia. Ten sam model reguły posłuży silnikowi
 // zapytań (ClickHouse, etap 4d).
 //
@@ -23,6 +23,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -51,7 +52,7 @@ type Rule struct {
 	// Name: nazwa Sigmy (odwołania z reguł korelacyjnych).
 	Name string `json:"name,omitempty"`
 
-	Heimdall Extensions `json:"heimdall"`
+	Vardr Extensions `json:"vardr"`
 	// CorrelationOnly: reguła bazowa korelacji z generate: false – zasila
 	// korelację, sama nie tworzy alertów.
 	CorrelationOnly bool `json:"correlation_only,omitempty"`
@@ -59,7 +60,8 @@ type Rule struct {
 	match Node
 }
 
-// Extensions to rozszerzenia Heimdalla (klucz „heimdall” w YAML).
+// Extensions to rozszerzenia Vardra (klucz „vardr” w YAML; dawny
+// „heimdall” jest nadal czytany – reguły sprzed zmiany nazwy, import SigmaHQ).
 type Extensions struct {
 	// Mode: stream | index_query | both (domyślnie both).
 	Mode string `json:"mode" yaml:"mode"`
@@ -110,7 +112,7 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 // Enabled mówi, czy reguła jest włączona.
-func (r *Rule) Enabled() bool { return r.Heimdall.Enabled == nil || *r.Heimdall.Enabled }
+func (r *Rule) Enabled() bool { return r.Vardr.Enabled == nil || *r.Vardr.Enabled }
 
 // Alerts mówi, czy reguła sama tworzy alerty (włączona i nie tylko do korelacji).
 func (r *Rule) Alerts() bool { return r.Enabled() && !r.CorrelationOnly }
@@ -131,7 +133,8 @@ type raw struct {
 	FalsePositives []string       `yaml:"falsepositives"`
 	Logsource      logsource      `yaml:"logsource"`
 	Detection      map[string]any `yaml:"detection"`
-	Heimdall       Extensions     `yaml:"heimdall"`
+	Vardr          Extensions     `yaml:"vardr"`
+	Legacy         *Extensions    `yaml:"heimdall"` // dawna nazwa klucza
 	// Pola Sigmy bez znaczenia dla wykonania – akceptowane, ignorowane.
 	Date     string   `yaml:"date"`
 	Modified string   `yaml:"modified"`
@@ -169,34 +172,37 @@ func Parse(data []byte, file string) (*Rule, error) {
 	case len(r.Detection) == 0:
 		return nil, errors.New("brak detection")
 	}
-	switch r.Heimdall.Mode {
+	if err := useLegacy(&r.Vardr, r.Legacy); err != nil {
+		return nil, err
+	}
+	switch r.Vardr.Mode {
 	case "":
-		r.Heimdall.Mode = "both"
+		r.Vardr.Mode = "both"
 	case "stream", "index_query", "both":
 	default:
-		return nil, errors.New("heimdall.mode: stream, index_query albo both")
+		return nil, errors.New("vardr.mode: stream, index_query albo both")
 	}
-	if t := r.Heimdall.Threshold; t != nil {
+	if t := r.Vardr.Threshold; t != nil {
 		switch w := time.Duration(t.Window); {
 		case t.Count < 2 || t.Count > MaxThresholdCount:
-			return nil, fmt.Errorf("heimdall.threshold.count: od 2 do %d", MaxThresholdCount)
+			return nil, fmt.Errorf("vardr.threshold.count: od 2 do %d", MaxThresholdCount)
 		case w < MinThresholdWindow || w > MaxThresholdWindow:
-			return nil, errors.New("heimdall.threshold.window: od 10s do 24h")
+			return nil, errors.New("vardr.threshold.window: od 10s do 24h")
 		}
 		// Łączenie trafień w alert co najmniej na długość okna progu.
-		if r.Heimdall.Suppress == 0 {
-			r.Heimdall.Suppress = Duration(time.Hour)
+		if r.Vardr.Suppress == 0 {
+			r.Vardr.Suppress = Duration(time.Hour)
 		}
-		if r.Heimdall.Suppress < t.Window {
-			r.Heimdall.Suppress = t.Window
+		if r.Vardr.Suppress < t.Window {
+			r.Vardr.Suppress = t.Window
 		}
 	}
-	if len(r.Heimdall.GroupBy) > 0 && r.Heimdall.Suppress == 0 {
-		r.Heimdall.Suppress = Duration(time.Hour)
+	if len(r.Vardr.GroupBy) > 0 && r.Vardr.Suppress == 0 {
+		r.Vardr.Suppress = Duration(time.Hour)
 	}
-	for _, f := range r.Heimdall.GroupBy {
+	for _, f := range r.Vardr.GroupBy {
 		if f == "" {
-			return nil, errors.New("heimdall.group_by: puste pole")
+			return nil, errors.New("vardr.group_by: puste pole")
 		}
 	}
 	ls, err := compileLogsource(r.Logsource)
@@ -207,11 +213,11 @@ func Parse(data []byte, file string) (*Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("detection: %w", err)
 	}
-	r.Heimdall.Instructions = Unwrap(r.Heimdall.Instructions)
+	r.Vardr.Instructions = Unwrap(r.Vardr.Instructions)
 	return &Rule{
 		ID: r.ID, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file,
-		Source: string(data), Name: r.Name, Heimdall: r.Heimdall, match: and{ls, cond},
+		Source: string(data), Name: r.Name, Vardr: r.Vardr, match: and{ls, cond},
 	}, nil
 }
 
@@ -367,12 +373,12 @@ func LoadSources(srcs []Source) (*Set, []LoadError) {
 }
 
 // IsThreshold mówi, czy reguła jest progowa.
-func (r *Rule) IsThreshold() bool { return r.Heimdall.Threshold != nil }
+func (r *Rule) IsThreshold() bool { return r.Vardr.Threshold != nil }
 
 // GroupKey zwraca wartości pól klucza alertu (w kolejności GroupBy).
 func (r *Rule) GroupKey(e Event) []string {
-	out := make([]string, len(r.Heimdall.GroupBy))
-	for i, f := range r.Heimdall.GroupBy {
+	out := make([]string, len(r.Vardr.GroupBy))
+	for i, f := range r.Vardr.GroupBy {
 		v, _ := e.Get(f)
 		out[i] = strings.ToLower(v)
 	}
@@ -399,4 +405,18 @@ func RenderWith(text string, e Event, extra map[string]string) string {
 		}
 		return "(brak)"
 	})
+}
+
+// useLegacy: rozszerzenia spod dawnego klucza „heimdall” (sprzed zmiany
+// nazwy na Vardr) – oba klucze naraz to błąd, żeby nie zgadywać, który
+// obowiązuje.
+func useLegacy(ext *Extensions, legacy *Extensions) error {
+	if legacy == nil {
+		return nil
+	}
+	if !reflect.DeepEqual(*ext, Extensions{}) {
+		return errors.New("vardr i heimdall naraz – zostaw tylko vardr (heimdall to dawna nazwa klucza)")
+	}
+	*ext = *legacy
+	return nil
 }

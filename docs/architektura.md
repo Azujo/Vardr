@@ -1,6 +1,6 @@
 # Architektura
 
-Heimdall to zestaw małych programów w Go, połączonych kolejką NATS JetStream. Zdarzenia przechodzą przez kolejne etapy, a każdy etap potwierdza wiadomość dopiero po wykonaniu swojej pracy. Awaria albo restart dowolnej usługi nie gubi więc zdarzeń: czekają w kolejce, a agenci trzymają je w buforze dyskowym, dopóki serwer ich nie przyjmie.
+Vardr to zestaw małych programów w Go, połączonych kolejką NATS JetStream. Zdarzenia przechodzą przez kolejne etapy, a każdy etap potwierdza wiadomość dopiero po wykonaniu swojej pracy. Awaria albo restart dowolnej usługi nie gubi więc zdarzeń: czekają w kolejce, a agenci trzymają je w buforze dyskowym, dopóki serwer ich nie przyjmie.
 
 ## Składniki
 
@@ -28,7 +28,7 @@ Heimdall to zestaw małych programów w Go, połączonych kolejką NATS JetStrea
 
 | Program | Rola | Stan |
 |---|---|---|
-| `siem_agent` (Windows) | czyta dzienniki zdarzeń, wysyła paczki, chroni się przed zatrzymaniem | stan odczytu i bufor dyskowy w `C:\ProgramData\Heimdall` |
+| `siem_agent` (Windows) | czyta dzienniki zdarzeń, wysyła paczki, chroni się przed zatrzymaniem | stan odczytu i bufor dyskowy w `C:\ProgramData\SiemAgent` |
 | `siem-collector` | odbiera syslog z urządzeń, wysyła jak agent | bufor dyskowy w katalogu kolektora |
 | `siem-connector` | pobiera logi z API chmury (Entra ID przez Graph), wysyła jak agent | kursor odczytu i bufor |
 | `siem-ingest` | przyjmuje paczki i heartbeaty (mTLS), wkłada do NATS | bezstanowy |

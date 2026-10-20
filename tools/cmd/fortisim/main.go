@@ -1,6 +1,6 @@
 // Command fortisim to symulator dziennika FortiGate (FortiOS 7, format
 // „default”: pary klucz=wartość) wysyłanego przez syslog do kolektora
-// Heimdalla – do testów dekodera i reguł bez prawdziwego urządzenia.
+// Vardra – do testów dekodera i reguł bez prawdziwego urządzenia.
 //
 //	go run ./tools/cmd/fortisim [-target 192.168.88.98:514] [-proto udp|tcp] [-scenario mix] [-count 20]
 //

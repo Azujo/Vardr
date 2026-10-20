@@ -5,7 +5,7 @@ description: |
   Zainstalowano usługę Windows, której program leży w katalogu użytkownika,
   folderze tymczasowym albo jest wywołaniem PowerShell/cmd. Tak utrwala się
   złośliwe oprogramowanie i narzędzia zdalnego wykonywania (np. PsExec-podobne).
-author: Heimdall
+author: Vardr
 tags:
   - attack.persistence
   - attack.t1543.003
@@ -48,7 +48,7 @@ detection:
 falsepositives:
   - Instalatory niektórych programów rozpakowujące usługi do ProgramData
 level: high
-heimdall:
+vardr:
   instructions: |
     Usługa {{ServiceName}} na {{Computer}} uruchamia {{ImagePath}} (konto
     {{AccountName}}). Jeśli usługa nie jest znana – zatrzymaj ją, zabezpiecz

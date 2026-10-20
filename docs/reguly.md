@@ -1,6 +1,6 @@
 # Reguły detekcji
 
-Reguły to pliki YAML w formacie [Sigma](https://sigmahq.io/docs/basics/rules.html) z rozszerzeniami Heimdalla (klucz `heimdall`). Leżą w repozytorium w `rules/` (`windows/`, `network/`, `cross/`) i są wdrażane na serwer. Jedna reguła działa w obu silnikach: **w locie** (każde zdarzenie z kolejki, alert w sekundy) i **zapytań** (ta sama reguła jako SQL na ClickHouse co minutę – nadrabia przerwy, spóźnione zdarzenia i limity pamięci). Kod: `internal/detect` (wczytanie, kompilacja, ocena, SQL), `server/internal/detector` (silniki, progi).
+Reguły to pliki YAML w formacie [Sigma](https://sigmahq.io/docs/basics/rules.html) z rozszerzeniami Vardra (klucz `vardr`). Leżą w repozytorium w `rules/` (`windows/`, `network/`, `cross/`) i są wdrażane na serwer. Jedna reguła działa w obu silnikach: **w locie** (każde zdarzenie z kolejki, alert w sekundy) i **zapytań** (ta sama reguła jako SQL na ClickHouse co minutę – nadrabia przerwy, spóźnione zdarzenia i limity pamięci). Kod: `internal/detect` (wczytanie, kompilacja, ocena, SQL), `server/internal/detector` (silniki, progi).
 
 ## Przykład
 
@@ -10,7 +10,7 @@ id: 2feca112-9567-41b7-83de-92c2516f6cdc
 status: stable
 description: |
   Co najmniej 10 nieudanych logowań (4625) na to samo konto w ciągu 5 minut.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110.001
@@ -28,7 +28,7 @@ detection:
 falsepositives:
   - Program z zapamiętanym starym hasłem
 level: medium
-heimdall:
+vardr:
   group_by: [TargetUserName]
   threshold:
     count: 10
@@ -54,9 +54,9 @@ heimdall:
 
 Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_access`; grupy i oprogramowanie (`attack.g0016`, `attack.s0002`) są dozwolone, ale nie trafiają do macierzy. Każda reguła, która tworzy alerty, powinna mieć co najmniej jedną technikę (reguła bazowa korelacji – nie musi; technikę ma korelacja).
 
-- **Słownik**: ATT&CK Enterprise wbudowany w Heimdalla (`internal/attack/enterprise.json`, obecnie wersja 20). Od wersji 20 taktyka Defense Evasion jest podzielona na `stealth` i `defense_impairment`, a część technik przeniesiono (np. czyszczenie dziennika: T1070.001 → T1685.005, wyłączenie narzędzi ochrony: T1562.001 → T1685).
+- **Słownik**: ATT&CK Enterprise wbudowany w Vardra (`internal/attack/enterprise.json`, obecnie wersja 20). Od wersji 20 taktyka Defense Evasion jest podzielona na `stealth` i `defense_impairment`, a część technik przeniesiono (np. czyszczenie dziennika: T1070.001 → T1685.005, wyłączenie narzędzi ochrony: T1562.001 → T1685).
 - **Sprawdzanie**: `siem-detector check` wypisuje `UWAGA` przy nieznanej technice, wycofanej technice (z następcą) i nieistniejącej taktyce; reguła działa dalej. Test reguły w panelu pokazuje te same ostrzeżenia, a test `TestRulesAttackTags` pilnuje reguł z repozytorium i wbudowanych.
-- **Bez stałej techniki**: wykrycia antywirusa (Defender, ASR) dotyczą różnych technik zależnie od zagrożenia – takie reguły mają tag `heimdall.attack_dynamic` zamiast `attack.t…` (test pokrycia ich nie wymaga).
+- **Bez stałej techniki**: wykrycia antywirusa (Defender, ASR) dotyczą różnych technik zależnie od zagrożenia – takie reguły mają tag `vardr.attack_dynamic` zamiast `attack.t…` (test pokrycia ich nie wymaga).
 - **Taktyki**: technika sama wskazuje swoje taktyki (kolumny macierzy), więc tag taktyki jest opcjonalny – pomaga tylko czytać regułę.
 - **W panelu**: plakietki technik przy regułach i alertach (z linkiem do attack.mitre.org), filtr alertów po technice (`/alerts?technique=T1110` – z podtechnikami) i taktyce, macierz pokrycia (*Wykrywanie → MITRE ATT&CK*) z eksportem warstwy dla ATT&CK Navigator, technika w powiadomieniach o alertach. Kreator korelacji dopisuje korelacji tagi `attack.*` reguł, z których ją złożono.
 - **Aktualizacja słownika** (nowa wersja ATT&CK, zwykle dwa razy w roku): pobierz `enterprise-attack.json` z `github.com/mitre-attack/attack-stix-data` i uruchom `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json`, potem `siem-detector check rules`.
@@ -94,7 +94,7 @@ Inne wartości są odrzucane przy wczytaniu. Reguła bez `service`/`category` ob
 
 **Warunek** (`condition`): nazwy selekcji z `and`, `or`, `not` i nawiasami oraz `1 of selection_*`, `all of selection_*`, `1 of them`, `all of them`. Jeden warunek tekstowy (bez listy warunków).
 
-Nieobsługiwane i jawnie odrzucane (reguła nie działa „trochę”): agregacje Sigmy (`| count() by …`), `timeframe`, `near`, modyfikatory `base64offset`, `windash`, `wide` itp. Progi wyraża się przez `heimdall.threshold`.
+Nieobsługiwane i jawnie odrzucane (reguła nie działa „trochę”): agregacje Sigmy (`| count() by …`), `timeframe`, `near`, modyfikatory `base64offset`, `windash`, `wide` itp. Progi wyraża się przez `vardr.threshold`.
 
 ## Pola zdarzenia
 
@@ -121,10 +121,10 @@ Reguła może używać trzech rodzajów nazw.
 
 Pole, którego nie ma w zdarzeniu, nie pasuje do żadnej wartości, z wyjątkiem `null` i `exists: false`.
 
-## Rozszerzenia Heimdalla
+## Rozszerzenia Vardra
 
 ```yaml
-heimdall:
+vardr:
   mode: both            # stream | index_query | both (domyślnie both)
   group_by: [TargetUserName]
   suppress: 1h
@@ -169,7 +169,7 @@ correlation:
       9f379649-a04b-43de-b3a0-25587cf713de: TargetSid
       f406b909-37ba-4b21-b8c2-f4bd5cbf3192: MemberSid
   generate: true
-heimdall:
+vardr:
   instructions: Konto {{key}} utworzono i dodano do grupy {{TargetUserName}} w {{window}}.
 ```
 
@@ -184,11 +184,11 @@ heimdall:
 - **`aliases`** – gdy to samo „coś” ma w każdej regule bazowej inne pole (SID nowego konta to `TargetSid` w 4720, a `MemberSid` przy dodaniu do grupy). Alias jest nazwą w `group-by`, a pod nim reguła bazowa (`id` albo `name`) → pole.
 - **`timespan`** – okno od `1m` do `24h` (jednostki `s`, `m`, `h`, `d`).
 - **`generate`** – `false` (domyślnie): reguły bazowe same nie tworzą alertów (w panelu opis „Reguła bazowa korelacji”). `true`: reguły bazowe nadal alarmują, korelacja to dodatkowy alert o wyższym poziomie.
-- **`heimdall`** – w regule korelacyjnej tylko `enabled`, `suppress` (domyślnie większe z 1 h i `timespan`) i `instructions`. W instrukcji oprócz pól ostatniego zdarzenia są `{{count}}` (liczba zdarzeń), `{{window}}`, `{{rules}}` (tytuły reguł, które trafiły) i `{{key}}` (wartości `group-by`).
+- **`vardr`** – w regule korelacyjnej tylko `enabled`, `suppress` (domyślnie większe z 1 h i `timespan`) i `instructions`. W instrukcji oprócz pól ostatniego zdarzenia są `{{count}}` (liczba zdarzeń), `{{window}}`, `{{rules}}` (tytuły reguł, które trafiły) i `{{key}}` (wartości `group-by`).
 
 **Jak działa.** Detektor co minutę (razem z korelacjami wbudowanymi) szuka w `siem.events` kluczy z nowo przyjętych zdarzeń reguł bazowych. Dla tych kluczy pobiera zdarzenia z okna `timespan` wstecz (plus godzina na zdarzenia spóźnione) i sprawdza warunek. Alert dostaje silnik `correlation` i zawiera wszystkie zdarzenia, które spełniły korelację. Ponowne przebiegi nie dublują zdarzeń (para reguła–zdarzenie jest w alercie raz), a kolejne trafienia tego samego klucza w oknie `suppress` dołączają do otwartego alertu.
 
-**Ograniczenia.** Bez warunków `lt`, `lte`, `eq`, `neq` (alert na „za mało” zdarzeń nie ma sensu przy ocenie nowych zdarzeń) i bez typu `value_sum`/`value_avg`. Reguła bazowa nie może być progowa (`heimdall.threshold`) – próg wyraża sama korelacja. Najwięcej 50 000 zdarzeń jednej korelacji w przebiegu; ponad limit przebieg kończy się błędem w dzienniku detektora – zawęź reguły bazowe albo skróć okno. Korelacje wbudowane („udane po nieudanych”, „nowy kraj”) zostają w kodzie, bo wymagają historii spoza okna.
+**Ograniczenia.** Bez warunków `lt`, `lte`, `eq`, `neq` (alert na „za mało” zdarzeń nie ma sensu przy ocenie nowych zdarzeń) i bez typu `value_sum`/`value_avg`. Reguła bazowa nie może być progowa (`vardr.threshold`) – próg wyraża sama korelacja. Najwięcej 50 000 zdarzeń jednej korelacji w przebiegu; ponad limit przebieg kończy się błędem w dzienniku detektora – zawęź reguły bazowe albo skróć okno. Korelacje wbudowane („udane po nieudanych”, „nowy kraj”) zostają w kodzie, bo wymagają historii spoza okna.
 
 ### Kreator korelacji w panelu
 
@@ -284,9 +284,9 @@ Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – dome
 
 ## Import reguł SigmaHQ
 
-[SigmaHQ](https://github.com/SigmaHQ/sigma) to otwarta baza kilku tysięcy reguł Sigma utrzymywana przez społeczność. Heimdall obsługuje podzbiór Sigmy, więc część reguł się wczyta, a część nie (np. nieobsługiwane modyfikatory albo źródła, których agent nie zbiera). Import jest ręczny: kopiujesz wybrane katalogi, sprawdzasz je parserem Heimdalla, odrzucasz te, które nie przechodzą, i wdrażasz resztę **wyłączoną**. Potem włączasz pojedyncze reguły w panelu, po teście na historii.
+[SigmaHQ](https://github.com/SigmaHQ/sigma) to otwarta baza kilku tysięcy reguł Sigma utrzymywana przez społeczność. Vardr obsługuje podzbiór Sigmy, więc część reguł się wczyta, a część nie (np. nieobsługiwane modyfikatory albo źródła, których agent nie zbiera). Import jest ręczny: kopiujesz wybrane katalogi, sprawdzasz je parserem Vardra, odrzucasz te, które nie przechodzą, i wdrażasz resztę **wyłączoną**. Potem włączasz pojedyncze reguły w panelu, po teście na historii.
 
-Reguły trafiają do `rules/sigmahq/`. Testy Heimdalla (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, a `TestImportedRules` pilnuje, żeby zaimportowane reguły wczytywały się bez błędów i były w plikach wyłączone.
+Reguły trafiają do `rules/sigmahq/`. Testy Vardra (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, a `TestImportedRules` pilnuje, żeby zaimportowane reguły wczytywały się bez błędów i były w plikach wyłączone.
 
 ### Kroki – PowerShell (w katalogu projektu)
 
@@ -308,7 +308,7 @@ Reguły trafiają do `rules/sigmahq/`. Testy Heimdalla (zgodność silników, ko
    Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | Where-Object { Select-String -Path $_.FullName -Pattern '^status: (experimental|deprecated|unsupported)' -Quiet } | Remove-Item
    ```
 
-4. Sprawdzenie parserem i usunięcie reguł, których Heimdall nie obsługuje (drugie polecenie; potem pierwsze jeszcze raz – licznik błędów ma pokazać 0):
+4. Sprawdzenie parserem i usunięcie reguł, których Vardr nie obsługuje (drugie polecenie; potem pierwsze jeszcze raz – licznik błędów ma pokazać 0):
 
    ```powershell
    & "C:\Program Files\Go\bin\go.exe" run ./server/cmd/siem-detector check rules > check.txt; "OK: " + (Select-String -Path check.txt -Pattern '^OK').Count; "błędy: " + (Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+sigmahq/').Count
@@ -321,7 +321,7 @@ Reguły trafiają do `rules/sigmahq/`. Testy Heimdalla (zgodność silników, ko
 5. Wszystkie zaimportowane reguły wyłączone w plikach (bez tego włączyłyby się setki reguł naraz):
 
    ```powershell
-   Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | ForEach-Object { [IO.File]::AppendAllText($_.FullName, "`nheimdall:`n  enabled: false`n") }
+   Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | ForEach-Object { [IO.File]::AppendAllText($_.FullName, "`nvardr:`n  enabled: false`n") }
    ```
 
 6. Wdrożenie (skrypt bashowy – przez Git Bash):
@@ -338,7 +338,7 @@ for d in windows/process_creation windows/powershell/powershell_script windows/b
 grep -rlE '^status: (experimental|deprecated|unsupported)' rules/sigmahq | xargs -r rm
 go run ./server/cmd/siem-detector check rules > check.txt
 grep -vE '^(OK|UWAGA)' check.txt | sed -nE 's/^[^ ]+ +(sigmahq\/[^ :]+\.yml).*/rules\/\1/p' | sort -u | xargs -r rm
-find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nheimdall:\n  enabled: false\n" >> "$1"' _ {} \;
+find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nvardr:\n  enabled: false\n" >> "$1"' _ {} \;
 deploy/lab/deploy.sh rules
 ```
 
@@ -350,4 +350,4 @@ Kategorie Sysmona spoza listy w kroku 2 (ładowanie bibliotek, dostęp do proces
 
 ### Licencja
 
-Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License): wolno je używać, zmieniać i rozpowszechniać, także komercyjnie, pod warunkiem zachowania autora (pole `author`), wskazania źródła i licencji. Nie usuwaj z reguł pól `author` i `references`. Dla reguł z `rules/sigmahq/` panel pokazuje autora, źródło (odnośnik do reguły w SigmaHQ) i licencję w szczegółach reguły i alertu, a powiadomienia mają pole „Autor reguły” – licencja wymaga wskazania autora także w komunikatach z trafień. Reguły Heimdalla tego pola nie mają. Katalog `rules/sigmahq/` jest w `.gitignore`: decyzja o imporcie należy do administratora, a reguły nie są dystrybuowane z repozytorium. Jeśli dołączasz `rules/sigmahq/` do własnego repozytorium albo dystrybucji, dodaj w tym katalogu informację o źródle i licencji. Licencja reguł nie dotyczy kodu Heimdalla.
+Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License): wolno je używać, zmieniać i rozpowszechniać, także komercyjnie, pod warunkiem zachowania autora (pole `author`), wskazania źródła i licencji. Nie usuwaj z reguł pól `author` i `references`. Dla reguł z `rules/sigmahq/` panel pokazuje autora, źródło (odnośnik do reguły w SigmaHQ) i licencję w szczegółach reguły i alertu, a powiadomienia mają pole „Autor reguły” – licencja wymaga wskazania autora także w komunikatach z trafień. Reguły Vardra tego pola nie mają. Katalog `rules/sigmahq/` jest w `.gitignore`: decyzja o imporcie należy do administratora, a reguły nie są dystrybuowane z repozytorium. Jeśli dołączasz `rules/sigmahq/` do własnego repozytorium albo dystrybucji, dodaj w tym katalogu informację o źródle i licencji. Licencja reguł nie dotyczy kodu Vardra.

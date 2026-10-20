@@ -1,4 +1,4 @@
-// Command siem-connector to agent Heimdalla w trybie konektora API: pobiera
+// Command siem-connector to agent Vardra w trybie konektora API: pobiera
 // logi z usług chmurowych (etap 7: Entra ID przez Microsoft Graph –
 // logowania i zmiany w katalogu) i wysyła je do serwera tak jak agent
 // Windows – mTLS, paczki, bufor dyskowy, heartbeat w panelu (Huginn),
@@ -100,7 +100,7 @@ func main() {
 }
 
 func configTemplate(serverURL string) string {
-	return fmt.Sprintf(`# Konektor API Heimdalla (siem-connector).
+	return fmt.Sprintf(`# Konektor API Vardra (siem-connector).
 server:
   url: %s
   ca_file: certs/ca.crt

@@ -69,7 +69,7 @@ func newKeyAndCSR() (keyPEM []byte, csrPEM string, err error) {
 		return nil, "", err
 	}
 	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
-		Subject: pkix.Name{CommonName: "heimdall-agent"}, // tożsamość nadaje serwer
+		Subject: pkix.Name{CommonName: "vardr-agent"}, // tożsamość nadaje serwer
 	}, key)
 	if err != nil {
 		return nil, "", err

@@ -1,4 +1,4 @@
-// Package notify wysyła wiadomości Heimdalla poza system – na kanały
+// Package notify wysyła wiadomości Vardra poza system – na kanały
 // ustawione w panelu (Discord, webhook): alerty zdrowia z Grafany, codzienną
 // kotwicę archiwum Urd, a później alerty detekcji (Gjallarhorn).
 package notify
@@ -50,7 +50,7 @@ type Field struct {
 	Name   string `json:"name"`
 	Value  string `json:"value"`
 	Inline bool   `json:"inline,omitempty"`
-	// Trusted: wartość tworzy Heimdall (link do panelu, czas) – nie jest
+	// Trusted: wartość tworzy Vardr (link do panelu, czas) – nie jest
 	// escapowana nawet w wiadomości z danymi ze zdarzeń (Untrusted).
 	Trusted bool `json:"-"`
 }
@@ -198,7 +198,7 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 			return errors.New("niepoprawny adres kanału")
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "Heimdall-SIEM")
+		req.Header.Set("User-Agent", "Vardr-SIEM")
 		resp, err := s.client().Do(req)
 		if err != nil {
 			return safeErr(err)
@@ -283,7 +283,7 @@ func discordPayload(m Message) map[string]any {
 	text = clip(text, 4000)
 	// Łączny limit: skracamy najdłuższy tekst, aż się zmieści.
 	for {
-		total := len([]rune(title)) + len([]rune(text)) + len("Heimdall SIEM")
+		total := len([]rune(title)) + len([]rune(text)) + len("Vardr SIEM")
 		longest, ln := -1, len([]rune(text))
 		for i, f := range fs {
 			n := len([]rune(f.value))
@@ -307,7 +307,7 @@ func discordPayload(m Message) map[string]any {
 		"description": text,
 		"color":       sevColor[m.Severity],
 		"timestamp":   m.At.UTC().Format(time.RFC3339),
-		"footer":      map[string]any{"text": "Heimdall SIEM"},
+		"footer":      map[string]any{"text": "Vardr SIEM"},
 	}
 	var fields []map[string]any
 	for _, f := range fs {
@@ -316,7 +316,7 @@ func discordPayload(m Message) map[string]any {
 	if fields != nil {
 		embed["fields"] = fields
 	}
-	return map[string]any{"username": "Heimdall", "embeds": []any{embed}, "allowed_mentions": map[string]any{"parse": []string{}}}
+	return map[string]any{"username": "Vardr", "embeds": []any{embed}, "allowed_mentions": map[string]any{"parse": []string{}}}
 }
 
 func webhookPayload(m Message) map[string]any {
@@ -324,7 +324,7 @@ func webhookPayload(m Message) map[string]any {
 	for _, f := range m.Fields {
 		fields[f.Name] = f.Value
 	}
-	return map[string]any{"source": "heimdall", "event": m.Event, "severity": m.Severity, "title": m.Title,
+	return map[string]any{"source": "vardr", "event": m.Event, "severity": m.Severity, "title": m.Title,
 		"text": m.Text, "fields": fields, "at": m.At.UTC().Format(time.RFC3339)}
 }
 

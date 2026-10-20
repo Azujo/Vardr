@@ -1,6 +1,6 @@
-// Command odczytaj (odczytaj.exe) to czytnik eksportu archiwum NIS2 Heimdalla
+// Command odczytaj (odczytaj.exe) to czytnik eksportu archiwum NIS2 Vardra
 // dla odbiorcy paczki – audytora, CSIRT, organu nadzoru. Nie wymaga
-// Heimdalla ani instalacji:
+// Vardra ani instalacji:
 //
 //   - dwuklik na odczytaj.exe w rozpakowanym folderze paczki albo
 //   - przeciągnięcie pliku .tar na odczytaj.exe (paczka zostanie rozpakowana obok)
@@ -39,7 +39,7 @@ func main() {
 	noOpen := flag.Bool("nie-otwieraj", false, "nie otwieraj raportu w Notatniku")
 	flag.Parse()
 
-	fmt.Printf("Heimdall – odczyt eksportu archiwum NIS2 (wersja %s)\n\n", version)
+	fmt.Printf("Vardr – odczyt eksportu archiwum NIS2 (wersja %s)\n\n", version)
 	code := 0
 	report, ok, err := runFor(flag.Arg(0))
 	switch {

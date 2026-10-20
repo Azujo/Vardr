@@ -6,7 +6,7 @@ description: |
   RustDesk, TeamViewer) albo narzędzia tunelującego (ngrok, chisel,
   cloudflared, plink z przekierowaniem -R). Napastnicy instalują je jako
   trwały kanał dostępu, który wygląda jak zwykłe oprogramowanie.
-author: Heimdall
+author: Vardr
 tags:
   - attack.command_and_control
   - attack.t1219
@@ -36,7 +36,7 @@ detection:
 falsepositives:
   - Oprogramowanie zdalnej pomocy używane oficjalnie przez dział IT (wyklucz jego program po ścieżce)
 level: medium
-heimdall:
+vardr:
   group_by: [host.name, Image]
   suppress: 24h
   instructions: |

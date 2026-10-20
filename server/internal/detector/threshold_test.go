@@ -156,7 +156,7 @@ func TestThresholdRestore(t *testing.T) {
 }
 
 func TestThresholdRuleValidation(t *testing.T) {
-	head := "title: t\nid: test-rule\nlevel: low\nlogsource:\n  product: windows\ndetection:\n  s:\n    EventID: 1\n  condition: s\nheimdall:\n"
+	head := "title: t\nid: test-rule\nlevel: low\nlogsource:\n  product: windows\ndetection:\n  s:\n    EventID: 1\n  condition: s\nvardr:\n"
 	for name, y := range map[string]string{
 		"próg 1":         "  threshold:\n    count: 1\n    window: 5m\n",
 		"okno za długie": "  threshold:\n    count: 5\n    window: 48h\n",
@@ -168,7 +168,7 @@ func TestThresholdRuleValidation(t *testing.T) {
 		}
 	}
 	r, err := detect.Parse([]byte(head+"  threshold:\n    count: 5\n    window: 2h\n"), "x.yml")
-	if err != nil || time.Duration(r.Heimdall.Suppress) != 2*time.Hour {
+	if err != nil || time.Duration(r.Vardr.Suppress) != 2*time.Hour {
 		t.Fatalf("łączenie co najmniej na długość okna: %v %v", err, r)
 	}
 }

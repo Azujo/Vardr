@@ -120,14 +120,14 @@ func (s *Searcher) TestRule(ctx context.Context, r *detect.Rule, from, to time.T
 		}
 		byKey[x.key] = append(byKey[x.key], i)
 	}
-	suppress := time.Duration(r.Heimdall.Suppress)
+	suppress := time.Duration(r.Vardr.Suppress)
 	var out []RuleTestAlert
 	add := func(idx []int) {
 		first, last := evs[idx[0]].e, evs[idx[len(idx)-1]].e
 		a := RuleTestAlert{First: first.Timestamp, Last: last.Timestamp, Events: len(idx), Host: first.HostName}
-		if len(r.Heimdall.GroupBy) > 0 {
+		if len(r.Vardr.GroupBy) > 0 {
 			a.Key = map[string]string{}
-			for _, f := range r.Heimdall.GroupBy {
+			for _, f := range r.Vardr.GroupBy {
 				v, _ := detect.Event{Event: &evs[idx[0]].e}.Get(f)
 				a.Key[f] = v
 			}
@@ -143,14 +143,14 @@ func (s *Searcher) TestRule(ctx context.Context, r *detect.Rule, from, to time.T
 				ser.t = append(ser.t, evs[i].e.Timestamp)
 				ser.v = append(ser.v, r.DistinctValue(detect.Event{Event: &evs[i].e}))
 			}
-			marks, _, found := detect.ThresholdMarks(ser, r.Heimdall.Threshold, suppress)
+			marks, _, found := detect.ThresholdMarks(ser, r.Vardr.Threshold, suppress)
 			if !found {
 				continue
 			}
 			for _, c := range detect.Components(ser, marks, suppress) {
 				add(idx[c.From:c.To])
 			}
-		case len(r.Heimdall.GroupBy) > 0 && suppress > 0:
+		case len(r.Vardr.GroupBy) > 0 && suppress > 0:
 			start := 0
 			for j := 1; j <= len(idx); j++ {
 				if j == len(idx) || evs[idx[j]].e.Timestamp.Sub(evs[idx[j-1]].e.Timestamp) > suppress {

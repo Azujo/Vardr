@@ -322,5 +322,5 @@ func (a *Archive) CheckDir(ctx context.Context) error {
 			return ErrWrongDir
 		}
 	}
-	return os.WriteFile(marker, []byte("Heimdall – archiwum NIS2 (Urd). Nie usuwać.\n"), 0o440)
+	return os.WriteFile(marker, []byte("Vardr – archiwum NIS2 (Urd). Nie usuwać.\n"), 0o440)
 }

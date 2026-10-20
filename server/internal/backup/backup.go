@@ -128,14 +128,14 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 		if host == "" {
 			host, _ = os.Hostname()
 		}
-		about := fmt.Sprintf("Kopia Heimdalla z %s, serwer %s, identyfikator hasła %s.\nZawartość: %s.\n"+
+		about := fmt.Sprintf("Kopia Vardra z %s, serwer %s, identyfikator hasła %s.\nZawartość: %s.\n"+
 			"Odtworzenie: ./restore.sh (docs/operacje.md, „Kopie zapasowe”).\n",
 			time.Now().UTC().Format(time.RFC3339), host, kid, describe(parts))
 		if err := os.WriteFile(filepath.Join(work, "KOPIA.txt"), []byte(about), 0o600); err != nil {
 			return status{failed: true, message: err.Error()}
 		}
 		parts = append(parts, "KOPIA.txt")
-		name := "heimdall-" + stamp + "-" + kid + ".tar.gpg"
+		name := "vardr-" + stamp + "-" + kid + ".tar.gpg"
 		out := filepath.Join(r.BackupDir, name)
 		if err := r.encryptTar(ctx, work, parts, nil, out+".tmp"); err != nil {
 			return status{failed: true, message: "szyfrowanie kopii nieudane: " + err.Error()}
@@ -219,7 +219,7 @@ func (r *Runner) encryptTar(ctx context.Context, dir string, parts []string, lis
 
 // localRetention usuwa stare kopie lokalne; zwraca liczbę usuniętych.
 func (r *Runner) localRetention(ret backupcfg.Retention) int {
-	matches, _ := filepath.Glob(filepath.Join(r.BackupDir, "heimdall-*.tar.gpg"))
+	matches := backupFiles(r.BackupDir)
 	var files []remoteFile
 	for _, m := range matches {
 		if fi, err := os.Stat(m); err == nil {
@@ -265,7 +265,7 @@ func expired(files []remoteFile, ret backupcfg.Retention, now time.Time) []strin
 	return out
 }
 
-// stampOf: czas z nazwy kopii (heimdall-20261019-0215-k1234abcd.tar.gpg).
+// stampOf: czas z nazwy kopii (vardr-20261019-0215-k1234abcd.tar.gpg).
 func stampOf(name string) (time.Time, bool) {
 	parts := strings.Split(name, "-")
 	if len(parts) < 4 {
@@ -286,16 +286,16 @@ func (r *Runner) metrics(size int64, remote bool) {
 		_ = os.WriteFile(lastRemote, []byte(fmt.Sprint(now)), 0o644)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# HELP heimdall_backup_last_success_timestamp_seconds Czas ostatniej udanej kopii zapasowej.\n")
-	fmt.Fprintf(&b, "# TYPE heimdall_backup_last_success_timestamp_seconds gauge\n")
-	fmt.Fprintf(&b, "heimdall_backup_last_success_timestamp_seconds %d\n", now)
-	fmt.Fprintf(&b, "# HELP heimdall_backup_size_bytes Rozmiar ostatniej kopii (zaszyfrowanej).\n")
-	fmt.Fprintf(&b, "# TYPE heimdall_backup_size_bytes gauge\n")
-	fmt.Fprintf(&b, "heimdall_backup_size_bytes %d\n", size)
+	fmt.Fprintf(&b, "# HELP vardr_backup_last_success_timestamp_seconds Czas ostatniej udanej kopii zapasowej.\n")
+	fmt.Fprintf(&b, "# TYPE vardr_backup_last_success_timestamp_seconds gauge\n")
+	fmt.Fprintf(&b, "vardr_backup_last_success_timestamp_seconds %d\n", now)
+	fmt.Fprintf(&b, "# HELP vardr_backup_size_bytes Rozmiar ostatniej kopii (zaszyfrowanej).\n")
+	fmt.Fprintf(&b, "# TYPE vardr_backup_size_bytes gauge\n")
+	fmt.Fprintf(&b, "vardr_backup_size_bytes %d\n", size)
 	if v, err := os.ReadFile(lastRemote); err == nil {
-		fmt.Fprintf(&b, "# HELP heimdall_backup_remote_last_success_timestamp_seconds Czas ostatniej udanej wysyłki kopii poza VM.\n")
-		fmt.Fprintf(&b, "# TYPE heimdall_backup_remote_last_success_timestamp_seconds gauge\n")
-		fmt.Fprintf(&b, "heimdall_backup_remote_last_success_timestamp_seconds %s\n", strings.TrimSpace(string(v)))
+		fmt.Fprintf(&b, "# HELP vardr_backup_remote_last_success_timestamp_seconds Czas ostatniej udanej wysyłki kopii poza VM.\n")
+		fmt.Fprintf(&b, "# TYPE vardr_backup_remote_last_success_timestamp_seconds gauge\n")
+		fmt.Fprintf(&b, "vardr_backup_remote_last_success_timestamp_seconds %s\n", strings.TrimSpace(string(v)))
 	}
 	path := filepath.Join(r.MetricsDir, "backup.prom")
 	if err := writeFileAtomic(path, []byte(b.String()), 0o644); err != nil {

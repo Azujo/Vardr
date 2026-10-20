@@ -4,7 +4,7 @@ status: stable
 description: |
   Co najmniej 5 nieudanych logowań do panelu administracyjnego FortiGate
   (HTTPS, SSH, konsola) z jednego adresu w ciągu 5 minut.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110.001
@@ -18,7 +18,7 @@ detection:
 falsepositives:
   - Administrator, który pomylił hasło
 level: high
-heimdall:
+vardr:
   group_by: [host.name, source.ip]
   threshold:
     count: 5

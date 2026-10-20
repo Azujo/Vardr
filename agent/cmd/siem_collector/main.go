@@ -1,8 +1,8 @@
-// Command siem-collector to agent Heimdalla w trybie kolektora: odbiera
+// Command siem-collector to agent Vardra w trybie kolektora: odbiera
 // syslog z urządzeń (zapory, routery, przełączniki, NAS) i wysyła go do
 // serwera tak jak agent Windows – mTLS, paczki, bufor dyskowy na czas
 // braku łączności, heartbeat w panelu (Huginn), odnawianie certyfikatu.
-// Działa na Linuksie i Windows (np. jako kontener na serwerze Heimdalla).
+// Działa na Linuksie i Windows (np. jako kontener na serwerze Vardra).
 //
 //	siem-collector enroll -server <adres> -token <token> -ca ca.crt -dir <katalog>
 //	siem-collector run -config <katalog>/collector.yaml
@@ -81,7 +81,7 @@ func main() {
 }
 
 func configTemplate(serverURL string) string {
-	return fmt.Sprintf(`# Kolektor syslog Heimdalla (siem-collector).
+	return fmt.Sprintf(`# Kolektor syslog Vardra (siem-collector).
 server:
   url: %s
   ca_file: certs/ca.crt

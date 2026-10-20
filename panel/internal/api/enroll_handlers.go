@@ -179,7 +179,7 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := "heimdall-agent-" + safeFileName(t.Name) + ".zip"
+	name := "vardr-agent-" + safeFileName(t.Name) + ".zip"
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	w.Header().Set("Cache-Control", "no-store")
@@ -217,9 +217,9 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// Instalator MSI (budowany przez deploy.sh obok programu agenta), jeśli jest.
-		if msi, err := os.Open(filepath.Join(filepath.Dir(s.Enroll.AgentExe), "heimdall-agent.msi")); err == nil {
+		if msi, err := os.Open(filepath.Join(filepath.Dir(s.Enroll.AgentExe), "vardr-agent.msi")); err == nil {
 			defer msi.Close()
-			f, err := zw.Create("heimdall-agent.msi")
+			f, err := zw.Create("vardr-agent.msi")
 			if err != nil {
 				return err
 			}
@@ -254,7 +254,7 @@ func safeFileName(s string) string {
 }
 
 const installCmd = `@echo off
-rem Instalacja agenta Heimdall (Huginn). Uruchom jako administrator
+rem Instalacja agenta Vardr (Huginn). Uruchom jako administrator
 rem (prawy przycisk myszy -> Uruchom jako administrator).
 "%~dp0siem_agent.exe" install
 pause
@@ -262,13 +262,13 @@ pause
 
 // installMSICmd: instalacja z MSI na jednym komputerze (adres i token wpisane).
 const installMSICmd = `@echo off
-rem Instalacja agenta Heimdall z pakietu MSI. Uruchom jako administrator.
-msiexec /i "%%~dp0heimdall-agent.msi" /qn SERVER=%s TOKEN=%s /l*v "%%TEMP%%\heimdall-agent-msi.log"
-if errorlevel 1 (echo Instalacja nieudana - dziennik: %%TEMP%%\heimdall-agent-msi.log oraz %%ProgramData%%\SiemAgent\msi.log) else (echo Agent zainstalowany.)
+rem Instalacja agenta Vardr z pakietu MSI. Uruchom jako administrator.
+msiexec /i "%%~dp0vardr-agent.msi" /qn SERVER=%s TOKEN=%s /l*v "%%TEMP%%\vardr-agent-msi.log"
+if errorlevel 1 (echo Instalacja nieudana - dziennik: %%TEMP%%\vardr-agent-msi.log oraz %%ProgramData%%\SiemAgent\msi.log) else (echo Agent zainstalowany.)
 pause
 `
 
-const packageReadme = `Heimdall – paczka instalacyjna agenta (Huginn)
+const packageReadme = `Vardr – paczka instalacyjna agenta (Huginn)
 ==============================================
 
 Token:   %s
@@ -283,15 +283,15 @@ Instalacja na jednym komputerze:
      zarejestruje się tokenem i zainstaluje jako usługa Windows.
 
 Wdrożenie masowe (Intune / SCCM / skrypt GPO), z konta SYSTEM lub
-administratora – instalator MSI (heimdall-agent.msi, jeśli jest w paczce):
-  msiexec /i heimdall-agent.msi /qn SERVER=<adres> TOKEN=<token>
+administratora – instalator MSI (vardr-agent.msi, jeśli jest w paczce):
+  msiexec /i vardr-agent.msi /qn SERVER=<adres> TOKEN=<token>
 albo bez MSI:
   siem_agent.exe install -server <adres> -token <token>
 (install-msi.cmd robi to samo z adresem i tokenem tej paczki.)
 
-Aktualizacja: nowszy heimdall-agent.msi bez TOKEN (rejestracja zostaje):
-  msiexec /i heimdall-agent.msi /qn
-Odinstalowanie: Programy i funkcje albo msiexec /x heimdall-agent.msi /qn
+Aktualizacja: nowszy vardr-agent.msi bez TOKEN (rejestracja zostaje):
+  msiexec /i vardr-agent.msi /qn
+Odinstalowanie: Programy i funkcje albo msiexec /x vardr-agent.msi /qn
 (dane i certyfikaty zostają w C:\ProgramData\SiemAgent).
 
 Paczka NIE zawiera klucza prywatnego, ale zawiera token – przechowuj ją

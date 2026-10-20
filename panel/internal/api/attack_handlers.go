@@ -233,7 +233,7 @@ func (s *Server) attackNavigator(w http.ResponseWriter, r *http.Request) {
 		info, _ := d.Technique(id)
 		for _, ta := range info.Tactics {
 			techs = append(techs, navTech{TechniqueID: id, Tactic: ta, Score: t.alerts, Enabled: true,
-				Comment: fmt.Sprintf("Reguły Heimdalla: %s. Alerty z %d dni: %d.", strings.Join(t.rules, "; "), days, t.alerts)})
+				Comment: fmt.Sprintf("Reguły Vardra: %s. Alerty z %d dni: %d.", strings.Join(t.rules, "; "), days, t.alerts)})
 		}
 		maxScore = max(maxScore, t.alerts)
 	}
@@ -242,8 +242,8 @@ func (s *Server) attackNavigator(w http.ResponseWriter, r *http.Request) {
 		version = version[:i]
 	}
 	layer := map[string]any{
-		"name":        "Heimdall – pokrycie reguł",
-		"description": fmt.Sprintf("Techniki pokryte włączonymi regułami Heimdalla; wynik = liczba alertów z %d dni (%s).", days, s.now().UTC().Format("2006-01-02")),
+		"name":        "Vardr – pokrycie reguł",
+		"description": fmt.Sprintf("Techniki pokryte włączonymi regułami Vardra; wynik = liczba alertów z %d dni (%s).", days, s.now().UTC().Format("2006-01-02")),
 		"domain":      "enterprise-attack",
 		"versions":    map[string]string{"attack": version, "navigator": "5.1.0", "layer": "4.5"},
 		"techniques":  techs,
@@ -259,6 +259,6 @@ func (s *Server) attackNavigator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="heimdall-attack-%s.json"`, s.now().UTC().Format("20060102")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="vardr-attack-%s.json"`, s.now().UTC().Format("20060102")))
 	_, _ = w.Write(b)
 }

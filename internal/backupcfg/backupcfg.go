@@ -1,4 +1,4 @@
-// Package backupcfg to ustawienia kopii zapasowych Heimdalla wspólne dla
+// Package backupcfg to ustawienia kopii zapasowych Vardra wspólne dla
 // panelu (zapis ustawień) i usługi kopii siem-backup (wykonanie):
 // harmonogram, zawartość, retencja, miejsce docelowe i sekrety.
 //

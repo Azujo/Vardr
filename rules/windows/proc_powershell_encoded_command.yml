@@ -5,7 +5,7 @@ description: |
   PowerShell uruchomiony z parametrem -EncodedCommand (albo jego skrótem).
   Zakodowane polecenia ukrywają treść skryptu przed podglądem i często są
   używane przez złośliwe oprogramowanie i narzędzia ataku.
-author: Heimdall
+author: Vardr
 tags:
   - attack.execution
   - attack.t1059.001
@@ -25,7 +25,7 @@ detection:
 falsepositives:
   - Narzędzia administracyjne i instalatory, które przekazują skrypty w postaci zakodowanej
 level: medium
-heimdall:
+vardr:
   group_by: [Computer, CommandLine]
   suppress: 1h
   instructions: |

@@ -22,3 +22,10 @@ func TestMSIPlaceholdersInWxs(t *testing.T) {
 		t.Fatal("MSIValue")
 	}
 }
+
+// Wypełniacz instalatora sprzed zmiany nazwy na Vardr nadal oznacza „brak wartości”.
+func TestMSIValueLegacyPlaceholder(t *testing.T) {
+	if MSIValue("HEIMDALL_MSI_SERVER_"+strings.Repeat("=", 108)) != "" || len(MSIServerPlaceholder) != 128 || len(MSITokenPlaceholder) != 64 {
+		t.Fatal("dawny wypełniacz")
+	}
+}

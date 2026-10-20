@@ -19,7 +19,7 @@ import (
 	"siem/agent/internal/shipper"
 )
 
-// Instalator MSI (heimdall-agent.msi) kopiuje siem_agent.exe i ca.crt do
+// Instalator MSI (vardr-agent.msi) kopiuje siem_agent.exe i ca.crt do
 // %ProgramFiles%\SiemAgent, a potem – jako SYSTEM – uruchamia:
 //
 //	siem_agent msi-install -server <SERVER> -token <TOKEN>   po instalacji plików

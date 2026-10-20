@@ -7,9 +7,9 @@ description: |
   odczyt pamięci LSASS, skrypt pobierający plik wykonywalny. Blokada
   zadziałała, ale próba to sygnał, że coś na komputerze zachowuje się jak
   narzędzie ataku. Technika zależy od reguły ASR (identyfikator w ID).
-author: Heimdall
+author: Vardr
 tags:
-  - heimdall.attack_dynamic
+  - vardr.attack_dynamic
 logsource:
   product: windows
   service: windefend
@@ -20,7 +20,7 @@ detection:
 falsepositives:
   - Nietypowe, ale legalne oprogramowanie (np. makra działu finansów) – wykluczenie ASR po weryfikacji
 level: medium
-heimdall:
+vardr:
   group_by: [host.name, Process Name]
   suppress: 24h
   instructions: |

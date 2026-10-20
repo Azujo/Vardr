@@ -158,7 +158,7 @@ func TestPlanExportEmptyRange(t *testing.T) {
 // realBatch buduje paczkę agenta w formacie z załącznika A (gzip + JSON).
 func realBatch(t *testing.T, id string, n int) []byte {
 	t.Helper()
-	b := contract.Batch{Schema: "heimdall.batch/1", BatchID: id, AgentID: "agt-1"}
+	b := contract.Batch{Schema: "vardr.batch/1", BatchID: id, AgentID: "agt-1"}
 	for i := range n {
 		b.Events = append(b.Events, contract.Event{ID: fmt.Sprintf("%s-e%d", id, i), Source: "Security",
 			Raw: fmt.Sprintf(`<Event><System><EventID>4625</EventID><Computer>PC-%d</Computer></System><EventData>%s/%d ąę</EventData></Event>`, i, id, i)})
@@ -244,7 +244,7 @@ func TestExportReadablePart(t *testing.T) {
 	}
 	if ev["event.code"] != float64(4625) || ev["host.name"] != "pc-z-normalizatora" || ev["winlog.channel"] != "Security" ||
 		!strings.HasPrefix(ev["event.original"].(string), "<Event>") || !strings.Contains(ev["event.original"].(string), "ąę") ||
-		ev["heimdall.batch_sha256"] == "" {
+		ev["vardr.batch_sha256"] == "" {
 		t.Fatalf("zdarzenie czytelne: %s", first)
 	}
 

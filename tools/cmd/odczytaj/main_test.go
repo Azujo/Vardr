@@ -20,7 +20,7 @@ const xml4625 = `<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/e
 
 func batch(t *testing.T, id string, minute int) []byte {
 	t.Helper()
-	return pack(contract.Batch{Schema: "heimdall.batch/1", BatchID: id, AgentID: "agt-dc01", Events: []contract.Event{
+	return pack(contract.Batch{Schema: "vardr.batch/1", BatchID: id, AgentID: "agt-dc01", Events: []contract.Event{
 		{ID: "agt-dc01:Security:g1:" + id, Source: "Security", Raw: fmt.Sprintf(xml4625, minute)},
 	}})
 }
@@ -62,7 +62,7 @@ func buildPackage(t *testing.T) string {
 	for i := range 3 {
 		_ = w.Add(urd.RecordMeta{Agent: "agt-dc01", Batch: fmt.Sprintf("b%d", i), ReceivedAt: now}, batch(t, fmt.Sprintf("b%d", i), i))
 	}
-	_ = w.Add(urd.RecordMeta{Agent: "agt-col", Batch: "s1", ReceivedAt: now}, pack(contract.Batch{Schema: "heimdall.batch/1",
+	_ = w.Add(urd.RecordMeta{Agent: "agt-col", Batch: "s1", ReceivedAt: now}, pack(contract.Batch{Schema: "vardr.batch/1",
 		BatchID: "s1", AgentID: "agt-col", Events: []contract.Event{{ID: "agt-col:syslog:g0:1", Source: "syslog:udp", Peer: "192.168.88.1", Raw: syslogRaw}}}))
 	if _, err := w.Commit(ctx); err != nil {
 		t.Fatal(err)

@@ -250,7 +250,7 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
             <Code block>
               {`siem_agent stop -token ${issued.token}        # prace serwisowe (start: siem_agent start)
 siem_agent uninstall -token ${issued.token}   # deinstalacja
-msiexec /x heimdall-agent.msi /qn UNINSTALL_TOKEN=${issued.token}`}
+msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=${issued.token}`}
             </Code>
             <Text size="xs" c="dimmed">
               Agent pobiera skrót tokenu z panelu – polecenie z tokenem samo odświeża konfigurację, więc działa od razu.

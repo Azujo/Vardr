@@ -293,12 +293,12 @@ func (r *Runner) test(ctx context.Context, cfg backupcfg.Config) (string, error)
 	if out, err := r.rclone(ctx, 2*time.Minute, conf, "mkdir", base+"/config"); err != nil {
 		return "", fmt.Errorf("utworzenie katalogu nieudane: %s", out)
 	}
-	probe := filepath.Join(work, ".heimdall-test")
+	probe := filepath.Join(work, ".vardr-test")
 	_ = os.WriteFile(probe, []byte(time.Now().UTC().Format(time.RFC3339)), 0o600)
-	if out, err := r.rclone(ctx, 2*time.Minute, conf, "copyto", probe, base+"/config/.heimdall-test"); err != nil {
+	if out, err := r.rclone(ctx, 2*time.Minute, conf, "copyto", probe, base+"/config/.vardr-test"); err != nil {
 		return "", fmt.Errorf("zapis nieudany: %s", out)
 	}
-	_, _ = r.rclone(ctx, time.Minute, conf, "deletefile", base+"/config/.heimdall-test")
+	_, _ = r.rclone(ctx, time.Minute, conf, "deletefile", base+"/config/.vardr-test")
 	out, err := r.rclone(ctx, 2*time.Minute, conf, "lsf", "--files-only", base+"/config")
 	if err != nil {
 		return "", fmt.Errorf("odczyt katalogu nieudany: %s", out)
@@ -357,7 +357,7 @@ func (r *Runner) genKey(ctx context.Context) (string, error) {
 	_ = os.Remove(key)
 	_ = os.Remove(key + ".pub")
 	host, _ := os.Hostname()
-	if out, err := r.cmd(ctx, 30*time.Second, nil, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "heimdall-backup@"+host, "-f", key); err != nil {
+	if out, err := r.cmd(ctx, 30*time.Second, nil, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "vardr-backup@"+host, "-f", key); err != nil {
 		return "", fmt.Errorf("ssh-keygen: %s", out)
 	}
 	pub, err := os.ReadFile(key + ".pub")

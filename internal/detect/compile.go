@@ -190,7 +190,7 @@ func compileDetection(det map[string]any) (Node, error) {
 	for name, v := range det {
 		if name == "condition" || name == "timeframe" {
 			if name == "timeframe" {
-				return nil, errors.New("timeframe nieobsługiwany – progi przez heimdall (etap 4c)")
+				return nil, errors.New("timeframe nieobsługiwany – progi przez vardr (etap 4c)")
 			}
 			continue
 		}
@@ -444,7 +444,7 @@ var condTokenRe = regexp.MustCompile(`\(|\)|\||[^\s()|]+`)
 func parseCondition(cond string, sel map[string]Node) (Node, error) {
 	p := &condParser{toks: condTokenRe.FindAllString(cond, -1), sel: sel}
 	if slices.Contains(p.toks, "|") {
-		return nil, errors.New("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez heimdall.threshold")
+		return nil, errors.New("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez vardr.threshold")
 	}
 	n, err := p.or()
 	if err != nil {

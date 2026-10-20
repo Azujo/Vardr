@@ -6,7 +6,7 @@ description: |
   ipconfig, tasklist, quser, arp, netstat…) uruchomione na jednym komputerze
   w ciągu 10 minut. Pojedyncze polecenie jest zwykłe, ale seria w krótkim
   czasie to typowy pierwszy krok napastnika po przejęciu konta albo komputera.
-author: Heimdall
+author: Vardr
 tags:
   - attack.discovery
   - attack.t1082
@@ -40,7 +40,7 @@ falsepositives:
   - Administrator diagnozujący problem (zwykle na swoim komputerze, w godzinach pracy)
   - Skrypty inwentaryzacji i logowania uruchamiane przy starcie sesji
 level: medium
-heimdall:
+vardr:
   group_by: [host.name]
   threshold:
     count: 4

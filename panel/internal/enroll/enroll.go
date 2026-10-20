@@ -114,7 +114,7 @@ func (s *Signer) Sign(csr *x509.CertificateRequest, agentID string, now time.Tim
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: agentID, Organization: []string{"Heimdall Agents"}},
+		Subject:      pkix.Name{CommonName: agentID, Organization: []string{"Vardr Agents"}},
 		NotBefore:    now.Add(-5 * time.Minute),
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,

@@ -6,7 +6,7 @@ description: |
   /transfer albo /addfile – wbudowane narzędzia Windows używane przez
   napastników do pobierania kolejnych narzędzi z ich serwera, z pominięciem
   przeglądarki i zabezpieczeń pobierania.
-author: Heimdall
+author: Vardr
 tags:
   - attack.command_and_control
   - attack.t1105
@@ -32,7 +32,7 @@ detection:
 falsepositives:
   - Stare skrypty instalacyjne pobierające pliki przez bitsadmin
 level: high
-heimdall:
+vardr:
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

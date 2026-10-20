@@ -43,11 +43,11 @@ correlation:
     account:
       user_created: TargetSid
       group_added: MemberSid
-heimdall:
+vardr:
   instructions: Sprawdź, kto utworzył konto {{SubjectUserName}}.
 `
 
-// withCond: typ i warunek korelacji (pod correlation, nie heimdall).
+// withCond: typ i warunek korelacji (pod correlation, nie vardr).
 func withCond(typ, cond string) string {
 	s := strings.Replace(corrOrdered, "type: temporal_ordered", "type: "+typ, 1)
 	if cond != "" {
@@ -58,7 +58,7 @@ func withCond(typ, cond string) string {
 
 func TestParseCorrelation(t *testing.T) {
 	c, err := ParseCorrelation([]byte(corrOrdered), "x.yml")
-	if err != nil || c.Type != "temporal_ordered" || c.Timespan != time.Hour || c.Generate || c.Heimdall.Suppress != Duration(time.Hour) {
+	if err != nil || c.Type != "temporal_ordered" || c.Timespan != time.Hour || c.Generate || c.Vardr.Suppress != Duration(time.Hour) {
 		t.Fatalf("%+v %v", c, err)
 	}
 	for name, src := range map[string]string{
@@ -72,7 +72,7 @@ func TestParseCorrelation(t *testing.T) {
 		"zły czas":        strings.Replace(corrOrdered, "timespan: 1h", "timespan: 1 hour", 1),
 		"alias spoza":     strings.Replace(corrOrdered, "group_added: MemberSid", "inna: MemberSid", 1),
 		"nieznany typ":    strings.Replace(corrOrdered, "temporal_ordered", "value_sum", 1),
-		"próg w heimdall": corrOrdered + "  threshold: {count: 5, window: 5m}\n",
+		"próg w vardr":    corrOrdered + "  threshold: {count: 5, window: 5m}\n",
 	} {
 		if _, err := ParseCorrelation([]byte(src), "x.yml"); err == nil {
 			t.Errorf("%s: brak błędu", name)
@@ -133,7 +133,7 @@ func TestEvaluateCorrelation(t *testing.T) {
 	}
 	mk := func(typ string, n int, span time.Duration, rules int) *Correlation {
 		c := &Correlation{Type: typ, Count: n, Timespan: span, Rules: make([]*Rule, rules)}
-		c.Heimdall.Suppress = Duration(max(time.Hour, span))
+		c.Vardr.Suppress = Duration(max(time.Hour, span))
 		if typ == "value_count" {
 			c.Field = "x"
 		}

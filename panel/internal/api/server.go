@@ -119,7 +119,7 @@ const (
 	defaultLockAfter = 10
 	defaultLockFor   = 15 * time.Minute
 
-	cookieName = "__Host-heimdall" // __Host-: tylko HTTPS, bez Domain, Path=/
+	cookieName = "__Host-vardr" // __Host-: tylko HTTPS, bez Domain, Path=/
 	csrfHeader = "X-CSRF-Token"
 )
 
@@ -356,9 +356,9 @@ func (s *Server) allow(key string, perMin, burst float64) bool {
 
 // ---- strona aplikacji ----
 
-const placeholderPage = `<!doctype html><html lang="pl"><meta charset="utf-8"><title>Heimdall</title>
+const placeholderPage = `<!doctype html><html lang="pl"><meta charset="utf-8"><title>Vardr</title>
 <body style="font-family:sans-serif;max-width:40rem;margin:4rem auto">
-<h1>Heimdall – panel nie został zbudowany</h1>
+<h1>Vardr – panel nie został zbudowany</h1>
 <p>API działa, ale brak plików aplikacji. Zbuduj frontend: <code>cd panel/web &amp;&amp; npm ci &amp;&amp; npm run build</code>,
 a potem ponownie zbuduj <code>siem-api</code>.</p></body></html>`
 

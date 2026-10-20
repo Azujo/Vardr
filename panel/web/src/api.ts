@@ -290,11 +290,11 @@ export const enrollApi = {
     request<{ revoked: number }>("POST", `/api/v1/agents/${encodeURIComponent(id)}/revoke`, { reason }),
 
   // Paczka ZIP: token w treści żądania (nie w adresie), plik zapisywany przez przeglądarkę.
-  downloadPackage: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/package", { secret }, "heimdall-agent.zip"),
+  downloadPackage: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/package", { secret }, "vardr-agent.zip"),
   // Jeden plik MSI z adresem serwera i tokenem – instalacja albo aktualizacja podwójnym kliknięciem.
-  downloadMSI: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/msi", { secret }, "heimdall-agent.msi"),
+  downloadMSI: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/msi", { secret }, "vardr-agent.msi"),
   // Bazowy instalator bez tokenu – aktualizacja zainstalowanych agentów.
-  downloadUpdateMSI: () => downloadFile("GET", "/api/v1/agent-update.msi", undefined, "heimdall-agent-aktualizacja.msi"),
+  downloadUpdateMSI: () => downloadFile("GET", "/api/v1/agent-update.msi", undefined, "vardr-agent-aktualizacja.msi"),
 };
 
 // downloadFile pobiera plik z API (sesja w ciasteczku, CSRF przy POST) i zapisuje go w przeglądarce.

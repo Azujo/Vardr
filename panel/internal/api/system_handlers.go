@@ -13,7 +13,7 @@ type StatusReporter interface {
 	Report(ctx context.Context, now time.Time) status.Report
 }
 
-// systemStatus: zdrowie usług Heimdalla (Prometheus) dla strony „Stan systemu”.
+// systemStatus: zdrowie usług Vardra (Prometheus) dla strony „Stan systemu”.
 func (s *Server) systemStatus(w http.ResponseWriter, r *http.Request) {
 	if s.Status == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"configured": false, "grafana_url": s.GrafanaURL})

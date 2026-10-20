@@ -31,7 +31,7 @@ export default function LoginPage() {
           <Stack>
             <Stack gap={4} align="center">
               <IconShieldHalf size={48} color="var(--mantine-color-yellow-5)" />
-              <Title order={2}>Heimdall</Title>
+              <Title order={2}>Vardr</Title>
               <Text c="dimmed" size="sm">
                 Hliðskjálf – panel SIEM
               </Text>

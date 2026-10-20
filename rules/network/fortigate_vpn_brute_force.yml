@@ -6,7 +6,7 @@ description: |
   w ciągu 5 minut, na dowolne konta. Zgadywanie haseł (brute force) albo
   sprawdzanie wykradzionych par login–hasło (credential stuffing) – portal
   VPN jest jednym z najczęściej atakowanych celów z internetu.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110
@@ -22,7 +22,7 @@ falsepositives:
   - Użytkownik z wygasłym hasłem, którego klient FortiClient ponawia połączenie
   - Kilku użytkowników za jednym adresem NAT (np. biuro partnera) z błędnymi hasłami
 level: high
-heimdall:
+vardr:
   group_by: [source.ip]
   threshold:
     count: 10

@@ -302,7 +302,7 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 			}
 			curDay, part = day, 0
 			days = append(days, dayFile{name: name})
-			cur.line("HEIMDALL – zdarzenia z dnia %s (czas polski), plik %s", day, name)
+			cur.line("VARDR – zdarzenia z dnia %s (czas polski), plik %s", day, name)
 			cur.line("Kolejność: według czasu zdarzenia. Pełny oryginalny zapis (XML) każdego zdarzenia: pliki")
 			cur.line("zdarzenia/*.ndjson.gz w paczce, pole event.original (wyszukaj po identyfikatorze).")
 			cur.line("")
@@ -399,7 +399,7 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	if err != nil {
 		return err
 	}
-	t.line("HEIMDALL – ODCZYT EKSPORTU ARCHIWUM NIS2")
+	t.line("VARDR – ODCZYT EKSPORTU ARCHIWUM NIS2")
 	t.line("========================================")
 	t.line("Utworzono:      %s (czas polski), odczytaj.exe wersja %s", plTime(now), version)
 	t.line("Folder paczki:  %s", dir)
@@ -419,7 +419,7 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	}
 	t.line("   Kotwica (SHA-256 najnowszego manifestu archiwum):")
 	t.line("     %s", info.Latest.SHA256)
-	t.line("   Porównaj ją z wartością przekazaną niezależnie (protokół przekazania, panel Heimdalla).")
+	t.line("   Porównaj ją z wartością przekazaną niezależnie (protokół przekazania, panel Vardra).")
 	t.line("")
 
 	t.line("2. O EKSPORCIE")
@@ -428,7 +428,7 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	t.line("   Zlecił:             %s, %s (czas polski)", info.RequestedBy, plTime(info.RequestedAt))
 	t.line("   Powód:              %s", info.Reason)
 	t.line("   Zakres (przyjęcie przez serwer): %s – %s (czas polski)", plTime(info.From), plTime(info.To))
-	t.line("   Paczkę utworzono:   %s (czas polski), Heimdall %s", plTime(info.CreatedAt), info.ServerVersion)
+	t.line("   Paczkę utworzono:   %s (czas polski), Vardr %s", plTime(info.CreatedAt), info.ServerVersion)
 	if len(info.Agents) > 0 {
 		t.line("   Tylko agenci:       %s", strings.Join(info.Agents, ", "))
 		t.line("                       (zdarzenia innych agentów są tylko w segmentach – dowodzie)")
@@ -540,7 +540,7 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 		t.line("     ODCZYT\\zdarzenia\\%s   – %d zdarzeń", d.name, d.count)
 	}
 	t.line("")
-	t.line("   Pola „komputer”, „użytkownik” itp. wylicza Heimdall z oryginalnego zapisu. Rozstrzygający")
+	t.line("   Pola „komputer”, „użytkownik” itp. wylicza Vardr z oryginalnego zapisu. Rozstrzygający")
 	t.line("   jest zawsze oryginał: zdarzenia/*.ndjson.gz, pole event.original (XML Windows), a jako")
 	t.line("   dowód – segments/ i chain/ (opis w README.txt). Folder ODCZYT można usunąć i odtworzyć")
 	t.line("   ponownie; nie jest częścią paczki i nie wpływa na wynik sprawdzenia.")

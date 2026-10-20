@@ -1,8 +1,8 @@
 {
-  "name": "heimdall-panel",
+  "name": "vardr-panel",
   "private": true,
   "version": "0.1.0",
-  "description": "Hliðskjálf – panel zarządzania SIEM Heimdall",
+  "description": "Hliðskjálf – panel zarządzania SIEM Vardr",
   "type": "module",
   "scripts": {
     "dev": "vite",

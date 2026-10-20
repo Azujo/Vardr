@@ -61,6 +61,8 @@ func NormalizeUninstallToken(t string) string {
 // UninstallHash to skrót tokenu związany z agentem (token jednego agenta
 // nie pasuje do innego).
 func UninstallHash(agentID, token string) string {
+	// Separator domeny skrótu zostaje pod dawną nazwą projektu – zmiana
+	// unieważniłaby tokeny odinstalowania zainstalowanych agentów.
 	sum := sha256.Sum256([]byte("heimdall-uninstall-v1\x00" + agentID + "\x00" + NormalizeUninstallToken(token)))
 	return hex.EncodeToString(sum[:])
 }

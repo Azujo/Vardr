@@ -67,8 +67,8 @@ func TestRulesAttackTags(t *testing.T) {
 			t.Errorf("%s: %v", name, m.Warnings)
 		}
 		// Reguła bazowa korelacji sama nie alarmuje – technikę ma korelacja;
-		// heimdall.attack_dynamic – technika zależy od wykrycia (Defender, ASR).
-		if len(m.Techniques) == 0 && !base && !slices.Contains(tags, "heimdall.attack_dynamic") {
+		// vardr.attack_dynamic – technika zależy od wykrycia (Defender, ASR).
+		if len(m.Techniques) == 0 && !base && !slices.Contains(tags, "vardr.attack_dynamic") {
 			t.Errorf("%s: brak techniki ATT&CK", name)
 		}
 	}

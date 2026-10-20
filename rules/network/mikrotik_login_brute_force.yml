@@ -5,7 +5,7 @@ description: |
   Co najmniej 5 nieudanych logowań do RouterOS (Winbox, SSH, WebFig, API,
   Telnet) z jednego adresu w ciągu 5 minut. Typowe dla zgadywania hasła
   administratora, zwłaszcza gdy usługi zarządzania są dostępne z internetu.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110.001
@@ -20,7 +20,7 @@ falsepositives:
   - Administrator, który pomylił hasło albo ma zapamiętane stare w Winboxie
   - Skrypt albo system monitoringu ze starym hasłem (stały adres, równe odstępy)
 level: medium
-heimdall:
+vardr:
   group_by: [host.name, source.ip]
   threshold:
     count: 5

@@ -150,7 +150,7 @@ export default function SystemPage() {
         <div>
           <Title order={2}>Himinbjörg – stan systemu</Title>
           <Text c="dimmed" size="sm">
-            Zdrowie usług Heimdalla z metryk (Prometheus), odświeżane co 30 s. Szczegółowe wykresy i alerty – linki do Grafany niżej.
+            Zdrowie usług Vardra z metryk (Prometheus), odświeżane co 30 s. Szczegółowe wykresy i alerty – linki do Grafany niżej.
           </Text>
         </div>
         {report && (

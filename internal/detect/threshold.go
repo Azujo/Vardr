@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Semantyka reguł progowych (heimdall.threshold) – wspólna dla silnika
+// Semantyka reguł progowych (vardr.threshold) – wspólna dla silnika
 // w locie, silnika zapytań i testu reguły w panelu, niezależna od
 // kolejności napływu zdarzeń:
 //
@@ -118,10 +118,10 @@ func Components(s Series, marks []bool, suppress time.Duration) []Span {
 // DistinctValue: wartość pola Distinct zdarzenia małymi literami (puste
 // albo „-” – „(brak)”); bez Distinct – pusta.
 func (r *Rule) DistinctValue(e Event) string {
-	if r.Heimdall.Threshold == nil || r.Heimdall.Threshold.Distinct == "" {
+	if r.Vardr.Threshold == nil || r.Vardr.Threshold.Distinct == "" {
 		return ""
 	}
-	v, _ := e.Get(r.Heimdall.Threshold.Distinct)
+	v, _ := e.Get(r.Vardr.Threshold.Distinct)
 	if v = strings.ToLower(v); v == "" || v == "-" {
 		return "(brak)"
 	}

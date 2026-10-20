@@ -64,7 +64,7 @@ Zmienne: `SIEM_LAB_HOST` (`siem@192.168.88.98`), `SIEM_LAB_KEY` (`~/.ssh/siem_la
 - **Zatrzymanie, deinstalacja:** panel → agent → Token deinstalacji (ponowne hasło, powód). Token jest jednorazowy i ważny krótko.
 - **Unieważnienie:** panel → agent → Unieważnij. Certyfikat trafia na listę odrzucanych przez ingest, a alert utraty łączności pomija agenta.
 - **Kolektor i konektor** w laboratorium: `deploy/lab/service-enroll.sh collector|connector [grupa]` (jednorazowo po pierwszym wdrożeniu).
-- **Polityka audytu i Sysmon w domenie:** `deploy/windows/heimdall-gpo.ps1`, `deploy/windows/sysmon.ps1`.
+- **Polityka audytu i Sysmon w domenie:** `deploy/windows/vardr-gpo.ps1`, `deploy/windows/sysmon.ps1`.
 
 ## Kopie zapasowe
 
@@ -81,7 +81,7 @@ Kopie wykonuje usługa `siem-backup` (kontener `backup`), a ustawia się je w pa
 
 - Panel zapisuje ustawienia w Sadze (zawsze z ponownym hasłem, do audytu). Usługa sprawdza je co 15 s.
 - Hasła i klucze do miejsca docelowego panel szyfruje kluczem publicznym usługi, więc nie odczyta ich ani panel, ani baza.
-- Kopia to paczka `heimdall-RRRRMMDD-GGMM-k<id>.tar.gpg` zaszyfrowana hasłem kopii (gpg AES-256). Lokalnie leży w `SIEM_BACKUP_DIR` (lab: `/srv/heimdall/backup`), w miejscu docelowym w `config/`, a przyrosty archiwum w `urd/`.
+- Kopia to paczka `vardr-RRRRMMDD-GGMM-k<id>.tar.gpg` zaszyfrowana hasłem kopii (gpg AES-256). Lokalnie leży w `SIEM_BACKUP_DIR` (lab: `/srv/heimdall/backup`), w miejscu docelowym w `config/`, a przyrosty archiwum w `urd/`.
 - Wysyłka idzie przez rclone. Klucz serwera SFTP jest zapamiętywany przy pierwszym połączeniu (odcisk widać w panelu); jego późniejsza zmiana zatrzymuje wysyłkę. Żeby zaakceptować nowy klucz, usuń wpis z `~/siem-lab/backup-state/known_hosts`.
 - Panel pokazuje historię kopii z wynikiem i ma przyciski „Zrób kopię teraz” i „Sprawdź połączenie”.
 - Stan usługi (klucz do sekretów, klucz SSH, `known_hosts`) jest w `~/siem-lab/backup-state`. Utrata tego katalogu oznacza nowe klucze: sekrety trzeba wpisać ponownie, a nowy klucz SSH dopisać na serwerze kopii.
@@ -108,7 +108,7 @@ Nic nie jest usuwane ani przepisywane: wynik weryfikacji, która wykryła niezgo
 ./backup.sh                 # kopia teraz (zlecenie dla usługi, czeka na wynik)
 ./backup.sh haslo init      # pierwsze hasło (pokazywane raz – zapisz poza serwerem)
 ./backup.sh haslo pokaz | zmien
-./restore.sh <heimdall-….tar.gpg> [katalog z paczkami urd-…]   # odtworzenie na czystej VM
+./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-…]   # odtworzenie na czystej VM
 ./restore.sh --zlecenie     # przywrócenie zlecone w panelu (uruchamia cron)
 ```
 
@@ -143,7 +143,7 @@ Planowanie dysku: ok. 125 B na zdarzenie w ClickHouse z surowym XML (ok. 75 GB n
 ## Monitorowanie
 
 - **Grafana** (`:3000`): pulpity „SIEM – przegląd zdarzeń” i „SIEM – zdrowie potoku” (przepływ przez etapy, odmowy, kolejki, opóźnienia, CPU i pamięć usług, ClickHouse).
-- **Alerty Grafany** (`grafana/provisioning/alerting/heimdall.yaml`): potok nie działa, detektor nie działa, archiwizator nie działa, kolejka NATS > 80%, ingest odmawia, silnik zapytań > 15 min w tyle, reguły z błędami, archiwum (niezgodności, brak weryfikacji, mało miejsca, archiwizacja wyłączona, zaplanowane osłabienie), dysk systemowy, kopie zapasowe. Alerty idą przez przekaźnik panelu na kanały powiadomień.
+- **Alerty Grafany** (`grafana/provisioning/alerting/vardr.yaml`): potok nie działa, detektor nie działa, archiwizator nie działa, kolejka NATS > 80%, ingest odmawia, silnik zapytań > 15 min w tyle, reguły z błędami, archiwum (niezgodności, brak weryfikacji, mało miejsca, archiwizacja wyłączona, zaplanowane osłabienie), dysk systemowy, kopie zapasowe. Alerty idą przez przekaźnik panelu na kanały powiadomień.
 - **Panel → Himinbjörg:** stan usług i kolejek.
 - **Logi:** `docker compose logs --since 10m <usługa>`; ostrzeżenia i błędy: `… | grep -E '"WARN"|"ERROR"'`.
 

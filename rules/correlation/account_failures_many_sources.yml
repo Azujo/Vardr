@@ -5,7 +5,7 @@ status: stable
 description: |
   Nieudane logowanie (4625) na konto użytkownika (bez kont komputerów
   i pustych nazw). Sama nie tworzy alertów – zasila korelację niżej.
-author: Heimdall
+author: Vardr
 logsource:
   product: windows
   service: security
@@ -28,7 +28,7 @@ description: |
   Nieudane logowania na to samo konto z co najmniej 4 różnych adresów IP
   w ciągu 15 minut. Zapamiętane stare hasło daje zwykle jedno źródło; wiele
   źródeł to rozproszone zgadywanie hasła albo użycie wykradzionego loginu.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110
@@ -45,7 +45,7 @@ correlation:
     field: IpAddress
 falsepositives:
   - Użytkownik z zapamiętanym starym hasłem na kilku urządzeniach (telefon, laptop, VPN)
-heimdall:
+vardr:
   instructions: |
     Konto {{TargetDomainName}}\{{TargetUserName}}: {{count}} nieudanych logowań
     z różnych adresów w {{window}}. Sprawdź listę adresów w zdarzeniach alertu.

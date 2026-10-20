@@ -46,7 +46,9 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.Rejected.Add(1)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set(contract.HeaderServerTime, time.Now().UTC().Format(time.RFC3339Nano))
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		w.Header().Set(contract.HeaderServerTime, now)
+		w.Header().Set(contract.LegacyHeaderServerTime, now)
 		w.WriteHeader(code)
 		resp := contract.Response{Error: msg}
 		if code == http.StatusOK {

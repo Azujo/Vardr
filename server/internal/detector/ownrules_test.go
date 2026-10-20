@@ -10,7 +10,7 @@ import (
 
 // importedDir: reguły zaimportowane z SigmaHQ (rules/sigmahq). Testy
 // zgodności silników, korpusu i tagów ATT&CK dotyczą reguł utrzymywanych
-// w Heimdallu – zaimportowane sprawdza osobno TestImportedRules.
+// w Vardrze – zaimportowane sprawdza osobno TestImportedRules.
 const importedDir = "sigmahq/"
 
 func ownRules(rules []*detect.Rule) []*detect.Rule {
@@ -55,7 +55,7 @@ func TestImportedRules(t *testing.T) {
 		}
 		n++
 		if r.Enabled() {
-			t.Errorf("%s: zaimportowana reguła włączona w pliku (heimdall.enabled: false – włączanie w panelu)", r.File)
+			t.Errorf("%s: zaimportowana reguła włączona w pliku (vardr.enabled: false – włączanie w panelu)", r.File)
 		}
 	}
 	t.Logf("zaimportowanych reguł: %d", n)

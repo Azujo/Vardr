@@ -6,7 +6,7 @@ description: |
   WinRM) uruchomił powłokę albo narzędzie systemowe. Tak wyglądają
   polecenia wykonywane zdalnie z innego komputera – np. wmiexec z Impacket
   albo Invoke-Command napastnika.
-author: Heimdall
+author: Vardr
 tags:
   - attack.lateral_movement
   - attack.t1021.006
@@ -33,7 +33,7 @@ falsepositives:
   - Systemy zarządzania (SCCM/Intune, monitoring) uruchamiające skrypty przez WMI
   - Administratorzy używający PowerShell Remoting
 level: medium
-heimdall:
+vardr:
   group_by: [host.name]
   suppress: 1h
   instructions: |

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kopie zapasowe Heimdalla – polecenia serwera. Kopie wykonuje usługa
+# Kopie zapasowe Vardra – polecenia serwera. Kopie wykonuje usługa
 # siem-backup (kontener backup) według ustawień z panelu: Administracja →
 # Kopie zapasowe (harmonogram, zawartość, retencja, miejsce docelowe).
 #
@@ -28,7 +28,7 @@ show_pass() {
   cat <<EOF
 
   ======================================================================
-   HASŁO KOPII ZAPASOWYCH HEIMDALLA
+   HASŁO KOPII ZAPASOWYCH VARDRA
 
        $(cat "$pass_file")
 

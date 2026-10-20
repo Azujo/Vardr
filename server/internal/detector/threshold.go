@@ -11,7 +11,7 @@ import (
 	"siem/internal/detect"
 )
 
-// Reguły progowe (heimdall.threshold).
+// Reguły progowe (vardr.threshold).
 //
 // Semantyka – wspólna dla obu silników (w locie i zapytań), niezależna od
 // kolejności napływu zdarzeń:
@@ -107,17 +107,17 @@ func NewThresholds() *Thresholds {
 // Signature opisuje parametry reguły, od których zależy stan progu
 // (zmiana = stan od nowa).
 func Signature(r *detect.Rule) string {
-	t := r.Heimdall.Threshold
+	t := r.Vardr.Threshold
 	if t == nil {
 		return ""
 	}
 	return fmt.Sprintf("%d|%s|%s|%s", t.Count, time.Duration(t.Window), strings.ToLower(t.Distinct),
-		strings.Join(r.Heimdall.GroupBy, ","))
+		strings.Join(r.Vardr.GroupBy, ","))
 }
 
 // keep: jak długo trzymać zdarzenia klucza względem najnowszego.
 func keep(r *detect.Rule) time.Duration {
-	return time.Duration(r.Heimdall.Threshold.Window) + max(time.Duration(r.Heimdall.Suppress), ThresholdLateness)
+	return time.Duration(r.Vardr.Threshold.Window) + max(time.Duration(r.Vardr.Suppress), ThresholdLateness)
 }
 
 // sync dopasowuje stan do bieżących reguł progowych.
@@ -284,7 +284,7 @@ func (t *Thresholds) observe(r *detect.Rule, ev detect.Event, base alerts.Hit) (
 	i := ks.insert(e)
 	t.total++
 	var hits []alerts.Hit
-	if ks.summary != "" && extendsAlert(ks.entries, i, time.Duration(r.Heimdall.Suppress)) {
+	if ks.summary != "" && extendsAlert(ks.entries, i, time.Duration(r.Vardr.Suppress)) {
 		e.emitted = true
 		hits = []alerts.Hit{hitOf(base, e, ks.summary, ks.instr)}
 	} else {
@@ -321,8 +321,8 @@ func observation(r *detect.Rule, ev detect.Event, base alerts.Hit, sig string, n
 // są tylko serie zawierające któreś z tych zdarzeń (silnik zapytań – serie
 // bez nowych zdarzeń były już zgłoszone wcześniej).
 func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only map[string]bool) []alerts.Hit {
-	suppress := time.Duration(r.Heimdall.Suppress)
-	marks, wins, found := thresholdMarks(es, r.Heimdall.Threshold, suppress)
+	suppress := time.Duration(r.Vardr.Suppress)
+	marks, wins, found := thresholdMarks(es, r.Vardr.Threshold, suppress)
 	if !found {
 		return nil
 	}
@@ -370,10 +370,10 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 // thresholdTexts: opis i instrukcja alertu progowego (zmienne {{count}},
 // {{window}} i {{values}} – lista różnych wartości pola Distinct).
 func thresholdTexts(r *detect.Rule, ev detect.Event, win []*entry) (string, string) {
-	th := r.Heimdall.Threshold
+	th := r.Vardr.Threshold
 	window := fmtWindow(time.Duration(th.Window))
 	var key []string
-	for _, f := range r.Heimdall.GroupBy {
+	for _, f := range r.Vardr.GroupBy {
 		if v, _ := ev.Get(f); v != "" {
 			key = append(key, f+"="+v)
 		}
@@ -405,7 +405,7 @@ func thresholdTexts(r *detect.Rule, ev detect.Event, win []*entry) (string, stri
 	if th.Distinct != "" {
 		s += "; " + th.Distinct + ": " + extra["values"]
 	}
-	return s, detect.RenderWith(r.Heimdall.Instructions, ev, extra)
+	return s, detect.RenderWith(r.Vardr.Instructions, ev, extra)
 }
 
 // fmtWindow: czas okna po polsku („5 min”, „1 h”, „90 s”).

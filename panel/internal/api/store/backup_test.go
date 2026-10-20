@@ -32,7 +32,7 @@ func TestPostgresBackup(t *testing.T) {
 		t.Fatalf("domyślne: %+v %v", st, err)
 	}
 	cfg := backupcfg.Default()
-	cfg.Target = backupcfg.Target{Method: backupcfg.MethodSMB, Host: "nas", User: "kopie", Share: "heimdall"}
+	cfg.Target = backupcfg.Target{Method: backupcfg.MethodSMB, Host: "nas", User: "kopie", Share: "vardr"}
 	if err := db.SaveBackup(ctx, cfg, map[string]SealedSecret{"password": {Sealed: []byte{1, 2, 3}, KeyID: "abc"}}, nil, "adam"); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestPostgresBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, err = db.Backup(ctx)
-	if err != nil || !st.Saved || st.Config.Target.Share != "heimdall" || len(st.Secrets) != 1 || st.Secrets[0].KeyID != "abc" ||
+	if err != nil || !st.Saved || st.Config.Target.Share != "vardr" || len(st.Secrets) != 1 || st.Secrets[0].KeyID != "abc" ||
 		st.Runner == nil || st.Runner.KeyID != backupcfg.KeyID(pub) || len(st.Runs) != 1 {
 		t.Fatalf("po zapisie: %+v %v", st, err)
 	}
@@ -70,7 +70,7 @@ func TestPostgresBackup(t *testing.T) {
 		t.Fatalf("zlecenia: %+v", st.Requests)
 	}
 	// Sprawdzenie zawartości: osobne zlecenie dla każdej kopii; lista kopii.
-	f1 := map[string]any{"location": "local", "name": "heimdall-20261019-0215-k1.tar.gpg"}
+	f1 := map[string]any{"location": "local", "name": "vardr-20261019-0215-k1.tar.gpg"}
 	if _, err := db.AddBackupRequest(ctx, "inspect", "adam", f1); err != nil {
 		t.Fatal(err)
 	}

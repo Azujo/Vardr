@@ -5,7 +5,7 @@ description: |
   Utworzono nowe konto (domenowe albo lokalne). Samo w sobie zwykłe, ale konta
   zakładane poza procesem kadrowym albo na serwerach są typowym sposobem
   utrwalenia dostępu.
-author: Heimdall
+author: Vardr
 tags:
   - attack.persistence
   - attack.t1136
@@ -19,7 +19,7 @@ detection:
 falsepositives:
   - Zakładanie kont przez dział IT
 level: low
-heimdall:
+vardr:
   instructions: |
     Konto {{TargetUserName}} (domena {{TargetDomainName}}) założył
     {{SubjectDomainName}}\{{SubjectUserName}}. Sprawdź, czy było zgłoszenie.

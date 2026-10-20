@@ -24,9 +24,9 @@ import { ApiError, backupApi, formatBytes, formatDate, type BackupFile, type Bac
 const partLabels: Record<BackupPart, string> = { saga: "baza Saga", config: "konfiguracja", grafana: "Grafana" };
 const confirmWord = "PRZYWRÓĆ";
 
-// Czas kopii z nazwy (heimdall-RRRRMMDD-GGMM-k….tar.gpg, UTC).
+// Czas kopii z nazwy (vardr-RRRRMMDD-GGMM-k….tar.gpg, UTC; heimdall- sprzed zmiany nazwy).
 function backupTime(name: string): string | undefined {
-  const m = /^heimdall-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})-/.exec(name);
+  const m = /^(?:vardr|heimdall)-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})-/.exec(name);
   return m ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00Z` : undefined;
 }
 

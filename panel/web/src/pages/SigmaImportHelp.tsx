@@ -25,19 +25,19 @@ const steps: Step[] = [
     bash: String.raw`grep -rlE '^status: (experimental|deprecated|unsupported)' rules/sigmahq | xargs -r rm`,
   },
   {
-    title: "Sprawdzenie parserem Heimdalla",
+    title: "Sprawdzenie parserem Vardra",
     ps: String.raw`& "C:\Program Files\Go\bin\go.exe" run ./server/cmd/siem-detector check rules > check.txt; "OK: " + (Select-String -Path check.txt -Pattern '^OK').Count; "błędy: " + (Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+sigmahq/').Count`,
     bash: "go run ./server/cmd/siem-detector check rules > check.txt",
   },
   {
-    title: "Usunięcie reguł, których Heimdall nie obsługuje (potem krok 4 jeszcze raz – 0 błędów)",
+    title: "Usunięcie reguł, których Vardr nie obsługuje (potem krok 4 jeszcze raz – 0 błędów)",
     ps: String.raw`Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+(sigmahq/[^\s:]+\.yml)' | ForEach-Object { "rules/" + $_.Matches[0].Groups[1].Value } | Sort-Object -Unique | Where-Object { Test-Path $_ } | Remove-Item`,
     bash: String.raw`grep -vE '^(OK|UWAGA)' check.txt | sed -nE 's/^[^ ]+ +(sigmahq\/[^ :]+\.yml).*/rules\/\1/p' | sort -u | xargs -r rm`,
   },
   {
     title: "Wszystkie zaimportowane reguły wyłączone w plikach",
-    ps: "Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | ForEach-Object { [IO.File]::AppendAllText($_.FullName, \"`nheimdall:`n  enabled: false`n\") }",
-    bash: String.raw`find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nheimdall:\n  enabled: false\n" >> "$1"' _ {} \;`,
+    ps: "Get-ChildItem rules/sigmahq -Recurse -Filter *.yml | ForEach-Object { [IO.File]::AppendAllText($_.FullName, \"`nvardr:`n  enabled: false`n\") }",
+    bash: String.raw`find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nvardr:\n  enabled: false\n" >> "$1"' _ {} \;`,
     note: "Bez tego po wdrożeniu włączyłyby się setki reguł naraz.",
   },
   {
@@ -74,9 +74,9 @@ export default function SigmaImportHelp() {
         <Anchor href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noopener noreferrer">
           SigmaHQ
         </Anchor>{" "}
-        to otwarta baza reguł Sigma. Heimdall obsługuje podzbiór Sigmy – polecenia kopiują reguły dla zbieranych źródeł do{" "}
+        to otwarta baza reguł Sigma. Vardr obsługuje podzbiór Sigmy – polecenia kopiują reguły dla zbieranych źródeł do{" "}
         <Code>rules/sigmahq/</Code>, odrzucają te, których parser nie obsługuje, i wdrażają resztę <b>wyłączoną</b>. Uruchamiasz je
-        w katalogu projektu (komputer administratora z repozytorium Heimdalla). Opis: <Code>docs/reguly.md</Code>, „Import reguł
+        w katalogu projektu (komputer administratora z repozytorium Vardra). Opis: <Code>docs/reguly.md</Code>, „Import reguł
         SigmaHQ”.
       </Text>
       <SegmentedControl

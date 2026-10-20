@@ -15,7 +15,7 @@ Spis: [siem_agent](#siem_agent--agent-windows) · [siem-collector](#siem-collect
 
 ## siem_agent – agent Windows
 
-Kod: `agent/cmd/siem_agent`. Usługa Windows `SiemAgent`, instalowana w `C:\Program Files\Heimdall`, dane w `C:\ProgramData\Heimdall` (konfiguracja, certyfikaty, stan odczytu, bufor dyskowy, logi, dziennik ochrony).
+Kod: `agent/cmd/siem_agent`. Usługa Windows `SiemAgent`, instalowana w `C:\Program Files\SiemAgent`, dane w `C:\ProgramData\SiemAgent` (konfiguracja, certyfikaty, stan odczytu, bufor dyskowy, logi, dziennik ochrony).
 
 **Co robi:** subskrybuje kanały dziennika zdarzeń (Security, System, Application, Sysmon, PowerShell, Defender, Harmonogram zadań – według profilu z panelu), renderuje XML, paczkuje i wysyła do `siem-ingest`. Pilnuje rozmiaru dzienników (`logwatch` – ostrzega, zanim Windows nadpisze nieodczytane zdarzenia), trzyma zdarzenia w buforze dyskowym przy braku łączności, ogranicza zużycie CPU, pamięci i łącza, co minutę wysyła heartbeat, chroni usługę przed zatrzymaniem.
 

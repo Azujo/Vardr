@@ -5,7 +5,7 @@ description: |
   Co najmniej 10 nieudanych logowań (4625) na to samo konto w ciągu 5 minut,
   z dowolnych komputerów. Typowe dla zgadywania hasła przez RDP, SMB, LDAP
   albo formularze korzystające z uwierzytelniania Windows.
-author: Heimdall
+author: Vardr
 tags:
   - attack.credential_access
   - attack.t1110.001
@@ -26,7 +26,7 @@ falsepositives:
   - Program albo usługa z zapamiętanym starym hasłem (zwykle jeden komputer źródłowy)
   - Użytkownik, który zapomniał hasła po jego zmianie
 level: medium
-heimdall:
+vardr:
   group_by: [TargetUserName]
   threshold:
     count: 10

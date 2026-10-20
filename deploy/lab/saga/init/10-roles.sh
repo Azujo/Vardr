@@ -31,10 +31,10 @@ boot=$(psql --no-psqlrc -tA --username "$admin" --dbname "$db" -c "SELECT rolnam
 if [ "$boot" != "$admin" ]; then
   echo "przemianowanie superużytkownika $boot -> $admin"
   psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username "$boot" --dbname "$db" \
-    -c "DROP ROLE IF EXISTS heimdall_rename" -c "CREATE ROLE heimdall_rename LOGIN SUPERUSER"
-  psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username heimdall_rename --dbname "$db" \
+    -c "DROP ROLE IF EXISTS vardr_rename" -c "CREATE ROLE vardr_rename LOGIN SUPERUSER"
+  psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username vardr_rename --dbname "$db" \
     -c "ALTER ROLE \"$boot\" RENAME TO \"$admin\""
-  psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username "$admin" --dbname "$db" -c "DROP ROLE heimdall_rename"
+  psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username "$admin" --dbname "$db" -c "DROP ROLE vardr_rename"
 fi
 
 psql -v ON_ERROR_STOP=1 --no-psqlrc --quiet --username "$admin" --dbname "$db" \

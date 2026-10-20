@@ -125,7 +125,7 @@ func TestRepositoryRules(t *testing.T) {
 	plain := ev("Security", 4688, map[string]string{"NewProcessName": `C:\x\powershell.exe`, "CommandLine": `powershell -ExecutionPolicy Bypass -File x.ps1`})
 	must("4b767c65-adff-4033-841f-3a325dc1bda4", plain, false)
 	must("3a480a5a-0ee4-4835-8c79-62f868ca9498", ev("Microsoft-Windows-PowerShell/Operational", 4104,
-		map[string]string{"ScriptBlockText": "'heimdall-test VirtualAlloc'"}), true)
+		map[string]string{"ScriptBlockText": "'vardr-test VirtualAlloc'"}), true)
 	must("3a480a5a-0ee4-4835-8c79-62f868ca9498", ev("Microsoft-Windows-PowerShell/Operational", 4104,
 		map[string]string{"ScriptBlockText": "(New-Object Net.WebClient).DownloadFile('x','y')"}), false)
 	must("7ea5663e-c655-439a-a894-616ba1e203d6", ev("System", 7045, map[string]string{"ImagePath": `C:\Users\jan\AppData\Local\Temp\svc.exe`}), true)

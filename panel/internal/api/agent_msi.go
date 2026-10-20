@@ -21,7 +21,7 @@ import (
 
 // agentMSIPath: instalator budowany przez deploy.sh obok programu agenta.
 func (s *Server) agentMSIPath() string {
-	return filepath.Join(filepath.Dir(s.Enroll.AgentExe), "heimdall-agent.msi")
+	return filepath.Join(filepath.Dir(s.Enroll.AgentExe), "vardr-agent.msi")
 }
 
 func (s *Server) readAgentMSI(w http.ResponseWriter) ([]byte, bool) {
@@ -87,7 +87,7 @@ func (s *Server) tokenMSI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "enroll_msi_downloaded", t.Name, nil)
-	sendMSI(w, "heimdall-agent-"+safeFileName(t.Name)+".msi", out)
+	sendMSI(w, "vardr-agent-"+safeFileName(t.Name)+".msi", out)
 }
 
 // agentUpdateMSI: bazowy instalator bez tokenu – aktualizacja agentów
@@ -103,5 +103,5 @@ func (s *Server) agentUpdateMSI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "agent_update_msi_downloaded", "", nil)
-	sendMSI(w, "heimdall-agent-aktualizacja.msi", data)
+	sendMSI(w, "vardr-agent-aktualizacja.msi", data)
 }

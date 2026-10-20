@@ -8,7 +8,7 @@ import (
 )
 
 func TestReplaceAcrossSectors(t *testing.T) {
-	old := "HEIMDALL_MSI_SERVER_" + strings.Repeat("=", 108)
+	old := "VARDR_MSI_SERVER_" + strings.Repeat("=", 111)
 	// Mały strumień: napis od pozycji 50 – przez granice minisektorów 0→1→2.
 	small := []byte(strings.Repeat("a", 50) + old + strings.Repeat("b", 60))
 	// Duży strumień (≥ 4096 B): napis na granicy sektorów 5→7 i drugi raz dalej.
@@ -35,7 +35,7 @@ func TestReplaceAcrossSectors(t *testing.T) {
 	if s := read(ents[1]); s != strings.Repeat("a", 50)+want+strings.Repeat("b", 60) {
 		t.Fatalf("mały strumień: %q", s)
 	}
-	if s := read(ents[2]); strings.Count(s, want) != 2 || strings.Contains(s, "HEIMDALL") || len(s) != len(big) {
+	if s := read(ents[2]); strings.Count(s, want) != 2 || strings.Contains(s, "VARDR") || len(s) != len(big) {
 		t.Fatal("duży strumień")
 	}
 	if len(out) != len(file) || !bytes.Equal(out[:512], file[:512]) {
@@ -62,11 +62,11 @@ func TestReplaceRealMSI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, n, err := Replace(data, "HEIMDALL_MSI_SERVER_"+strings.Repeat("=", 108), "192.168.88.98")
+	out, n, err := Replace(data, "VARDR_MSI_SERVER_"+strings.Repeat("=", 111), "192.168.88.98")
 	if err != nil || n != 1 {
 		t.Fatalf("SERVER: %d %v", n, err)
 	}
-	out, n, err = Replace(out, "HEIMDALL_MSI_TOKEN_"+strings.Repeat("=", 45), "hdt_"+strings.Repeat("A", 43))
+	out, n, err = Replace(out, "VARDR_MSI_TOKEN_"+strings.Repeat("=", 48), "hdt_"+strings.Repeat("A", 43))
 	if err != nil || n != 1 {
 		t.Fatalf("TOKEN: %d %v", n, err)
 	}

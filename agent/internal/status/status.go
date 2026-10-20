@@ -68,7 +68,7 @@ type BufferStatus struct {
 	LastErrorTime time.Time `json:"last_error_at,omitzero"`
 }
 
-// ClockStatus to zegar komputera względem serwera Heimdalla i stan usługi
+// ClockStatus to zegar komputera względem serwera Vardra i stan usługi
 // czasu Windows (W32Time).
 type ClockStatus struct {
 	// OffsetMs: zegar agenta minus zegar serwera (ms); dodatnie = agent się spieszy.

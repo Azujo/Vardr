@@ -6,7 +6,9 @@ import (
 	"time"
 )
 
-// ManifestFormat identyfikuje wersję formatu manifestu.
+// ManifestFormat identyfikuje wersję formatu manifestu. Zapisany w każdym
+// manifeście łańcucha archiwum – zostaje pod dawną nazwą projektu (zmiana
+// rozerwałaby zgodność z istniejącym archiwum NIS2).
 const ManifestFormat = "heimdall-urd-manifest/1"
 
 // GenesisPrev to „poprzedni hash” pierwszego manifestu w łańcuchu.

@@ -144,7 +144,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Menu" />
             <IconShieldHalf size={26} color="var(--mantine-color-yellow-5)" />
             <Text fw={700} size="lg">
-              Heimdall
+              Vardr
             </Text>
             <Text c="dimmed" size="sm" visibleFrom="xs">
               Hliðskjálf

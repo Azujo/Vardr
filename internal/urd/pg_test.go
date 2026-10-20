@@ -375,7 +375,7 @@ func TestPostgresRecovery(t *testing.T) {
 	}
 	// Zlecenie po przywróceniu (jak restore.sh) i decyzja administratora.
 	if _, err := db.pool.Exec(ctx, `INSERT INTO urd.recoveries (kind, requested_by, reason, backup, window_from, window_to)
-		VALUES ('restore', 'adam (panel)', 'test', 'heimdall-x.tar.gpg', $1, $2)`, dumpAt.Add(-10*time.Minute), now); err != nil {
+		VALUES ('restore', 'adam (panel)', 'test', 'vardr-x.tar.gpg', $1, $2)`, dumpAt.Add(-10*time.Minute), now); err != nil {
 		t.Fatal(err)
 	}
 	id, err := db.RequestRecovery(ctx, "quarantine", "adam", "plik testowy", []string{"segments/x"}, vid)

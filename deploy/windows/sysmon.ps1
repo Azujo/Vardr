@@ -1,11 +1,11 @@
-﻿# Heimdall – instalacja i aktualizacja Sysmona (Sysinternals) na komputerze.
+﻿# Vardr – instalacja i aktualizacja Sysmona (Sysinternals) na komputerze.
 # Do uruchamiania jako skrypt startowy komputera w GPO (konto SYSTEM) albo
 # ręcznie jako administrator. Można uruchamiać wielokrotnie:
 #   - brak Sysmona            -> instalacja z konfiguracją,
 #   - starsza wersja          -> aktualizacja programu,
 #   - inna konfiguracja       -> wczytanie nowej konfiguracji (sysmon -c),
 #   - wszystko aktualne       -> nic.
-# Agent Heimdall NIE instaluje Sysmona sam – tylko raportuje jego stan,
+# Agent Vardr NIE instaluje Sysmona sam – tylko raportuje jego stan,
 # a panel (grupa z opcją „Wymagany Sysmon”) wskazuje komputery bez niego.
 #
 # Źródło plików (zalecane w firmie): udział sieciowy z Sysmon64.exe
@@ -31,7 +31,7 @@ function Log($msg) {
     } catch { }
 }
 
-$work = Join-Path $env:TEMP "heimdall-sysmon-$(Get-Random)"
+$work = Join-Path $env:TEMP "vardr-sysmon-$(Get-Random)"
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 try {
     if ($Source) {

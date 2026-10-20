@@ -6,7 +6,7 @@ description: |
   (4728/4732/4756). Typowy sposób utrwalenia dostępu: napastnik zakłada
   własne konto i od razu nadaje mu uprawnienia. Zdarzenia łączone po SID
   konta (TargetSid w 4720, MemberSid przy dodaniu do grupy).
-author: Heimdall
+author: Vardr
 tags:
   - attack.persistence
   - attack.privilege_escalation
@@ -29,7 +29,7 @@ correlation:
   generate: true
 falsepositives:
   - Zakładanie kont administracyjnych przez dział IT (sprawdź zgłoszenie)
-heimdall:
+vardr:
   instructions: |
     Konto {{key}} utworzono i w ciągu {{window}} dodano do grupy
     {{TargetUserName}} ({{count}} zdarzeń). Sprawdź, kto wykonał obie

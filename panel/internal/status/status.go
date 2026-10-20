@@ -1,4 +1,4 @@
-// Package status to „Stan systemu” w panelu: zdrowie usług Heimdalla
+// Package status to „Stan systemu” w panelu: zdrowie usług Vardra
 // z metryk Prometheusa (te same progi co alerty Grafany), czytelne dla
 // administratora bez otwierania Grafany.
 package status
@@ -284,10 +284,10 @@ var defs = []def{
 	{group: "Archiwum NIS2", name: "Wolne miejsce na dysku archiwum", query: `min(siem_archive_disk_free_bytes / siem_archive_disk_total_bytes)`,
 		hint: "Po zapełnieniu archiwizacja się wstrzyma – powiększ dysk albo skróć retencję.",
 		eval: thresholdLow(0.15, 0.05, pct)},
-	{group: "Kopie zapasowe", name: "Ostatnia kopia", query: `time() - max(heimdall_backup_last_success_timestamp_seconds)`,
+	{group: "Kopie zapasowe", name: "Ostatnia kopia", query: `time() - max(vardr_backup_last_success_timestamp_seconds or heimdall_backup_last_success_timestamp_seconds)`,
 		hint: "Kopia powinna powstawać co noc (cron 02:15, backup.sh) – sprawdź ~/siem-lab/backup.log.",
 		eval: thresholdHigh(26*3600, 50*3600, ago)},
-	{group: "Kopie zapasowe", name: "Ostatnia kopia poza VM (NAS)", query: `time() - max(heimdall_backup_remote_last_success_timestamp_seconds)`,
+	{group: "Kopie zapasowe", name: "Ostatnia kopia poza VM (NAS)", query: `time() - max(vardr_backup_remote_last_success_timestamp_seconds or heimdall_backup_remote_last_success_timestamp_seconds)`,
 		hint: "Kopia nie trafia poza VM – sprawdź połączenie z NAS i klucz SSH kopii.",
 		eval: thresholdHigh(26*3600, 50*3600, ago)},
 	{group: "Serwer", name: "Wolne miejsce na dysku systemowym", query: `min(node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})`,

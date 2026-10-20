@@ -1,5 +1,5 @@
 -- Instrukcja dla analityka z wartościami ze zdarzenia (zmienne {{Pole}}
--- w heimdall.instructions reguły są podstawiane przy tworzeniu alertu).
+-- w vardr.instructions reguły są podstawiane przy tworzeniu alertu).
 ALTER TABLE gjallarhorn.alerts ADD COLUMN instructions text NOT NULL DEFAULT '';
 
 DO $$

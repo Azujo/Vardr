@@ -13,7 +13,7 @@ Wersja planistyczna 1.6.0 • 07.10.2026
 | Konsola zarządzania | **Własny panel** (React + TypeScript, backend `siem-api` w Go, PostgreSQL) w stylu Wazuh Dashboard; Grafana zostaje do monitorowania samego SIEM | Załącznik C |
 | Wdrażanie agentów | **Rejestracja tokenem**: panel generuje token i instalator bez klucza prywatnego; agent sam tworzy klucz i otrzymuje certyfikat od serwera. Paczki z kluczem (`siem-pki package`) tylko w laboratorium | Załącznik C |
 | Kolejność etapów | Panel (moduły: logowanie, agenci, wdrażanie, zdarzenia) razem z etapem 2 **przed** detekcją | Sekcja 17 |
-| Nazwa i nazewnictwo | Produkt: **Heimdall** (repozytorium `heimdall`). Komponenty nazwane według mitologii nordyckiej w panelu, dokumentacji i nazwach usług; w kodzie nazwy opisowe | Załącznik D |
+| Nazwa i nazewnictwo | Produkt: **Vardr** (repozytorium `vardr`). Komponenty nazwane według mitologii nordyckiej w panelu, dokumentacji i nazwach usług; w kodzie nazwy opisowe | Załącznik D |
 | Skalowanie | Elementy bez stanu (ingest, normalizator, writer, później detekcja) **poziomo** – dokładanie kopii; elementy z danymi (NATS, ClickHouse) **najpierw pionowo**, potem klaster. Przeciążenie ma kończyć się opóźnieniem, nigdy utratą danych | Załącznik E |
 
 ## 0. Co zmieniło się względem wersji 1.1
@@ -438,7 +438,7 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - **Etap 2 + panel – postęp:** moduł 1 (logowanie i role) gotowy 07.10.2026: siem-api, baza Saga (PostgreSQL) z migracjami, konta, sesje, audyt, aplikacja React z Mantine pod HTTPS :8444. Moduł 2 (Huginn: heartbeat agentów, lista i szczegóły agenta) gotowy 07.10.2026, sprawdzony na 1000 symulowanych agentach. Moduł 3 (Bifröst: tokeny rejestracyjne, paczka bez klucza prywatnego, CA agentów, automatyczne odnawianie i unieważnianie certyfikatów, `siem_agent upgrade`) gotowy 07.10.2026. Moduł 4 (Mímir: wyszukiwarka zdarzeń z językiem zapytań, histogramem, szczegółami i surowym XML; konto ClickHouse tylko do odczytu) gotowy 07.10.2026. Konfiguracja agentów z serwera (grupy z profilem i limitami, agent 0.5.0 pobiera ją co 5 min i stosuje bez restartu) gotowa 07.10.2026 – **moduły 1–4 panelu zakończone**; agent 0.6 (08.10.2026): bufor dyskowy z limitem i polityką przepełnienia, pomiar zegara, instalator MSI – **etap 2 zakończony** po teście na stacjach laboratorium AD. Dalej: etap 3 (archiwum NIS2, Urd) i etap 4 (detekcja, Gjallarhorn).
 - **Etap 3 – postęp:** część 1 (archiwizator Urd) gotowa 07.10.2026: segmenty na dysku, godzinowe manifesty z łańcuchem hashy w Sadze, weryfikacja integralności co 6 h, retencja 30 dni, metryki, polecenia `verify` i `disable`. Sprawdzone na VM (2427/2427 paczek testu obciążenia w archiwum). Część 2 (moduł Urd w panelu: stan zgodności, łańcuch manifestów, historia weryfikacji, weryfikacja na żądanie z audytem) gotowa 07.10.2026; alert przy niezgodności dojdzie z modułem alertów (etap 4). Po przeglądzie (07.10.2026) wzmocnienie archiwum: osobne role bazy, ochrona dysku i osobny dysk 150 GB, weryfikacja z budżetem, kopie zapasowe, alerty w Grafanie, skrypt wdrożenia. Część 3a (eksport dla audytora: paczka z segmentami, łańcuchem i kotwicą, `check-export`, audyt zlecenia i pobrania) gotowa 07.10.2026. Część 3b (replay: osobna ścieżka NATS, kopie normalizatora i writera, tabela siem.events_replay, przełącznik w Mímirze) gotowa 07.10.2026 – sprawdzone: 100 117 zdarzeń odtworzonych zgodnie z siem.events. Część 4 (polityka w panelu: włączenie, retencja w granicach z konfiguracji serwera, wyłączanie grup i agentów; osłabienie tylko z ponownym podaniem hasła, z karencją 24 h, alertem i możliwością anulowania; źródła bez archiwizacji; eksport z filtrem źródeł) gotowa 07.10.2026 – **etap 3 zakończony**. Uproszczenie: jedna retencja dla całego archiwum (segmenty mieszają źródła); osobna retencja per źródło – po MVP. Dalej: etap 4 (detekcja, Gjallarhorn).
 - **Etap 5 – postęp:** praca z alertami (filtry, przypisanie, oś czasu z notatkami, akcje zbiorcze, powiązane alerty), burza alertów (limit na regułę i wiadomości zbiorcze), reguły w panelu (wersje, włączanie z hasłem, test na zdarzeniach z alertami, które by powstały), stan systemu (Himinbjörg) i filtry powiadomień na kanałach – gotowe 09.10.2026; scenariusz atak → alert → powiadomienie → analiza → zamknięcie przeprowadzony w laboratorium AD – **etap 5 zakończony**. Tokeny deinstalacji przesunięte do etapu 8.
-- **Etap 4 – postęp:** część 4a (kompilator podzbioru Sigmy w Go, rozszerzenia Heimdalla, pierwsze reguły w `rules/`) i 4b (siem-detector – silnik w locie, alerty w Sadze z deduplikacją i łączeniem trafień, outbox → kanały powiadomień, moduł Gjallarhorn w panelu) gotowe 09.10.2026; sprawdzone w laboratorium AD (PowerShell -EncodedCommand, podejrzany skrypt, usługa z katalogu użytkownika, dodanie do Backup Operators, nowe konto). Część 4c (progi `count` / `count distinct` w oknie, stan progów w Sadze odporny na restart, reguły brute force i password spraying) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4d (silnik zapytań na ClickHouse, wspólna semantyka progów, test zgodności obu silników w CI) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4e (utrata łączności z agentem z progiem w grupie, czyszczenie dzienników 1102/104, zatrzymanie usług bezpieczeństwa; scenariusze sprawdzone w laboratorium AD) gotowa 09.10.2026 – **etap 4 zakończony** (scenariusze FortiGate i Entra ID czekają na integracje).
+- **Etap 4 – postęp:** część 4a (kompilator podzbioru Sigmy w Go, rozszerzenia Vardra, pierwsze reguły w `rules/`) i 4b (siem-detector – silnik w locie, alerty w Sadze z deduplikacją i łączeniem trafień, outbox → kanały powiadomień, moduł Gjallarhorn w panelu) gotowe 09.10.2026; sprawdzone w laboratorium AD (PowerShell -EncodedCommand, podejrzany skrypt, usługa z katalogu użytkownika, dodanie do Backup Operators, nowe konto). Część 4c (progi `count` / `count distinct` w oknie, stan progów w Sadze odporny na restart, reguły brute force i password spraying) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4d (silnik zapytań na ClickHouse, wspólna semantyka progów, test zgodności obu silników w CI) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4e (utrata łączności z agentem z progiem w grupie, czyszczenie dzienników 1102/104, zatrzymanie usług bezpieczeństwa; scenariusze sprawdzone w laboratorium AD) gotowa 09.10.2026 – **etap 4 zakończony** (scenariusze FortiGate i Entra ID czekają na integracje).
 
 **Kamienie milowe po drodze:**
 
@@ -593,12 +593,19 @@ agent ──mTLS──► siem-ingest  └──► rejestracja agentów, heartb
 
 `siem-pki package` (paczka z kluczem prywatnym) pozostaje wyłącznie narzędziem laboratoryjnym.
 
-## Załącznik D. Nazewnictwo – Heimdall i jego świat
+## Załącznik D. Nazewnictwo – Vardr i jego świat
 
-> Heimdall, strażnik bogów, widzi na sto mil we dnie i w nocy i słyszy, jak rośnie trawa.
-> Pilnuje mostu Bifröst, a gdy nadchodzi zagrożenie, dmie w róg Gjallarhorn.
+> Vǫrðr (Vardr) – w wierzeniach nordyckich duch-strażnik, który towarzyszy człowiekowi
+> od narodzin, czuwa nad nim i bywa widziany, zanim nadejdzie to, co ważne.
 
-Trudno o lepszy opis SIEM-a. System nazywa się **Heimdall**, a jego części biorą imiona z tego samego świata.
+Trudno o lepszy opis SIEM-a: cichy strażnik, który stale czuwa i daje znać, zanim stanie się
+coś złego. System nazywa się **Vardr**, a jego części biorą imiona z tego samego świata.
+
+Do października 2026 projekt nazywał się Heimdall. Nazwę zmieniono przed publikacją, bo w
+branży bezpieczeństwa IT są już zarejestrowane bardzo podobne znaki towarowe (m.in. Heimdal®).
+Część identyfikatorów technicznych zachowała dawną nazwę dla zgodności z istniejącymi danymi
+(ścieżki `/srv/heimdall` w laboratorium, formaty archiwum Urd, ID wbudowanych reguł,
+`uid` alertów Grafany); dawny klucz reguł `heimdall:` jest nadal czytany.
 
 ### Mapa świata
 
@@ -634,7 +641,7 @@ Trudno o lepszy opis SIEM-a. System nazywa się **Heimdall**, a jego części bi
 
 | Komponent | Nazwa | Postać w mitologii | Nazwa techniczna (kod, katalogi) |
 |---|---|---|---|
-| Cały system | **Heimdall** | strażnik bogów, widzi i słyszy wszystko | repozytorium `heimdall` |
+| Cały system | **Vardr** | duch-strażnik, który stale czuwa i ostrzega | repozytorium `vardr` |
 | Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `siem_agent`, `agent/` |
 | Kanał agent → serwer (mTLS, ingest) | **Bifröst** | tęczowy most do Asgardu, którego strzeże Heimdall | `siem-ingest`, `server/internal/ingest` |
 | Kolejka (NATS JetStream) | **Ratatoskr** | wiewiórka biegająca po Yggdrasilu z wiadomościami | `nats`, `server/internal/bus` |
@@ -642,7 +649,7 @@ Trudno o lepszy opis SIEM-a. System nazywa się **Heimdall**, a jego części bi
 | Zapis zdarzeń do bazy | **Verðandi** | norna teraźniejszości („to, co się staje”) | `siem-writer`, `server/internal/chwriter` |
 | Baza zdarzeń (ClickHouse) | **Mímir** | studnia mądrości, za łyk z której Odyn oddał oko | `clickhouse`, baza `siem` |
 | Archiwum NIS2 (WORM) | **Urd** | norna przeszłości i jej studnia – przeszłości nie da się zmienić | etap 3 |
-| Detekcja i alerty | **Gjallarhorn** | róg Heimdalla, ogłaszający nadejście zagrożenia | etap 4 |
+| Detekcja i alerty | **Gjallarhorn** | róg Heimdalla, strażnika Bifröstu, ogłaszający nadejście zagrożenia | etap 4 |
 | Panel | **Hliðskjálf** | tron Odyna, z którego widać wszystkie dziewięć światów | `siem-api` + frontend, katalog `panel/` (załącznik C) |
 | Konfiguracja i stan (PostgreSQL) | **Saga** | bogini, z którą Odyn codziennie pije ze złotych pucharów (Grímnismál); imię wiąże się z opowieścią i pamięcią | `postgres` |
 | Monitorowanie potoku (Grafana) | – | narzędzie zewnętrzne, bez nazwy z mitologii | `grafana` |
@@ -675,13 +682,13 @@ Zmiany robimy przy okazji pracy w danym obszarze, a nie jednym dużym przemianow
 
 | Kiedy | Co zmienić | Uwagi |
 |---|---|---|
-| Start panelu (załącznik C) | Tytuł i logo panelu: „Heimdall”; sekcje menu: Huginn (agenci), Mímir (zdarzenia), Gjallarhorn (alerty), Bifröst (wdrażanie i łączność) | nowy kod – bez migracji |
+| Start panelu (załącznik C) | Tytuł i logo panelu: „Vardr”; sekcje menu: Huginn (agenci), Mímir (zdarzenia), Gjallarhorn (alerty), Bifröst (wdrażanie i łączność) | nowy kod – bez migracji |
 | Start panelu | Usługi w `docker-compose.yml`: `ingest`→`bifrost`, `nats`→`ratatoskr`, `normalizer`→`bragi`, `writer`→`verdandi`, `clickhouse`→`mimir`, nowe `saga` (PostgreSQL) i `hlidskjalf` (API + frontend) | zmiana nazw hostów w zmiennych środowiskowych (`SIEM_NATS_URL`, `SIEM_CLICKHOUSE_ADDR`), datasource Grafany i certyfikatu serwera (`-hosts`) |
-| Start panelu | Moduł Go `siem` → `heimdall` (ścieżka importu) | jednorazowa zamiana w całym repozytorium |
-| Start panelu | Pulpit Grafany: „Heimdall – zdrowie potoku” zamiast przeglądu zdarzeń (przegląd zdarzeń przejmuje Hliðskjálf) | Grafana zostaje do monitorowania |
+| Start panelu | Moduł Go `siem` → `vardr` (ścieżka importu) | jednorazowa zamiana w całym repozytorium |
+| Start panelu | Pulpit Grafany: „Vardr – zdrowie potoku” zamiast przeglądu zdarzeń (przegląd zdarzeń przejmuje Hliðskjálf) | Grafana zostaje do monitorowania |
 | Etap 3 | Archiwizator od razu jako **Urd** (usługa `urd`) | nowy komponent |
 | Etap 4 | Silnik detekcji i powiadomień od razu jako **Gjallarhorn** | nowy komponent |
-| Instalator MSI (etap 2) | Nazwa wyświetlana usługi: „Heimdall Huginn (agent SIEM)”; nazwa usługi `SiemAgent` i źródło w Podglądzie zdarzeń **bez zmian** | zmiana nazwy usługi wymagałaby migracji na wszystkich komputerach – tylko jeśli będzie wyraźny powód |
+| Instalator MSI (etap 2) | Nazwa wyświetlana usługi: „Vardr Huginn (agent SIEM)”; nazwa usługi `SiemAgent` i źródło w Podglądzie zdarzeń **bez zmian** | zmiana nazwy usługi wymagałaby migracji na wszystkich komputerach – tylko jeśli będzie wyraźny powód |
 | Bez zmian | Polecenie `siem_agent`, baza ClickHouse `siem`, prefiks identyfikatorów `agt-`, ścieżki `C:\Program Files\SiemAgent` i `C:\ProgramData\SiemAgent` | stabilne nazwy techniczne – zmiana kosztuje migrację, nie daje wartości |
 
 ## Załącznik E. Skalowanie i przeciążenie
