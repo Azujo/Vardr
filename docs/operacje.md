@@ -12,8 +12,9 @@ Opis dotyczy serwera laboratoryjnego (`deploy/lab`): jedna VM z Dockerem, cały 
 | `~/siem-lab/bin/` | programy Linux budowane przez `deploy.sh` |
 | `~/siem-lab/rules/` | reguły: `v<czas>/` i dowiązanie `current` |
 | `~/siem-lab/collector/`, `connector/` | konfiguracja, certyfikaty i bufor kolektora i konektora |
-| `/srv/heimdall/archive` | archiwum NIS2 (`SIEM_ARCHIVE_PATH`, osobny dysk) |
-| `/srv/heimdall/backup` | kopie zapasowe przed wysyłką |
+| `/srv/vardr/archive` | archiwum NIS2 (`SIEM_ARCHIVE_PATH`, osobny dysk; laboratorium: `/srv/heimdall/archive` – nazwa sprzed zmiany nazwy projektu) |
+| `/srv/vardr/backup` | kopie zapasowe przed wysyłką (`SIEM_BACKUP_DIR`; laboratorium: `/srv/heimdall/backup`) |
+| `~/.vardr-backup.pass` | hasło kopii zapasowych (tylko dla właściciela) |
 | wolumeny Dockera | dane NATS, ClickHouse, Saga, Prometheus, Grafana |
 
 **Zmienne `.env`:** hasła baz (`SAGA_ADMIN_PASSWORD`, `SAGA_DB_PASSWORD`, `SAGA_ARCHIVER_PASSWORD`, `SAGA_DETECTOR_PASSWORD`, `CLICKHOUSE_ADMIN_USER`/`_PASSWORD`, `CLICKHOUSE_WRITER_PASSWORD`, `CLICKHOUSE_PANEL_PASSWORD`, `CLICKHOUSE_DETECTOR_PASSWORD`, `CLICKHOUSE_GRAFANA_PASSWORD`), `GRAFANA_ADMIN_PASSWORD`, `SIEM_ALERT_RELAY_TOKEN`, `SIEM_PUBLIC_SERVER` (adres w paczkach agentów), `SIEM_EVENTS_TTL_DAYS`, `SIEM_RAW_TTL_DAYS`, `SIEM_ARCHIVE_PATH`, `SIEM_ARCHIVE_EXPORT_PATH`, `SIEM_DETECTION_MODE`, `SIEM_BACKUP_REMOTE`, `SIEM_PPROF`. Pozostałe ustawienia usług mają wartości domyślne w compose ([programy.md](programy.md)).
@@ -48,7 +49,7 @@ deploy/lab/deploy.sh detector api       # wybrane cele
 | `web` | frontend panelu budowany w kontenerze Node na VM (potem cel `api`) |
 | `ingest`, `normalizer`, `writer`, `archiver`, `detector`, `api`, `backup` | program dla Linuksa z wersją z gita, obraz i restart usługi |
 | `collector`, `connector` | kolektor i konektor |
-| `agent` | `siem_agent.exe` i MSI do paczek panelu |
+| `agent` | `vardr-agent.exe` i MSI do paczek panelu |
 | `tools` | `odczytaj.exe` do eksportów archiwum |
 
 Zmienne: `SIEM_LAB_HOST` (`siem@192.168.88.98`), `SIEM_LAB_KEY` (`~/.ssh/siem_lab`), `SIEM_LAB_DIR` (`~/siem-lab`). Wersja z niezatwierdzonymi zmianami ma dopisek `-dirty`.
@@ -59,7 +60,7 @@ Zmienne: `SIEM_LAB_HOST` (`siem@192.168.88.98`), `SIEM_LAB_KEY` (`~/.ssh/siem_la
 
 ## Agenci
 
-- **Nowy agent:** panel → Bifröst → token i paczka ZIP. Na komputerze `siem_agent install -token …` albo MSI.
+- **Nowy agent:** panel → Bifröst → token i paczka ZIP. Na komputerze `vardr-agent install -token …` albo MSI.
 - **Aktualizacja:** nowa wersja MSI (każde wydanie musi mieć nowy numer wersji – instalator nie aktualizuje tej samej wersji). Chroniony agent przyjmuje aktualizację przez instalator bez tokenu (instalator zatrzymuje go jako SYSTEM).
 - **Zatrzymanie, deinstalacja:** panel → agent → Token deinstalacji (ponowne hasło, powód). Token jest jednorazowy i ważny krótko.
 - **Unieważnienie:** panel → agent → Unieważnij. Certyfikat trafia na listę odrzucanych przez ingest, a alert utraty łączności pomija agenta.
@@ -81,7 +82,7 @@ Kopie wykonuje usługa `siem-backup` (kontener `backup`), a ustawia się je w pa
 
 - Panel zapisuje ustawienia w Sadze (zawsze z ponownym hasłem, do audytu). Usługa sprawdza je co 15 s.
 - Hasła i klucze do miejsca docelowego panel szyfruje kluczem publicznym usługi, więc nie odczyta ich ani panel, ani baza.
-- Kopia to paczka `vardr-RRRRMMDD-GGMM-k<id>.tar.gpg` zaszyfrowana hasłem kopii (gpg AES-256). Lokalnie leży w `SIEM_BACKUP_DIR` (lab: `/srv/heimdall/backup`), w miejscu docelowym w `config/`, a przyrosty archiwum w `urd/`.
+- Kopia to paczka `vardr-RRRRMMDD-GGMM-k<id>.tar.gpg` zaszyfrowana hasłem kopii (gpg AES-256). Lokalnie leży w `SIEM_BACKUP_DIR` (domyślnie `/srv/vardr/backup`, laboratorium: `/srv/heimdall/backup`), w miejscu docelowym w `config/`, a przyrosty archiwum w `urd/`.
 - Wysyłka idzie przez rclone. Klucz serwera SFTP jest zapamiętywany przy pierwszym połączeniu (odcisk widać w panelu); jego późniejsza zmiana zatrzymuje wysyłkę. Żeby zaakceptować nowy klucz, usuń wpis z `~/siem-lab/backup-state/known_hosts`.
 - Panel pokazuje historię kopii z wynikiem i ma przyciski „Zrób kopię teraz” i „Sprawdź połączenie”.
 - Stan usługi (klucz do sekretów, klucz SSH, `known_hosts`) jest w `~/siem-lab/backup-state`. Utrata tego katalogu oznacza nowe klucze: sekrety trzeba wpisać ponownie, a nowy klucz SSH dopisać na serwerze kopii.

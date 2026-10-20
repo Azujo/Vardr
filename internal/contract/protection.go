@@ -96,7 +96,7 @@ const (
 	TamperBadToken      = "bad_token"       // nieudana próba zatrzymania/deinstalacji (zły token)
 	TamperStopToken     = "stop_token"      // zatrzymanie tokenem (prace serwisowe)
 	TamperUninstallTok  = "uninstall_token" // deinstalacja tokenem
-	TamperUpgrade       = "upgrade"         // aktualizacja (MSI albo siem_agent upgrade)
+	TamperUpgrade       = "upgrade"         // aktualizacja (MSI albo vardr-agent upgrade)
 	TamperProtectionOff = "protection_off"  // grupa wyłączyła ochronę – uprawnienia usługi zwykłe
 )
 

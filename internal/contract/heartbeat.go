@@ -22,7 +22,7 @@ const (
 )
 
 // Heartbeat to okresowy raport agenta o jego stanie (roadmapa, załącznik C).
-// Status to ten sam dokument, który zapisuje `siem_agent status`
+// Status to ten sam dokument, który zapisuje `vardr-agent status`
 // (status.json) – serwer przechowuje go bez interpretacji, panel go wyświetla.
 type Heartbeat struct {
 	Schema    string          `json:"schema"`

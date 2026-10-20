@@ -124,7 +124,7 @@ if [ "${1:-}" = --zlecenie ]; then
   set -a
   . ./.env
   set +a
-  jobdir="${SIEM_BACKUP_DIR:-/srv/heimdall/backup}/.przywracanie"
+  jobdir="${SIEM_BACKUP_DIR:-/srv/vardr/backup}/.przywracanie"
   job="$jobdir/zlecenie"
   [ -f "$job" ] || exit 0
   exec 9> "$jobdir/.blokada"
@@ -137,9 +137,9 @@ if [ "${1:-}" = --zlecenie ]; then
     log "BŁĄD: niepoprawne zlecenie przywracania" >&2
     exit 1
   fi
-  src="${SIEM_BACKUP_DIR:-/srv/heimdall/backup}/$file"
+  src="${SIEM_BACKUP_DIR:-/srv/vardr/backup}/$file"
   name=$(basename "$file")
-  pass_args=(--batch --pinentry-mode loopback --passphrase-file "$HOME/.heimdall-backup.pass")
+  pass_args=(--batch --pinentry-mode loopback --passphrase-file "$HOME/.vardr-backup.pass")
   work="$(mktemp -d)"
   started=$(date -u +%FT%TZ)
 

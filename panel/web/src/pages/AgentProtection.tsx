@@ -248,8 +248,8 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
             </Group>
             <Text size="sm">Na komputerze (PowerShell jako administrator):</Text>
             <Code block>
-              {`siem_agent stop -token ${issued.token}        # prace serwisowe (start: siem_agent start)
-siem_agent uninstall -token ${issued.token}   # deinstalacja
+              {`vardr-agent stop -token ${issued.token}        # prace serwisowe (start: vardr-agent start)
+vardr-agent uninstall -token ${issued.token}   # deinstalacja
 msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=${issued.token}`}
             </Code>
             <Text size="xs" c="dimmed">

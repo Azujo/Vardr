@@ -27,14 +27,14 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 **Cel:** zdarzenie z Windows widoczne w wyszukiwarce i śledzone po stałym ID.
 
 **Zrobione:**
-- **Agent Windows** (`siem_agent`):
+- **Agent Windows** (`vardr-agent`):
   - odczyt Event Log z bookmarkiem;
   - paczki gzip po TLS 1.3 z certyfikatem klienta;
   - pozycja zapisywana dopiero po potwierdzeniu serwera, więc możliwe są duplikaty, ale nie luki;
   - kopia stanu w rejestrze;
   - ochrona plików i blokada niebezpiecznych ścieżek usługi;
   - limity CPU, pamięci, zdarzeń na sekundę i łącza;
-  - diagnostyka (`status`, Podgląd zdarzeń) i instalator `siem_agent install`.
+  - diagnostyka (`status`, Podgląd zdarzeń) i instalator `vardr-agent install`.
 - **Potok serwera:** `siem-ingest` (mTLS) → NATS JetStream → `siem-normalizer` (ECS) → `siem-writer` → ClickHouse; podgląd w Grafanie.
 
 **Sprawdzone:** 40 123 / 40 123 zdarzeń po twardym zabiciu agenta, 30% odrzuceń 503 i wyłączeniu serwera, bez braków.
@@ -63,7 +63,7 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 - **Panel Hliðskjálf** (`siem-api`, React + Mantine, HTTPS :8444, baza Saga/PostgreSQL):
   - **logowanie i role:** administrator, analityk, tylko odczyt; sesje, CSRF, blokada konta po nieudanych próbach, dziennik audytu;
   - **Huginn:** heartbeat agentów co minutę, lista i szczegóły agenta, problemy agenta;
-  - **Bifröst:** tokeny rejestracyjne (skrót w bazie, limit instalacji, ważność, grupa) i paczka ZIP bez klucza prywatnego. Do tego CA agentów, automatyczne odnawianie i unieważnianie certyfikatów oraz `siem_agent upgrade`;
+  - **Bifröst:** tokeny rejestracyjne (skrót w bazie, limit instalacji, ważność, grupa) i paczka ZIP bez klucza prywatnego. Do tego CA agentów, automatyczne odnawianie i unieważnianie certyfikatów oraz `vardr-agent upgrade`;
   - **Mímir:** wyszukiwarka z językiem zapytań, histogramem, szczegółami i surowym XML; konto ClickHouse tylko do odczytu;
   - **grupy agentów:** profil zdarzeń i limity; agent 0.5.0 pobiera konfigurację co 5 min i stosuje ją bez restartu.
 
@@ -167,7 +167,7 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 
 - **8a–8b (12.10): ochrona agenta (0.7.0)** – „utrudnić i wykryć”:
   - usługa z zawężonymi uprawnieniami: administrator nie zatrzyma ani nie usunie jej poleceniem `sc` czy `services.msc`; restart agenta to polecenie do usługi (kod 128), bez prawa zatrzymania;
-  - jednorazowe tokeny deinstalacji z panelu (administrator, powód, hasło, audyt; na komputerze i w bazie tylko skrót) dla `siem_agent stop|upgrade|uninstall` i `msiexec /x … UNINSTALL_TOKEN=`;
+  - jednorazowe tokeny deinstalacji z panelu (administrator, powód, hasło, audyt; na komputerze i w bazie tylko skrót) dla `vardr-agent stop|upgrade|uninstall` i `msiexec /x … UNINSTALL_TOKEN=`;
   - agent co 30 s pilnuje uprawnień, typu uruchamiania i programu usługi (w menedżerze usług i w rejestrze), zmianę cofa i zgłasza;
   - dziennik zdarzeń ochrony w heartbeacie; ostatni heartbeat z powodem zatrzymania; wykrycie zabicia procesu (znacznik działania i czas startu systemu);
   - reguła wbudowana „Próba sabotażu agenta” – także zatrzymanie tokenem, którego panel nie wydał, i aktualizacja, po której agent nie wrócił;

@@ -14,7 +14,7 @@
 #   ingest normalizer writer archiver detector api backup
 #               program dla Linuksa z wersją z gita (svc.Version), obraz
 #               i restart usługi
-#   agent       siem_agent.exe do paczek instalacyjnych panelu (agent-dist/)
+#   agent       vardr-agent.exe do paczek instalacyjnych panelu (agent-dist/)
 #   collector   siem-collector (kolektor syslog, kontener na VM; rejestracja:
 #               deploy/lab/collector-enroll.sh)
 #   tools       odczytaj.exe – czytnik eksportu archiwum dołączany do paczek (export-tools/)
@@ -62,7 +62,9 @@ for t in "${targets[@]}"; do
     # Kopie zapasowe: usługa siem-backup (harmonogram z panelu) zastąpiła wpis
     # crona z backup.sh; plik hasła musi istnieć przed startem kontenera
     # (inaczej Docker założyłby w jego miejscu katalog).
-    remote "touch ~/.heimdall-backup.pass && chmod 600 ~/.heimdall-backup.pass && mkdir -p backup-state metrics"
+    # Plik hasła sprzed zmiany nazwy projektu (~/.heimdall-backup.pass) – przeniesienie.
+    remote "if [ -f ~/.heimdall-backup.pass ] && [ ! -e ~/.vardr-backup.pass ]; then mv ~/.heimdall-backup.pass ~/.vardr-backup.pass; fi"
+    remote "touch ~/.vardr-backup.pass && chmod 600 ~/.vardr-backup.pass && mkdir -p backup-state metrics"
     remote "crontab -l 2>/dev/null | grep -q 'siem-lab/backup.sh' && (crontab -l | grep -v 'siem-lab/backup.sh' | crontab -) && echo '   usunięto wpis crona backup.sh (harmonogram kopii jest teraz w panelu)'" || true
     # Przywracanie zlecone w panelu wykonuje restore.sh (zatrzymuje usługi) – sprawdza zlecenie co minutę.
     remote "crontab -l 2>/dev/null | grep -q 'restore.sh --zlecenie' || (crontab -l 2>/dev/null; echo '* * * * * \$HOME/siem-lab/restore.sh --zlecenie >> \$HOME/siem-lab/restore.log 2>&1') | crontab -" &&
@@ -100,15 +102,15 @@ for t in "${targets[@]}"; do
     ;;
   agent)
     echo "== agent Windows -> agent-dist/ (program i instalator MSI)"
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o deploy/lab/bin/siem_agent.exe ./agent/cmd/siem_agent
-    agent_version=$(sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/siem_agent/main.go)
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o deploy/lab/bin/vardr-agent.exe ./agent/cmd/vardr-agent
+    agent_version=$(sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go)
     remote "mkdir -p agent-dist msi"
-    copy deploy/lab/bin/siem_agent.exe "$host:$dir/agent-dist/siem_agent.exe"
+    copy deploy/lab/bin/vardr-agent.exe "$host:$dir/agent-dist/vardr-agent.exe"
     copy deploy/lab/msi/Dockerfile deploy/lab/msi/agent.wxs "$host:$dir/msi/"
     # MSI z CA tej instalacji (certs/ca.crt na serwerze), narzędziem wixl w kontenerze.
     remote "docker image inspect siem/wixl:lab >/dev/null 2>&1 || docker build -q -t siem/wixl:lab msi >/dev/null; \
       docker run --rm -u 1000:1000 -v \$PWD/msi:/src:ro -v \$PWD/agent-dist:/out \
-        -v \$PWD/agent-dist/siem_agent.exe:/w/siem_agent.exe:ro -v \$PWD/certs/ca.crt:/w/ca.crt:ro \
+        -v \$PWD/agent-dist/vardr-agent.exe:/w/vardr-agent.exe:ro -v \$PWD/certs/ca.crt:/w/ca.crt:ro \
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/vardr-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
       ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
     ;;

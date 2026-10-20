@@ -9,17 +9,17 @@ Każdy program serwera to jeden plik wykonywalny Go, konfigurowany zmiennymi śr
 
 Wersja programu pochodzi z gita (`git describe`, ustawiana przy budowaniu przez `deploy.sh`) i jest widoczna w logu startowym (`deploy.sh` wypisuje ją na końcu jako „gotowe: wersja …”).
 
-Spis: [siem_agent](#siem_agent--agent-windows) · [siem-collector](#siem-collector--kolektor-syslog) · [siem-connector](#siem-connector--konektor-api) · [siem-ingest](#siem-ingest) · [siem-normalizer](#siem-normalizer) · [siem-writer](#siem-writer) · [siem-detector](#siem-detector) · [siem-archiver](#siem-archiver) · [siem-backup](#siem-backup) · [siem-api](#siem-api--panel-hliðskjálf) · [siem-loadgen](#siem-loadgen) · [narzędzia](#narzędzia)
+Spis: [vardr-agent](#vardr-agent--agent-windows) · [siem-collector](#siem-collector--kolektor-syslog) · [siem-connector](#siem-connector--konektor-api) · [siem-ingest](#siem-ingest) · [siem-normalizer](#siem-normalizer) · [siem-writer](#siem-writer) · [siem-detector](#siem-detector) · [siem-archiver](#siem-archiver) · [siem-backup](#siem-backup) · [siem-api](#siem-api--panel-hliðskjálf) · [siem-loadgen](#siem-loadgen) · [narzędzia](#narzędzia)
 
 ---
 
-## siem_agent – agent Windows
+## vardr-agent – agent Windows
 
-Kod: `agent/cmd/siem_agent`. Usługa Windows `SiemAgent`, instalowana w `C:\Program Files\SiemAgent`, dane w `C:\ProgramData\SiemAgent` (konfiguracja, certyfikaty, stan odczytu, bufor dyskowy, logi, dziennik ochrony).
+Kod: `agent/cmd/vardr-agent`. Usługa Windows `SiemAgent`, instalowana w `C:\Program Files\SiemAgent`, dane w `C:\ProgramData\SiemAgent` (konfiguracja, certyfikaty, stan odczytu, bufor dyskowy, logi, dziennik ochrony).
 
 **Co robi:** subskrybuje kanały dziennika zdarzeń (Security, System, Application, Sysmon, PowerShell, Defender, Harmonogram zadań – według profilu z panelu), renderuje XML, paczkuje i wysyła do `siem-ingest`. Pilnuje rozmiaru dzienników (`logwatch` – ostrzega, zanim Windows nadpisze nieodczytane zdarzenia), trzyma zdarzenia w buforze dyskowym przy braku łączności, ogranicza zużycie CPU, pamięci i łącza, co minutę wysyła heartbeat, chroni usługę przed zatrzymaniem.
 
-**Polecenia** (`siem_agent help`):
+**Polecenia** (`vardr-agent help`):
 
 | Polecenie | Działanie |
 |---|---|
@@ -213,7 +213,7 @@ W laboratorium: `docker compose run --rm api bootstrap-admin -username admin`.
 | `SIEM_NATS_URL` | – | NATS (bez NATS panel działa, ale bez heartbeatów i dostarczania konfiguracji) |
 | `SIEM_AGENTS_CA_CERT`, `SIEM_AGENTS_CA_KEY`, `SIEM_ROOT_CA` | `/certs/…` | CA agentów (wystawianie certyfikatów) i CA serwera (do paczek) |
 | `SIEM_PUBLIC_SERVER` | – | adres serwera wpisywany do paczek instalacyjnych |
-| `SIEM_AGENT_EXE` | `/agent-dist/siem_agent.exe` | program agenta do paczek |
+| `SIEM_AGENT_EXE` | `/agent-dist/vardr-agent.exe` | program agenta do paczek |
 | `SIEM_PROMETHEUS_URL` | – | strona Stan systemu |
 | `SIEM_GRAFANA_URL` | adres serwera panelu, port 3000 | adres Grafany dla przeglądarki – linki do pulpitów i alertów w Himinbjörgu |
 | `SIEM_ARCHIVE_EXPORT_DIR` | – | pobieranie eksportów archiwum |

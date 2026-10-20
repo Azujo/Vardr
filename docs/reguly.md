@@ -241,6 +241,8 @@ Nie są plikami Sigmy – działają w kodzie detektora, ale są widoczne w pane
 | Logowanie z nowego kraju | `heimdall-signin-new-country` | udane logowanie z kraju spoza historii osoby z 30 dni (Entra ID) | tak |
 | Cisza źródła zdarzeń | `heimdall-source-silent` | urządzenie syslog albo chmura milczy dłużej niż najdłuższa przerwa z 7 dni + 1 h | tak |
 
+Identyfikatory mają przedrostek `heimdall-` – dawną nazwę projektu. Zostają bez zmian, bo wiążą historię alertów, filtry kanałów powiadomień i nadpisania z panelu.
+
 Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `silence.go`. Korelacje i cisza źródła czytają ClickHouse (`siem.auth_events`, `siem.events`), więc wymagają `SIEM_DETECTOR_CH_PASSWORD`.
 
 ## Reguły w repozytorium

@@ -157,7 +157,7 @@ export interface AgentsSummary {
   with_problems: number;
 }
 
-// Status agenta – ten sam dokument co `siem_agent status` (status.json).
+// Status agenta – ten sam dokument co `vardr-agent status` (status.json).
 export interface AgentStatusDoc {
   updated_at?: string;
   version?: string;

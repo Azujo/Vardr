@@ -26,6 +26,6 @@ for i in $(seq 1 "$N"); do
     "| cpu $(q 'sum by (service) (rate(process_cpu_seconds_total{job="siem"}[1m]))' service)" \
     "| ch_cpu $(q 'sum(rate(ClickHouseProfileEvents_OSCPUVirtualTimeMicroseconds[1m])) / 1e6')" \
     "| load $(cut -d' ' -f1 /proc/loadavg)" \
-    "| disk_root $(df --output=avail -BG / | tail -1 | tr -d ' ') arch $(df --output=avail -BG /srv/heimdall | tail -1 | tr -d ' ')"
+    "| disk_root $(df --output=avail -BG / | tail -1 | tr -d ' ') arch $(df --output=avail -BG "$(sed -n 's/^SIEM_ARCHIVE_PATH=//p' .env 2>/dev/null || echo /)" 2>/dev/null | tail -1 | tr -d ' ')"
   [ "$i" -lt "$N" ] && sleep "$INTERVAL"
 done

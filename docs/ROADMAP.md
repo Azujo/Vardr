@@ -431,11 +431,11 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 **Stan i zmiana kolejności (aktualizacja 1.3):**
 
 - Etap 1 **ukończony**: agent Windows → mTLS → NATS JetStream → normalizator → ClickHouse → Grafana, na VM w Proxmoxie.
-- Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `siem_agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
+- Z etapów 2 i 8 zrobione wcześniej: usługa z restartem po awarii, limity zasobów, diagnostyka (`status`, Podgląd zdarzeń), ochrona plików agenta, kopia stanu w rejestrze, instalator `vardr-agent install` z PATH i poleceniami `start/stop/status/test/set-server`.
 - Nowa kolejność: **etap 2 + część etapu 5 (panel: logowanie, agenci, wdrażanie tokenem, wyszukiwarka zdarzeń)** → etap 3 (archiwum NIS2) → etap 4 (detekcja) → reszta etapu 5 (alerty, reguły) → etapy 6–8. Uzasadnienie: bez zarządzania agentami (rejestracja, heartbeat, konfiguracja z serwera) wdrożenie detekcji na więcej niż kilka maszyn jest niepraktyczne.
 - **Proponowany etap 1.5 – wzmocnienie (40–60 h, przed panelem):** kolejka bez cichych strat i limit przyjmowania w ingest (K1), odporność writera na wadliwe wiersze (K2), generator obciążenia i metryki z pulpitem „zdrowie potoku” (K4), równoległy normalizator, rozrzut ponowień w agencie i krótsza retencja surowego XML (W1–W3), zalecenia GPO dla rozmiaru dzienników i ostrzeżenie w agencie (K3), testy w GitHub Actions (M1). Szczegóły: załącznik E.
 - **Etap 1.5 – postęp:** **etap 1.5 zakończony** (06–07.10.2026): K1, K2, K3, K4, W1, W2 (mechanizm), W3 i M1. K1, K3, K4, W1 i W2 sprawdzone na żywo, K2 i W3 testami jednostkowymi. Potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU. Opcjonalnie później: wydajność writera (W7).
-- **Etap 2 + panel – postęp:** moduł 1 (logowanie i role) gotowy 07.10.2026: siem-api, baza Saga (PostgreSQL) z migracjami, konta, sesje, audyt, aplikacja React z Mantine pod HTTPS :8444. Moduł 2 (Huginn: heartbeat agentów, lista i szczegóły agenta) gotowy 07.10.2026, sprawdzony na 1000 symulowanych agentach. Moduł 3 (Bifröst: tokeny rejestracyjne, paczka bez klucza prywatnego, CA agentów, automatyczne odnawianie i unieważnianie certyfikatów, `siem_agent upgrade`) gotowy 07.10.2026. Moduł 4 (Mímir: wyszukiwarka zdarzeń z językiem zapytań, histogramem, szczegółami i surowym XML; konto ClickHouse tylko do odczytu) gotowy 07.10.2026. Konfiguracja agentów z serwera (grupy z profilem i limitami, agent 0.5.0 pobiera ją co 5 min i stosuje bez restartu) gotowa 07.10.2026 – **moduły 1–4 panelu zakończone**; agent 0.6 (08.10.2026): bufor dyskowy z limitem i polityką przepełnienia, pomiar zegara, instalator MSI – **etap 2 zakończony** po teście na stacjach laboratorium AD. Dalej: etap 3 (archiwum NIS2, Urd) i etap 4 (detekcja, Gjallarhorn).
+- **Etap 2 + panel – postęp:** moduł 1 (logowanie i role) gotowy 07.10.2026: siem-api, baza Saga (PostgreSQL) z migracjami, konta, sesje, audyt, aplikacja React z Mantine pod HTTPS :8444. Moduł 2 (Huginn: heartbeat agentów, lista i szczegóły agenta) gotowy 07.10.2026, sprawdzony na 1000 symulowanych agentach. Moduł 3 (Bifröst: tokeny rejestracyjne, paczka bez klucza prywatnego, CA agentów, automatyczne odnawianie i unieważnianie certyfikatów, `vardr-agent upgrade`) gotowy 07.10.2026. Moduł 4 (Mímir: wyszukiwarka zdarzeń z językiem zapytań, histogramem, szczegółami i surowym XML; konto ClickHouse tylko do odczytu) gotowy 07.10.2026. Konfiguracja agentów z serwera (grupy z profilem i limitami, agent 0.5.0 pobiera ją co 5 min i stosuje bez restartu) gotowa 07.10.2026 – **moduły 1–4 panelu zakończone**; agent 0.6 (08.10.2026): bufor dyskowy z limitem i polityką przepełnienia, pomiar zegara, instalator MSI – **etap 2 zakończony** po teście na stacjach laboratorium AD. Dalej: etap 3 (archiwum NIS2, Urd) i etap 4 (detekcja, Gjallarhorn).
 - **Etap 3 – postęp:** część 1 (archiwizator Urd) gotowa 07.10.2026: segmenty na dysku, godzinowe manifesty z łańcuchem hashy w Sadze, weryfikacja integralności co 6 h, retencja 30 dni, metryki, polecenia `verify` i `disable`. Sprawdzone na VM (2427/2427 paczek testu obciążenia w archiwum). Część 2 (moduł Urd w panelu: stan zgodności, łańcuch manifestów, historia weryfikacji, weryfikacja na żądanie z audytem) gotowa 07.10.2026; alert przy niezgodności dojdzie z modułem alertów (etap 4). Po przeglądzie (07.10.2026) wzmocnienie archiwum: osobne role bazy, ochrona dysku i osobny dysk 150 GB, weryfikacja z budżetem, kopie zapasowe, alerty w Grafanie, skrypt wdrożenia. Część 3a (eksport dla audytora: paczka z segmentami, łańcuchem i kotwicą, `check-export`, audyt zlecenia i pobrania) gotowa 07.10.2026. Część 3b (replay: osobna ścieżka NATS, kopie normalizatora i writera, tabela siem.events_replay, przełącznik w Mímirze) gotowa 07.10.2026 – sprawdzone: 100 117 zdarzeń odtworzonych zgodnie z siem.events. Część 4 (polityka w panelu: włączenie, retencja w granicach z konfiguracji serwera, wyłączanie grup i agentów; osłabienie tylko z ponownym podaniem hasła, z karencją 24 h, alertem i możliwością anulowania; źródła bez archiwizacji; eksport z filtrem źródeł) gotowa 07.10.2026 – **etap 3 zakończony**. Uproszczenie: jedna retencja dla całego archiwum (segmenty mieszają źródła); osobna retencja per źródło – po MVP. Dalej: etap 4 (detekcja, Gjallarhorn).
 - **Etap 5 – postęp:** praca z alertami (filtry, przypisanie, oś czasu z notatkami, akcje zbiorcze, powiązane alerty), burza alertów (limit na regułę i wiadomości zbiorcze), reguły w panelu (wersje, włączanie z hasłem, test na zdarzeniach z alertami, które by powstały), stan systemu (Himinbjörg) i filtry powiadomień na kanałach – gotowe 09.10.2026; scenariusz atak → alert → powiadomienie → analiza → zamknięcie przeprowadzony w laboratorium AD – **etap 5 zakończony**. Tokeny deinstalacji przesunięte do etapu 8.
 - **Etap 4 – postęp:** część 4a (kompilator podzbioru Sigmy w Go, rozszerzenia Vardra, pierwsze reguły w `rules/`) i 4b (siem-detector – silnik w locie, alerty w Sadze z deduplikacją i łączeniem trafień, outbox → kanały powiadomień, moduł Gjallarhorn w panelu) gotowe 09.10.2026; sprawdzone w laboratorium AD (PowerShell -EncodedCommand, podejrzany skrypt, usługa z katalogu użytkownika, dodanie do Backup Operators, nowe konto). Część 4c (progi `count` / `count distinct` w oknie, stan progów w Sadze odporny na restart, reguły brute force i password spraying) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4d (silnik zapytań na ClickHouse, wspólna semantyka progów, test zgodności obu silników w CI) gotowa 09.10.2026 i sprawdzona w laboratorium. Część 4e (utrata łączności z agentem z progiem w grupie, czyszczenie dzienników 1102/104, zatrzymanie usług bezpieczeństwa; scenariusze sprawdzone w laboratorium AD) gotowa 09.10.2026 – **etap 4 zakończony** (scenariusze FortiGate i Entra ID czekają na integracje).
@@ -577,7 +577,7 @@ agent ──mTLS──► siem-ingest  └──► rejestracja agentów, heartb
 | # | Moduł | Zakres |
 |---|---|---|
 | 1 | Logowanie i role | konta lokalne, role administrator / analityk / tylko odczyt, audyt zmian; później SSO (Entra ID) i MFA |
-| 2 | Agenci | lista (online/offline z heartbeatu, wersja, host), szczegóły (zdalny odpowiednik `siem_agent status`), grupy, profile zdarzeń, limity zasobów |
+| 2 | Agenci | lista (online/offline z heartbeatu, wersja, host), szczegóły (zdalny odpowiednik `vardr-agent status`), grupy, profile zdarzeń, limity zasobów |
 | 3 | Wdrażanie | tokeny rejestracyjne (jednorazowe lub czasowe, przypisane do grupy), pobranie instalatora (ZIP, później MSI budowane `wixl`), gotowe polecenie instalacji |
 | 4 | Zdarzenia | wyszukiwarka po ClickHouse z filtrami, szczegóły zdarzenia (pola, surowy XML) |
 | 5 | Alerty, reguły, dekodery, archiwum NIS2 | razem z etapami 3–4 |
@@ -586,7 +586,7 @@ agent ──mTLS──► siem-ingest  └──► rejestracja agentów, heartb
 
 1. Administrator w panelu tworzy token dla grupy (np. „Stacje – księgowość”, profil `workstation`, ważny 7 dni lub N użyć).
 2. Panel udostępnia instalator: program, adres serwera, certyfikat CA i token – **bez klucza prywatnego**.
-3. `siem_agent install -server <adres> -token <token>`: agent generuje klucz lokalnie (nigdy nie opuszcza komputera), wysyła prośbę o certyfikat (CSR) z tokenem przez TLS z weryfikacją CA.
+3. `vardr-agent install -server <adres> -token <token>`: agent generuje klucz lokalnie (nigdy nie opuszcza komputera), wysyła prośbę o certyfikat (CSR) z tokenem przez TLS z weryfikacją CA.
 4. Serwer sprawdza token, nadaje identyfikator agenta, podpisuje krótkoterminowy certyfikat, zapisuje agenta w grupie i zwraca konfigurację.
 5. Dalej: heartbeat co ~60 s (stan, wersja, limity, błędy kanałów), automatyczne odnawianie certyfikatu, konfiguracja pobierana z serwera.
 6. Ten sam token może posłużyć do wdrożenia masowego (GPO / Intune / SCCM) w ramach limitu użyć.
@@ -642,7 +642,7 @@ Część identyfikatorów technicznych zachowała dawną nazwę dla zgodności z
 | Komponent | Nazwa | Postać w mitologii | Nazwa techniczna (kod, katalogi) |
 |---|---|---|---|
 | Cały system | **Vardr** | duch-strażnik, który stale czuwa i ostrzega | repozytorium `vardr` |
-| Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `siem_agent`, `agent/` |
+| Agent | **Huginn** | kruk Odyna („myśl”), co dzień okrąża świat i wraca z wieściami | `vardr-agent`, `agent/` |
 | Kanał agent → serwer (mTLS, ingest) | **Bifröst** | tęczowy most do Asgardu, którego strzeże Heimdall | `siem-ingest`, `server/internal/ingest` |
 | Kolejka (NATS JetStream) | **Ratatoskr** | wiewiórka biegająca po Yggdrasilu z wiadomościami | `nats`, `server/internal/bus` |
 | Normalizator i dekodery | **Bragi** | bóg poezji i słowa | `siem-normalizer`, `server/internal/normalize` |
@@ -674,7 +674,7 @@ Wolne nazwy na przyszłość:
    - zmienne środowiskowe;
    - logi techniczne (`component=ingest`).
 3. Przy pierwszym wystąpieniu w dokumentacji zawsze podajemy obie formy: „Bifröst (ingest)”.
-4. **Polecenie agenta zostaje `siem_agent`.** To nazwa, którą wpisuje administrator, i powinna mówić sama za siebie.
+4. **Polecenie agenta to `vardr-agent`** (do wersji 0.7.x: `siem_agent`; aktualizacja przepina usługę na nowy plik). To nazwa, którą wpisuje administrator, i powinna mówić sama za siebie.
 
 ### Plan zmiany nazw
 
@@ -689,7 +689,7 @@ Zmiany robimy przy okazji pracy w danym obszarze, a nie jednym dużym przemianow
 | Etap 3 | Archiwizator od razu jako **Urd** (usługa `urd`) | nowy komponent |
 | Etap 4 | Silnik detekcji i powiadomień od razu jako **Gjallarhorn** | nowy komponent |
 | Instalator MSI (etap 2) | Nazwa wyświetlana usługi: „Vardr Huginn (agent SIEM)”; nazwa usługi `SiemAgent` i źródło w Podglądzie zdarzeń **bez zmian** | zmiana nazwy usługi wymagałaby migracji na wszystkich komputerach – tylko jeśli będzie wyraźny powód |
-| Bez zmian | Polecenie `siem_agent`, baza ClickHouse `siem`, prefiks identyfikatorów `agt-`, ścieżki `C:\Program Files\SiemAgent` i `C:\ProgramData\SiemAgent` | stabilne nazwy techniczne – zmiana kosztuje migrację, nie daje wartości |
+| Bez zmian | Polecenie `vardr-agent`, baza ClickHouse `siem`, prefiks identyfikatorów `agt-`, ścieżki `C:\Program Files\SiemAgent` i `C:\ProgramData\SiemAgent` | stabilne nazwy techniczne – zmiana kosztuje migrację, nie daje wartości |
 
 ## Załącznik E. Skalowanie i przeciążenie
 
@@ -889,5 +889,5 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
   - przy wznowieniu po przerwie, gdy zapisana pozycja jest starsza niż najstarszy rekord dziennika (Windows wznawia wtedy po cichu od najstarszego);
   - w trakcie pracy (błąd „wyniki nieaktualne” subskrypcji, wykrywany już wcześniej, teraz zgłaszany także w statusie i w Podglądzie zdarzeń).
 - Przy starcie: podpowiedź dla dziennika Security mniejszego niż 128 MB i ostrzeżenie przed trybem „nie nadpisuj”.
-- Sprawdzone na żywo na kanale, który się już zawinął (`Microsoft-Windows-Shell-Core/Operational`, najstarszy rekord 38 054). Agent wznawiający od rekordu 1000 zgłosił „LUKA W DANYCH: rekordy 1001–38053”, a przy nieosiągalnym serwerze ostrzeżenie o zajętości 78%. Oba komunikaty trafiły do `siem_agent status`.
+- Sprawdzone na żywo na kanale, który się już zawinął (`Microsoft-Windows-Shell-Core/Operational`, najstarszy rekord 38 054). Agent wznawiający od rekordu 1000 zgłosił „LUKA W DANYCH: rekordy 1001–38053”, a przy nieosiągalnym serwerze ostrzeżenie o zajętości 78%. Oba komunikaty trafiły do `vardr-agent status`.
 - Zalecenia rozmiarów dzienników dla GPO: README, sekcja „Rozmiar dzienników Windows”.

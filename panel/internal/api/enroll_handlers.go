@@ -169,7 +169,7 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 	exe, err := os.Open(s.Enroll.AgentExe)
 	if err != nil {
 		s.Log.Error("brak programu agenta do paczki", "path", s.Enroll.AgentExe, "err", err)
-		writeError(w, http.StatusServiceUnavailable, "no_agent_exe", "na serwerze brak programu agenta (SIEM_AGENT_EXE) – skopiuj siem_agent.exe")
+		writeError(w, http.StatusServiceUnavailable, "no_agent_exe", "na serwerze brak programu agenta (SIEM_AGENT_EXE) – skopiuj vardr-agent.exe")
 		return
 	}
 	defer exe.Close()
@@ -194,7 +194,7 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	crlf := func(s string) []byte { return []byte(strings.ReplaceAll(s, "\n", "\r\n")) }
 	err = func() error {
-		f, err := zw.Create("siem_agent.exe")
+		f, err := zw.Create("vardr-agent.exe")
 		if err != nil {
 			return err
 		}
@@ -256,7 +256,7 @@ func safeFileName(s string) string {
 const installCmd = `@echo off
 rem Instalacja agenta Vardr (Huginn). Uruchom jako administrator
 rem (prawy przycisk myszy -> Uruchom jako administrator).
-"%~dp0siem_agent.exe" install
+"%~dp0vardr-agent.exe" install
 pause
 `
 
@@ -286,7 +286,7 @@ Wdrożenie masowe (Intune / SCCM / skrypt GPO), z konta SYSTEM lub
 administratora – instalator MSI (vardr-agent.msi, jeśli jest w paczce):
   msiexec /i vardr-agent.msi /qn SERVER=<adres> TOKEN=<token>
 albo bez MSI:
-  siem_agent.exe install -server <adres> -token <token>
+  vardr-agent.exe install -server <adres> -token <token>
 (install-msi.cmd robi to samo z adresem i tokenem tej paczki.)
 
 Aktualizacja: nowszy vardr-agent.msi bez TOKEN (rejestracja zostaje):

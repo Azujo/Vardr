@@ -1,6 +1,6 @@
 //go:build windows
 
-// Command siem_agent to agent Windows zbierający zdarzenia z Event Log
+// Command vardr-agent to agent Windows zbierający zdarzenia z Event Log
 // i wysyłający je po mTLS do serwera SIEM.
 package main
 
@@ -43,14 +43,14 @@ import (
 	"siem/internal/throttle"
 )
 
-const version = "0.7.4"
+const version = "0.8.0"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `siem_agent %s – agent SIEM dla Windows
+	fmt.Fprintf(os.Stderr, `vardr-agent %s – agent SIEM dla Windows
 
-Instalacja (PowerShell lub cmd jako administrator, w folderze z siem_agent.exe,
+Instalacja (PowerShell lub cmd jako administrator, w folderze z vardr-agent.exe,
 ca.crt, agent.crt i agent.key):
-  siem_agent install [-server adres] [-token token] [-profile workstation|server|dc] [-start-at now|oldest] [-no-start]
+  vardr-agent install [-server adres] [-token token] [-profile workstation|server|dc] [-start-at now|oldest] [-no-start]
       -server   adres serwera, np. 192.168.88.98 lub siem.firma.local:8443 (bez -server: pytanie)
       -profile  zestaw zbieranych zdarzeń (domyślnie workstation)
       -token    token rejestracyjny z panelu (Bifröst) – agent sam wygeneruje klucz i pobierze
@@ -58,13 +58,13 @@ ca.crt, agent.crt i agent.key):
       -ca, -cert, -key   inne położenie certyfikatów
 
 Sterowanie (po instalacji polecenie działa z każdego miejsca):
-  siem_agent status                 stan usługi, połączenia, kanałów, limitów i ochrony
-  siem_agent start | restart
-  siem_agent stop [-token T]        zatrzymanie (agent chroniony: token z panelu)
-  siem_agent test                   sprawdzenie połączenia z serwerem
-  siem_agent set-server <adres>     zmiana adresu serwera (restartuje agenta)
-  siem_agent upgrade [-token T]     aktualizacja programu (uruchom z folderu nowej wersji)
-  siem_agent uninstall [-token T] [-purge]
+  vardr-agent status                 stan usługi, połączenia, kanałów, limitów i ochrony
+  vardr-agent start | restart
+  vardr-agent stop [-token T]        zatrzymanie (agent chroniony: token z panelu)
+  vardr-agent test                   sprawdzenie połączenia z serwerem
+  vardr-agent set-server <adres>     zmiana adresu serwera (restartuje agenta)
+  vardr-agent upgrade [-token T]     aktualizacja programu (uruchom z folderu nowej wersji)
+  vardr-agent uninstall [-token T] [-purge]
                                     odinstalowanie (-purge: także dane i certyfikaty)
 
 Ochrona: agent w grupie z włączoną ochroną (domyślnie) ma usługę, której
@@ -72,11 +72,11 @@ administrator nie zatrzyma ani nie usunie bez jednorazowego tokenu z panelu
 (Huginn → agent → Token deinstalacji). Próby bez tokenu panel zgłasza jako alert.
 
 Diagnostyka:
-  siem_agent check                  walidacja konfiguracji, certyfikatów i uprawnień
-  siem_agent run                    uruchomienie w konsoli zamiast usługi (Ctrl+C kończy)
-  siem_agent enroll -server <adres> -token <token> -dir <katalog>
+  vardr-agent check                  walidacja konfiguracji, certyfikatów i uprawnień
+  vardr-agent run                    uruchomienie w konsoli zamiast usługi (Ctrl+C kończy)
+  vardr-agent enroll -server <adres> -token <token> -dir <katalog>
                                     rejestracja bez instalacji usługi (test, konsola)
-  siem_agent version
+  vardr-agent version
 
 Opcja -config <plik> (przed lub po poleceniu) wskazuje inną konfigurację.
 Domyślnie: %s (po instalacji) lub agent.yaml obok programu.
@@ -94,7 +94,7 @@ func defaultConfigPath() string {
 }
 
 func main() {
-	global := flag.NewFlagSet("siem_agent", flag.ExitOnError)
+	global := flag.NewFlagSet("vardr-agent", flag.ExitOnError)
 	global.Usage = usage
 	cfgFlag := global.String("config", "", "plik konfiguracji")
 	_ = global.Parse(os.Args[1:])
@@ -187,7 +187,7 @@ func main() {
 		err = testConnection(*cfgPath)
 	case "set-server":
 		if cf.NArg() != 1 {
-			err = errors.New("użycie: siem_agent set-server <adres>, np. siem_agent set-server 192.168.88.98")
+			err = errors.New("użycie: vardr-agent set-server <adres>, np. vardr-agent set-server 192.168.88.98")
 		} else {
 			err = setServer(*cfgPath, cf.Arg(0))
 		}

@@ -97,7 +97,7 @@ jobs:
 
       - name: Budowanie agenta i czytnika eksportu archiwum
         run: |
-          go build -trimpath -o siem_agent.exe ./agent/cmd/siem_agent
+          go build -trimpath -o vardr-agent.exe ./agent/cmd/vardr-agent
           go build -trimpath -o odczytaj.exe ./tools/cmd/odczytaj
 
   web:

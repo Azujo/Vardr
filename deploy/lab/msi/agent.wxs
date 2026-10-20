@@ -34,8 +34,9 @@
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLFOLDER" Name="SiemAgent">
-          <Component Id="AgentExe" Guid="1A2B3C4D-0001-4000-8000-000000000001" Win64="yes">
-            <File Id="AgentExe" Name="siem_agent.exe" Source="siem_agent.exe" KeyPath="yes"/>
+          <!-- 0.8.0: nowy GUID – program zmienił nazwę (siem_agent.exe → vardr-agent.exe). -->
+          <Component Id="AgentExe" Guid="1A2B3C4D-0001-4000-8000-000000000003" Win64="yes">
+            <File Id="AgentExe" Name="vardr-agent.exe" Source="vardr-agent.exe" KeyPath="yes"/>
           </Component>
           <Component Id="CaCrt" Guid="1A2B3C4D-0001-4000-8000-000000000002" Win64="yes">
             <File Id="CaCrt" Name="ca.crt" Source="ca.crt" KeyPath="yes"/>

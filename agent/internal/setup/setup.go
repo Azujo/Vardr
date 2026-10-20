@@ -80,8 +80,8 @@ func GenerateConfig(o Options) (string, error) {
 		o.StartAt = "now"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, `# Konfiguracja agenta SIEM – utworzona przez "siem_agent install".
-# Zmiana adresu serwera: siem_agent set-server <adres>
+	fmt.Fprintf(&b, `# Konfiguracja agenta SIEM – utworzona przez "vardr-agent install".
+# Zmiana adresu serwera: vardr-agent set-server <adres>
 # Pozostałe opcje i opis: agent/configs/agent.example.yaml w repozytorium projektu.
 
 server:

@@ -7,7 +7,7 @@ Vardr to zestaw małych programów w Go, połączonych kolejką NATS JetStream. 
 ```
  komputery Windows          urządzenia sieciowe             chmura
  ┌──────────────┐           ┌──────────────┐               ┌────────────┐
- │ siem_agent   │           │ MikroTik,    │──syslog 514──▶│siem-       │
+ │ vardr-agent   │           │ MikroTik,    │──syslog 514──▶│siem-       │
  │ (usługa)     │           │ FortiGate    │               │collector   │
  └──────┬───────┘           └──────────────┘               └─────┬──────┘
         │ HTTPS + mTLS, paczki gzip, heartbeat                   │   ┌────────────┐
@@ -28,7 +28,7 @@ Vardr to zestaw małych programów w Go, połączonych kolejką NATS JetStream. 
 
 | Program | Rola | Stan |
 |---|---|---|
-| `siem_agent` (Windows) | czyta dzienniki zdarzeń, wysyła paczki, chroni się przed zatrzymaniem | stan odczytu i bufor dyskowy w `C:\ProgramData\SiemAgent` |
+| `vardr-agent` (Windows) | czyta dzienniki zdarzeń, wysyła paczki, chroni się przed zatrzymaniem | stan odczytu i bufor dyskowy w `C:\ProgramData\SiemAgent` |
 | `siem-collector` | odbiera syslog z urządzeń, wysyła jak agent | bufor dyskowy w katalogu kolektora |
 | `siem-connector` | pobiera logi z API chmury (Entra ID przez Graph), wysyła jak agent | kursor odczytu i bufor |
 | `siem-ingest` | przyjmuje paczki i heartbeaty (mTLS), wkłada do NATS | bezstanowy |
@@ -108,7 +108,7 @@ Każda usługa łączy się własną rolą z minimalnymi uprawnieniami (`saga_ad
 
 ### Archiwum NIS2 (Urd)
 
-Pliki w `SIEM_ARCHIVE_PATH` (lab: `/srv/heimdall/archive`): oryginalne paczki agentów w segmentach (do 64 MB albo 30 s), każdy segment z hashem SHA-256 i odwołaniem do hasha poprzedniego (łańcuch). Manifest dnia spina segmenty; codziennie o 7:00 hash manifestu idzie na kanał powiadomień jako kotwica poza systemem. Weryfikacja co 6 h sprawdza część archiwum w ramach budżetu odczytu. Eksport dla audytora to paczka `.tar` z czytnikiem `odczytaj.exe`. Odtworzenie (replay) przepuszcza wybrane segmenty przez osobny potok do `siem.events_replay`. Szczegóły: [README.md, „Archiwum NIS2”](../README.md#archiwum-nis2--urd-siem-archiver).
+Pliki w `SIEM_ARCHIVE_PATH` (np. `/srv/vardr/archive`; laboratorium: `/srv/heimdall/archive`): oryginalne paczki agentów w segmentach (do 64 MB albo 30 s), każdy segment z hashem SHA-256 i odwołaniem do hasha poprzedniego (łańcuch). Manifest dnia spina segmenty; codziennie o 7:00 hash manifestu idzie na kanał powiadomień jako kotwica poza systemem. Weryfikacja co 6 h sprawdza część archiwum w ramach budżetu odczytu. Eksport dla audytora to paczka `.tar` z czytnikiem `odczytaj.exe`. Odtworzenie (replay) przepuszcza wybrane segmenty przez osobny potok do `siem.events_replay`. Szczegóły: [README.md, „Archiwum NIS2”](../README.md#archiwum-nis2--urd-siem-archiver).
 
 ## Detekcja (Gjallarhorn)
 
@@ -155,7 +155,7 @@ Jeden moduł Go (`siem`). Kod w `agent/internal/`, `server/internal/` i `panel/i
 
 ```
 agent/
-  cmd/siem_agent/        agent Windows: instalator, usługa, ochrona, polecenia
+  cmd/vardr-agent/        agent Windows: instalator, usługa, ochrona, polecenia
   cmd/siem_collector/    kolektor syslog (Linux/Windows)
   cmd/siem_connector/    konektor API (Entra ID przez Microsoft Graph)
   configs/               agent.example.yaml (profil z załącznika B), agent.lab.yaml

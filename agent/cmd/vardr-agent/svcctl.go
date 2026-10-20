@@ -5,6 +5,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -20,7 +23,7 @@ var stateNames = map[svc.State]string{
 	svc.Running: "działa", svc.Paused: "wstrzymany", svc.ContinuePending: "wznawianie", svc.PausePending: "wstrzymywanie",
 }
 
-var errNotInstalled = errors.New("agent nie jest zainstalowany (brak usługi " + serviceName + ") – zainstaluj: siem_agent install")
+var errNotInstalled = errors.New("agent nie jest zainstalowany (brak usługi " + serviceName + ") – zainstaluj: vardr-agent install")
 
 // requireAdmin zwraca czytelny błąd, gdy polecenie wymaga administratora.
 func requireAdmin(what string) error {
@@ -97,7 +100,7 @@ func waitState(s *mgr.Service, want svc.State, timeout time.Duration) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("usługa nie osiągnęła stanu „%s” w ciągu %s (obecnie: %s) – sprawdź siem_agent status",
+			return fmt.Errorf("usługa nie osiągnęła stanu „%s” w ciągu %s (obecnie: %s) – sprawdź vardr-agent status",
 				stateNames[want], timeout, stateNames[st.State])
 		}
 		time.Sleep(300 * time.Millisecond)
@@ -170,7 +173,43 @@ func restartService() error {
 	}); err != nil {
 		return fmt.Errorf("polecenie restartu: %w", err)
 	}
-	fmt.Println("Agent uruchamia się ponownie (w procesie usługi) – stan: siem_agent status.")
+	fmt.Println("Agent uruchamia się ponownie (w procesie usługi) – stan: vardr-agent status.")
+	return nil
+}
+
+// moveServiceBinary przepina istniejącą usługę na installExe, jeśli
+// wskazuje inny program (aktualizacja z wersji 0.7.x: siem_agent.exe →
+// vardr-agent.exe), i usuwa stary plik. Usługa musi być zatrzymana; zmiana
+// konfiguracji wymaga konta SYSTEM (MSI) albo usługi bez ochrony (po tokenie).
+func moveServiceBinary(cfgPath string) error {
+	moved := false
+	err := withService(func(s *mgr.Service) error {
+		c, err := s.Config()
+		if err != nil {
+			return err
+		}
+		if strings.Contains(strings.ToLower(c.BinaryPathName), strings.ToLower(installExe)) {
+			return nil
+		}
+		c.BinaryPathName = syscall.EscapeArg(installExe) + " -config " + syscall.EscapeArg(cfgPath)
+		if err := s.UpdateConfig(c); err != nil {
+			return protectedErr(err)
+		}
+		moved = true
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("zmiana programu usługi na %s: %w", installExe, err)
+	}
+	if moved {
+		fmt.Printf("Usługa %s uruchamia teraz %s\n", serviceName, installExe)
+	}
+	// Usługa uruchamia installExe – pozostałości wersji 0.7.x są zbędne.
+	for _, old := range []string{legacyExe, legacyExe + ".previous"} {
+		if fileExists(old) && !samePath(old, installExe) {
+			_ = os.Remove(old)
+		}
+	}
 	return nil
 }
 

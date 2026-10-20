@@ -117,7 +117,7 @@ func serve(log *slog.Logger) error {
 
 	// Bifröst: rejestracja agentów tokenem (wymaga CA agentów z siem-pki agents-ca).
 	enrollment := &api.Enrollment{
-		AgentExe:     svc.Env("SIEM_AGENT_EXE", "/agent-dist/siem_agent.exe"),
+		AgentExe:     svc.Env("SIEM_AGENT_EXE", "/agent-dist/vardr-agent.exe"),
 		RootCA:       svc.Env("SIEM_ROOT_CA", "/certs/ca.crt"),
 		PublicServer: os.Getenv("SIEM_PUBLIC_SERVER"),
 	}

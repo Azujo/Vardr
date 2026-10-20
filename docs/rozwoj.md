@@ -11,7 +11,7 @@
 
 ```powershell
 # agent Windows (na Windows bez dodatkowych zmiennych)
-go build -o bin/siem_agent.exe ./agent/cmd/siem_agent
+go build -o bin/vardr-agent.exe ./agent/cmd/vardr-agent
 
 # usługi serwera (Linux)
 $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
@@ -24,7 +24,7 @@ go build -o bin/ ./server/cmd/siem-loadgen ./tools/cmd/...
 cd panel/web; npm ci; npm run build
 ```
 
-Wersję usług serwera ustawia `-ldflags "-X siem/internal/svc.Version=<wersja>"` (kolektor i konektor: `-X main.version=…`); `deploy.sh` bierze ją z `git describe`. Agent ma własny numer wersji w `agent/cmd/siem_agent/main.go` – podnoś go przy każdym wydaniu MSI (instalator nie aktualizuje tej samej wersji). MSI buduje `deploy.sh agent` (wixl w kontenerze, `deploy/lab/msi`).
+Wersję usług serwera ustawia `-ldflags "-X siem/internal/svc.Version=<wersja>"` (kolektor i konektor: `-X main.version=…`); `deploy.sh` bierze ją z `git describe`. Agent ma własny numer wersji w `agent/cmd/vardr-agent/main.go` – podnoś go przy każdym wydaniu MSI (instalator nie aktualizuje tej samej wersji). MSI buduje `deploy.sh agent` (wixl w kontenerze, `deploy/lab/msi`).
 
 ## Testy
 
@@ -66,7 +66,7 @@ go test -count=1 -p 1 -run 'Compat|Chain|Correlations|Postgres|PG' ./server/inte
 **CI** (`.github/workflows/ci.yml`, każdy push):
 
 - **Linux:** `gofmt`, `go vet`, testy z `-race`, testy na prawdziwych bazach (usługi ClickHouse i PostgreSQL), 60 s fuzzingu, budowanie usług.
-- **Windows:** `go vet`, testy agenta, budowanie `siem_agent.exe` i `odczytaj.exe`.
+- **Windows:** `go vet`, testy agenta, budowanie `vardr-agent.exe` i `odczytaj.exe`.
 - **Frontend:** `npm ci` i `npm run build` (TypeScript).
 
 Wynik jest w zakładce *Actions* repozytorium.

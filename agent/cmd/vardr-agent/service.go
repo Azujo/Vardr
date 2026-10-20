@@ -115,7 +115,7 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 				stop()
 				return false, 0
 			case guard.ControlRestart:
-				// siem_agent restart / set-server: ponowne uruchomienie w procesie
+				// vardr-agent restart / set-server: ponowne uruchomienie w procesie
 				// usługi (chroniona usługa nie pozwala administratorowi jej zatrzymać).
 				cfg, err := config.Load(s.cfgPath)
 				if err != nil {

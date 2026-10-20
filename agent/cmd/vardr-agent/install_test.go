@@ -21,7 +21,7 @@ func TestCheckPackageReportsMissingFilesBeforeChanges(t *testing.T) {
 		t.Fatal("oczekiwano błędu dla niekompletnej paczki")
 	}
 	msg := err.Error()
-	for _, want := range []string{"agent.crt", "agent.key", "siem-pki.exe package", `.\siem_agent.exe install`} {
+	for _, want := range []string{"agent.crt", "agent.key", "siem-pki.exe package", `.\vardr-agent.exe install`} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("brak %q w komunikacie:\n%s", want, msg)
 		}

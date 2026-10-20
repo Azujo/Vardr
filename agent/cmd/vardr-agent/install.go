@@ -36,7 +36,9 @@ import (
 var (
 	installDir = filepath.Join(os.Getenv("ProgramFiles"), "SiemAgent")
 	dataDir    = filepath.Join(os.Getenv("ProgramData"), "SiemAgent")
-	installExe = filepath.Join(installDir, "siem_agent.exe")
+	installExe = filepath.Join(installDir, "vardr-agent.exe")
+	// legacyExe: program agenta do wersji 0.7.x (przed zmianą nazwy na Vardr).
+	legacyExe  = filepath.Join(installDir, "siem_agent.exe")
 	installCfg = filepath.Join(dataDir, "agent.yaml")
 )
 
@@ -54,9 +56,9 @@ func install(o installOptions) error {
 	}
 	if st, err := queryService(); err == nil {
 		return fmt.Errorf("agent jest już zainstalowany (usługa: %s).\n"+
-			"  zmiana serwera:          siem_agent set-server <adres>\n"+
-			"  nowa wersja programu:    siem_agent upgrade (uruchomione z folderu nowej wersji)\n"+
-			"  ponowna instalacja:      siem_agent uninstall, a potem install", stateNames[st.State])
+			"  zmiana serwera:          vardr-agent set-server <adres>\n"+
+			"  nowa wersja programu:    vardr-agent upgrade (uruchomione z folderu nowej wersji)\n"+
+			"  ponowna instalacja:      vardr-agent uninstall, a potem install", stateNames[st.State])
 	}
 
 	srcExe, err := os.Executable()
@@ -258,7 +260,7 @@ func install(o installOptions) error {
 		fmt.Println("  [6/7] Usługa:        SiemAgent działa (start automatyczny, restart po awarii)")
 	}
 
-	// 7. Polecenie siem_agent dostępne z każdego miejsca.
+	// 7. Polecenie vardr-agent dostępne z każdego miejsca.
 	if err := addToSystemPath(installDir); err != nil {
 		fmt.Printf("  [7/7] PATH:          UWAGA – %v\n", err)
 	} else {
@@ -266,7 +268,7 @@ func install(o installOptions) error {
 	}
 
 	fmt.Println("\nGotowe. Otwórz NOWE okno PowerShell lub cmd (jako administrator) i użyj:")
-	fmt.Println("  siem_agent status | start | stop | restart | test | set-server <adres>")
+	fmt.Println("  vardr-agent status | start | stop | restart | test | set-server <adres>")
 	return nil
 }
 
@@ -417,7 +419,7 @@ func prompt(question string) (string, error) {
 	fmt.Print(question)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
-		return "", errors.New("nie podano adresu serwera (użyj: siem_agent install -server <adres>)")
+		return "", errors.New("nie podano adresu serwera (użyj: vardr-agent install -server <adres>)")
 	}
 	return strings.TrimSpace(line), nil
 }
@@ -508,7 +510,7 @@ func checkPackage(srcDir string, files ...string) error {
 		"Instalację uruchamia się z folderu paczki utworzonej dla tego komputera, np.:\n"+
 		`  bin\siem-pki.exe package -id agt-pc01 -server 192.168.88.98`+"\n"+
 		`  cd dist\agt-pc01`+"\n"+
-		`  .\siem_agent.exe install`+"\n"+
+		`  .\vardr-agent.exe install`+"\n"+
 		"(albo wskaż pliki opcjami -ca, -cert, -key). Folder %s nie zawiera paczki.",
 		strings.Join(missing, "\n  "), srcDir)
 }

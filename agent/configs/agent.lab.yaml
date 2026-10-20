@@ -1,7 +1,7 @@
 # Konfiguracja do testu na własnym komputerze BEZ uprawnień administratora:
 # kanały System i Application są czytelne dla zwykłego użytkownika.
 # Uruchomienie (z katalogu głównego repozytorium):
-#   bin\siem_agent.exe -config agent\configs\agent.lab.yaml run
+#   bin\vardr-agent.exe -config agent\configs\agent.lab.yaml run
 
 server:
   url: https://localhost:8443/v1/ingest

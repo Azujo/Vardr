@@ -19,11 +19,11 @@ import (
 	"siem/agent/internal/shipper"
 )
 
-// Instalator MSI (vardr-agent.msi) kopiuje siem_agent.exe i ca.crt do
+// Instalator MSI (vardr-agent.msi) kopiuje vardr-agent.exe i ca.crt do
 // %ProgramFiles%\SiemAgent, a potem – jako SYSTEM – uruchamia:
 //
-//	siem_agent msi-install -server <SERVER> -token <TOKEN>   po instalacji plików
-//	siem_agent msi-uninstall                                przed usunięciem plików
+//	vardr-agent msi-install -server <SERVER> -token <TOKEN>   po instalacji plików
+//	vardr-agent msi-uninstall                                przed usunięciem plików
 //
 // Aktualizacja nowszym MSI najpierw usuwa starą wersję (msi-uninstall
 // zostawia dane i certyfikaty), a msi-install nowej wersji widzi istniejącą
@@ -37,7 +37,7 @@ func msiLog() (io.Writer, func()) {
 	if err != nil {
 		return os.Stdout, func() {}
 	}
-	fmt.Fprintf(f, "\n== %s siem_agent %s %v\n", time.Now().Format(time.RFC3339), version, os.Args[1])
+	fmt.Fprintf(f, "\n== %s vardr-agent %s %v\n", time.Now().Format(time.RFC3339), version, os.Args[1])
 	return f, func() { f.Close() }
 }
 
@@ -89,6 +89,9 @@ func msiInstall(server, token string) (err error) {
 				return err
 			}
 		}
+		if err := moveServiceBinary(installCfg); err != nil {
+			return err
+		}
 		markInstaller(dataDir, "install")
 		if err := addToSystemPath(installDir); err != nil {
 			fmt.Println("uwaga: PATH:", err)
@@ -105,7 +108,7 @@ func msiInstall(server, token string) (err error) {
 	if server == "" {
 		return errors.New("brak adresu serwera – podaj SERVER=… w poleceniu msiexec")
 	}
-	// Pozostałość po instalacji bez MSI (siem_agent install): usługa istnieje,
+	// Pozostałość po instalacji bez MSI (vardr-agent install): usługa istnieje,
 	// ale konfiguracji brak – usuwamy usługę, żeby instalacja przeszła.
 	if _, err := queryService(); err == nil {
 		_ = deleteService()

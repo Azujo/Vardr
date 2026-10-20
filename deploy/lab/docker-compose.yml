@@ -167,7 +167,7 @@ services:
     volumes:
       # Programy dołączane do paczek eksportu (odczytaj.exe; deploy.sh tools).
       - ./export-tools:/export-tools:ro
-      # Archiwum na osobnym dysku (SIEM_ARCHIVE_PATH w .env, np. /srv/heimdall/archive):
+      # Archiwum na osobnym dysku (SIEM_ARCHIVE_PATH w .env, np. /srv/vardr/archive):
       # zapełnienie archiwum nie zatrzyma wtedy kolejki ani bazy zdarzeń.
       # create_host_path: false – gdy dysk nie jest zamontowany, usługa nie wystartuje
       # (Docker nie założy pustego katalogu na dysku systemowym).
@@ -175,7 +175,7 @@ services:
         source: ${SIEM_ARCHIVE_PATH:-./archive}
         target: /archive
         bind: { create_host_path: false }
-      # Paczki eksportu dla audytora (SIEM_ARCHIVE_EXPORT_PATH, np. /srv/heimdall/export).
+      # Paczki eksportu dla audytora (SIEM_ARCHIVE_EXPORT_PATH, np. /srv/vardr/export).
       - type: bind
         source: ${SIEM_ARCHIVE_EXPORT_PATH:-./exports}
         target: /exports
@@ -207,7 +207,7 @@ services:
   collector:
     build: { context: ., args: { BIN: siem-collector } }
     image: siem/collector:lab
-    hostname: heimdall-collector
+    hostname: vardr-collector
     restart: unless-stopped
     user: "1000:1000"
     command: ["run", "-config", "/collector/collector.yaml"]
@@ -227,7 +227,7 @@ services:
   connector:
     build: { context: ., args: { BIN: siem-connector } }
     image: siem/connector:lab
-    hostname: heimdall-connector
+    hostname: vardr-connector
     restart: unless-stopped
     user: "1000:1000"
     command: ["run", "-config", "/connector/connector.yaml"]
@@ -245,7 +245,7 @@ services:
     image: siem/entrasim:lab
     restart: unless-stopped
     user: "1000:1000"
-    command: ["-listen", ":8080", "-tenant", "lab", "-client-id", "heimdall", "-secret-file", "/secret/entra.secret",
+    command: ["-listen", ":8080", "-tenant", "lab", "-client-id", "vardr", "-secret-file", "/secret/entra.secret",
               "-domain", "azujo.pl", "-users", "heimdall-lab,test01,jkowalski,anowak,pwisniewski,kwojcik"]
     volumes:
       - ./connector/entra.secret:/secret/entra.secret:ro
@@ -330,8 +330,8 @@ services:
       SIEM_BACKUP_REMOTE_KEEP_DAYS: ${SIEM_BACKUP_REMOTE_KEEP_DAYS:-}
     volumes:
       - ./backup-state:/state
-      - ${SIEM_BACKUP_DIR:-/srv/heimdall/backup}:/backup
-      - ${HOME}/.heimdall-backup.pass:/secrets/backup.pass:ro
+      - ${SIEM_BACKUP_DIR:-/srv/vardr/backup}:/backup
+      - ${HOME}/.vardr-backup.pass:/secrets/backup.pass:ro
       - ./certs:/stack/certs:ro
       - ./.env:/stack/.env:ro
       - ${SIEM_ARCHIVE_PATH:-./archive}:/archive:ro
@@ -372,7 +372,7 @@ services:
       SIEM_GRAFANA_URL: ${SIEM_GRAFANA_URL:-}
     volumes:
       - ./certs:/certs:ro
-      - ./agent-dist:/agent-dist:ro   # siem_agent.exe do paczek instalacyjnych
+      - ./agent-dist:/agent-dist:ro   # vardr-agent.exe do paczek instalacyjnych
       - ${SIEM_ARCHIVE_EXPORT_PATH:-./exports}:/exports:ro   # eksporty archiwum (pobieranie)
     ports:
       - "8444:8444"

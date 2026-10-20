@@ -49,7 +49,7 @@ function msg(e: unknown) {
 function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; secret: string } | null; server: string; onClose: () => void }) {
   const [busy, setBusy] = useState("");
   if (!data) return null;
-  const cmd = `siem_agent.exe install -server ${server || location.hostname} -token ${data.secret}`;
+  const cmd = `vardr-agent.exe install -server ${server || location.hostname} -token ${data.secret}`;
   const download = async (kind: "msi" | "zip") => {
     setBusy(kind);
     try {

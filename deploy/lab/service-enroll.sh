@@ -60,7 +60,7 @@ docker compose run --rm --no-deps -T "$SVC" \
 unset token
 if [ "$SVC" = connector ]; then
   # Laboratorium: symulator Microsoft Graph zamiast prawdziwego tenanta.
-  sed -i -e 's|^  tenant_id: .*|  tenant_id: "lab"|' -e 's|^  client_id: .*|  client_id: "heimdall"|' \
+  sed -i -e 's|^  tenant_id: .*|  tenant_id: "lab"|' -e 's|^  client_id: .*|  client_id: "vardr"|' \
     -e 's|^  # login_url / graph_url.*|  login_url: http://entrasim:8080\n  graph_url: http://entrasim:8080|' connector/connector.yaml
   docker compose up -d entrasim 2>&1 | grep -E 'Started|Error' || true
 fi

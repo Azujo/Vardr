@@ -163,7 +163,7 @@ func newCSR(t *testing.T) string {
 func newEnrollEnv(t *testing.T) (*env, *[]string) {
 	e := newEnv(t)
 	dir := t.TempDir()
-	exe, ca := filepath.Join(dir, "siem_agent.exe"), filepath.Join(dir, "ca.crt")
+	exe, ca := filepath.Join(dir, "vardr-agent.exe"), filepath.Join(dir, "ca.crt")
 	os.WriteFile(exe, []byte("MZ-program-agenta"), 0o644)
 	os.WriteFile(ca, []byte("-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"), 0o644)
 	var revoked []string
@@ -310,7 +310,7 @@ func TestEnrollPackage(t *testing.T) {
 		files[f.Name] = string(data)
 	}
 	if strings.TrimSpace(files["token.txt"]) != secret || strings.TrimSpace(files["server.txt"]) != "192.168.88.98" ||
-		files["siem_agent.exe"] != "MZ-program-agenta" || !strings.Contains(files["install.cmd"], "\r\n") {
+		files["vardr-agent.exe"] != "MZ-program-agenta" || !strings.Contains(files["install.cmd"], "\r\n") {
 		t.Fatalf("zawartość paczki: %v", keys(files))
 	}
 	for name, data := range files {

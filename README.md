@@ -33,8 +33,8 @@ bin\siem-pki.exe agent -id agt-lab-pc01
 bin\siem-ingest-stub.exe
 
 # terminal 2 – agent w konsoli
-bin\siem_agent.exe -config agent\configs\agent.lab.yaml check
-bin\siem_agent.exe -config agent\configs\agent.lab.yaml run
+bin\vardr-agent.exe -config agent\configs\agent.lab.yaml check
+bin\vardr-agent.exe -config agent\configs\agent.lab.yaml run
 ```
 
 Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.json`.
@@ -45,7 +45,7 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
    identyfikatorem agenta, CA, program i domyślny adres serwera):
 
    ```powershell
-   go build -o bin\siem_agent.exe .\agent\cmd\siem_agent
+   go build -o bin\vardr-agent.exe .\agent\cmd\vardr-agent
    bin\siem-pki.exe package -id agt-pc01 -server 192.168.88.98
    ```
 
@@ -54,9 +54,9 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
 2. Skopiuj folder na komputer i w PowerShell lub cmd **jako administrator**:
 
    ```powershell
-   .\siem_agent.exe install                       # adres z server.txt albo pytanie o adres
-   .\siem_agent.exe install -server 10.0.0.5      # adres podany wprost
-   .\siem_agent.exe install -profile dc           # profil zdarzeń: workstation | server | dc
+   .\vardr-agent.exe install                       # adres z server.txt albo pytanie o adres
+   .\vardr-agent.exe install -server 10.0.0.5      # adres podany wprost
+   .\vardr-agent.exe install -profile dc           # profil zdarzeń: workstation | server | dc
    ```
 
    Instalator kopiuje program do `C:\Program Files\SiemAgent`, konfigurację
@@ -69,13 +69,13 @@ Zdarzenia trafiają do `data\events.ndjson`, stan agenta do `data\agent\state.js
 
    | Polecenie | Działanie | Administrator |
    |---|---|---|
-   | `siem_agent status` | stan usługi; szczegóły: serwer, kanały, liczniki, limity | szczegóły – tak |
-   | `siem_agent start` / `restart` | uruchomienie; restart agenta w procesie usługi | tak |
-   | `siem_agent stop [-token T]` | zatrzymanie (agent chroniony: token z panelu) | tak |
-   | `siem_agent test` | test połączenia z serwerem (TLS + certyfikaty) | tak |
-   | `siem_agent set-server <adres>` | zmiana adresu, test, restart agenta | tak |
-   | `siem_agent upgrade [-token T]` | aktualizacja programu (z folderu nowej wersji) | tak |
-   | `siem_agent uninstall [-token T] [-purge]` | odinstalowanie: usługa, program i klucz prywatny (`-purge`: także konfiguracja, bufor i certyfikaty) | tak |
+   | `vardr-agent status` | stan usługi; szczegóły: serwer, kanały, liczniki, limity | szczegóły – tak |
+   | `vardr-agent start` / `restart` | uruchomienie; restart agenta w procesie usługi | tak |
+   | `vardr-agent stop [-token T]` | zatrzymanie (agent chroniony: token z panelu) | tak |
+   | `vardr-agent test` | test połączenia z serwerem (TLS + certyfikaty) | tak |
+   | `vardr-agent set-server <adres>` | zmiana adresu, test, restart agenta | tak |
+   | `vardr-agent upgrade [-token T]` | aktualizacja programu (z folderu nowej wersji) | tak |
+   | `vardr-agent uninstall [-token T] [-purge]` | odinstalowanie: usługa, program i klucz prywatny (`-purge`: także konfiguracja, bufor i certyfikaty) | tak |
 
 Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\ProgramData\SiemAgent\agent.log`.
 
@@ -93,15 +93,15 @@ msiexec /i vardr-agent.msi /qn                                    # aktualizacja
 msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # odinstalowanie chronionego agenta
 ```
 
-MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `siem_agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
+MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `vardr-agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
 
-Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/siem_agent/main.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
+Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/vardr-agent/main.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
 
 ### Ochrona przed zatrzymaniem i deinstalacją (od wersji 0.7)
 
 Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia usługi, a konto SYSTEM może wszystko. Cel to **utrudnić i wykryć**. Ochronę włącza grupa agentów (panel → Grupy agentów → „Ochrona agenta”, domyślnie włączona). Agent bez konfiguracji z panelu jest bez ochrony.
 
-- **Uprawnienia usługi.** Administrator sprawdzi stan usługi, uruchomi ją i zrestartuje agenta (`siem_agent restart` – polecenie 128 do usługi). Nie może jej zatrzymać, wstrzymać, przekonfigurować ani usunąć: `sc stop` i `services.msc` dostają odmowę dostępu. Zostaje mu prawo zmiany uprawnień – to granica ochrony.
+- **Uprawnienia usługi.** Administrator sprawdzi stan usługi, uruchomi ją i zrestartuje agenta (`vardr-agent restart` – polecenie 128 do usługi). Nie może jej zatrzymać, wstrzymać, przekonfigurować ani usunąć: `sc stop` i `services.msc` dostają odmowę dostępu. Zostaje mu prawo zmiany uprawnień – to granica ochrony.
 - **Token deinstalacji.** Panel → Huginn → agent → „Token deinstalacji”: rola administratora, powód i ponowne podanie hasła, wpis w audycie. Token jest jednorazowy, działa tylko na tym komputerze, domyślnie przez 24 h (do 7 dni). Panel pokazuje go raz; w bazie i na komputerze jest tylko skrót. Nowy token unieważnia poprzedni. Polecenie z tokenem samo pobiera świeżą konfigurację z panelu, więc token działa od razu. Użyty token panel oznacza na podstawie raportu agenta.
 - **Wycofanie po deinstalacji (od 0.7.4).** Deinstalacja usuwa klucz prywatny agenta (`certsgent.key`); konfiguracja i bufor zostają (`-purge` usuwa wszystko). Gdy agent zgłosi deinstalację tokenem wydanym w panelu dla tego komputera, panel unieważnia jego certyfikaty (rozsyłane do ingestu jak przy ręcznym unieważnieniu) i zapisuje `agent_retired` w audycie. Agent ma w Huginnie stan „wycofany” – znika z domyślnej listy (filtr „Wycofani”), historia zostaje. Ponowna instalacja na tym komputerze to nowa rejestracja tokenem i nowy identyfikator (identyfikatory nigdy nie są używane ponownie – zdarzenia z jednego identyfikatora zawsze pochodzą z jednego klucza).
 - **Pilnowanie co 30 s.** Agent sprawdza uprawnienia usługi, typ uruchamiania i ścieżkę programu, zarówno w menedżerze usług, jak i w rejestrze. Zmianę zgłasza i cofa.
@@ -114,10 +114,10 @@ Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia 
 | zatrzymanie „tokenem”, którego panel nie wydał (podrobiony `managed.json`) | wysoki |
 | aktualizacja przez instalator, po której agent nie wrócił w ciągu 15 min | wysoki |
 | zabicie procesu (`taskkill /f`; usługa wstaje sama po 5 s) | średni |
-| `siem_agent stop` / `uninstall` / `msiexec /x` bez tokenu albo ze złym tokenem | średni |
+| `vardr-agent stop` / `uninstall` / `msiexec /x` bez tokenu albo ze złym tokenem | średni |
 | zatrzymanie, aktualizacja i deinstalacja tokenem; zamknięcie systemu | brak (wpis w panelu) |
 
-`siem_agent status` i strona agenta w panelu pokazują stan ochrony i ostatnie zdarzenia. Agent zatrzymany bez tokenu ma na liście czerwony znacznik „zatrzymany bez tokenu”. Reguła Sigma `system_security_service_stopped` dotyczy teraz tylko Sysmona: zatrzymania agenta zgłasza reguła wbudowana, która odróżnia zatrzymanie tokenem.
+`vardr-agent status` i strona agenta w panelu pokazują stan ochrony i ostatnie zdarzenia. Agent zatrzymany bez tokenu ma na liście czerwony znacznik „zatrzymany bez tokenu”. Reguła Sigma `system_security_service_stopped` dotyczy teraz tylko Sysmona: zatrzymania agenta zgłasza reguła wbudowana, która odróżnia zatrzymanie tokenem.
 
 Awaryjnie, gdy komputer nie ma łączności z panelem i nie da się użyć tokenu: `sc sdset SiemAgent` przywraca zwykłe uprawnienia, a potem `sc stop` / `sc delete`. Panel dostanie wtedy alert – to zamierzone.
 
@@ -157,7 +157,7 @@ po twardym zabiciu agenta, 30% odrzuceń 503 i wyłączeniu serwera – bez brak
 ## Diagnostyka
 
 ```powershell
-siem_agent status
+vardr-agent status
 ```
 
 Pokazuje stan usługi, połączenia z serwerem (ostatnia przyjęta paczka, ostatni
@@ -177,7 +177,7 @@ Uprawnienia `0600` nie działają na Windows – pliki dziedziczą ACL folderu,
 a w `C:\ProgramData` zwykli użytkownicy mają prawo odczytu. Agent działający
 jako SYSTEM / administrator przy każdym starcie (i instalator usługi) ustawia
 na katalogu stanu i kluczu prywatnym chronioną listę dostępu: tylko SYSTEM
-i Administratorzy. `siem_agent check` pokazuje, czy klucz i katalog stanu są
+i Administratorzy. `vardr-agent check` pokazuje, czy klucz i katalog stanu są
 chronione. Uruchomiony bez uprawnień administratora agent nie zawęża ACL
 (odciąłby sam siebie) i zgłasza to w statusie.
 
@@ -240,7 +240,7 @@ Paczka, której nie udało się wysłać od razu (brak sieci, serwer przeciążo
 
 - **Limit:** domyślnie 1024 MB (`buffer.max_mb` w `agent.yaml` albo „Bufor dyskowy” w grupie agentów w panelu; 0 = wyłączony). Bufor nigdy nie zabiera ostatniego 1 GB wolnego miejsca (`buffer.min_free_mb`).
 - **Po zapełnieniu** (`buffer.on_full` albo grupa w panelu): `pause` (domyślnie) – nowe zdarzenia czekają w dzienniku Windows jak bez bufora; `drop_oldest` – usuwane są najstarsze paczki z bufora, a liczba utraconych zdarzeń trafia do statusu i panelu.
-- Stan bufora widać w `siem_agent status` i w panelu (Huginn → agent). Panel zgłasza problem, gdy paczki czekają dłużej niż 5 minut, gdy bufor jest pełny i gdy coś utracono.
+- Stan bufora widać w `vardr-agent status` i w panelu (Huginn → agent). Panel zgłasza problem, gdy paczki czekają dłużej niż 5 minut, gdy bufor jest pełny i gdy coś utracono.
 
 **Zegar:** agent przy każdym heartbeacie mierzy odchylenie swojego zegara od serwera (nagłówek `X-Vardr-Time`) i co 5 minut sprawdza usługę czasu Windows (W32Time). Panel zgłasza odchylenie ponad 60 s i wyłączoną usługę czasu (zatrzymana jest normalna poza domeną – Windows uruchamia ją na żądanie).
 
@@ -267,7 +267,7 @@ Agent pilnuje tego sam:
 - **przy wznowieniu** (np. po długim wyłączeniu) i w trakcie pracy zgłasza dokładny zakres rekordów nadpisanych przed odczytem („LUKA W DANYCH”);
 - **przy starcie** podpowiada zwiększenie dziennika Security mniejszego niż 128 MB i ostrzega przed ustawieniem „nie nadpisuj”, przy którym Windows po zapełnieniu przestaje zapisywać nowe zdarzenia.
 
-Wszystkie te komunikaty trafiają do logu agenta, do `siem_agent status` i (gdy agent działa jako usługa) do Podglądu zdarzeń (Application, źródło `SiemAgent`).
+Wszystkie te komunikaty trafiają do logu agenta, do `vardr-agent status` i (gdy agent działa jako usługa) do Podglądu zdarzeń (Application, źródło `SiemAgent`).
 
 ## Testy
 
@@ -279,7 +279,7 @@ go test ./...
 Na GitHubie testy uruchamiają się automatycznie przy każdym pushu ([.github/workflows/ci.yml](.github/workflows/ci.yml)):
 
 - **Linux:** `gofmt`, `go vet`, testy z wykrywaniem wyścigów (`-race`), 60 s fuzzingu parsera XML i budowanie usług serwera;
-- **Windows:** `go vet`, testy agenta i budowanie `siem_agent.exe`.
+- **Windows:** `go vet`, testy agenta i budowanie `vardr-agent.exe`.
 
 Wynik widać w zakładce *Actions* repozytorium.
 
@@ -316,7 +316,7 @@ Wdrożenie ze stacji (Git Bash) na VM: jeden skrypt kopiuje konfigurację stosu,
 ```bash
 deploy/lab/deploy.sh                    # konfiguracja + wszystkie usługi
 deploy/lab/deploy.sh web api            # frontend panelu i siem-api
-deploy/lab/deploy.sh archiver agent     # wybrane cele (agent = siem_agent.exe do paczek)
+deploy/lab/deploy.sh archiver agent     # wybrane cele (agent = vardr-agent.exe do paczek)
 ```
 
 Skrypt nie dotyka `certs/`, `.env` ani danych. Certyfikat serwera z adresem VM przygotowuje się raz na stacji i kopiuje do `~/siem-lab/certs` (katalog `certs` jest ignorowany przez git):
@@ -360,7 +360,7 @@ Panel działa pod adresem **https://192.168.88.98:8444**. Korzysta z certyfikatu
 
    Windows zapyta o potwierdzenie. Usunięcie: `certutil -user -delstore Root "SIEM Lab CA"`.
 
-**Huginn – agenci:** agent (od wersji 0.4.0) co minutę wysyła heartbeat ze swoim stanem, czyli tym samym, co pokazuje `siem_agent status`. Trasa: `POST /v1/heartbeat` na siem-ingest (mTLS) → strumień NATS `SIEM_HEARTBEATS` (ostatni heartbeat na agenta) → siem-api → tabela `agents` w Sadze.
+**Huginn – agenci:** agent (od wersji 0.4.0) co minutę wysyła heartbeat ze swoim stanem, czyli tym samym, co pokazuje `vardr-agent status`. Trasa: `POST /v1/heartbeat` na siem-ingest (mTLS) → strumień NATS `SIEM_HEARTBEATS` (ostatni heartbeat na agenta) → siem-api → tabela `agents` w Sadze.
 
 Panel pokazuje dla każdego agenta:
 
@@ -374,7 +374,7 @@ Agenci ze starszych wersji wysyłają zdarzenia, ale nie pojawiają się na liś
 **Bifröst – wdrażanie agentów tokenem:** administrator tworzy w panelu token rejestracyjny: nazwa, profil zdarzeń, ważność i limit instalacji. Token jest widoczny raz, a w bazie zostaje tylko jego skrót. Do tokenu panel daje instalator MSI z wpisanym adresem serwera i tokenem (jeden plik – instalacja albo aktualizacja podwójnym kliknięciem), paczkę ZIP (program agenta, główne CA, adres serwera, token, `install.cmd`) – oba **bez klucza prywatnego** – i gotowe polecenie do GPO lub Intune:
 
 ```bash
-siem_agent.exe install -server 192.168.88.98 -token hdt_…
+vardr-agent.exe install -server 192.168.88.98 -token hdt_…
 ```
 
 Przebieg instalacji:
@@ -390,13 +390,13 @@ Certyfikaty podpisuje osobne **CA agentów** (`siem-pki agents-ca`), które moż
 
 Inne polecenia agenta:
 
-- `siem_agent enroll -server … -token … -dir …`: rejestracja bez instalowania usługi, np. do testów;
-- `siem_agent upgrade`: aktualizacja programu z folderu nowej wersji, z zachowaniem konfiguracji, certyfikatów i stanu.
+- `vardr-agent enroll -server … -token … -dir …`: rejestracja bez instalowania usługi, np. do testów;
+- `vardr-agent upgrade`: aktualizacja programu z folderu nowej wersji, z zachowaniem konfiguracji, certyfikatów i stanu.
 
 Przygotowanie serwera:
 
 - `binsiem-pki.exe agents-ca`, potem `agents-ca.crt` i `agents-ca.key` do `~/siem-lab/certs`;
-- `siem_agent.exe` do `~/siem-lab/agent-dist`;
+- `vardr-agent.exe` do `~/siem-lab/agent-dist`;
 - w `.env`: `SIEM_PUBLIC_SERVER=192.168.88.98`.
 
 **Mímir – wyszukiwarka zdarzeń:** zapytania w prostym języku, np.:
@@ -428,7 +428,7 @@ Panel łączy się z ClickHouse kontem `siem_panel`, które ma tylko prawo odczy
 
 Lokalny `agent.yaml` dalej decyduje o adresie serwera i certyfikatach. Agent bez przypisania należy do grupy „Domyślna”. Token rejestracyjny wskazuje grupę dla nowych agentów.
 
-Panel pokazuje przy agencie, czy jego konfiguracja jest aktualna (wersja z heartbeatu porównana z wersją grupy). `siem_agent status` pokazuje źródło konfiguracji. Zmienna `SIEM_CONFIG_POLL_SECONDS` przyspiesza pobieranie (diagnostyka).
+Panel pokazuje przy agencie, czy jego konfiguracja jest aktualna (wersja z heartbeatu porównana z wersją grupy). `vardr-agent status` pokazuje źródło konfiguracji. Zmienna `SIEM_CONFIG_POLL_SECONDS` przyspiesza pobieranie (diagnostyka).
 
 **Zapomniane hasło administratora:** `docker compose run --rm api reset-password -username admin`.
 
@@ -720,7 +720,7 @@ Archiwizator zapisuje **oryginalne paczki agentów** (przed normalizacją, skomp
 
   Kolejne przebiegi obejmują więc całe archiwum po kolei. Manifest z problemem nie dostaje znacznika sprawdzenia, więc niezgodność nie znika z widoku. Panel pokazuje, od kiedy całość jest sprawdzona w całości. `verify --full` czyta całe archiwum, np. przed audytem. Wynik trafia do bazy, do logu i do metryk `siem_archive_verify_ok` i `siem_archive_verify_problems`.
 - **Retencja:** ustawiana w polityce w panelu (niżej), przy pierwszym starcie `SIEM_ARCHIVE_RETENTION_DAYS` z `.env`, domyślnie 30 dni. Dane starszych godzin są usuwane, a wpisy manifestów zostają w bazie, więc łańcuch pozostaje ciągły.
-- **Miejsce na dysku:** archiwum zajmuje ok. 100 B na zdarzenie, czyli ~85 GB na dobę przy 10 000 zdarzeń/s. Powinno więc leżeć na osobnym dysku: `SIEM_ARCHIVE_PATH` w `.env`, np. `/srv/heimdall/archive`.
+- **Miejsce na dysku:** archiwum zajmuje ok. 100 B na zdarzenie, czyli ~85 GB na dobę przy 10 000 zdarzeń/s. Powinno więc leżeć na osobnym dysku: `SIEM_ARCHIVE_PATH` w `.env`, np. `/srv/vardr/archive`.
   - Poniżej 15% wolnego miejsca archiwizator ostrzega.
   - Poniżej 5% albo 2 GB wstrzymuje archiwizację (`SIEM_ARCHIVE_MIN_FREE_PERCENT`, `SIEM_ARCHIVE_MIN_FREE_GB`). Paczki czekają wtedy w kolejce, zamiast zapełnić dysk.
   - Stan dysku jest widoczny w panelu i w metrykach `siem_archive_disk_free_bytes` i `siem_archive_paused`.
@@ -737,15 +737,15 @@ W panelu stan archiwum widać w module **Urd**:
 
 Administrator może zlecić weryfikację przyciskiem „Zweryfikuj teraz”. Archiwizator rozpoczyna ją w ciągu minuty, a zlecenie trafia do audytu. Kafelek z tym stanem jest też na stronie startowej.
 
-**Dysk archiwum (jednorazowo, wymaga sudo):** w laboratorium to osobny dysk 150 GB (`/dev/sdb`) zamontowany w `/srv/heimdall`, z katalogami `archive` i `backup` należącymi do `siem` (uid 1000):
+**Dysk archiwum (jednorazowo, wymaga sudo):** osobny dysk (w laboratorium 150 GB, `/dev/sdb`) zamontowany w `/srv/vardr`, z katalogami `archive` i `backup` należącymi do `siem` (uid 1000):
 
 ```bash
-sudo mkfs.ext4 -L heimdall-data /dev/sdb
-sudo mkdir -p /srv/heimdall && echo 'LABEL=heimdall-data /srv/heimdall ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab && sudo mount -a
-sudo mkdir -p /srv/heimdall/archive /srv/heimdall/backup && sudo chown -R 1000:1000 /srv/heimdall && sudo chmod 750 /srv/heimdall/archive /srv/heimdall/backup
+sudo mkfs.ext4 -L vardr-data /dev/sdb
+sudo mkdir -p /srv/vardr && echo 'LABEL=vardr-data /srv/vardr ext4 defaults,noatime,nofail 0 2' | sudo tee -a /etc/fstab && sudo mount -a
+sudo mkdir -p /srv/vardr/archive /srv/vardr/backup && sudo chown -R 1000:1000 /srv/vardr && sudo chmod 750 /srv/vardr/archive /srv/vardr/backup
 ```
 
-W `.env` ustaw `SIEM_ARCHIVE_PATH=/srv/heimdall/archive`. Dzięki `nofail` brak dysku nie blokuje startu VM, a dwie blokady chronią przed pisaniem archiwum na dysk systemowy:
+W `.env` ustaw `SIEM_ARCHIVE_PATH=/srv/vardr/archive` (i `SIEM_BACKUP_DIR=/srv/vardr/backup`, jeśli kopie mają leżeć gdzie indziej niż domyślnie). Laboratorium zostało przy dysku zamontowanym w `/srv/heimdall` (nazwa sprzed zmiany nazwy projektu) – ścieżki ustawia jego `.env`. Dzięki `nofail` brak dysku nie blokuje startu VM, a dwie blokady chronią przed pisaniem archiwum na dysk systemowy:
 
 - Docker nie zakłada brakującego katalogu (`create_host_path: false`), więc archiwizator nie wystartuje;
 - archiwizator odmawia pracy, gdy spis w bazie ma manifesty, a katalog nie zawiera archiwum (znacznik `.urd-archive`).
@@ -800,7 +800,7 @@ Wcześniej trzeba dopisać do `.env` hasła `SAGA_ADMIN_PASSWORD` i `SAGA_ARCHIV
 
 ### Eksport dla audytora (Urd)
 
-Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/heimdall/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczkę da się w całości odczytać i sprawdzić **bez Vardra**, np. przy zgłoszeniu incydentu do CSIRT albo organu nadzoru. Zawiera:
+Administrator zleca eksport w panelu: zakładka *Urd → Eksport dla audytora*, zakres pełnych godzin archiwizacji (do 31 dni) i obowiązkowy powód. Archiwizator przygotowuje paczkę `urd-eksport-<nr>-<od>-<do>.tar` w `/srv/vardr/export` (`SIEM_ARCHIVE_EXPORT_PATH`). Paczkę da się w całości odczytać i sprawdzić **bez Vardra**, np. przy zgłoszeniu incydentu do CSIRT albo organu nadzoru. Zawiera:
 
 - **Zdarzenia do odczytu** (`zdarzenia/`):
   - `RRRR-MM-DD_GG.ndjson.gz`: jedno zdarzenie w linii, pola według Elastic Common Schema (`@timestamp`, `host.name`, `event.code`, `user.name`, `source.ip`…). Pełny oryginalny XML Windows jest w `event.original`. Plik da się wczytać do Elastic, Splunk czy Sentinel albo przeglądać przez `zcat` i `jq`.
@@ -906,7 +906,7 @@ Każda kopia to **jedna zaszyfrowana paczka** `vardr-RRRRMMDD-GGMM-k<id>.tar.gpg
 ./backup.sh               # kopia teraz (to samo co „Zrób kopię teraz” w panelu)
 ```
 
-Hasło leży w `~/.heimdall-backup.pass` (tylko dla właściciela), poza katalogiem stosu i poza samą kopią; panel go nie zna. **Bez hasła kopii nie da się odtworzyć** – po utracie VM potrzebne jest hasło zapisane przez administratora. Bez hasła kopie nie powstają: panel pokazuje ostrzeżenie, a alert „brak udanej kopii” zgłasza to po 26 h.
+Hasło leży w `~/.vardr-backup.pass` (tylko dla właściciela), poza katalogiem stosu i poza samą kopią; panel go nie zna. **Bez hasła kopii nie da się odtworzyć** – po utracie VM potrzebne jest hasło zapisane przez administratora. Bez hasła kopie nie powstają: panel pokazuje ostrzeżenie, a alert „brak udanej kopii” zgłasza to po 26 h.
 
 **Hasła i klucze do miejsca docelowego** wpisuje się w panelu. Panel szyfruje je kluczem publicznym usługi kopii (NaCl), więc po zapisie nie odczyta ich ani panel, ani baza – można je tylko zastąpić. Przy logowaniu SFTP kluczem usługi panel pokazuje klucz publiczny do dopisania w `authorized_keys` na serwerze kopii. Klucz serwera kopii jest zapamiętywany przy pierwszym połączeniu, a jego zmiana zatrzymuje wysyłkę.
 
@@ -922,8 +922,8 @@ Alert „kopia nie trafiła poza VM od ponad 26 h” pilnuje wysyłki. Stan usł
 **Odtworzenie całego systemu na czystej VM** (Docker zainstalowany, stos skopiowany `deploy.sh config` i usługi zbudowane):
 
 ```bash
-scp heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/config/vardr-….tar.gpg .
-rsync -a heimdall@192.168.88.180:/mnt/HDD/TANK/heimdall_backup/urd/ urd/   # opcjonalnie: archiwum NIS2
+scp <użytkownik>@<serwer kopii>:<katalog kopii>/config/vardr-….tar.gpg .
+rsync -a <użytkownik>@<serwer kopii>:<katalog kopii>/urd/ urd/   # opcjonalnie: archiwum NIS2
 ./restore.sh vardr-….tar.gpg urd/
 ```
 

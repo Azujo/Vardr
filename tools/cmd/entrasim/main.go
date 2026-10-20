@@ -3,7 +3,7 @@
 // API (internal/entrasim). Generuje tło (zwykłe logowania użytkowników)
 // i scenariusze ataków na żądanie:
 //
-//	entrasim -listen :8080 -tenant lab -client-id heimdall -secret-file entra.secret
+//	entrasim -listen :8080 -tenant lab -client-id vardr -secret-file entra.secret
 //	curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'
 //
 // Scenariusze: normal, spray, brute, success-after-failures, foreign,
@@ -26,7 +26,7 @@ import (
 func main() {
 	listen := flag.String("listen", ":8080", "adres nasłuchu")
 	tenant := flag.String("tenant", "lab", "identyfikator tenanta")
-	clientID := flag.String("client-id", "heimdall", "identyfikator aplikacji")
+	clientID := flag.String("client-id", "vardr", "identyfikator aplikacji")
 	secretFile := flag.String("secret-file", "", "plik z sekretem aplikacji (wymagany)")
 	domain := flag.String("domain", "azujo.pl", "domena kont (UPN)")
 	users := flag.String("users", "jkowalski,anowak,pwisniewski,kwojcik,mkaminska,heimdall-lab", "konta (przecinki)")

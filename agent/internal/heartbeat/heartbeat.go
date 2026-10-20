@@ -1,5 +1,5 @@
 // Package heartbeat co minutę wysyła na serwer stan agenta – ten sam,
-// który pokazuje `siem_agent status`. Panel (Huginn) widzi dzięki temu
+// który pokazuje `vardr-agent status`. Panel (Huginn) widzi dzięki temu
 // listę agentów, ich wersje, ostrzeżenia i to, czy są online.
 package heartbeat
 
