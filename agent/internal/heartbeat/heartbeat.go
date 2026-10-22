@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package heartbeat co minutę wysyła na serwer stan agenta – ten sam,
 // który pokazuje `vardr-agent status`. Panel (Huginn) widzi dzięki temu
 // listę agentów, ich wersje, ostrzeżenia i to, czy są online.

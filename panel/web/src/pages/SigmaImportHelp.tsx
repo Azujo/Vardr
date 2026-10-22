@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Instrukcja importu reguł SigmaHQ (to samo co docs/reguly.md, „Import
 // reguł SigmaHQ”) – polecenia do skopiowania: na serwerze z instalacji
 // (sigmahq-import.sh) albo w katalogu projektu (repozytorium Vardra).

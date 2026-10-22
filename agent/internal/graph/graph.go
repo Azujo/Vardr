@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package graph to źródło logów Entra ID (Azure AD) z Microsoft Graph dla
 // konektora (siem-connector): logowania (auditLogs/signIns) i zmiany
 // w katalogu (auditLogs/directoryAudits). Konektor odpytuje API co minutę

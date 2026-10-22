@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Schemat bazy SIEM (roadmapa, sekcja 15a). Uruchamiany przez obraz
 # ClickHouse przy pierwszym starcie (pusty wolumen danych).
 set -euo pipefail

@@ -1,4 +1,5 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Role bazy Saga – rozdzielenie uprawnień:
 #
 #   saga_admin     superużytkownik, tylko do administracji (żadna usługa go nie używa)

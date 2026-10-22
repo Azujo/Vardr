@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Import reguł SigmaHQ na serwerze z instalacji (install.sh) – odpowiednik
 # procedury z docs/reguly.md („Import reguł SigmaHQ”) bez repozytorium Vardra.
 #

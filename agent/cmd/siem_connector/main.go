@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-connector to agent Vardra w trybie konektora API: pobiera
 // logi z usług chmurowych (etap 7: Entra ID przez Microsoft Graph –
 // logowania i zmiany w katalogu) i wysyła je do serwera tak jak agent

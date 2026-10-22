@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Tabela zdarzeń odtworzonych z archiwum NIS2 (Urd, replay). Osobna od
 # siem.events: odtworzenie nie zmienia danych produkcyjnych (ReplacingMergeTree
 # usuwa duplikaty tylko w obrębie partycji) i nie trafia do detekcji.

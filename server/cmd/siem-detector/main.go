@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-detector (Gjallarhorn) ocenia znormalizowane zdarzenia
 // regułami (Sigma, katalog SIEM_RULES_DIR) i zapisuje alerty w bazie Saga
 // (schemat gjallarhorn). Powiadomienia wysyła panel (outbox).

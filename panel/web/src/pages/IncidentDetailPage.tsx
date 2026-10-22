@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Incydent: obsługa (status, waga, prowadzący), ustalenia, alerty, oś czasu,
 // a dla incydentu poważnego (NIS2) – terminy i zgłoszenia do CSIRT.
 import { useCallback, useEffect, useMemo, useState } from "react";

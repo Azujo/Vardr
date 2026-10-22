@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package identity wyznacza tożsamość osoby (user.identity) z konta
 // w zdarzeniu (etap 7a): to samo konto w AD („AZUJO\jkowalski”), w Entra ID
 // („jkowalski@azujo.pl”) i na VPN („jkowalski”) daje jeden klucz, więc reguły

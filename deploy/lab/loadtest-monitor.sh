@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Monitor potoku na czas testu obciążenia: co INTERVAL s jedna linia
 # z metrykami Prometheusa (przepływ, odmowy, kolejki, opóźnienie, CPU usług
 # i ClickHouse, wolne miejsce). Opis: docs/testy-obciazeniowe.md.

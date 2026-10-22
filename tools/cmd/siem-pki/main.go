@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-pki tworzy infrastrukturę certyfikatów dla mTLS: urząd
 // certyfikacji (CA), certyfikat serwera, CA rejestracji agentów i – tylko
 // w laboratorium – certyfikaty agentów. Używa go install.sh przy instalacji

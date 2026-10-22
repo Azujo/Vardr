@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package urd to archiwum NIS2 (Urd): format plików archiwum, łańcuch
 // manifestów i ich weryfikacja. Używają go archiwizator (siem-archiver)
 // i panel (odczyt stanu).

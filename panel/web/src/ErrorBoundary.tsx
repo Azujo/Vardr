@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Alert, Button, Code, Group, Stack, Text } from "@mantine/core";
 

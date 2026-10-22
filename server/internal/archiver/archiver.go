@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package archiver zapisuje surowe paczki z kolejki SIEM_RAW do archiwum
 // NIS2 (Urd). Wiadomość jest potwierdzana dopiero, gdy segment z nią jest
 // trwale zapisany na dysku i zarejestrowany w spisie.

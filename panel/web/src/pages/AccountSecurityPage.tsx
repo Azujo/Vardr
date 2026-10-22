@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Moje konto → Bezpieczeństwo: drugi składnik logowania (TOTP) – włączenie,
 // nowe kody zapasowe, wyłączenie (gdy polityka panelu go nie wymaga).
 import { useCallback, useEffect, useState } from "react";

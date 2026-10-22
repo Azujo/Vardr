@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-collector to agent Vardra w trybie kolektora: odbiera
 // syslog z urządzeń (zapory, routery, przełączniki, NAS) i wysyła go do
 // serwera tak jak agent Windows – mTLS, paczki, bufor dyskowy na czas

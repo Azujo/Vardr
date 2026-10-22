@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useEffect, useState } from "react";
 import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { IconActivityHeartbeat, IconAlertTriangle, IconArchive, IconBolt, IconDatabaseSearch, IconDeviceDesktop } from "@tabler/icons-react";

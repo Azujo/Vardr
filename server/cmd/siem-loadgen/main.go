@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-loadgen symuluje wielu agentów wysyłających zdarzenia Windows
 // do siem-ingest (etap 1.5, ustalenie K4). Każdy symulowany agent ma własny
 // certyfikat (wystawiany w pamięci przez laboratoryjne CA), własne

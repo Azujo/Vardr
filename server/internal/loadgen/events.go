@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package loadgen generuje realistyczne zdarzenia Windows (XML jak z EvtRender)
 // do testów obciążenia i benchmarków serwera.
 package loadgen

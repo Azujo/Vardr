@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command fortisim to symulator dziennika FortiGate (FortiOS 7, format
 // „default”: pary klucz=wartość) wysyłanego przez syslog do kolektora
 // Vardra – do testów dekodera i reguł bez prawdziwego urządzenia.

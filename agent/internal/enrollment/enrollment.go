@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package enrollment to strona agenta rejestracji tokenem (Bifröst):
 // agent generuje klucz prywatny u siebie, wysyła do panelu tylko prośbę
 // o certyfikat (CSR) i odnawia certyfikat przed wygaśnięciem.

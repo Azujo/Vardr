@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { ReactNode } from "react";
 import {
   ActionIcon,
+  Anchor,
   AppShell,
   Burger,
   Group,
@@ -219,7 +222,11 @@ export default function Layout({ children }: { children: ReactNode }) {
         </AppShell.Section>
         <AppShell.Section>
           <Text size="xs" c="dimmed" ta="center" my="xs" title="wersja siem-api">
-            {version && `wersja ${version}`}
+            {version && `wersja ${version} · `}
+            {/* AGPL-3.0 §13: użytkownicy panelu przez sieć mają dostęp do kodu źródłowego. */}
+            <Anchor href="https://github.com/Azujo/Vardr" target="_blank" rel="noopener noreferrer" size="xs" c="dimmed" underline="always">
+              kod źródłowy (AGPL-3.0)
+            </Anchor>
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>

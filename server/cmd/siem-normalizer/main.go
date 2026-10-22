@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-normalizer czyta surowe paczki ze strumienia SIEM_RAW,
 // normalizuje zdarzenia i publikuje wynik w strumieniu SIEM_EVENTS.
 // Wiadomość wejściowa jest potwierdzana dopiero po zapisie wyniku.

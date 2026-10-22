@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //go:build windows
 
 // Package secure ogranicza dostęp do plików agenta (klucz prywatny, stan,

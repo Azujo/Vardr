@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Pasek „panel został zaktualizowany”: otwarta karta pobiera nowe dane, ale
 // kod strony wymienia dopiero po przeładowaniu – stary kod potrafi błędnie
 // pokazać nowe dane (np. nieznany stan agenta). Strona co minutę i przy

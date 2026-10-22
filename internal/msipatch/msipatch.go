@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package msipatch podmienia w pliku MSI napis na inny o tej samej długości
 // (wypełniacze właściwości SERVER i TOKEN instalatora agenta). MSI to plik
 // Compound File Binary (CFB): strumienie są łańcuchami sektorów, małe

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-api to backend panelu Hliðskjálf: API (logowanie, konta,
 // audyt) i aplikacja React, po HTTPS. Dane w bazie Saga (PostgreSQL).
 //

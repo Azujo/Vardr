@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-writer czyta znormalizowane paczki ze strumienia SIEM_EVENTS
 // i zapisuje je do ClickHouse dużymi paczkami. Wiadomości są potwierdzane
 // dopiero po udanym INSERT.

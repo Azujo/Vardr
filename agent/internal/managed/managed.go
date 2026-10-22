@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package managed to konfiguracja agenta zarządzana z panelu (grupy
 // agentów): profil zbieranych zdarzeń i limity zasobów. Lokalny agent.yaml
 // decyduje o adresie serwera, certyfikatach i katalogu stanu; panel –

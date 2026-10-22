@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package status to „Stan systemu” w panelu: zdrowie usług Vardra
 // z metryk Prometheusa (te same progi co alerty Grafany), czytelne dla
 // administratora bez otwierania Grafany.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package guard to ochrona agenta przed zatrzymaniem i deinstalacją
 // (roadmapa, sekcja 7 – „utrudnić i wykryć”). Pełnej blokady nie ma:
 // administrator może zmienić uprawnienia usługi, a SYSTEM zrobić wszystko.

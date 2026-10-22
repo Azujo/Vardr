@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // MITRE ATT&CK w panelu: słownik (z serwera, raz na sesję), odczyt tagów
 // reguł (attack.t1110.001, attack.credential_access) i plakietki technik.
 import { useEffect, useState } from "react";

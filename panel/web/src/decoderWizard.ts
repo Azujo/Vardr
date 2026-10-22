@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Logika kreatora dekoderów (bez interfejsu): rozpoznanie rodzaju treści,
 // rozbiór par klucz=wartość i JSON, budowa wyrażenia regularnego z
 // zaznaczonych fragmentów, rozpoznanie formatu czasu i złożenie definicji

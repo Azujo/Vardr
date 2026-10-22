@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // attackgen buduje słownik MITRE ATT&CK (internal/attack/enterprise.json)
 // z oficjalnego pakietu STIX MITRE:
 //

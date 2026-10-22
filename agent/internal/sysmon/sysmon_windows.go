@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package sysmon sprawdza, czy na komputerze działa Sysmon (Sysinternals),
 // w jakiej wersji i z jaką konfiguracją. Agent niczego nie instaluje –
 // tylko zgłasza stan w heartbeacie, a panel porównuje go z wymaganiami grupy.

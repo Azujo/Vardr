@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package throttle to prosty ogranicznik tempa (token bucket) używany do
 // limitu zdarzeń na sekundę i limitu przepustowości wysyłki.
 package throttle

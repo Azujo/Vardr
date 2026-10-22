@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Stosuje retencję z pliku .env do istniejącej bazy (schemat w init/ działa
 # tylko przy pierwszym starcie z pustym wolumenem). Bezpieczne do
 # wielokrotnego uruchamiania. Użycie (na serwerze, w katalogu stosu):

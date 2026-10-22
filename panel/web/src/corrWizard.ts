@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Logika kreatora korelacji (bez interfejsu): kroki z przykładowych
 // zdarzeń (istniejąca reguła albo nowa reguła bazowa z wybranych pól),
 // klucz wspólny dla kroków (także pod różnymi nazwami pól – aliasy),

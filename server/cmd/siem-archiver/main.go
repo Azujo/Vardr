@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-archiver (Urd) zapisuje oryginalne paczki agentów do
 // archiwum NIS2: segmenty na dysku, godzinowe manifesty połączone łańcuchem
 // hashy (spis w bazie Saga) i okresowa weryfikacja integralności.

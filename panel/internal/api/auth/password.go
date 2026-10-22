@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package auth zawiera hashowanie haseł, generowanie tokenów i reguły haseł
 // panelu Hliðskjálf.
 package auth

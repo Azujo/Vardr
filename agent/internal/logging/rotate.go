@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package logging zawiera rotowany plik logu oraz przekazywanie ostrzeżeń
 // i błędów agenta do Windows Event Log.
 package logging

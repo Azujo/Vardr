@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Logowanie domenowe (AD przez LDAPS): połączenie z kontem usługowym,
 // kreator grup (OU → grupy → profil uprawnień, w kolejności) i podgląd
 // konta – jaki profil dostanie przy logowaniu.

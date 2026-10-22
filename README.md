@@ -1010,6 +1010,14 @@ Domyślnie generator ma 3500 kont i 0,2% nieudanych logowań (zwykły dzień fir
 
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).
 
+## Licencja
+
+Copyright © 2026 Marcin Krzemianowski „Azujo” i współtwórcy Vardra.
+
+Vardr jest wolnym oprogramowaniem na licencji [GNU Affero General Public License 3.0 lub późniejszej](LICENSE) (`AGPL-3.0-or-later`): wolno go używać (także komercyjnie), zmieniać i rozpowszechniać. Kto udostępnia zmienioną wersję – także jako usługę przez sieć (np. SIEM dla klientów) – musi udostępnić jej użytkownikom kod źródłowy na tej samej licencji. Panel pokazuje odnośnik do kodu źródłowego (stopka menu); zmieniona wersja powinna wskazywać własne repozytorium.
+
+Licencja nie obejmuje reguł SigmaHQ (osobna licencja DRL 1.1, patrz niżej) ani programów firm trzecich uruchamianych w stosie (NATS, ClickHouse, PostgreSQL, Grafana, Prometheus – każdy na własnej licencji). Zasady przesyłania zmian: [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Podziękowania
 
 Detekcja Vardra opiera się na formacie [Sigma](https://sigmahq.io), a panel pozwala zaimportować otwartą bibliotekę reguł [SigmaHQ](https://github.com/SigmaHQ/sigma) – kilka tysięcy reguł pisanych i utrzymywanych przez społeczność analityków bezpieczeństwa. Dziękujemy autorom i opiekunom projektu za świetną robotę. Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License); Vardr ich nie dołącza – importuje je administrator (`sigmahq-import.sh` albo instrukcja w panelu), a panel pokazuje autora, źródło i licencję przy każdej regule i alercie.

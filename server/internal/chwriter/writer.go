@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package chwriter zapisuje znormalizowane zdarzenia i kwarantannę do
 // ClickHouse. Zapis odbywa się dużymi paczkami (ClickHouse źle znosi wiele
 // małych INSERT-ów).

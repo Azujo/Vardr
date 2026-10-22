@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Paczka instalacyjna serwera Vardr: dist/vardr-<wersja>-linux-amd64.tar.gz
 # (programy, pliki stosu, reguły, agent Windows, install.sh) + plik .sha256.
 #
@@ -62,7 +63,7 @@ cp deploy/vardr/docker-compose.yml deploy/vardr/.dockerignore "$stage/stack/"
 # (stack/sigmahq-import.sh, instrukcja w panelu: Reguły → Import reguł SigmaHQ).
 tar -C rules --exclude=./sigmahq -cf - . | tar -C "$stage/rules" -xf -
 cp deploy/vardr/sigmahq-import.sh "$stage/stack/"
-cp deploy/vardr/install.sh "$stage/"
+cp deploy/vardr/install.sh LICENSE "$stage/"
 echo "$version" > "$stage/VERSION"
 cat > "$stage/README.txt" <<EOF
 Vardr $version – serwer SIEM
@@ -76,6 +77,7 @@ Instalacja (Linux x86_64, systemd, Docker Engine z wtyczką compose v2):
 Aktualizacja: to samo polecenie z nowszej paczki (konfiguracja, certyfikaty
 i dane zostają). Opcje: sudo ./install.sh --help
 Dokumentacja: docs/instalacja.md w repozytorium Vardra.
+Licencja: GNU AGPL-3.0 lub późniejsza (plik LICENSE), kod: https://github.com/Azujo/Vardr
 EOF
 
 echo "== archiwum"

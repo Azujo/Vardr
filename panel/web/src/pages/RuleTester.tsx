@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useEffect, useState, type ReactNode } from "react";
 import { Alert as MAlert, Button, Code, Group, Select, Stack, Table, Text, Textarea } from "@mantine/core";
 import { IconFlask } from "@tabler/icons-react";

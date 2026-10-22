@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Wspólne dla incydentów: odliczanie terminów zgłoszeń NIS2.
 import { Badge, Tooltip } from "@mantine/core";
 import { formatDate, type IncidentDeadline } from "./api";

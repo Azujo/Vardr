@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Próby reguł: reguły w trybie próbnym liczą trafienia bez alertów – tu widać
 // wynik (trafienia, dni, komputery, ostatnie zdarzenie) i rekomendację, czy
 // regułę można włączyć, a administrator włącza albo wyłącza je zbiorczo.

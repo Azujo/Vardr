@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Zdarzenia wybrane do kreatora korelacji (z wyszukiwarki zdarzeń).
 // Trzymane w sessionStorage tej karty – wygoda, nie stan do zachowania;
 // bez dostępu do magazynu lista żyje tylko w pamięci strony.

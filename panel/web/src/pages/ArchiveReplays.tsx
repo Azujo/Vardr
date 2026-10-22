@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Anchor, Badge, Button, Card, Group, SimpleGrid, Stack, Table, Text, TextInput, Textarea, Title, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";

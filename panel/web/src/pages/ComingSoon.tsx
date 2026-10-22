@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { Paper, Stack, Text, Title } from "@mantine/core";
 import { IconHammer } from "@tabler/icons-react";
 

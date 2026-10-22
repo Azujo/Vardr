@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package detector to silnik detekcji w locie (Gjallarhorn, tryb stream):
 // ocena znormalizowanych zdarzeń regułami i przygotowanie trafień do zapisu.
 package detector

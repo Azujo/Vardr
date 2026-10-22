@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package attack to słownik MITRE ATT&CK (Enterprise) i odczyt tagów reguł
 // w konwencji Sigmy: attack.t1110.001 (technika), attack.credential_access
 // (taktyka), attack.g0016 / attack.s0002 (grupy i oprogramowanie – bez

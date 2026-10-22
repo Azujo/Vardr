@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package store to dostęp do bazy Saga (PostgreSQL): konta panelu, sesje
 // i dziennik audytu.
 package store

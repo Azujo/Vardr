@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package limits nakłada na proces agenta ograniczenia zasobów („kaganiec”):
 // priorytet CPU/I/O, twardy limit CPU, miękki i twardy limit pamięci.
 package limits

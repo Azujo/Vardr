@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Dodanie alertów do incydentu: nowy (tytuł, waga) albo istniejący aktywny.
 import { useEffect, useState } from "react";
 import { Button, Modal, SegmentedControl, Select, Stack, TextInput, Textarea } from "@mantine/core";

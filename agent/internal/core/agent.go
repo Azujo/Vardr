@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package core łączy źródła, paczkowanie, wysyłkę i zapis pozycji odczytu.
 //
 // Gwarancja dostarczania: pozycja kanału jest zapisywana na dysku dopiero po

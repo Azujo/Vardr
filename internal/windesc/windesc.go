@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package windesc zawiera krótkie polskie opisy najważniejszych zdarzeń
 // Windows (Event ID) – do raportów czytelnych dla osób spoza IT, np. w czytniku
 // eksportu archiwum dla audytora. Lista obejmuje zdarzenia z profilu

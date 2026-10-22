@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package svc zawiera wspólne elementy programów serwera: konfigurację ze
 // zmiennych środowiskowych (kontenery), log JSON i obsługę zatrzymania.
 package svc

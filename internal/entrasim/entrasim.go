@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package entrasim to symulator Microsoft Graph dla logów Entra ID (etap 7):
 // token aplikacji (OAuth2 client credentials), auditLogs/signIns
 // i auditLogs/directoryAudits z filtrem czasu, stronicowaniem

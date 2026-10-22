@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package syslog to źródło logów kolektora: odbiór syslog przez UDP i TCP
 // (RFC 3164 i RFC 5424; w TCP ramkowanie „octet counting” z RFC 6587 albo
 // koniec linii). Wiadomość trafia do paczki bez zmian (parsowanie na

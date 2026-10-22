@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package enroll wystawia certyfikaty agentom rejestrowanym tokenem
 // (Bifröst, roadmapa załącznik C). Agent generuje klucz u siebie i przysyła
 // tylko prośbę o certyfikat (CSR) – klucz prywatny nigdy nie opuszcza

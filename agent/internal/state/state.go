@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package state przechowuje potwierdzone pozycje odczytu (bookmarki) agenta.
 //
 // Stan jest zapisywany w dwóch miejscach: w pliku state.json (po każdym

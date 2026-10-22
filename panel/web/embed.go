@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package web zawiera zbudowaną aplikację panelu (Vite → web/dist),
 // wbudowywaną w siem-api. Budowanie: cd panel/web && npm ci && npm run build.
 package web

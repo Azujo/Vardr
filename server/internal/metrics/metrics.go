@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package metrics udostępnia metryki usług serwera w formacie Prometheus
 // (/metrics). Każda usługa rejestruje tylko swoje metryki; wszystkie
 // metody są bezpieczne dla nil (metryki są opcjonalne, np. w testach).

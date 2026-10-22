@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Drugi składnik logowania (TOTP): konfiguracja aplikacji (kod QR) i kody
 // zapasowe – wspólne dla strony logowania i „Bezpieczeństwa konta”.
 import { useState } from "react";

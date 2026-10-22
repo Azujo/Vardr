@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package notify wysyła wiadomości Vardra poza system – na kanały
 // ustawione w panelu (Discord, webhook): alerty zdrowia z Grafany, codzienną
 // kotwicę archiwum Urd, a później alerty detekcji (Gjallarhorn).

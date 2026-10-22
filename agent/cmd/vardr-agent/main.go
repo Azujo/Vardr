@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 //go:build windows
 
 // Command vardr-agent to agent Windows zbierający zdarzenia z Event Log

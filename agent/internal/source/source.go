@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package source definiuje wspólny interfejs źródeł logów agenta.
 package source
 

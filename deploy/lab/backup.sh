@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Kopie zapasowe Vardra – polecenia serwera. Kopie wykonuje usługa
 # siem-backup (kontener backup) według ustawień z panelu: Administracja →
 # Kopie zapasowe (harmonogram, zawartość, retencja, miejsce docelowe).

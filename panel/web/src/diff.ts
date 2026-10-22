@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Różnice między wersjami (linie): najdłuższy wspólny podciąg.
 export function lineDiff(a: string, b: string): { op: " " | "+" | "-"; line: string }[] {
   const x = a.split("\n");

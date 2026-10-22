@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package api to backend panelu Hliðskjálf (siem-api): logowanie i sesje,
 // konta i role, dziennik audytu oraz serwowanie aplikacji React.
 package api

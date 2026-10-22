@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Zmiana zbiorcza reguł (włączenie, wyłączenie, tryb próbny, ustawienie
 // z pliku) – zawsze z powodem i hasłem: hurtowe włączenie może zalać
 // analityków alertami, a wyłączenie osłabia detekcję.

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Rejestracja kolektora syslog albo konektora API na VM laboratorium ze
 # stacji – uruchamia enroll-service.sh w katalogu stosu na VM (po
 # „deploy.sh config” i „deploy.sh collector|connector”). Konektor

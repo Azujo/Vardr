@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Klient API siem-api. Sesja w ciasteczku HttpOnly (JS jej nie widzi),
 // token CSRF w pamięci – dołączany do każdego żądania zmieniającego stan.
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package setup zawiera logikę instalatora agenta niezależną od systemu:
 // adres serwera, generowanie konfiguracji, zmianę adresu w istniejącym
 // pliku i operacje na zmiennej PATH.

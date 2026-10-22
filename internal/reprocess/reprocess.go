@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package reprocess to protokół ponownego przetwarzania kwarantanny (etap
 // 6d): panel wysyła wpisy kwarantanny żądaniem NATS (request-reply) do
 // normalizatora, który normalizuje je bieżącym kodem i dekoderami,

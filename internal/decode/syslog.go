@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package decode to dekodery logów spoza Windows (syslog z zapór, routerów,
 // serwerów): rozbiór nagłówka syslog, wybór dekodera po dopasowaniu
 // i zamiana treści na pola zdarzenia (podzbiór ECS + mapa pól). Używany

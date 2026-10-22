@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package contract opisuje kontrakt paczki agent → serwer (roadmapa, załącznik A).
 // Pakiet jest współdzielony przez agenta i serwer, żeby obie strony zawsze
 // używały tych samych typów i tych samych reguł walidacji.

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Start stosu po uruchomieniu VM (crontab użytkownika siem: @reboot).
 # Sama polityka restart: unless-stopped nie wystarcza: po wyłączeniu VM
 # przyciskiem w Proxmoxie (12.10.2026) Docker nie podniósł NATS ani

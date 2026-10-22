@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package events to wyszukiwarka zdarzeń panelu (Mímir): prosty język
 // zapytań, budowa bezpiecznego SQL (tylko kolumny z listy, wartości jako
 // parametry) i zapytania do ClickHouse.

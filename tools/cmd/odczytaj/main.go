@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command odczytaj (odczytaj.exe) to czytnik eksportu archiwum NIS2 Vardra
 // dla odbiorcy paczki – audytora, CSIRT, organu nadzoru. Nie wymaga
 // Vardra ani instalacji:

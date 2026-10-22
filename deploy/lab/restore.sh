@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Przywrócenie Vardra z kopii zapasowej.
 #
 #   ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg]

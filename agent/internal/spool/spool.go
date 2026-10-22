@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package spool to dyskowy bufor paczek agenta na czas braku łączności
 // z serwerem (roadmapa, sekcja 7: bufor offline).
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package hostagent to wspólny szkielet agentów serwerowych Vardra –
 // kolektora syslog (siem-collector) i konektora API (siem-connector):
 // konfiguracja, rejestracja tokenem i praca jak agent Windows (mTLS,

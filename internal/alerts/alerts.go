@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package alerts to magazyn alertów Gjallarhorna w bazie Saga (schemat
 // gjallarhorn): zapis trafień reguł przez detektor (idempotentny), odczyt
 // i outbox powiadomień dla panelu.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package fleet opisuje przepływ heartbeatów agentów przez NATS:
 // siem-ingest publikuje, siem-api (panel) odbiera i zapisuje w bazie Saga.
 // Współdzielony przez serwer i panel, żeby obie strony miały tę samą

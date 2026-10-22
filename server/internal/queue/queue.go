@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package queue to wspólne ustawienia kolejek NATS dla usług potoku:
 // pojemność ze zmiennych środowiskowych i obserwacja zaległości.
 package queue

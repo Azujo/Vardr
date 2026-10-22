@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package status zbiera bieżący stan agenta i zapisuje go do pliku
 // status.json w katalogu stanu (dostępnym tylko dla administratorów).
 // Z pliku korzysta polecenie „vardr-agent status”; docelowo te same dane

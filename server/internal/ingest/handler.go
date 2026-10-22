@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package ingest to endpoint /v1/ingest przyjmujący paczki od agentów
 // (roadmapa, załącznik A). Paczka jest potwierdzana („accepted”) dopiero
 // po trwałym zapisie w strumieniu NATS JetStream.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package bus konfiguruje trwałe strumienie NATS JetStream serwera SIEM.
 package bus
 

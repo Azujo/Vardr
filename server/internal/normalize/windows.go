@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package normalize zamienia surowe zdarzenia od agentów na model.Event
 // (podzbiór ECS + pola specyficzne dla źródła w mapie Fields).
 package normalize

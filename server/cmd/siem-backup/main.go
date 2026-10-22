@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-backup to usługa kopii zapasowych Vardra (kontener
 // backup w stosie): kopie według ustawień z panelu (Administracja → Kopie
 // zapasowe), szyfrowane hasłem kopii, z retencją lokalną i zdalną, wysyłka

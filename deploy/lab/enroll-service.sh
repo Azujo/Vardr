@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Rejestracja agenta serwerowego stosu – kolektora syslog (siem-collector)
 # albo konektora API (siem-connector) – raz, na serwerze, w katalogu stosu.
 # Jak rejestracja agenta tokenem z panelu, tylko bez przeklejania tokenu:

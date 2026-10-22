@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Profile uprawnień: macierz moduł → poziom (brak, odczyt, test/eksport,
 // zmiana). Profile wbudowane (administrator, analityk, obserwator) są stałe –
 // można je skopiować jako punkt wyjścia. Zmiany z hasłem, w audycie.

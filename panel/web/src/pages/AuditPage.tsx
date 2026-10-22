@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Code, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { api, formatDate, type AuditEntry } from "../api";

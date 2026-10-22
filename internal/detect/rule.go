@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package detect to reguły detekcji Gjallarhorna: format Sigma (YAML)
 // z rozszerzeniami Vardra, kompilacja do drzewa warunków i ocena
 // znormalizowanego zdarzenia. Ten sam model reguły posłuży silnikowi

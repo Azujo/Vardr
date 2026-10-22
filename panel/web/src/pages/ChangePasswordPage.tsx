@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useState } from "react";
 import { Alert, Button, Center, Paper, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";

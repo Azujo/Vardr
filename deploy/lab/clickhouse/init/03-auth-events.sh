@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Tabela logowań dla korelacji (etap 8). Korelacje („udane po nieudanych”,
 # „nowy kraj”) czytały siem.events: co minutę wszystkie zdarzenia Windows
 # z ostatnich 1,5 h, żeby znaleźć nieudane logowania – przy 7000 zdarzeń/s

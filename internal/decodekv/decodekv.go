@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package decodekv dostarcza dekodery syslog zmienione w panelu do
 // normalizatorów przez magazyn klucz-wartość NATS (klucz = id dekodera,
 // wartość = decode.Custom w JSON). Panel zapisuje (źródłem prawdy jest baza

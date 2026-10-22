@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Wdrożenie stosu laboratoryjnego ze stacji (Git Bash) na VM – jedna droga
 # zamiast ręcznego kopiowania, więc VM nie rozjeżdża się z repozytorium.
 #

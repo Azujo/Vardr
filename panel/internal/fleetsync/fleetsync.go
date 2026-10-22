@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package fleetsync odbiera heartbeaty agentów ze strumienia NATS
 // (publikowane przez siem-ingest) i zapisuje stan agentów w bazie Saga.
 package fleetsync

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command siem-ingest-stub to minimalny, testowy endpoint przyjmujący paczki
 // od agentów (załącznik A). Zapisuje zdarzenia do pliku NDJSON zamiast do
 // kolejki NATS. Służy do testowania agenta przed powstaniem właściwego

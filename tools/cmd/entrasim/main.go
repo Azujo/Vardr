@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Command entrasim to symulator Microsoft Graph (logi Entra ID) dla
 // laboratorium – konektor Vardra łączy się z nim tak jak z prawdziwym
 // API (internal/entrasim). Generuje tło (zwykłe logowania użytkowników)

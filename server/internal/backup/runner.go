@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package backup to usługa kopii zapasowych Vardra (siem-backup):
 // wykonuje kopie według ustawień z panelu (internal/backupcfg, tabele
 // backup_* w Sadze), szyfruje je hasłem kopii (gpg, jak dotychczasowy

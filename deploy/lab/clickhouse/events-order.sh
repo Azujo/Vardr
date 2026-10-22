@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Zmiana klucza sortowania siem.events na (event_dataset,
 # toStartOfHour(ingested), host_name, timestamp, event_id) w istniejącej
 # instalacji (etap 8; nowe instalacje mają go od razu – init/01-schema.sh).

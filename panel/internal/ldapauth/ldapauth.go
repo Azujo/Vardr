@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Package ldapauth to logowanie do panelu kontem domenowym (Active
 // Directory) przez LDAPS: sprawdzenie hasła, członkostwo w grupach (także
 // zagnieżdżone – tokenGroups) i profil uprawnień według powiązań grupa →
