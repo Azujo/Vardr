@@ -9,7 +9,8 @@
 #   ./backup.sh haslo zmien     nowe hasło dla kolejnych kopii (stare kopie
 #                               otwiera tylko stare hasło)
 #
-# Hasło leży w ~/.vardr-backup.pass (tylko dla właściciela) – poza katalogiem
+# Hasło leży w ~/.vardr-backup.pass (instalacja z paczki: VARDR_BACKUP_PASS_FILE
+# w .env, /etc/vardr/backup.pass; tylko dla właściciela) – poza katalogiem
 # stosu i poza samą kopią; panel go nie zna. Bez hasła kopii NIE DA SIĘ
 # odtworzyć: po utracie VM odtworzenie wymaga hasła zapisanego przez
 # administratora poza serwerem. Nazwa pliku kopii zawiera identyfikator
@@ -20,7 +21,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 umask 077
 
-pass_file="$HOME/.vardr-backup.pass"
+pass_file=$(sed -n 's/^VARDR_BACKUP_PASS_FILE=//p' .env 2>/dev/null | tail -1)
+pass_file="${pass_file:-$HOME/.vardr-backup.pass}"
 
 key_id() { printf 'k%s' "$(sha256sum "$pass_file" | cut -c1-8)"; }
 

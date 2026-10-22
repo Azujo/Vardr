@@ -1,8 +1,7 @@
-// Command siem-pki tworzy laboratoryjną infrastrukturę certyfikatów dla mTLS:
-// urząd certyfikacji (CA), certyfikat serwera i certyfikaty agentów.
-//
-// To narzędzie WYŁĄCZNIE do laboratorium. W docelowym systemie agenci
-// otrzymują certyfikaty w procesie rejestracji tokenem (roadmapa, etap 2).
+// Command siem-pki tworzy infrastrukturę certyfikatów dla mTLS: urząd
+// certyfikacji (CA), certyfikat serwera, CA rejestracji agentów i – tylko
+// w laboratorium – certyfikaty agentów. Używa go install.sh przy instalacji
+// serwera; agenci otrzymują certyfikaty przy rejestracji tokenem.
 package main
 
 import (
@@ -108,7 +107,7 @@ func makeCA(dir string) error {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial(),
-		Subject:               pkix.Name{CommonName: "SIEM Lab CA", Organization: []string{"SIEM Lab"}},
+		Subject:               pkix.Name{CommonName: "Vardr CA", Organization: []string{"Vardr"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(5, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
@@ -178,7 +177,7 @@ func issueTo(caDir, outDir, name string, tmpl *x509.Certificate) error {
 
 func makeServer(dir string, hosts []string) error {
 	tmpl := &x509.Certificate{
-		Subject:     pkix.Name{CommonName: "siem-server", Organization: []string{"SIEM Lab"}},
+		Subject:     pkix.Name{CommonName: "siem-server", Organization: []string{"Vardr"}},
 		NotAfter:    time.Now().AddDate(1, 0, 0),
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
@@ -199,7 +198,7 @@ func makeServer(dir string, hosts []string) error {
 
 func agentTemplate(agentID string) *x509.Certificate {
 	return &x509.Certificate{
-		Subject:     pkix.Name{CommonName: agentID, Organization: []string{"SIEM Lab Agents"}},
+		Subject:     pkix.Name{CommonName: agentID, Organization: []string{"Vardr Agents"}},
 		NotAfter:    time.Now().AddDate(0, 3, 0), // krótko żyjące certyfikaty agentów
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 	}
@@ -308,7 +307,7 @@ func makeAgentsCA(dir string) error {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial(),
-		Subject:               pkix.Name{CommonName: "SIEM Lab Agents CA", Organization: []string{"SIEM Lab"}},
+		Subject:               pkix.Name{CommonName: "Vardr Agents CA", Organization: []string{"Vardr"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(3, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,

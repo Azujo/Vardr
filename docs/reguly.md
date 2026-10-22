@@ -309,7 +309,22 @@ Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – dome
 
 [SigmaHQ](https://github.com/SigmaHQ/sigma) to otwarta baza kilku tysięcy reguł Sigma utrzymywana przez społeczność. Vardr obsługuje podzbiór Sigmy, więc część reguł się wczyta, a część nie (np. nieobsługiwane modyfikatory albo źródła, których agent nie zbiera). Import jest ręczny: kopiujesz wybrane katalogi, sprawdzasz je parserem Vardra, odrzucasz te, które nie przechodzą, i wdrażasz resztę **wyłączoną**. Potem włączasz pojedyncze reguły w panelu, po teście na historii.
 
-Reguły trafiają do `rules/sigmahq/`. Testy Vardra (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, a `TestImportedRules` pilnuje, żeby zaimportowane reguły wczytywały się bez błędów i były w plikach wyłączone.
+Reguły trafiają do `rules/sigmahq/`. Paczka instalacyjna serwera ich nie zawiera – import to decyzja administratora.
+
+### Serwer z instalatora
+
+Na serwerze zainstalowanym z paczki (`install.sh`) cały import wykonuje jeden skrypt – bez repozytorium i Go:
+
+```bash
+sudo /opt/vardr/sigmahq-import.sh            # import albo aktualizacja
+sudo /opt/vardr/sigmahq-import.sh --remove   # usunięcie reguł SigmaHQ
+```
+
+Skrypt pobiera SigmaHQ z GitHuba, kopiuje kategorie z listy poniżej, odrzuca reguły `experimental`, `deprecated` i `unsupported` oraz te, których parser Vardra nie obsługuje, wyłącza resztę w plikach, dodaje informację o źródle i licencji i przełącza nową wersję katalogu reguł (detektor wczyta ją w ciągu 30 s). Aktualizacja Vardra przenosi zaimportowane reguły do nowej wersji. Ta sama instrukcja jest w panelu: *Reguły → Import reguł SigmaHQ*.
+
+### Repozytorium Vardra
+
+Testy Vardra (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, a `TestImportedRules` pilnuje, żeby zaimportowane reguły wczytywały się bez błędów i były w plikach wyłączone.
 
 ### Kroki – PowerShell (w katalogu projektu)
 
@@ -373,4 +388,4 @@ Kategorie Sysmona spoza listy w kroku 2 (ładowanie bibliotek, dostęp do proces
 
 ### Licencja
 
-Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License): wolno je używać, zmieniać i rozpowszechniać, także komercyjnie, pod warunkiem zachowania autora (pole `author`), wskazania źródła i licencji. Nie usuwaj z reguł pól `author` i `references`. Dla reguł z `rules/sigmahq/` panel pokazuje autora, źródło (odnośnik do reguły w SigmaHQ) i licencję w szczegółach reguły i alertu, a powiadomienia mają pole „Autor reguły” – licencja wymaga wskazania autora także w komunikatach z trafień. Reguły Vardra tego pola nie mają. Katalog `rules/sigmahq/` jest w `.gitignore`: decyzja o imporcie należy do administratora, a reguły nie są dystrybuowane z repozytorium. Jeśli dołączasz `rules/sigmahq/` do własnego repozytorium albo dystrybucji, dodaj w tym katalogu informację o źródle i licencji. Licencja reguł nie dotyczy kodu Vardra.
+Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License): wolno je używać, zmieniać i rozpowszechniać, także komercyjnie, pod warunkiem zachowania autora (pole `author`), wskazania źródła i licencji. Nie usuwaj z reguł pól `author` i `references`. Dla reguł z `rules/sigmahq/` panel pokazuje autora, źródło (odnośnik do reguły w SigmaHQ) i licencję w szczegółach reguły i alertu, a powiadomienia mają pole „Autor reguły” – licencja wymaga wskazania autora także w komunikatach z trafień. Reguły Vardra tego pola nie mają. Katalog `rules/sigmahq/` jest w `.gitignore`, a paczka instalacyjna go pomija: decyzja o imporcie należy do administratora, a reguły nie są dystrybuowane z Vardrem. `sigmahq-import.sh` zapisuje w tym katalogu informację o źródle i licencji (`README.md`, `LICENSE.SigmaHQ.md`); przy imporcie z repozytorium dodaj ją sam, jeśli przekazujesz katalog dalej. Licencja reguł nie dotyczy kodu Vardra.

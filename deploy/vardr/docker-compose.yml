@@ -1,0 +1,391 @@
+# Vardr – stos serwera (instalacja z paczki: install.sh).
+#   agent → ingest (mTLS :8443) → NATS → normalizer → writer → ClickHouse
+#                                      → detector (alerty) → Saga (PostgreSQL)
+#                                      → archiver (archiwum NIS2 Urd)
+#   panel: przeglądarka → api (HTTPS :8444); Grafana :3000
+#
+# Konfiguracja w .env (tworzy ją install.sh – sekrety losowe), programy w ./bin
+# (obrazy budowane lokalnie: docker compose build). Kolektor syslog
+# i konektor API to profile: włącza je enroll-service.sh przy rejestracji.
+#
+# Plik stosu laboratorium (deploy/lab/docker-compose.yml) ma te same usługi;
+# zmiany w jednym przenoś do drugiego.
+
+name: vardr
+
+x-server: &server
+  restart: unless-stopped
+  user: "${VARDR_UID:-1000}:${VARDR_GID:-1000}"
+  environment: &server-env
+    SIEM_NATS_URL: nats://nats:4222
+    # Pojemność kolejek (MB). Po zapełnieniu ingest odpowiada 503, a dane
+    # czekają u agentów – nic nie jest usuwane po cichu.
+    SIEM_QUEUE_RAW_MAX_MB: ${SIEM_QUEUE_RAW_MAX_MB:-8192}
+    SIEM_QUEUE_EVENTS_MAX_MB: ${SIEM_QUEUE_EVENTS_MAX_MB:-8192}
+    SIEM_PPROF: ${SIEM_PPROF:-0}
+  depends_on:
+    nats:
+      condition: service_healthy
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "3" }
+
+services:
+  nats:
+    image: nats:2.12-alpine
+    restart: unless-stopped
+    command: ["-c", "/etc/nats/nats.conf"]
+    volumes:
+      - ./nats/nats.conf:/etc/nats/nats.conf:ro
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:8222:8222"   # monitoring tylko lokalnie
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 1g
+    logging: *logging
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      SIEM_WRITER_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      SIEM_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+      SIEM_PANEL_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
+      SIEM_DETECTOR_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
+      SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
+      SIEM_RAW_TTL_DAYS: ${SIEM_RAW_TTL_DAYS:-2}
+      SIEM_REPLAY_TTL_DAYS: ${SIEM_REPLAY_TTL_DAYS:-7}
+    volumes:
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./clickhouse/config.d/siem.xml:/etc/clickhouse-server/config.d/siem.xml:ro
+      - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "127.0.0.1:8123:8123"   # HTTP tylko lokalnie (diagnostyka)
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: ${VARDR_CLICKHOUSE_MEM:-4g}
+    logging: *logging
+
+  ingest:
+    <<: *server
+    build: { context: ., args: { BIN: siem-ingest } }
+    image: vardr/ingest:local
+    volumes:
+      - ./certs:/certs:ro
+    environment:
+      <<: *server-env
+      SIEM_INGEST_MAX_INFLIGHT: ${SIEM_INGEST_MAX_INFLIGHT:-64}
+      SIEM_INGEST_QUEUE_HIGH_WATER: ${SIEM_INGEST_QUEUE_HIGH_WATER:-0.9}
+      SIEM_INGEST_MAX_HEARTBEATS: ${SIEM_INGEST_MAX_HEARTBEATS:-128}
+      GOMEMLIMIT: 600MiB
+    ports:
+      - "${VARDR_INGEST_PORT:-8443}:8443"
+    mem_limit: 768m
+    cpu_shares: 2048
+
+  normalizer:
+    <<: *server
+    build: { context: ., args: { BIN: siem-normalizer } }
+    image: vardr/normalizer:local
+    environment:
+      <<: *server-env
+      GOGC: "200"
+      GOMEMLIMIT: 400MiB
+    mem_limit: 512m
+    cpu_shares: 2048
+
+  writer:
+    <<: *server
+    build: { context: ., args: { BIN: siem-writer } }
+    image: vardr/writer:local
+    environment:
+      <<: *server-env
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_writer
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      GOGC: "200"
+      GOMEMLIMIT: 800MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 1g
+
+  # Odtwarzanie z archiwum (replay): te same programy, osobne strumienie
+  # i tabela siem.events_replay. Bez zleceń czekają bezczynnie.
+  normalizer-replay:
+    <<: *server
+    build: { context: ., args: { BIN: siem-normalizer } }
+    image: vardr/normalizer:local
+    environment:
+      <<: *server-env
+      SIEM_PIPELINE: replay
+      SIEM_NORMALIZER_WORKERS: "2"
+      GOGC: "200"
+      GOMEMLIMIT: 200MiB
+    mem_limit: 256m
+
+  writer-replay:
+    <<: *server
+    build: { context: ., args: { BIN: siem-writer } }
+    image: vardr/writer:local
+    environment:
+      <<: *server-env
+      SIEM_PIPELINE: replay
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_writer
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_WRITER_PASSWORD}
+      GOGC: "200"
+      GOMEMLIMIT: 200MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 256m
+
+  # Urd – archiwum NIS2 (oryginalne paczki agentów, manifesty z łańcuchem hashy).
+  archiver:
+    <<: *server
+    build: { context: ., args: { BIN: siem-archiver } }
+    image: vardr/archiver:local
+    volumes:
+      - ./export-tools:/export-tools:ro
+      # create_host_path: false – gdy dysk archiwum nie jest zamontowany,
+      # usługa nie wystartuje (zamiast pisać na dysk systemowy).
+      - type: bind
+        source: ${SIEM_ARCHIVE_PATH:-/srv/vardr/archive}
+        target: /archive
+        bind: { create_host_path: false }
+      - type: bind
+        source: ${SIEM_ARCHIVE_EXPORT_PATH:-/srv/vardr/export}
+        target: /exports
+        bind: { create_host_path: false }
+    environment:
+      <<: *server-env
+      SIEM_ARCHIVE_DB_URL: postgres://siem_archiver:${SAGA_ARCHIVER_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_ARCHIVE_RETENTION_DAYS: ${SIEM_ARCHIVE_RETENTION_DAYS:-30}
+      SIEM_ARCHIVE_MIN_RETENTION_DAYS: ${SIEM_ARCHIVE_MIN_RETENTION_DAYS:-30}
+      SIEM_ARCHIVE_MAX_RETENTION_DAYS: ${SIEM_ARCHIVE_MAX_RETENTION_DAYS:-3650}
+      SIEM_ARCHIVE_POLICY_GRACE: ${SIEM_ARCHIVE_POLICY_GRACE:-24h}
+      SIEM_ARCHIVE_EXPORT_DIR: /exports
+      SIEM_ARCHIVE_EXCLUDE_AGENTS: ${SIEM_ARCHIVE_EXCLUDE_AGENTS:-}
+      GOMEMLIMIT: 300MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      saga: { condition: service_healthy }
+    mem_limit: 384m
+
+  # Kolektor syslog (profil collector): syslog z urządzeń na porcie 514
+  # UDP/TCP, wysyłany do ingest jak agent. Rejestracja: ./enroll-service.sh collector.
+  collector:
+    profiles: [collector]
+    build: { context: ., args: { BIN: siem-collector } }
+    image: vardr/collector:local
+    hostname: vardr-collector
+    restart: unless-stopped
+    user: "${VARDR_UID:-1000}:${VARDR_GID:-1000}"
+    command: ["run", "-config", "/collector/collector.yaml"]
+    volumes:
+      - ./collector:/collector
+    ports:
+      - "514:514/udp"
+      - "514:514/tcp"
+    environment:
+      GOMEMLIMIT: 100MiB
+    mem_limit: 160m
+    logging: *logging
+
+  # Konektor API (profil connector): logi Entra ID z Microsoft Graph.
+  # Rejestracja: ./enroll-service.sh connector, potem dane aplikacji
+  # Entra w connector/connector.yaml.
+  connector:
+    profiles: [connector]
+    build: { context: ., args: { BIN: siem-connector } }
+    image: vardr/connector:local
+    hostname: vardr-connector
+    restart: unless-stopped
+    user: "${VARDR_UID:-1000}:${VARDR_GID:-1000}"
+    command: ["run", "-config", "/connector/connector.yaml"]
+    volumes:
+      - ./connector:/connector
+    environment:
+      GOMEMLIMIT: 100MiB
+    mem_limit: 160m
+    logging: *logging
+
+  # Gjallarhorn – detekcja (reguły Sigma z ./rules/current).
+  detector:
+    <<: *server
+    build: { context: ., args: { BIN: siem-detector } }
+    image: vardr/detector:local
+    volumes:
+      - ./rules:/rules:ro
+    environment:
+      <<: *server-env
+      SIEM_DETECTOR_DB_URL: postgres://siem_detector:${SAGA_DETECTOR_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_RULES_DIR: /rules/current
+      SIEM_DETECTION_MODE: ${SIEM_DETECTION_MODE:-both}
+      SIEM_ALERT_RETENTION_DAYS: ${SIEM_ALERT_RETENTION_DAYS:-365}
+      SIEM_DETECTOR_CH_ADDR: clickhouse:9000
+      SIEM_DETECTOR_CH_USER: siem_detector
+      SIEM_DETECTOR_CH_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
+      GOMEMLIMIT: 850MiB
+    depends_on:
+      nats: { condition: service_healthy }
+      saga: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 1g
+    # Pierwszeństwo detekcji przy braku CPU: ustępują zapis i scalanie
+    # w ClickHouse, a alerty przychodzą na czas.
+    cpu_shares: 4096
+
+  # Saga – baza panelu, alertów i spisu archiwum.
+  saga:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: saga
+      POSTGRES_USER: saga_admin
+      POSTGRES_PASSWORD: ${SAGA_ADMIN_PASSWORD}
+      SAGA_DB_PASSWORD: ${SAGA_DB_PASSWORD}
+      SAGA_ARCHIVER_PASSWORD: ${SAGA_ARCHIVER_PASSWORD}
+      SAGA_DETECTOR_PASSWORD: ${SAGA_DETECTOR_PASSWORD}
+    volumes:
+      - ./saga/init:/docker-entrypoint-initdb.d:ro
+      - saga-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "saga_admin", "-d", "saga"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 512m
+    shm_size: 256m
+    logging: *logging
+
+  # Kopie zapasowe (siem-backup): harmonogram i miejsce docelowe z panelu.
+  # Działa jako root (czyta dane Grafany i hasło kopii), pliki kopii oddaje
+  # użytkownikowi stosu.
+  backup:
+    build: { context: ., dockerfile: backup/Dockerfile }
+    image: vardr/backup:local
+    restart: unless-stopped
+    environment:
+      SIEM_BACKUP_DB_URL: postgres://saga_admin:${SAGA_ADMIN_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_BACKUP_TZ: ${SIEM_ANCHOR_TZ:-Europe/Warsaw}
+      SIEM_BACKUP_SERVER_NAME: ${SIEM_PUBLIC_SERVER:-}
+      SIEM_BACKUP_UID: ${VARDR_UID:-1000}
+      SIEM_BACKUP_GID: ${VARDR_GID:-1000}
+    volumes:
+      - ./backup-state:/state
+      - ${SIEM_BACKUP_DIR:-/srv/vardr/backup}:/backup
+      - ${VARDR_BACKUP_PASS_FILE:-/etc/vardr/backup.pass}:/secrets/backup.pass:ro
+      - ./certs:/stack/certs:ro
+      - ./.env:/stack/.env:ro
+      - ${SIEM_ARCHIVE_PATH:-/srv/vardr/archive}:/archive:ro
+      - grafana-data:/grafana:ro
+      - ./metrics:/metrics
+    depends_on:
+      saga: { condition: service_healthy }
+    mem_limit: 512m
+    logging: *logging
+
+  # Hliðskjálf – panel (siem-api z aplikacją React) pod HTTPS :8444.
+  api:
+    restart: unless-stopped
+    user: "${VARDR_UID:-1000}:${VARDR_GID:-1000}"
+    build: { context: ., args: { BIN: siem-api } }
+    image: vardr/api:local
+    environment:
+      SIEM_API_DB_URL: postgres://siem_api:${SAGA_DB_PASSWORD}@saga:5432/saga?sslmode=disable
+      SIEM_NATS_URL: nats://nats:4222
+      SIEM_PUBLIC_SERVER: ${SIEM_PUBLIC_SERVER:-}
+      SIEM_CLICKHOUSE_ADDR: clickhouse:9000
+      SIEM_CLICKHOUSE_USER: siem_panel
+      SIEM_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
+      SIEM_ARCHIVE_EXPORT_DIR: /exports
+      SIEM_ALERT_RELAY_TOKEN: ${SIEM_ALERT_RELAY_TOKEN:-}
+      SIEM_ALERT_NOTIFY_PER_RULE: ${SIEM_ALERT_NOTIFY_PER_RULE:-5}
+      SIEM_ALERT_NOTIFY_WINDOW: ${SIEM_ALERT_NOTIFY_WINDOW:-10m}
+      SIEM_ANCHOR_HOUR: ${SIEM_ANCHOR_HOUR:-7}
+      SIEM_PROMETHEUS_URL: http://prometheus:9090
+      SIEM_GRAFANA_URL: ${SIEM_GRAFANA_URL:-}
+    volumes:
+      - ./certs:/certs:ro
+      - ./agent-dist:/agent-dist:ro
+      - ${SIEM_ARCHIVE_EXPORT_PATH:-/srv/vardr/export}:/exports:ro
+    ports:
+      - "${VARDR_PANEL_PORT:-8444}:8444"
+    depends_on:
+      saga: { condition: service_healthy }
+      nats: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    mem_limit: 256m
+    logging: *logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command: ["--path.rootfs=/host", "--collector.textfile.directory=/textfile", "--collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run|snap|var/lib/docker/.+)($$|/)"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - ./metrics:/textfile:ro
+    mem_limit: 64m
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    mem_limit: 512m
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      SIEM_ALERT_RELAY_TOKEN: ${SIEM_ALERT_RELAY_TOKEN:-}
+      CLICKHOUSE_GRAFANA_PASSWORD: ${CLICKHOUSE_GRAFANA_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${VARDR_GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      prometheus: { condition: service_started }
+    mem_limit: 512m
+    logging: *logging
+
+volumes:
+  nats-data:
+  prometheus-data:
+  saga-data:
+  clickhouse-data:
+  grafana-data:

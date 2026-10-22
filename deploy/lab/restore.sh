@@ -3,12 +3,14 @@
 #
 #   ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg]
 #       odtworzenie na czystej VM (Docker zainstalowany, stos skopiowany:
-#       deploy/lab/deploy.sh config + usługi) – wszystko, co jest w kopii;
+#       deploy/lab/deploy.sh config + usługi albo install.sh z paczki
+#       Vardra) – wszystko, co jest w kopii;
 #       gpg zapyta o hasło kopii (albo plik z hasłem w VARDR_BACKUP_PASS_FILE)
 #
 #   ./restore.sh --zlecenie
 #       przywrócenie zlecone w panelu (Administracja → Kopie zapasowe →
-#       Przywracanie); uruchamiane co minutę z crona (deploy.sh config).
+#       Przywracanie); uruchamiane co minutę z crona (deploy.sh config)
+#       albo timera systemd vardr-restore.timer (install.sh).
 #       Usługa kopii przygotowuje zlecenie (kopia obecnego stanu, pobranie
 #       i sprawdzenie kopii) w <kopie>/.przywracanie/zlecenie; skrypt
 #       przywraca wybrane części, bo tylko on może zatrzymać usługi.
@@ -139,7 +141,7 @@ if [ "${1:-}" = --zlecenie ]; then
   fi
   src="${SIEM_BACKUP_DIR:-/srv/vardr/backup}/$file"
   name=$(basename "$file")
-  pass_args=(--batch --pinentry-mode loopback --passphrase-file "$HOME/.vardr-backup.pass")
+  pass_args=(--batch --pinentry-mode loopback --passphrase-file "${VARDR_BACKUP_PASS_FILE:-$HOME/.vardr-backup.pass}")
   work="$(mktemp -d)"
   started=$(date -u +%FT%TZ)
 

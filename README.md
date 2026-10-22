@@ -8,6 +8,7 @@ Obecny stan: **MVP gotowe (etapy 0–8, październik 2026)**. Działają agent W
 
 Pełna dokumentacja jest w [docs/](docs/README.md):
 
+- [Instalacja](docs/instalacja.md) – instalacja serwera z paczki, aktualizacja, usunięcie, budowanie paczki;
 - [Architektura](docs/architektura.md) – składniki, przepływ zdarzenia, kolejki, bazy, detekcja, struktura repozytorium;
 - [Programy](docs/programy.md) – każdy program: polecenia, flagi, zmienne środowiskowe, porty, metryki;
 - [Panel](docs/panel.md) – moduły, role, język wyszukiwania, praca z alertem;
@@ -1008,3 +1009,7 @@ Co 10 s generator pokazuje zdarzenia wygenerowane i przyjęte, odmowy, opóźnie
 Domyślnie generator ma 3500 kont i 0,2% nieudanych logowań (zwykły dzień firmy); `-failures 5` to ciągły brute force na wszystkich kontach (scenariusz przeciążenia detekcji). Zdarzenia z prefiksem `agt-load-` nie trafiają do archiwum (`SIEM_ARCHIVE_EXCLUDE_AGENTS`). Po teście: `cd ~/siem-lab && bash loadtest-cleanup.sh` – usuwa zdarzenia, alerty, stan progów i agentów generatora (w tej kolejności, inaczej silnik zapytań odtworzy alerty z danych, które zostały). Monitor na czas testu (`loadtest-monitor.sh`), sprzątanie po dużym teście (`loadtest-droppart.sh`) i pełna procedura: [docs/testy-obciazeniowe.md](docs/testy-obciazeniowe.md).
 
 Zasady skalowania, obsługa przeciążenia, pomiary i znane ograniczenia: [docs/ROADMAP.md – załącznik E](docs/ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).
+
+## Podziękowania
+
+Detekcja Vardra opiera się na formacie [Sigma](https://sigmahq.io), a panel pozwala zaimportować otwartą bibliotekę reguł [SigmaHQ](https://github.com/SigmaHQ/sigma) – kilka tysięcy reguł pisanych i utrzymywanych przez społeczność analityków bezpieczeństwa. Dziękujemy autorom i opiekunom projektu za świetną robotę. Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License); Vardr ich nie dołącza – importuje je administrator (`sigmahq-import.sh` albo instrukcja w panelu), a panel pokazuje autora, źródło i licencję przy każdej regule i alercie.

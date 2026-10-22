@@ -1,0 +1,3 @@
+# Kontekst budowania obrazów: tylko programy (bez .env, certyfikatów i danych).
+*
+!bin/

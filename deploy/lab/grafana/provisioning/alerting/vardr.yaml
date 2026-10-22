@@ -202,7 +202,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Kopia zapasowa nie trafiła poza VM od ponad 26 h"
-          description: "Wysyłka kopii na serwer kopii (SIEM_BACKUP_REMOTE, np. TrueNAS) nie powiodła się. Log: ~/siem-lab/backup.log."
+          description: "Wysyłka kopii na serwer kopii (SIEM_BACKUP_REMOTE, np. TrueNAS) nie powiodła się. Szczegóły: panel → Kopie zapasowe, log usługi: docker compose logs backup."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }

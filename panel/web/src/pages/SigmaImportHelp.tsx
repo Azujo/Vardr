@@ -1,11 +1,24 @@
 // Instrukcja importu reguł SigmaHQ (to samo co docs/reguly.md, „Import
-// reguł SigmaHQ”) – polecenia do skopiowania, wykonywane przez
-// administratora w katalogu projektu.
+// reguł SigmaHQ”) – polecenia do skopiowania: na serwerze z instalacji
+// (sigmahq-import.sh) albo w katalogu projektu (repozytorium Vardra).
 import { ActionIcon, Alert, Anchor, Code, CopyButton, Group, List, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
 import { useState } from "react";
 
 type Step = { title: string; ps: string; bash: string; note?: string };
+
+// Serwer z instalacji (install.sh): jeden skrypt robi wszystkie kroki.
+const serverSteps: { title: string; cmd: string; note?: string }[] = [
+  {
+    title: "Import albo aktualizacja reguł (na serwerze Vardra)",
+    cmd: "sudo /opt/vardr/sigmahq-import.sh",
+    note: "Pobiera SigmaHQ z GitHuba, kopiuje reguły dla zbieranych źródeł, pomija niezgodne z parserem i wszystkie zostawia wyłączone. Aktualizacja Vardra zachowuje zaimportowane reguły.",
+  },
+  {
+    title: "Usunięcie reguł SigmaHQ (opcjonalnie)",
+    cmd: "sudo /opt/vardr/sigmahq-import.sh --remove",
+  },
+];
 
 const steps: Step[] = [
   {
@@ -67,28 +80,44 @@ function Cmd({ text }: { text: string }) {
 }
 
 export default function SigmaImportHelp() {
-  const [shell, setShell] = useState<"ps" | "bash">("ps");
+  const [shell, setShell] = useState<"server" | "ps" | "bash">("server");
   return (
     <Stack gap="sm">
       <Text size="sm">
         <Anchor href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noopener noreferrer">
           SigmaHQ
         </Anchor>{" "}
-        to otwarta baza reguł Sigma. Vardr obsługuje podzbiór Sigmy – polecenia kopiują reguły dla zbieranych źródeł do{" "}
-        <Code>rules/sigmahq/</Code>, odrzucają te, których parser nie obsługuje, i wdrażają resztę <b>wyłączoną</b>. Uruchamiasz je
-        w katalogu projektu (komputer administratora z repozytorium Vardra). Opis: <Code>docs/reguly.md</Code>, „Import reguł
-        SigmaHQ”.
+        to otwarta baza reguł Sigma. Vardr obsługuje podzbiór Sigmy – import kopiuje reguły dla zbieranych źródeł do{" "}
+        <Code>rules/sigmahq/</Code>, odrzuca te, których parser nie obsługuje, i wdraża resztę <b>wyłączoną</b>. Na serwerze
+        z instalatora wystarczy jeden skrypt; z repozytorium Vardra – polecenia w katalogu projektu. Opis:{" "}
+        <Code>docs/reguly.md</Code>, „Import reguł SigmaHQ”.
       </Text>
       <SegmentedControl
         value={shell}
-        onChange={(v) => setShell(v as "ps" | "bash")}
+        onChange={(v) => setShell(v as "server" | "ps" | "bash")}
         data={[
-          { value: "ps", label: "PowerShell" },
-          { value: "bash", label: "Git Bash" },
+          { value: "server", label: "Serwer (instalator)" },
+          { value: "ps", label: "Repozytorium – PowerShell" },
+          { value: "bash", label: "Repozytorium – Git Bash" },
         ]}
         w="fit-content"
       />
-      {steps.map((s, i) => (
+      {shell === "server" &&
+        serverSteps.map((s, i) => (
+          <Stack key={i} gap={4}>
+            <Text size="sm" fw={600}>
+              {i + 1}. {s.title}
+            </Text>
+            <Cmd text={s.cmd} />
+            {s.note && (
+              <Text size="xs" c="dimmed">
+                {s.note}
+              </Text>
+            )}
+          </Stack>
+        ))}
+      {shell !== "server" &&
+        steps.map((s, i) => (
         <Stack key={i} gap={4}>
           <Text size="sm" fw={600}>
             {i + 1}. {s.title}
@@ -100,7 +129,7 @@ export default function SigmaImportHelp() {
             </Text>
           )}
         </Stack>
-      ))}
+        ))}
       <Alert color="blue" variant="light" title="Po wdrożeniu">
         <List size="sm" spacing={2}>
           <List.Item>Reguły z SigmaHQ są na liście wyłączone (plik sigmahq/…) i nie obciążają detekcji.</List.Item>
