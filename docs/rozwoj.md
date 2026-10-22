@@ -79,7 +79,7 @@ Wynik jest w zakładce *Actions* repozytorium.
 - **Programy serwera:** konfiguracja tylko ze zmiennych środowiskowych (`internal/svc`: `Env`, `EnvInt`, `EnvDuration`), log JSON (`svc.Logger`), metryki w `server/internal/metrics`, czyste zakończenie po SIGTERM.
 - **Potwierdzanie wiadomości NATS** dopiero po wykonaniu pracy; każdy etap musi znosić duplikaty.
 - **SQL:** wartości od użytkownika zawsze jako parametry; nazwy kolumn tylko z list dozwolonych (Mímir, reguły).
-- **Zmiany zachowania** opisuj w `README.md` (instrukcje) i `docs/` (ten zestaw), przebieg prac w `docs/PODSUMOWANIE.md`.
+- **Zmiany zachowania** opisuj w `docs/` (ten zestaw; `README.md` to tylko strona projektu), przebieg prac w `docs/PODSUMOWANIE.md`.
 
 ## Jak dodać…
 

@@ -14,7 +14,9 @@ Ta dokumentacja opisuje system tak, jak działa po etapie 8 (MVP, październik 2
 | [Reguły detekcji](reguly.md) | autor reguł | format Sigma z rozszerzeniami Vardra, pola, progi, tryby silników, reguły wbudowane, testowanie i wdrażanie |
 | [Dekodery](dekodery.md) | autor dekoderów | dekodery syslog i API: dopasowanie, parsery, mapowanie pól, wynik, czas, próbki |
 | [Instalacja](instalacja.md) | administrator | serwer z paczki: wymagania, instalacja, aktualizacja, kolektor i konektor, usunięcie |
+| [Agent Windows](agent.md) | administrator | instalacja agenta (MSI, GPO), ochrona przed zatrzymaniem, gwarancja dostarczania, limity zasobów, polityka audytu, diagnostyka |
 | [Operacje](operacje.md) | administrator | laboratorium: wdrażanie, kopie, retencja, migracje, skrypty, diagnostyka |
+| [Laboratorium](laboratorium.md) | programista, administrator | stos testowy `deploy/lab` i szczegóły funkcji serwera: panel, detekcja, dekodery, Entra ID, archiwum NIS2, kopie, skalowanie |
 | [Testy obciążeniowe](testy-obciazeniowe.md) | programista, administrator | generator ruchu, monitor, sprzątanie, wyniki i pojemność |
 | [Rozwój](rozwoj.md) | programista | budowanie, testy, CI, konwencje kodu, jak dodać źródło, regułę wbudowaną czy migrację |
 

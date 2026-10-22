@@ -51,7 +51,7 @@ Opcja `-config <plik>` wskazuje inną konfigurację. Instalator MSI (`deploy/lab
 | `logging.level`, `max_size_mb`, `max_files` | log agenta |
 | `channels[].name`, `event_ids` | kanały i identyfikatory zdarzeń (gdy agent nie dostaje profilu z panelu); każdy profil zbiera Security (zakres według profilu), System, PowerShell 4104, Sysmon i od 0.7.2 Microsoft Defender (wykrycia, działania, ASR, wyłączenie ochrony, zmiany ustawień) |
 
-Panel nadpisuje kanały, limity i ochronę według grupy agenta (`/enroll/v1/config`, sprawdzane co kilka minut; `SIEM_CONFIG_POLL_SECONDS` skraca to w testach). Lokalny plik decyduje o serwerze, certyfikatach i katalogu stanu. Szczegóły instalacji, ochrony i diagnostyki: [README.md](../README.md#instalacja-agenta-na-komputerze).
+Panel nadpisuje kanały, limity i ochronę według grupy agenta (`/enroll/v1/config`, sprawdzane co kilka minut; `SIEM_CONFIG_POLL_SECONDS` skraca to w testach). Lokalny plik decyduje o serwerze, certyfikatach i katalogu stanu. Szczegóły instalacji, ochrony i diagnostyki: [agent.md](agent.md#instalacja-agenta-na-komputerze).
 
 ## siem-collector – kolektor syslog
 

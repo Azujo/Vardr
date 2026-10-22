@@ -1,6 +1,6 @@
 # Operacje
 
-Opis dotyczy serwera laboratoryjnego (`deploy/lab`): jedna VM z Dockerem, cały stos w Docker Compose. Instalacja od zera krok po kroku jest w [README.md, „Serwer laboratoryjny”](../README.md#serwer-laboratoryjny-deploylab).
+Opis dotyczy serwera laboratoryjnego (`deploy/lab`): jedna VM z Dockerem, cały stos w Docker Compose. Instalacja od zera krok po kroku jest w [laboratorium.md, „Serwer laboratoryjny”](laboratorium.md#serwer-laboratoryjny-deploylab); instalacja serwera z paczki: [instalacja.md](instalacja.md).
 
 ## Układ serwera
 

@@ -104,11 +104,11 @@ Konta ClickHouse: `siem_writer` (zapis), `siem_detector` (odczyt z limitami czas
 | `gjallarhorn` | `siem-detector` (`internal/alerts/migrations`) | `alerts`, `alert_events`, `alert_activity`, `outbox`, `threshold_events`, `index_state`, `rules`, `rule_versions`, `rule_overrides`, `rule_errors` |
 | `urd` | `siem-archiver` (`internal/urd`) | `segments`, `manifests`, `verifications`, `policy`, `policy_changes`, `exports`, `replays`, `group_membership`, `archiver_state` |
 
-Każda usługa łączy się własną rolą z minimalnymi uprawnieniami (`saga_admin` tylko do migracji i administracji, `siem_api`, `siem_detector`, `siem_archiver`; opis: [README.md, „Role bazy Saga”](../README.md#role-bazy-saga)). Migracje stosuje usługa przy starcie, pod blokadą doradczą, więc kilka kopii nie wykona ich równolegle. Kolejność wdrażania: najpierw detektor (schemat `gjallarhorn`), potem panel.
+Każda usługa łączy się własną rolą z minimalnymi uprawnieniami (`saga_admin` tylko do migracji i administracji, `siem_api`, `siem_detector`, `siem_archiver`; opis: [laboratorium.md, „Role bazy Saga”](laboratorium.md#role-bazy-saga)). Migracje stosuje usługa przy starcie, pod blokadą doradczą, więc kilka kopii nie wykona ich równolegle. Kolejność wdrażania: najpierw detektor (schemat `gjallarhorn`), potem panel.
 
 ### Archiwum NIS2 (Urd)
 
-Pliki w `SIEM_ARCHIVE_PATH` (np. `/srv/vardr/archive`; laboratorium: `/srv/heimdall/archive`): oryginalne paczki agentów w segmentach (do 64 MB albo 30 s), każdy segment z hashem SHA-256 i odwołaniem do hasha poprzedniego (łańcuch). Manifest dnia spina segmenty; codziennie o 7:00 hash manifestu idzie na kanał powiadomień jako kotwica poza systemem. Weryfikacja co 6 h sprawdza część archiwum w ramach budżetu odczytu. Eksport dla audytora to paczka `.tar` z czytnikiem `odczytaj.exe`. Odtworzenie (replay) przepuszcza wybrane segmenty przez osobny potok do `siem.events_replay`. Szczegóły: [README.md, „Archiwum NIS2”](../README.md#archiwum-nis2--urd-siem-archiver).
+Pliki w `SIEM_ARCHIVE_PATH` (np. `/srv/vardr/archive`; laboratorium: `/srv/heimdall/archive`): oryginalne paczki agentów w segmentach (do 64 MB albo 30 s), każdy segment z hashem SHA-256 i odwołaniem do hasha poprzedniego (łańcuch). Manifest dnia spina segmenty; codziennie o 7:00 hash manifestu idzie na kanał powiadomień jako kotwica poza systemem. Weryfikacja co 6 h sprawdza część archiwum w ramach budżetu odczytu. Eksport dla audytora to paczka `.tar` z czytnikiem `odczytaj.exe`. Odtworzenie (replay) przepuszcza wybrane segmenty przez osobny potok do `siem.events_replay`. Szczegóły: [laboratorium.md, „Archiwum NIS2”](laboratorium.md#archiwum-nis2--urd-siem-archiver).
 
 ## Detekcja (Gjallarhorn)
 
