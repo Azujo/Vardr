@@ -2,6 +2,12 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.0.2] – 2026-10-23 – Poprawki bezpieczeństwa
+
+### Bezpieczeństwo
+- Czytnik eksportu (`odczytaj.exe`) przy rozpakowywaniu paczki `.tar` odrzuca także ścieżki względne do dysku (`C:plik`), ścieżki sieciowe i nazwy zarezerwowane Windows (`NUL`, `COM1`) – wcześniej odrzucał tylko ścieżki bezwzględne i `..` (CodeQL `go/zipslip`).
+- Normalizator: odwołania znakowe w XML zdarzeń Windows ponad zakres Unicode są odrzucane przed konwersją typu (CodeQL `go/incorrect-integer-conversion`; wcześniej też były odrzucane, ale dopiero po konwersji).
+
 ## [1.0.1] – 2026-10-23 – English update
 
 > 🇬🇧 **English update.** Vardr is now available in English: the whole panel, notifications, NIS2 report drafts, rule texts, service messages, the export reader, the agent's command line and the documentation ([docs/en](docs/en/README.md)). Service logs and server scripts are in English. Every account chooses its panel language; the administrator chooses the system language for notifications.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -454,7 +455,9 @@ func charRef(ent string) (rune, bool) {
 	} else {
 		v, err = strconv.ParseUint(ent[1:], 10, 32)
 	}
-	if err != nil || !isXMLChar(rune(v)) {
+	// Granica przed konwersją: wartość ponad zakres Unicode nie jest znakiem
+	// (bez niej rune(v) mogłoby się przekręcić – alert CodeQL).
+	if err != nil || v > unicode.MaxRune || !isXMLChar(rune(v)) {
 		return 0, false
 	}
 	return rune(v), true

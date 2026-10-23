@@ -3,6 +3,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -140,9 +142,39 @@ func TestReaderProducesReport(t *testing.T) {
 	}
 }
 
-func TestExtractRejectsTraversal(t *testing.T) {
+func TestExtractMissingFile(t *testing.T) {
 	if _, _, err := runFor(filepath.Join(t.TempDir(), "brak.tar")); err == nil {
 		t.Fatal("brakujący plik powinien dać błąd")
+	}
+}
+
+// Wpisy wychodzące poza folder paczki muszą być odrzucone, zanim cokolwiek
+// zostanie zapisane poza nim (Zip Slip, alert CodeQL go/zipslip).
+func TestExtractRejectsTraversal(t *testing.T) {
+	bad := []string{"../poza.txt", "a/../../poza.txt", "/abs.txt", ""}
+	if runtime.GOOS == "windows" {
+		bad = append(bad, `C:poza.txt`, `C:\abs.txt`, `\\serwer\udzial\x.txt`, "NUL", "zdarzenia/COM1")
+	}
+	for _, name := range bad {
+		root := t.TempDir()
+		tarPath := filepath.Join(root, "paczka", "eksport.tar")
+		if err := os.MkdirAll(filepath.Dir(tarPath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		_ = tw.WriteHeader(&tar.Header{Name: name, Typeflag: tar.TypeReg, Mode: 0o644, Size: 2})
+		_, _ = tw.Write([]byte("x\n"))
+		_ = tw.Close()
+		if err := os.WriteFile(tarPath, buf.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := extract(tarPath); err == nil {
+			t.Errorf("%q: wpis spoza folderu powinien być odrzucony", name)
+		}
+		if _, err := os.Stat(filepath.Join(root, "poza.txt")); err == nil {
+			t.Errorf("%q: plik zapisany poza folderem paczki", name)
+		}
 	}
 }
 

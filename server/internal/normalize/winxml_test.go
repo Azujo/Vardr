@@ -142,3 +142,15 @@ func nonASCIIMarkup(s string) bool {
 	}
 	return false
 }
+
+// Odwołania znakowe ponad zakres Unicode (także ponad int32) nie są znakami.
+func TestCharRefOutOfRange(t *testing.T) {
+	for _, ent := range []string{"#x110000", "#xFFFFFFFF", "#4294967295", "#x80000041", "#xD800"} {
+		if r, ok := charRef(ent); ok {
+			t.Errorf("%s: przyjęte jako %U", ent, r)
+		}
+	}
+	if r, ok := charRef("#x10FFFF"); !ok || r != 0x10FFFF {
+		t.Errorf("#x10FFFF: %U %v", r, ok)
+	}
+}

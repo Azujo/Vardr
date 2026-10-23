@@ -137,8 +137,10 @@ func extract(tarPath string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf(tr("paczka nieczytelna: %w", "unreadable package: %w"), err)
 		}
+		// IsLocal odrzuca też to, czego nie łapały IsAbs i "..": ścieżki
+		// względne do dysku (C:plik) i nazwy zarezerwowane Windows (NUL, COM1).
 		name := filepath.FromSlash(h.Name)
-		if filepath.IsAbs(name) || strings.HasPrefix(filepath.Clean(name), "..") {
+		if !filepath.IsLocal(name) {
 			return "", fmt.Errorf(tr("niedozwolona ścieżka w paczce: %s", "path not allowed in the package: %s"), h.Name)
 		}
 		target := filepath.Join(dir, name)
