@@ -6,13 +6,14 @@
 package events
 
 import (
-	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"siem/internal/lang"
 )
 
 // Język zapytań (przykłady):
@@ -100,12 +101,12 @@ func Parse(q string) (Parsed, error) {
 			continue
 		}
 		if len([]rune(text)) > 200 {
-			return p, errors.New("fraza do wyszukania jest za długa (maks. 200 znaków)")
+			return p, lang.Errorf("fraza do wyszukania jest za długa (maks. 200 znaków)", "the search phrase is too long (max 200 characters)")
 		}
 		p.Text = append(p.Text, text)
 	}
 	if len(p.Conds)+len(p.Text) > 20 {
-		return p, errors.New("za dużo warunków w zapytaniu (maks. 20)")
+		return p, lang.Errorf("za dużo warunków w zapytaniu (maks. 20)", "too many conditions in the query (max 20)")
 	}
 	return p, nil
 }
@@ -154,7 +155,7 @@ func fieldCondition(name, value string) (Condition, error) {
 		return wrap(Condition{f.column + " = ?", []any{uint32(n)}}), nil
 	case kindIP:
 		if strings.ContainsAny(value, "*") {
-			return Condition{}, errors.New("ip: prefiks nie jest obsługiwany – podaj pełny adres")
+			return Condition{}, lang.Errorf("ip: prefiks nie jest obsługiwany – podaj pełny adres", "ip: a prefix is not supported – enter a full address")
 		}
 		return wrap(Condition{f.column + " = toIPv6OrDefault(?)", []any{value}}), nil
 	default:
@@ -200,7 +201,7 @@ func tokenize(q string) ([]token, error) {
 		}
 	}
 	if inQuote {
-		return nil, errors.New("niezamknięty cudzysłów w zapytaniu")
+		return nil, lang.Errorf("niezamknięty cudzysłów w zapytaniu", "unclosed quote in the query")
 	}
 	flush(false)
 	return out, nil

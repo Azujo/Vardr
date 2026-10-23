@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"siem/internal/lang"
 )
 
 // SigmaHQDir: katalog reguł zaimportowanych z SigmaHQ (rules/sigmahq,
@@ -33,12 +35,10 @@ func (r RuleInfo) SigmaHQAttribution() *Attribution {
 		Author string `yaml:"author"`
 	}
 	_ = yaml.Unmarshal([]byte(r.Source), &meta)
-	author := strings.TrimSpace(meta.Author)
-	if author == "" {
-		author = "autor nieznany (brak pola author)"
-	}
+	// Pusty autor – reguła bez pola author (panel i powiadomienie piszą
+	// „autor nieznany” w swoim języku).
 	return &Attribution{
-		Author:     author,
+		Author:     strings.TrimSpace(meta.Author),
 		Source:     "SigmaHQ",
 		RuleURL:    "https://github.com/SigmaHQ/sigma/blob/master/rules/" + strings.TrimPrefix(r.File, SigmaHQDir),
 		License:    "Detection Rule License (DRL) 1.1",
@@ -46,7 +46,11 @@ func (r RuleInfo) SigmaHQAttribution() *Attribution {
 	}
 }
 
-// Line opisuje autora i źródło jednym zdaniem (powiadomienia).
-func (a *Attribution) Line() string {
-	return a.Author + " – reguła " + a.Source + " (" + a.License + "): " + a.RuleURL
+// Line opisuje autora i źródło jednym zdaniem (powiadomienia, język l).
+func (a *Attribution) Line(l string) string {
+	author := a.Author
+	if author == "" {
+		author = lang.Pick(l, "autor nieznany (brak pola author)", "unknown author (no author field)")
+	}
+	return author + lang.Pick(l, " – reguła ", " – rule from ") + a.Source + " (" + a.License + "): " + a.RuleURL
 }

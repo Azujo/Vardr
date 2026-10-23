@@ -16,15 +16,16 @@ import (
 	"golang.org/x/sys/windows"
 
 	"siem/agent/internal/source"
+	"siem/internal/lang"
 )
 
 // ErrChannelNotFound oznacza, że kanał nie istnieje na tym hoście
 // (np. Sysmon nie jest zainstalowany).
-var ErrChannelNotFound = errors.New("kanał nie istnieje")
+var ErrChannelNotFound = errors.New("channel does not exist")
 
 // ErrAccessDenied oznacza brak uprawnień do kanału (np. Security bez
 // uprawnień administratora lub członkostwa w grupie Event Log Readers).
-var ErrAccessDenied = errors.New("brak dostępu do kanału")
+var ErrAccessDenied = errors.New("no access to the channel")
 
 // Reader czyta jeden kanał Event Log przez subskrypcję typu pull.
 type Reader struct {
@@ -63,11 +64,12 @@ func (r *Reader) LastDrained() time.Time {
 	return time.Time{}
 }
 
-// gap zgłasza lukę w danych: log (także do Podglądu zdarzeń) i OnGap.
-func (r *Reader) gap(msg string, attrs ...any) {
-	r.log.Error(msg, append(attrs, "eventlog", true)...)
+// gap zgłasza lukę w danych: log po angielsku (także do Podglądu zdarzeń)
+// i OnGap w języku systemu.
+func (r *Reader) gap(pl, en string, attrs ...any) {
+	r.log.Error(en, append(attrs, "eventlog", true)...)
 	if r.OnGap != nil {
-		r.OnGap("kanał " + r.channel + ": " + msg)
+		r.OnGap(lang.L("kanał ", "channel ") + r.channel + ": " + lang.L(pl, en))
 	}
 }
 
@@ -80,12 +82,14 @@ func (r *Reader) checkResumeGap(pos source.Position) {
 	}
 	info, err := LogInfo(r.channel)
 	if err != nil {
-		r.log.Debug("odczyt stanu dziennika nieudany", "err", err)
+		r.log.Debug("reading the log state failed", "err", err)
 		return
 	}
 	if info.Records > 0 && info.Oldest > pos.RecordID+1 {
 		r.gap(fmt.Sprintf("LUKA W DANYCH: dziennik nadpisał rekordy %d–%d, zanim agent je przeczytał (np. długa przerwa w działaniu agenta)",
-			pos.RecordID+1, info.Oldest-1), "after_record", pos.RecordID, "oldest_record", info.Oldest)
+			pos.RecordID+1, info.Oldest-1),
+			fmt.Sprintf("DATA GAP: the log overwrote records %d–%d before the agent read them (e.g. a long agent outage)",
+				pos.RecordID+1, info.Oldest-1), "after_record", pos.RecordID, "oldest_record", info.Oldest)
 	}
 }
 
@@ -106,7 +110,7 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 		return pos, err
 	}
 	defer func() { evtClose(sub) }()
-	r.log.Info("subskrypcja kanału uruchomiona", "query", r.query, "after_record", pos.RecordID, "resume", pos.Valid)
+	r.log.Info("channel subscription started", "query", r.query, "after_record", pos.RecordID, "resume", pos.Valid)
 	r.checkResumeGap(pos)
 
 	handles := make([]evtHandle, 64)
@@ -142,7 +146,8 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 				if errors.Is(err, errorEvtQueryResultStale) {
 					// Zdarzenia zostały nadpisane, zanim je przeczytaliśmy:
 					// to realna luka w danych, którą trzeba zgłosić.
-					r.gap("LUKA W DANYCH: zdarzenia nadpisane w dzienniku przed odczytem; wznawiam od najstarszego dostępnego", "after_record", pos.RecordID)
+					r.gap("LUKA W DANYCH: zdarzenia nadpisane w dzienniku przed odczytem; wznawiam od najstarszego dostępnego",
+						"DATA GAP: events overwritten in the log before reading; resuming from the oldest available", "after_record", pos.RecordID)
 					evtClose(sub)
 					sub = 0
 					if sub, err = r.subscribe(signal, pos); err != nil {
@@ -158,12 +163,12 @@ func (r *Reader) Run(ctx context.Context, start source.Position, out chan<- sour
 				xml, err := evtRenderXML(h, &buf)
 				evtClose(h)
 				if err != nil {
-					r.log.Warn("nie udało się wyrenderować zdarzenia", "err", err)
+					r.log.Warn("rendering the event failed", "err", err)
 					continue
 				}
 				meta, err := parseMeta(xml)
 				if err != nil {
-					r.log.Warn("pomijam zdarzenie bez numeru rekordu", "err", err)
+					r.log.Warn("skipping an event without a record number", "err", err)
 					continue
 				}
 				rec := source.Record{
@@ -210,7 +215,7 @@ func (r *Reader) subscribe(signal windows.Handle, pos source.Position) (evtHandl
 	case errors.Is(err, errorAccessDenied):
 		return 0, fmt.Errorf("%w: %s", ErrAccessDenied, r.channel)
 	case errors.Is(err, errorEvtInvalidQuery):
-		return 0, fmt.Errorf("niepoprawne zapytanie XPath %q: %w", r.query, err)
+		return 0, fmt.Errorf("invalid XPath query %q: %w", r.query, err)
 	default:
 		return 0, fmt.Errorf("EvtSubscribe(%s): %w", r.channel, err)
 	}

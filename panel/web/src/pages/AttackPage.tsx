@@ -24,7 +24,9 @@ import {
 } from "@mantine/core";
 import { IconDownload, IconExternalLink, IconSearch } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { levelLabels, type AlertLevel } from "../api";
+import { useTranslation } from "react-i18next";
+import { levelLabels, ruleText, type AlertLevel } from "../api";
+import { locale } from "../i18n";
 import {
   attackApi,
   parentOf,
@@ -46,11 +48,12 @@ interface Cell {
 
 type State = "alerts" | "covered" | "disabled" | "none";
 
-const stateStyle: Record<State, { bg: string; border: string; label: string }> = {
-  alerts: { bg: "var(--mantine-color-orange-light)", border: "var(--mantine-color-orange-6)", label: "pokryta, były alerty" },
-  covered: { bg: "var(--mantine-color-green-light)", border: "var(--mantine-color-green-6)", label: "pokryta włączoną regułą" },
-  disabled: { bg: "var(--mantine-color-yellow-light)", border: "var(--mantine-color-yellow-6)", label: "tylko wyłączone reguły" },
-  none: { bg: "transparent", border: "var(--mantine-color-default-border)", label: "bez reguł" },
+// Opisy stanów: attack: state.<stan>.
+const stateStyle: Record<State, { bg: string; border: string }> = {
+  alerts: { bg: "var(--mantine-color-orange-light)", border: "var(--mantine-color-orange-6)" },
+  covered: { bg: "var(--mantine-color-green-light)", border: "var(--mantine-color-green-6)" },
+  disabled: { bg: "var(--mantine-color-yellow-light)", border: "var(--mantine-color-yellow-6)" },
+  none: { bg: "transparent", border: "var(--mantine-color-default-border)" },
 };
 
 function cellState(c: Cell): State {
@@ -58,15 +61,16 @@ function cellState(c: Cell): State {
   return c.alerts > 0 ? "alerts" : "covered";
 }
 
-// Platformy, które zbiera Vardr (Windows, Entra ID, urządzenia sieciowe).
+// Platformy, które zbiera Vardr (Windows, Entra ID, urządzenia sieciowe);
+// nazwy: attack: platform.<klucz>.
 const platforms = [
-  { value: "", label: "wszystkie platformy" },
-  { value: "Windows", label: "Windows" },
-  { value: "Identity Provider", label: "Entra ID / dostawca tożsamości" },
-  { value: "Network Devices", label: "urządzenia sieciowe" },
-  { value: "SaaS", label: "SaaS" },
-  { value: "IaaS", label: "chmura (IaaS)" },
-  { value: "Linux", label: "Linux" },
+  { value: "", key: "all" },
+  { value: "Windows", key: "windows" },
+  { value: "Identity Provider", key: "idp" },
+  { value: "Network Devices", key: "network" },
+  { value: "SaaS", key: "saas" },
+  { value: "IaaS", key: "iaas" },
+  { value: "Linux", key: "linux" },
 ];
 
 function sinceParam(days: number): string {
@@ -74,6 +78,7 @@ function sinceParam(days: number): string {
 }
 
 export default function AttackPage() {
+  const { t: tr } = useTranslation("attack");
   const dict = useAttackDict();
   const [days, setDays] = useState("30");
   const [rules, setRules] = useState<CoverageRule[] | null>(null);
@@ -101,7 +106,7 @@ export default function AttackPage() {
     const byTech = new Map<string, CoverageRule[]>();
     const warns: { rule: CoverageRule; w: string }[] = [];
     for (const r of rules) {
-      for (const w of r.warnings ?? []) warns.push({ rule: r, w });
+      for (const w of (locale() !== "pl" && r.warnings_en) || r.warnings || []) warns.push({ rule: r, w });
       if (r.correlation_only) continue;
       for (const id of r.techniques) {
         if (!byTech.has(id)) byTech.set(id, []);
@@ -166,11 +171,9 @@ export default function AttackPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>MITRE ATT&CK – pokrycie</Title>
+          <Title order={2}>{tr("title")}</Title>
           <Text c="dimmed" size="sm" maw={900}>
-            Techniki ATT&CK {dict?.version ?? ""} według tagów reguł (<code>attack.t…</code>). Kolor komórki: czy technikę wykrywa włączona
-            reguła i czy w wybranym okresie były alerty. Technika obejmuje swoje podtechniki. Kliknij komórkę, żeby zobaczyć reguły
-            i alerty.
+            {tr("intro", { version: dict?.version ?? "" })}
           </Text>
         </div>
         <Button
@@ -178,9 +181,9 @@ export default function AttackPage() {
           href={attackApi.navigatorURL(Number(days))}
           variant="light"
           leftSection={<IconDownload size={16} />}
-          title="Warstwa dla MITRE ATT&CK Navigator: techniki pokryte włączonymi regułami, wynik = liczba alertów"
+          title={tr("exportHint")}
         >
-          Eksport do ATT&CK Navigator
+          {tr("export")}
         </Button>
       </Group>
       {error && <Alert color="red">{error}</Alert>}
@@ -190,24 +193,24 @@ export default function AttackPage() {
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <Card withBorder padding="sm">
               <Text size="xs" c="dimmed">
-                Techniki pokryte włączonymi regułami
+                {tr("stats.covered")}
               </Text>
               <Text fz={24} fw={700}>
                 {stats.covered} / {stats.total}
               </Text>
               <Text size="xs" c="dimmed">
-                {platform ? `platforma: ${platform}` : "wszystkie platformy"} · {((100 * stats.covered) / Math.max(1, stats.total)).toFixed(1)}%
+                {platform ? tr("stats.platform", { platform }) : tr("platform.all")} · {((100 * stats.covered) / Math.max(1, stats.total)).toFixed(1)}%
               </Text>
             </Card>
             <Card withBorder padding="sm">
               <Text size="xs" c="dimmed">
-                Taktyki z co najmniej jedną regułą
+                {tr("stats.tactics")}
               </Text>
               <Text fz={24} fw={700}>
                 {columns.filter((c) => c.covered > 0).length} / {columns.length}
               </Text>
               <Text size="xs" c="dimmed" lineClamp={2}>
-                bez reguł:{" "}
+                {tr("stats.noRules")}{" "}
                 {columns
                   .filter((c) => c.covered === 0)
                   .map((c) => c.tactic.name)
@@ -216,22 +219,22 @@ export default function AttackPage() {
             </Card>
             <Card withBorder padding="sm">
               <Text size="xs" c="dimmed">
-                Alerty z reguł z technikami ATT&CK ({days} dni)
+                {tr("stats.alerts", { days })}
               </Text>
               <Text fz={24} fw={700}>
                 {stats.alerts}
               </Text>
               <Text size="xs" c="dimmed">
-                {rules.filter((r) => r.techniques.length === 0 && !r.correlation_only).length} reguł bez techniki ATT&CK
+                {tr("stats.untagged", { count: rules.filter((r) => r.techniques.length === 0 && !r.correlation_only).length })}
               </Text>
             </Card>
           </SimpleGrid>
 
           {warnings.length > 0 && (
-            <Alert color="orange" title={`Tagi do poprawy (${warnings.length})`}>
+            <Alert color="orange" title={tr("warnings", { count: warnings.length })}>
               {warnings.slice(0, 10).map((x, i) => (
                 <Text size="sm" key={i}>
-                  <b>{x.rule.title}</b>: {x.w}
+                  <b>{ruleText(x.rule).title}</b>: {x.w}
                 </Text>
               ))}
             </Alert>
@@ -243,9 +246,9 @@ export default function AttackPage() {
               value={days}
               onChange={setDays}
               data={[
-                { value: "7", label: "7 dni" },
-                { value: "30", label: "30 dni" },
-                { value: "90", label: "90 dni" },
+                { value: "7", label: tr("days", { n: 7 }) },
+                { value: "30", label: tr("days", { n: 30 }) },
+                { value: "90", label: tr("days", { n: 90 }) },
               ]}
             />
             <SegmentedControl
@@ -253,15 +256,17 @@ export default function AttackPage() {
               value={view}
               onChange={setView}
               data={[
-                { value: "all", label: "wszystkie techniki" },
-                { value: "covered", label: "tylko z regułami" },
+                { value: "all", label: tr("view.all") },
+                { value: "covered", label: tr("view.covered") },
               ]}
             />
-            <Select size="xs" w={240} allowDeselect={false} value={platform} onChange={(v) => setPlatform(v ?? "")} data={platforms} />
+            <Select size="xs" w={240} allowDeselect={false} value={platform} onChange={(v) => setPlatform(v ?? "")}
+              data={platforms.map((p) => ({ value: p.value, label: p.value === "Windows" || p.value === "SaaS" || p.value === "Linux" ? p.value : tr(`platform.${p.key}`) }))}
+            />
             <TextInput
               size="xs"
               w={220}
-              placeholder="szukaj techniki"
+              placeholder={tr("search")}
               leftSection={<IconSearch size={14} />}
               value={q}
               onChange={(e) => setQ(e.currentTarget.value)}
@@ -270,7 +275,7 @@ export default function AttackPage() {
               {(Object.keys(stateStyle) as State[]).map((s) => (
                 <Group key={s} gap={4}>
                   <Box w={14} h={14} style={{ background: stateStyle[s].bg, border: `1px solid ${stateStyle[s].border}`, borderRadius: 3 }} />
-                  <Text size="xs">{stateStyle[s].label}</Text>
+                  <Text size="xs">{tr(`state.${s}`)}</Text>
                 </Group>
               ))}
             </Group>
@@ -280,7 +285,7 @@ export default function AttackPage() {
             <Group align="flex-start" gap={6} wrap="nowrap">
               {columns.map((col) => (
                 <Stack key={col.tactic.id} gap={4} w={168} style={{ flex: "0 0 168px" }}>
-                  <Tooltip label={`${col.tactic.id} – pokryte ${col.covered} z ${col.total} technik`}>
+                  <Tooltip label={tr("tacticTip", { id: col.tactic.id, covered: col.covered, total: col.total })}>
                     <Box
                       p={6}
                       style={{
@@ -321,9 +326,9 @@ export default function AttackPage() {
                           </Text>
                           {(c.rules.length > 0 || c.subs.length > 0) && (
                             <Text size="10px" c="dimmed">
-                              {c.rules.length > 0 ? `${c.enabled} reg.` : ""}
-                              {c.alerts > 0 ? ` · ${c.alerts} al.` : ""}
-                              {c.subs.length > 0 && c.subsCovered > 0 ? ` · ${c.subsCovered}/${c.subs.length} pod.` : ""}
+                              {c.rules.length > 0 ? tr("cell.rules", { n: c.enabled }) : ""}
+                              {c.alerts > 0 ? ` · ${tr("cell.alerts", { n: c.alerts })}` : ""}
+                              {c.subs.length > 0 && c.subsCovered > 0 ? ` · ${tr("cell.subs", { n: c.subsCovered, total: c.subs.length })}` : ""}
                             </Text>
                           )}
                         </Group>
@@ -343,25 +348,24 @@ export default function AttackPage() {
             <Group gap="xs">
               {open.t.tactics.map((s) => (
                 <Badge key={s} variant="outline" color="grape">
-                  {dict.tactics.find((t) => t.short === s)?.name ?? s}
+                  {dict.tactics.find((x) => x.short === s)?.name ?? s}
                 </Badge>
               ))}
               <Anchor href={techniqueURL(open.t.id)} target="_blank" rel="noopener noreferrer" size="sm">
-                opis w MITRE ATT&CK <IconExternalLink size={12} />
+                {tr("mitreLink")} <IconExternalLink size={12} />
               </Anchor>
             </Group>
             {open.t.platforms && (
               <Text size="xs" c="dimmed">
-                Platformy: {open.t.platforms.join(", ")}
+                {tr("platforms", { list: open.t.platforms.join(", ") })}
               </Text>
             )}
             <Text fw={600} size="sm">
-              Reguły ({open.rules.length})
+              {tr("rules", { count: open.rules.length })}
             </Text>
             {open.rules.length === 0 ? (
               <Text size="sm" c="dimmed">
-                Żadna reguła nie ma tagu tej techniki ani jej podtechnik. Nowa reguła: Reguły detekcji → Przetestuj nową regułę albo
-                kreator korelacji; tag <code>attack.{open.t.id.toLowerCase()}</code>.
+                {tr("noRules", { tag: `attack.${open.t.id.toLowerCase()}` })}
               </Text>
             ) : (
               <Table fz="sm" verticalSpacing={4}>
@@ -374,19 +378,19 @@ export default function AttackPage() {
                         </Badge>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm">{r.title}</Text>
+                        <Text size="sm">{ruleText(r).title}</Text>
                         <Text size="xs" c="dimmed">
-                          {r.techniques.join(", ")} · {r.enabled ? "włączona" : "wyłączona"} · {r.file}
+                          {r.techniques.join(", ")} · {r.enabled ? tr("enabled") : tr("disabled")} · {r.file}
                         </Text>
                       </Table.Td>
                       <Table.Td ta="right" style={{ whiteSpace: "nowrap" }}>
                         {r.alerts.total > 0 ? (
                           <Anchor component={Link} to={`/alerts?status=all&rule=${encodeURIComponent(r.id)}${since ? `&since=${since}` : ""}`} size="sm">
-                            {r.alerts.total} alertów ({r.alerts.open} otw.)
+                            {tr("ruleAlerts", { total: r.alerts.total, open: r.alerts.open })}
                           </Anchor>
                         ) : (
                           <Text size="xs" c="dimmed">
-                            bez alertów
+                            {tr("noAlerts")}
                           </Text>
                         )}
                       </Table.Td>
@@ -397,13 +401,13 @@ export default function AttackPage() {
             )}
             {open.alerts > 0 && (
               <Button component={Link} to={alertsLink(open.t.id)} variant="light" size="xs" w="fit-content">
-                Alerty tej techniki ({days} dni)
+                {tr("techniqueAlerts", { days })}
               </Button>
             )}
             {open.subs.length > 0 && (
               <>
                 <Text fw={600} size="sm">
-                  Podtechniki ({open.subsCovered}/{open.subs.length} pokrytych)
+                  {tr("subtechniques", { n: open.subsCovered, total: open.subs.length })}
                 </Text>
                 <Stack gap={2}>
                   {open.subs.map((s) => {
@@ -418,7 +422,7 @@ export default function AttackPage() {
                         </Anchor>
                         {n > 0 && (
                           <Text size="xs" c="dimmed">
-                            {n} reg.
+                            {tr("cell.rules", { n })}
                           </Text>
                         )}
                       </Group>

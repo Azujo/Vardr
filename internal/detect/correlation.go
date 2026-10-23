@@ -4,7 +4,6 @@ package detect
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"siem/internal/lang"
 )
 
 // Reguły korelacyjne w formacie Sigma Correlation (sigmahq.io, „Sigma
@@ -114,7 +115,7 @@ var timespanRe = regexp.MustCompile(`^(\d+)([smhd])$`)
 func ParseTimespan(s string) (time.Duration, error) {
 	m := timespanRe.FindStringSubmatch(strings.TrimSpace(s))
 	if m == nil {
-		return 0, fmt.Errorf("niepoprawny czas %q (np. 15m, 1h, 1d)", s)
+		return 0, lang.Errorf("niepoprawny czas %q (np. 15m, 1h, 1d)", "invalid duration %q (e.g. 15m, 1h, 1d)", s)
 	}
 	n, _ := strconv.Atoi(m[1])
 	unit := map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour}[m[2]]
@@ -135,17 +136,17 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 	}
 	switch {
 	case r.Title == "":
-		return nil, errors.New("brak title")
+		return nil, lang.Errorf("brak title", "missing title")
 	case !idRe.MatchString(r.ID):
-		return nil, errors.New("id: 3–64 znaki: litery, cyfry, . _ - (np. UUID)")
+		return nil, lang.Errorf("id: 3–64 znaki: litery, cyfry, . _ - (np. UUID)", "id: 3–64 characters: letters, digits, . _ - (e.g. a UUID)")
 	case !slices.Contains(Levels, r.Level):
-		return nil, fmt.Errorf("level: jedno z %s", strings.Join(Levels, ", "))
+		return nil, lang.Errorf("level: jedno z %s", "level: one of %s", strings.Join(Levels, ", "))
 	case !slices.Contains(CorrelationTypes, c.Type):
-		return nil, fmt.Errorf("correlation.type: jedno z %s", strings.Join(CorrelationTypes, ", "))
+		return nil, lang.Errorf("correlation.type: jedno z %s", "correlation.type: one of %s", strings.Join(CorrelationTypes, ", "))
 	case len(c.Rules) == 0:
-		return nil, errors.New("correlation.rules: podaj reguły bazowe (id albo name)")
+		return nil, lang.Errorf("correlation.rules: podaj reguły bazowe (id albo name)", "correlation.rules: list the base rules (id or name)")
 	case (c.Type == "temporal" || c.Type == "temporal_ordered") && len(c.Rules) < 2:
-		return nil, errors.New("correlation.rules: korelacja czasowa wymaga co najmniej dwóch reguł")
+		return nil, lang.Errorf("correlation.rules: korelacja czasowa wymaga co najmniej dwóch reguł", "correlation.rules: a temporal correlation needs at least two rules")
 	}
 	span := c.Timespan
 	if span == "" {
@@ -156,7 +157,7 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 		return nil, fmt.Errorf("correlation.timespan: %w", err)
 	}
 	if ts < MinCorrelationSpan || ts > MaxCorrelationSpan {
-		return nil, errors.New("correlation.timespan: od 1m do 24h")
+		return nil, lang.Errorf("correlation.timespan: od 1m do 24h", "correlation.timespan: from 1m to 24h")
 	}
 	out := &Correlation{ID: r.ID, Name: r.Name, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file, Source: string(data),
@@ -166,16 +167,16 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 	}
 	for _, g := range c.GroupBy {
 		if strings.TrimSpace(g) == "" {
-			return nil, errors.New("correlation.group-by: puste pole")
+			return nil, lang.Errorf("correlation.group-by: puste pole", "correlation.group-by: empty field")
 		}
 	}
 	for alias, m := range c.Aliases {
 		if !slices.Contains(c.GroupBy, alias) {
-			return nil, fmt.Errorf("correlation.aliases: alias %q nie jest w group-by", alias)
+			return nil, lang.Errorf("correlation.aliases: alias %q nie jest w group-by", "correlation.aliases: alias %q is not in group-by", alias)
 		}
 		for ref := range m {
 			if !slices.Contains(c.Rules, ref) {
-				return nil, fmt.Errorf("correlation.aliases.%s: reguła %q nie jest w rules", alias, ref)
+				return nil, lang.Errorf("correlation.aliases.%s: reguła %q nie jest w rules", "correlation.aliases.%s: rule %q is not in rules", alias, ref)
 			}
 		}
 	}
@@ -189,37 +190,40 @@ func ParseCorrelation(data []byte, file string) (*Correlation, error) {
 		if c.Type == "value_count" {
 			f, _ := c.Condition["field"].(string)
 			if strings.TrimSpace(f) == "" {
-				return nil, errors.New("correlation.condition.field: value_count liczy różne wartości pola – podaj je")
+				return nil, lang.Errorf("correlation.condition.field: value_count liczy różne wartości pola – podaj je", "correlation.condition.field: value_count counts distinct values of a field – specify it")
 			}
 			out.Field = f
 		}
 	default:
 		if len(c.Condition) > 0 {
-			return nil, errors.New("correlation.condition: korelacja czasowa nie ma warunku liczbowego")
+			return nil, lang.Errorf("correlation.condition: korelacja czasowa nie ma warunku liczbowego", "correlation.condition: a temporal correlation has no numeric condition")
 		}
 	}
 	if h := r.Vardr; h.Mode != "" || len(h.GroupBy) > 0 || h.Threshold != nil {
-		return nil, errors.New("vardr: w korelacji tylko instructions, suppress i enabled (klucz i okno są w correlation)")
+		return nil, lang.Errorf("vardr: w korelacji tylko instructions, suppress i enabled (klucz i okno są w correlation)", "vardr: a correlation allows only instructions, i18n, suppress and enabled (key and window are in correlation)")
 	}
 	if out.Vardr.Suppress == 0 {
 		out.Vardr.Suppress = Duration(max(time.Hour, ts))
 	}
 	out.Vardr.Instructions = Unwrap(out.Vardr.Instructions)
+	if err := normalizeI18n(&out.Vardr); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
 // condCount: warunek liczbowy (gte, gt) → najmniejsza liczba spełniająca.
 func condCount(cond map[string]any) (int, error) {
 	if len(cond) == 0 {
-		return 0, errors.New("correlation.condition: podaj warunek, np. gte: 10")
+		return 0, lang.Errorf("correlation.condition: podaj warunek, np. gte: 10", "correlation.condition: specify a condition, e.g. gte: 10")
 	}
 	for k := range cond {
 		switch k {
 		case "gte", "gt", "field":
 		case "lt", "lte", "eq", "neq":
-			return 0, fmt.Errorf("correlation.condition.%s: nieobsługiwane (alert przy braku zdarzeń) – użyj gte albo gt", k)
+			return 0, lang.Errorf("correlation.condition.%s: nieobsługiwane (alert przy braku zdarzeń) – użyj gte albo gt", "correlation.condition.%s: not supported (alert on missing events) – use gte or gt", k)
 		default:
-			return 0, fmt.Errorf("correlation.condition.%s: nieznany warunek", k)
+			return 0, lang.Errorf("correlation.condition.%s: nieznany warunek", "correlation.condition.%s: unknown condition", k)
 		}
 	}
 	n, add := 0, 0
@@ -234,7 +238,7 @@ func condCount(cond map[string]any) (int, error) {
 		ok = false
 	}
 	if !ok || n < 2 || n > MaxThresholdCount {
-		return 0, fmt.Errorf("correlation.condition: liczba od 2 do %d (gte albo gt)", MaxThresholdCount)
+		return 0, lang.Errorf("correlation.condition: liczba od 2 do %d (gte albo gt)", "correlation.condition: a number from 2 to %d (gte or gt)", MaxThresholdCount)
 	}
 	return n, nil
 }
@@ -251,10 +255,10 @@ func (c *Correlation) Resolve(rules []*Rule) error {
 			}
 		}
 		if found == nil {
-			return fmt.Errorf("correlation.rules: nie ma reguły %q (id albo name; korelacja korelacji nieobsługiwana)", ref)
+			return lang.Errorf("correlation.rules: nie ma reguły %q (id albo name; korelacja korelacji nieobsługiwana)", "correlation.rules: no rule %q (id or name; a correlation of correlations is not supported)", ref)
 		}
 		if found.IsThreshold() {
-			return fmt.Errorf("correlation.rules: reguła %q jest progowa – korelacja liczy sama, użyj reguły bez progu", ref)
+			return lang.Errorf("correlation.rules: reguła %q jest progowa – korelacja liczy sama, użyj reguły bez progu", "correlation.rules: rule %q has a threshold – the correlation counts by itself, use a rule without a threshold", ref)
 		}
 		c.Rules = append(c.Rules, found)
 	}
@@ -527,14 +531,14 @@ func ParseText(data []byte, file string, known []*Rule) (*Set, error) {
 		if IsCorrelation(doc) {
 			c, err := ParseCorrelation(doc, file)
 			if err != nil {
-				return nil, fmt.Errorf("dokument %d: %w", i+1, err)
+				return nil, lang.Errorf("dokument %d: %w", "document %d: %w", i+1, err)
 			}
 			set.Correlations = append(set.Correlations, c)
 			continue
 		}
 		r, err := Parse(doc, file)
 		if err != nil {
-			return nil, fmt.Errorf("dokument %d: %w", i+1, err)
+			return nil, lang.Errorf("dokument %d: %w", "document %d: %w", i+1, err)
 		}
 		set.Rules = append(set.Rules, r)
 	}

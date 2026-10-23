@@ -25,7 +25,9 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconDownload, IconEdit, IconRefresh, IconTrash, IconWand } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import { decodersApi, type DecodeResult, type DecoderTestResponse } from "../api";
+import { serverText } from "../i18n";
 import {
   LABELS,
   LAYOUTS,
@@ -66,6 +68,7 @@ interface Props {
 }
 
 export default function DecoderWizard({ initialSamples, initialPeer, admin, samplesAvailable, onEdit, onSaved }: Props) {
+  const { t } = useTranslation("decoders");
   const [samplesText, setSamplesText] = useState(initialSamples.join("\n"));
   const [peer, setPeer] = useState(initialPeer ?? "");
   const [parsed, setParsed] = useState<DecodeResult[]>([]);
@@ -122,10 +125,10 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
       const first = res[0];
       if (first) {
         setMode(detectMode(first.header.message));
-        const name = first.header.app || first.header.host || "urzadzenie";
+        const name = first.header.app || first.header.host || t("wizard.device");
         setMeta((m) => ({
-          id: m.id || slug(name) + "-kreator",
-          title: m.title || `${name} – dekoder z kreatora`,
+          id: m.id || slug(name) + "-wizard",
+          title: m.title || t("wizard.defaultTitle", { name }),
           dataset: m.dataset || `${slug(name).replace(/-/g, "_")}.log`,
           priority: m.priority,
         }));
@@ -146,7 +149,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
     setLoading(true);
     try {
       const r = await decodersApi.samples({ peer: peer.trim(), hours: 168, limit: 100 });
-      if (r.samples.length === 0) notifications.show({ color: "gray", message: "Brak nierozpoznanych wiadomości z ostatnich 7 dni" });
+      if (r.samples.length === 0) notifications.show({ color: "gray", message: t("wizard.noUnrecognized") });
       setSamplesText(r.samples.map((s) => s.raw).join("\n"));
       const peers = new Set(r.samples.map((s) => s.peer));
       if (!peer.trim() && peers.size === 1) setPeer([...peers][0]);
@@ -209,16 +212,16 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
   const applyLabel = (key: LabelKey, target: { start: number; end: number } | null = pending) => {
     const pending = target;
     if (!pending) {
-      notifications.show({ color: "gray", message: "Najpierw zaznacz fragment wiadomości myszą (albo upuść etykietę na słowie)" });
+      notifications.show({ color: "gray", message: t("wizard.selectFirst") });
       return;
     }
     if (key === "custom" && !/^[a-z][a-z0-9_.]{1,40}$/.test(customName.trim())) {
-      notifications.show({ color: "orange", message: "Własne pole: wpisz nazwę (małe litery, cyfry, kropki), np. vpn.tunnel" });
+      notifications.show({ color: "orange", message: t("wizard.customName") });
       return;
     }
     const overl = spans.some((x) => pending.start < x.end && x.start < pending.end);
     if (overl) {
-      notifications.show({ color: "orange", message: "Fragment nachodzi na już oznaczony – kliknij stary, aby go usunąć" });
+      notifications.show({ color: "orange", message: t("wizard.overlap") });
       return;
     }
     const span: Span = { ...pending, key, custom: key === "custom" ? customName.trim() : undefined };
@@ -282,12 +285,11 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
   }, [mode, timeSample, timeLayout]);
 
   const built = useMemo(() => {
-    if (!cur) return { yaml: "", error: "wczytaj próbki" };
-    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(meta.id)) return { yaml: "", error: "id: małe litery, cyfry, . _ - (2–64 znaki)" };
-    if (existing[meta.id] && !replace)
-      return { yaml: "", error: `id „${meta.id}” ma już dekoder „${existing[meta.id]}” – zmień id albo zaznacz „zastąp istniejący”` };
+    if (!cur) return { yaml: "", error: t("wizard.err.load") };
+    if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(meta.id)) return { yaml: "", error: t("wizard.err.id") };
+    if (existing[meta.id] && !replace) return { yaml: "", error: t("wizard.err.exists", { id: meta.id, title: existing[meta.id] }) };
     if (!/^[a-z0-9][a-z0-9._-]*$/.test(meta.dataset) || meta.dataset.startsWith("windows.") || meta.dataset === "syslog.generic")
-      return { yaml: "", error: "zbiór danych: małe litery, cyfry, . _ - (bez windows.* i syslog.generic)" };
+      return { yaml: "", error: t("wizard.err.dataset") };
     const contains = [
       ...new Set(
         mode === "regex"
@@ -314,7 +316,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
       outcomeFailure: outFailure,
       samples: [], // próbki dopisuje zapis – tylko te, które ten dekoder rozpoznaje
     });
-  }, [existing, replace, cur, meta, mode, match, byPatterns, peer, patterns, keyLabels, requiredKeys, hasTime, timeLayout, timeZone, outSuccess, outFailure]);
+  }, [existing, replace, cur, meta, mode, match, byPatterns, peer, patterns, keyLabels, requiredKeys, hasTime, timeLayout, timeZone, outSuccess, outFailure, t]);
 
   // Wartości pola „wynik” widziane w próbkach (do przypisania udane/nieudane).
   const outcomeValues = useMemo(() => {
@@ -379,8 +381,8 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
   const save = async () => {
     setSaving(true);
     try {
-      const r = await decodersApi.save(meta.id, finalYAML(), note.trim() || "utworzony kreatorem");
-      notifications.show({ color: "green", message: `Rewizja ${r.revision}: ${r.message}` });
+      const r = await decodersApi.save(meta.id, finalYAML(), note.trim() || t("wizard.createdNote"));
+      notifications.show({ color: "green", message: t("saved", { revision: r.revision, status: t(`delivery.${r.delivery}`, { defaultValue: r.message }) }) });
       onSaved();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -407,23 +409,23 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
       <Card withBorder p="sm">
         <Group justify="space-between" mb={4}>
           <Text fw={600} size="sm">
-            1. Próbki ({samples.length})
+            {t("wizard.step1", { count: samples.length })}
           </Text>
           <Group gap="xs">
-            <TextInput size="xs" placeholder="adres nadawcy" w={150} value={peer} onChange={(e) => setPeer(e.currentTarget.value)} />
+            <TextInput size="xs" placeholder={t("wizard.peer")} w={150} value={peer} onChange={(e) => setPeer(e.currentTarget.value)} />
             {samplesAvailable && (
               <Button size="xs" variant="default" leftSection={<IconDownload size={14} />} loading={loading} onClick={() => void loadUnrecognized()}>
-                Nierozpoznane (7 dni)
+                {t("wizard.unrecognized")}
               </Button>
             )}
             <Button size="xs" leftSection={<IconRefresh size={14} />} loading={loading} onClick={() => void parse()}>
-              Wczytaj
+              {t("wizard.load")}
             </Button>
           </Group>
         </Group>
         {stale && (
           <Text size="xs" c="orange" mb={4}>
-            Próbki zmienione – kliknij „Wczytaj”, żeby kreator i sprawdzenie ich użyły.
+            {t("wizard.stale")}
           </Text>
         )}
         <Textarea
@@ -432,7 +434,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
           maxRows={6}
           spellCheck={false}
           styles={{ input: { fontFamily: "monospace", fontSize: 11 } }}
-          placeholder="jedna wiadomość syslog w wierszu (z nagłówkiem), np. z kwarantanny albo pliku"
+          placeholder={t("wizard.samplesPlaceholder")}
           value={samplesText}
           onChange={(e) => setSamplesText(e.currentTarget.value)}
         />
@@ -444,22 +446,22 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
             <Card withBorder p="sm">
               <Group justify="space-between" mb={6}>
                 <Text fw={600} size="sm">
-                  2. Oznacz pola
+                  {t("wizard.step2")}
                 </Text>
                 <SegmentedControl
                   size="xs"
                   value={mode}
                   onChange={(v) => setMode(v as Mode)}
                   data={[
-                    { value: "regex", label: "tekst" },
-                    { value: "kv", label: "klucz=wartość" },
+                    { value: "regex", label: t("wizard.mode.regex") },
+                    { value: "kv", label: t("wizard.mode.kv") },
                     { value: "json", label: "JSON" },
                   ]}
                 />
               </Group>
               <Select
                 size="xs"
-                label="Wiadomość"
+                label={t("wizard.message")}
                 allowDeselect={false}
                 value={String(sel)}
                 onChange={(v) => {
@@ -472,15 +474,14 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                 }))}
               />
               <Text size="xs" c="dimmed" mt={4}>
-                nagłówek: program <Code>{cur.header.app || "—"}</Code>, host <Code>{cur.header.host || "—"}</Code>, format {cur.header.format}
+                {t("wizard.header.program")} <Code>{cur.header.app || "—"}</Code>, {t("wizard.header.host")} <Code>{cur.header.host || "—"}</Code>,{" "}
+                {t("wizard.header.format", { format: cur.header.format })}
               </Text>
 
               {mode === "regex" ? (
                 <Stack gap={6} mt="xs">
                   <Text size="xs" c="dimmed">
-                    Zaznacz myszą fragment poniżej, potem kliknij etykietę albo przeciągnij ją na zaznaczenie. Kliknięcie oznaczonego
-                    fragmentu usuwa etykietę. Każdy rodzaj wiadomości (np. logowanie udane i nieudane) oznacz osobno – kreator zrobi z
-                    nich osobne wzorce.
+                    {t("wizard.markHint")}
                   </Text>
                   <Group gap={4}>
                     {LABELS.map((l) => (
@@ -500,7 +501,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                     <TextInput
                       size="xs"
                       w={150}
-                      placeholder="nazwa własnego pola"
+                      placeholder={t("wizard.customField")}
                       value={customName}
                       onChange={(e) => setCustomName(e.currentTarget.value)}
                     />
@@ -530,7 +531,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                   >
                     {segments.map((s, i) =>
                       s.span ? (
-                        <Tooltip key={i} label={`${s.span.key === "custom" ? s.span.custom : labelDef(s.span.key).label} – kliknij, aby usunąć`}>
+                        <Tooltip key={i} label={t("wizard.clickToRemove", { label: s.span.key === "custom" ? s.span.custom : labelDef(s.span.key).label })}>
                           <span
                             onClick={() => removeSpan(s.span!)}
                             style={{ background: markColor(s.span.key), borderRadius: 3, padding: "1px 0", cursor: "pointer", color: "black" }}
@@ -551,8 +552,8 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                     <Group gap="xs" align="flex-end">
                       <TextInput
                         size="xs"
-                        label="Akcja dla tej wiadomości"
-                        description="np. login, logout, config-change"
+                        label={t("wizard.action")}
+                        description={t("wizard.actionHint")}
                         w={200}
                         value={pattern.action ?? ""}
                         onChange={(e) => {
@@ -562,36 +563,36 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                       />
                       <Select
                         size="xs"
-                        label="Wynik dla tej wiadomości"
+                        label={t("wizard.outcome")}
                         w={160}
                         value={pattern.outcome ?? ""}
                         onChange={(v) => setPattern((p) => ({ ...p, outcome: (v ?? "") as PatternDef["outcome"] }))}
                         data={[
                           { value: "", label: "—" },
-                          { value: "success", label: "udane" },
-                          { value: "failure", label: "nieudane" },
+                          { value: "success", label: t("wizard.success") },
+                          { value: "failure", label: t("wizard.failure") },
                         ]}
                       />
                       <Button size="xs" variant="subtle" color="red" leftSection={<IconTrash size={12} />} onClick={() => setPattern(() => null)}>
-                        usuń wzorzec
+                        {t("wizard.removePattern")}
                       </Button>
                     </Group>
                   )}
                   {local && (
                     <Text size="xs" c={local.groups ? "green" : "red"}>
                       {local.groups
-                        ? "wzorzec pasuje do tej wiadomości: " +
+                        ? t("wizard.patternMatches") +
                           Object.entries(local.groups)
                             .map(([k, v]) => `${k}=${v}`)
                             .join(", ")
-                        : "wzorzec nie pasuje do tej wiadomości – sprawdź zaznaczenia"}
+                        : t("wizard.patternNoMatch")}
                     </Text>
                   )}
                 </Stack>
               ) : (
                 <Stack gap={4} mt="xs">
                   <Text size="xs" c="dimmed">
-                    Przypisz etykiety polom wiadomości. „wymagaj” – wiadomość musi mieć to pole (rozpoznawanie).
+                    {t("wizard.kvHint")}
                   </Text>
                   <ScrollArea.Autosize mah={420}>
                     <Table fz="xs" verticalSpacing={2}>
@@ -633,7 +634,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                             <Table.Td>
                               <Checkbox
                                 size="xs"
-                                label="wymagaj"
+                                label={t("wizard.require")}
                                 checked={requiredKeys.includes(k)}
                                 onChange={(e) => {
                                   const on = e.currentTarget.checked;
@@ -654,25 +655,25 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
           <Stack gap="sm">
             <Card withBorder p="sm">
               <Text fw={600} size="sm" mb={4}>
-                3. Dekoder
+                {t("wizard.step3")}
               </Text>
               <Group gap="xs" align="flex-end">
                 <TextInput size="xs" label="Id" w={170} value={meta.id} onChange={(e) => setMeta({ ...meta, id: e.currentTarget.value })} />
-                <TextInput size="xs" label="Nazwa" style={{ flex: 1 }} value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.currentTarget.value })} />
+                <TextInput size="xs" label={t("wizard.name")} style={{ flex: 1 }} value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.currentTarget.value })} />
               </Group>
               <Group gap="xs" align="flex-end" mt={4}>
                 <TextInput
                   size="xs"
-                  label="Zbiór danych (event.dataset)"
-                  description="np. cisco.asa, synology.dsm"
+                  label={t("wizard.dataset")}
+                  description={t("wizard.datasetHint")}
                   w={220}
                   value={meta.dataset}
                   onChange={(e) => setMeta({ ...meta, dataset: e.currentTarget.value })}
                 />
                 <NumberInput
                   size="xs"
-                  label="Priorytet"
-                  description="wyższy – wcześniej"
+                  label={t("col.priority")}
+                  description={t("wizard.priorityHint")}
                   w={110}
                   min={1}
                   max={1000}
@@ -681,26 +682,26 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                 />
               </Group>
               <Text size="xs" fw={600} mt="xs">
-                Rozpoznawanie – wszystkie zaznaczone warunki muszą być spełnione
+                {t("wizard.matchTitle")}
               </Text>
               <Group gap="md" mt={2}>
                 <Checkbox
                   size="xs"
-                  label={`program „${cur.header.app || "—"}”`}
+                  label={t("wizard.matchApp", { v: cur.header.app || "—" })}
                   disabled={!cur.header.app}
                   checked={match.app}
                   onChange={(e) => setMatch({ ...match, app: e.currentTarget.checked })}
                 />
                 <Checkbox
                   size="xs"
-                  label={`host „${cur.header.host || "—"}”`}
+                  label={t("wizard.matchHost", { v: cur.header.host || "—" })}
                   disabled={!cur.header.host}
                   checked={match.host}
                   onChange={(e) => setMatch({ ...match, host: e.currentTarget.checked })}
                 />
                 <Checkbox
                   size="xs"
-                  label={`nadawca ${peer || "—"}`}
+                  label={t("wizard.matchPeer", { v: peer || "—" })}
                   disabled={!peer.trim()}
                   checked={match.peer}
                   onChange={(e) => setMatch({ ...match, peer: e.currentTarget.checked })}
@@ -711,13 +712,13 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                   <Checkbox
                     size="xs"
                     mt={4}
-                    label="tylko wiadomości pasujące do oznaczonych wzorców (zalecane)"
-                    description="bez tego dekoder przejmie każdą wiadomość spełniającą warunki powyżej, także taką, z której nie wyciągnie pól"
+                    label={t("wizard.byPatterns")}
+                    description={t("wizard.byPatternsHint")}
                     checked={byPatterns}
                     onChange={(e) => setByPatterns(e.currentTarget.checked)}
                   />
                   <Text size="xs" c="dimmed" mt={2}>
-                    Stały fragment wiadomości do rozpoznawania oznacz etykietą „rozpoznawanie” (w każdym wzorcu).
+                    {t("wizard.matchFragmentHint")}
                   </Text>
                 </>
               )}
@@ -726,7 +727,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                   size="xs"
                   mt={4}
                   color="red"
-                  label={`zastąp istniejący dekoder „${existing[meta.id]}” (${meta.id})`}
+                  label={t("wizard.replace", { title: existing[meta.id], id: meta.id })}
                   checked={replace}
                   onChange={(e) => setReplace(e.currentTarget.checked)}
                 />
@@ -735,7 +736,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                 <Group gap="xs" align="flex-end" mt="xs">
                   <Select
                     size="xs"
-                    label={`Format czasu (przykład: ${timeSample || "—"})`}
+                    label={t("wizard.timeFormat", { sample: timeSample || "—" })}
                     w={300}
                     searchable
                     value={LAYOUTS.some((l) => l.value === timeLayout) ? timeLayout : null}
@@ -744,24 +745,24 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                   />
                   <TextInput
                     size="xs"
-                    label="albo układ Go"
+                    label={t("wizard.goLayout")}
                     w={190}
                     placeholder="2006-01-02 15:04:05"
                     value={timeLayout}
                     onChange={(e) => setTimeLayout(e.currentTarget.value)}
                   />
-                  <TextInput size="xs" label="Strefa (opcjonalnie)" placeholder="Europe/Warsaw" w={140} value={timeZone} onChange={(e) => setTimeZone(e.currentTarget.value)} />
+                  <TextInput size="xs" label={t("wizard.zone")} placeholder="Europe/Warsaw" w={140} value={timeZone} onChange={(e) => setTimeZone(e.currentTarget.value)} />
                 </Group>
               )}
               {hasOutcome && (
                 <Stack gap={4} mt="xs">
                   <Text size="xs" fw={600}>
-                    Wynik – które wartości pola oznaczają…
+                    {t("wizard.outcomeTitle")}
                   </Text>
                   {outcomeValues.length > 0 && (
                     <Group gap={4}>
                       <Text size="xs" c="dimmed">
-                        w próbkach:
+                        {t("wizard.inSamples")}
                       </Text>
                       {outcomeValues.map((v) => (
                         <Group key={v} gap={2} wrap="nowrap">
@@ -769,10 +770,10 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                           {!outSuccess.includes(v) && !outFailure.includes(v) && (
                             <>
                               <Button size="compact-xs" variant="subtle" color="green" onClick={() => setOutSuccess((l) => [...l, v])}>
-                                udane
+                                {t("wizard.success")}
                               </Button>
                               <Button size="compact-xs" variant="subtle" color="red" onClick={() => setOutFailure((l) => [...l, v])}>
-                                nieudane
+                                {t("wizard.failure")}
                               </Button>
                             </>
                           )}
@@ -781,8 +782,8 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                     </Group>
                   )}
                   <Group gap="xs" grow>
-                    <TagsInput size="xs" label="udane" value={outSuccess} onChange={setOutSuccess} />
-                    <TagsInput size="xs" label="nieudane" value={outFailure} onChange={setOutFailure} />
+                    <TagsInput size="xs" label={t("wizard.success")} value={outSuccess} onChange={setOutSuccess} />
+                    <TagsInput size="xs" label={t("wizard.failure")} value={outFailure} onChange={setOutFailure} />
                   </Group>
                 </Stack>
               )}
@@ -791,21 +792,21 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
             <Card withBorder p="sm">
               <Group justify="space-between" mb={4}>
                 <Text fw={600} size="sm">
-                  4. Sprawdzenie na wszystkich próbkach
+                  {t("wizard.step4")}
                 </Text>
                 {sum && (
                   <Group gap={4}>
                     <Badge color={sum.candidate === sum.total ? "green" : sum.candidate > 0 ? "yellow" : "red"}>
-                      ten dekoder: {sum.candidate} z {sum.total}
+                      {t("sum.thisOf", { n: sum.candidate, total: sum.total })}
                     </Badge>
-                    {sum.no_pattern > 0 && <Badge color="orange">bez wzorca: {sum.no_pattern}</Badge>}
-                    {sum.other > 0 && <Badge color="blue">inne dekodery: {sum.other}</Badge>}
-                    {sum.errors > 0 && <Badge color="red">błędy: {sum.errors}</Badge>}
+                    {sum.no_pattern > 0 && <Badge color="orange">{t("sum.noPattern", { n: sum.no_pattern })}</Badge>}
+                    {sum.other > 0 && <Badge color="blue">{t("sum.other", { n: sum.other })}</Badge>}
+                    {sum.errors > 0 && <Badge color="red">{t("sum.errors", { n: sum.errors })}</Badge>}
                   </Group>
                 )}
               </Group>
               {built.error && <MAlert color="gray">{built.error}</MAlert>}
-              {test && !test.ok && <MAlert color="red">{test.error}</MAlert>}
+              {test && !test.ok && <MAlert color="red">{serverText(test.error ?? "", test.error_en)}</MAlert>}
               {test?.ok && test.results && (
                 <ScrollArea.Autosize mah={300}>
                   <Table fz="xs" verticalSpacing={2}>
@@ -834,10 +835,8 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                               if (ps.length === 0) return null;
                               return (
                                 <Text size="xs" c={ps.length > 1 ? "orange" : "dimmed"}>
-                                  wzorzec z wiadomości {patternNo(ps[0])}
-                                  {ps.length > 1
-                                    ? ` – pasuje też do wzorca z wiadomości ${ps.slice(1).map(patternNo).join(", ")}; działa pierwszy, sprawdź akcję i wynik`
-                                    : ""}
+                                  {t("wizard.patternFrom", { n: patternNo(ps[0]) })}
+                                  {ps.length > 1 ? t("wizard.patternAlso", { list: ps.slice(1).map(patternNo).join(", ") }) : ""}
                                 </Text>
                               );
                             })()}
@@ -851,7 +850,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                             )}
                             {r.error && (
                               <Text size="xs" c="red">
-                                {r.error}
+                                {serverText(r.error, r.error_en)}
                               </Text>
                             )}
                           </Table.Td>
@@ -862,13 +861,13 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
                 </ScrollArea.Autosize>
               )}
               <Text size="xs" c="dimmed" mt={4}>
-                ✓ – rozpoznana tym dekoderem z polami, ✗ – nie (kliknij, aby oznaczyć ją jako kolejny wzorzec), ↷ – obsługuje ją inny dekoder.
+                {t("wizard.legend")}
               </Text>
             </Card>
 
             <Card withBorder p="sm">
               <Title order={6} mb={4}>
-                Definicja
+                {t("tab.source")}
               </Title>
               <ScrollArea.Autosize mah={220}>
                 <Code block fz="xs">
@@ -877,13 +876,13 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
               </ScrollArea.Autosize>
               <Group mt="xs" gap="xs" align="flex-end">
                 <Button size="xs" variant="default" leftSection={<IconEdit size={14} />} disabled={!built.yaml} onClick={() => onEdit(finalYAML())}>
-                  Otwórz w edytorze
+                  {t("wizard.openEditor")}
                 </Button>
                 {admin && (
                   <>
-                    <TextInput size="xs" placeholder="opis zmiany" style={{ flex: 1 }} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+                    <TextInput size="xs" placeholder={t("wizard.notePlaceholder")} style={{ flex: 1 }} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
                     <Button size="xs" color="green" leftSection={<IconWand size={14} />} disabled={!built.yaml} loading={saving} onClick={() => void save()}>
-                      Zapisz i wdroż
+                      {t("saveDeploy")}
                     </Button>
                   </>
                 )}
@@ -894,7 +893,7 @@ export default function DecoderWizard({ initialSamples, initialPeer, admin, samp
       )}
       {!cur && samples.length > 0 && !loading && (
         <Text size="sm" c="dimmed">
-          Kliknij „Wczytaj”, aby rozebrać próbki.
+          {t("wizard.clickLoad")}
         </Text>
       )}
     </Stack>

@@ -1,0 +1,149 @@
+{
+  "title": "Himinbjörg – stan systemu",
+  "intro": "Zdrowie usług Vardra z metryk (Prometheus), odświeżane co 30 s. Szczegółowe wykresy i alerty – linki do Grafany niżej.",
+  "allOk": "wszystko działa",
+  "notConfigured": "siem-api nie ma adresu Prometheusa (SIEM_PROMETHEUS_URL) – stan systemu niedostępny.",
+  "attention": "Wymaga uwagi ({{count}})",
+  "charts": "wykresy w Grafanie",
+  "status": {
+    "ok": "OK",
+    "off": "wyłączone",
+    "unknown": "brak danych",
+    "warn": "uwaga",
+    "crit": "problem"
+  },
+  "range": {
+    "1h": "1 h",
+    "6h": "6 h",
+    "24h": "24 h",
+    "7d": "7 dni"
+  },
+  "grafana": {
+    "pipeline": "Zdrowie potoku",
+    "pipelineHint": "przepływ, kolejki, opóźnienia, CPU i pamięć usług",
+    "overview": "Przegląd zdarzeń",
+    "overviewHint": "zdarzenia, agenci, logowania",
+    "firing": "Alerty – aktywne",
+    "firingHint": "co teraz alarmuje w Grafanie",
+    "rules": "Reguły alertów",
+    "rulesHint": "wszystkie reguły i ich stan",
+    "explore": "Explore (Prometheus)",
+    "exploreHint": "własne zapytania do metryk"
+  },
+  "group": {
+    "services": "Usługi",
+    "pipeline": "Potok",
+    "detection": "Detekcja",
+    "archive": "Archiwum NIS2",
+    "backup": "Kopie zapasowe",
+    "server": "Serwer",
+    "monitoring": "Monitorowanie"
+  },
+  "check": {
+    "up": {
+      "ingest": "Przyjmowanie zdarzeń (siem-ingest)",
+      "normalizer": "Normalizator",
+      "writer": "Zapis do ClickHouse (siem-writer)",
+      "archiver": "Archiwum NIS2 (siem-archiver)",
+      "detector": "Detekcja (siem-detector)",
+      "clickhouse": "ClickHouse"
+    },
+    "pipeline": {
+      "events": "Zdarzenia przyjmowane (5 min)",
+      "throttled": "Odmowy przyjęcia (kolejka pełna)",
+      "queue": "Najbardziej zapełniona kolejka",
+      "write_errors": "Błędy zapisu do ClickHouse (15 min)",
+      "quarantine": "Kwarantanna (ostatnia godzina)"
+    },
+    "detection": {
+      "rules": "Włączone reguły",
+      "rule_errors": "Reguły z błędami",
+      "index_lag": "Silnik zapytań – zaległość"
+    },
+    "archive": {
+      "integrity": "Weryfikacja integralności",
+      "last_verify": "Ostatnia weryfikacja",
+      "enabled": "Archiwizacja",
+      "disk_free": "Wolne miejsce na dysku archiwum"
+    },
+    "backup": {
+      "last": "Ostatnia kopia",
+      "remote": "Ostatnia kopia poza VM (NAS)"
+    },
+    "server": {
+      "disk_free": "Wolne miejsce na dysku systemowym",
+      "cpu": "Obciążenie CPU (5 min)",
+      "memory": "Wolna pamięć"
+    },
+    "monitoring": {
+      "prometheus": "Prometheus"
+    }
+  },
+  "hint": {
+    "up": {
+      "ingest": "Agenci buforują zdarzenia u siebie; sprawdź `docker compose logs ingest`.",
+      "normalizer": "Paczki czekają w kolejce SIEM_RAW; sprawdź logi normalizatora.",
+      "writer": "Zdarzenia czekają w kolejce SIEM_EVENTS; sprawdź logi writera i ClickHouse.",
+      "archiver": "Paczki czekają w kolejce; po jej zapełnieniu serwer przestanie przyjmować zdarzenia.",
+      "detector": "Reguły nie są wykonywane – ataki nie wywołają alertów; sprawdź logi detektora.",
+      "clickhouse": "Wyszukiwarka i silnik zapytań nie działają; writer ponawia zapis."
+    },
+    "pipeline": {
+      "throttled": "Kolejka jest pełna – któryś etap nie nadąża. Sprawdź zapełnienie kolejek poniżej.",
+      "queue": "Odbiorca kolejki nie nadąża (wskazany w nawiasie). Powyżej 80% ingest zaczyna odmawiać przyjęcia.",
+      "write_errors": "Writer ponawia zapis; sprawdź logi writera i stan ClickHouse.",
+      "quarantine": "Zdarzenia, których nie udało się znormalizować albo zapisać – są w siem.quarantine."
+    },
+    "detection": {
+      "rules": "Detektor nie ma włączonych reguł – sprawdź katalog reguł i panel.",
+      "rule_errors": "Część reguł nie działa – szczegóły w panelu (Reguły detekcji) i w logach detektora.",
+      "index_lag": "Punkt kontrolny silnika zapytań stoi – sprawdź logi detektora i obciążenie ClickHouse."
+    },
+    "archive": {
+      "integrity": "Dane w archiwum zmieniono, usunięto albo dodano poza archiwizatorem – szczegóły: panel → Urd.",
+      "last_verify": "Weryfikacja powinna przechodzić co 6 h – sprawdź logi archiwizatora.",
+      "enabled": "Archiwizacja wyłączona w polityce albo wstrzymana z braku miejsca – panel → Urd.",
+      "disk_free": "Po zapełnieniu archiwizacja się wstrzyma – powiększ dysk albo skróć retencję."
+    },
+    "backup": {
+      "last": "Kopia powinna powstawać co noc (cron 02:15, backup.sh) – sprawdź ~/siem-lab/backup.log.",
+      "remote": "Kopia nie trafia poza VM – sprawdź połączenie z NAS i klucz SSH kopii."
+    },
+    "server": {
+      "disk_free": "Brak miejsca zatrzyma ClickHouse i kolejki – usuń stare dane albo powiększ dysk.",
+      "cpu": "Długotrwale wysokie obciążenie – potok może nie nadążać przy szczycie zdarzeń.",
+      "memory": "Mało pamięci – ryzyko zabicia usług przez system (OOM)."
+    },
+    "monitoring": {
+      "prometheus": "Panel nie ma skąd wziąć stanu usług – sprawdź kontener prometheus ({{error}})."
+    }
+  },
+  "value": {
+    "no_data": "brak danych",
+    "service_missing": "nie widać usługi",
+    "not_responding": "nie odpowiada",
+    "running": "działa",
+    "eps": "{{n}} zdarzeń/s",
+    "none": "brak",
+    "batches_per_s": "{{n}} paczek/s",
+    "queue": "{{n}}% ({{consumer}})",
+    "count": "{{n}}",
+    "stream_only": "wyłączony (SIEM_DETECTION_MODE=stream)",
+    "lag": "{{n}} s (w tym opóźnienie 2 min)",
+    "integrity_problems": "wykryto niezgodności",
+    "compliant": "zgodne",
+    "enabled": "włączona",
+    "disabled_or_paused": "wyłączona albo wstrzymana",
+    "pct": "{{n}}%",
+    "query_error": "błąd zapytania",
+    "unavailable": "niedostępny",
+    "rules_one": "{{n}} reguła",
+    "rules_few": "{{n}} reguły",
+    "rules_many": "{{n}} reguł",
+    "rules_other": "{{n}} reguły",
+    "events_one": "{{n}} zdarzenie",
+    "events_few": "{{n}} zdarzenia",
+    "events_many": "{{n}} zdarzeń",
+    "events_other": "{{n}} zdarzenia"
+  }
+}

@@ -1,0 +1,326 @@
+{
+  "copy": "Copy",
+  "copied": "Copied",
+  "done": "Done",
+  "save": "Save",
+  "yourPassword": "Your password",
+  "users": {
+    "title": "Users",
+    "intro": "Panel accounts and their permission profiles (Administration → Permission profiles). Every change is recorded in the audit log.",
+    "new": "New account",
+    "temp": {
+      "title": "Initial password",
+      "text": "Account {{user}}. Pass the password to the user over a secure channel – they set their own at first sign-in.",
+      "once": "The password will not be shown again."
+    },
+    "policySaved": "Second-factor requirement saved",
+    "mfaRemoved": "Second factor of account {{user}} removed",
+    "saved": "Changes to account {{user}} saved",
+    "resetConfirm": "Issue a new initial password for {{user}}? Current sessions of this account will be ended.",
+    "mfaRequiredFrom": "Second sign-in factor (TOTP) required for:",
+    "policy": {
+      "all": "everyone",
+      "admins": "administrators",
+      "none": "nobody (optional)"
+    },
+    "mfaUnavailable": [
+      "The second sign-in factor is unavailable – no MFA key on the server (file ",
+      "; the installer creates it automatically)."
+    ],
+    "col": {
+      "login": "Username",
+      "name": "Name",
+      "profile": "Profile",
+      "state": "State",
+      "lastLogin": "Last sign-in"
+    },
+    "adTip": "domain account – password and profile from Active Directory",
+    "adProfile": "the profile of a domain account comes from AD groups",
+    "profileOf": "Profile of {{user}}",
+    "state": {
+      "disabled": "disabled",
+      "active": "active",
+      "initial": "initial password",
+      "locked": "locked"
+    },
+    "until": "until {{date}}",
+    "mfaOn": "enabled {{date}}",
+    "mfaAtLogin": "will set up at sign-in",
+    "mfaNone": "none",
+    "actions": "Actions for {{user}}",
+    "newPassword": "New initial password",
+    "resetMfa": "Reset second factor",
+    "enable": "Enable account",
+    "disable": "Disable account",
+    "loginHint": "2–64 characters: letters, digits, dot, hyphen, underscore",
+    "displayName": "Display name",
+    "profile": "Permission profile",
+    "create": "Create and show the initial password",
+    "policyTitle": "Second-factor requirement",
+    "policyNone": "The second factor will be optional – the password alone is enough to sign in.",
+    "policyAll": "Accounts without a second factor will set it up at their next sign-in; their current sessions without a second factor will be ended.",
+    "policyAdmins": "Administrator accounts without a second factor will set it up at their next sign-in; their current sessions without a second factor will be ended.",
+    "resetMfaTitle": "Reset second factor – {{user}}",
+    "resetMfaText": "E.g. for a lost phone. The account loses its app and recovery codes and its sessions are ended; at the next sign-in it sets up the app again (if the second factor is required). The change is recorded in the audit log.",
+    "reset": "Reset"
+  },
+  "audit": {
+    "title": "Audit log",
+    "intro": "Sign-ins and changes in the panel – who, when, from where and what changed.",
+    "col": {
+      "time": "Time",
+      "user": "User",
+      "action": "Action",
+      "target": "Target",
+      "ip": "IP address",
+      "details": "Details"
+    },
+    "action": {
+      "login": "sign-in",
+      "login_failed": "failed sign-in",
+      "logout": "sign-out",
+      "password_changed": "password change",
+      "password_change_failed": "failed password change",
+      "password_reset": "new initial password",
+      "user_created": "new account",
+      "user_updated": "account change"
+    },
+    "older": "Older entries"
+  },
+  "perm": {
+    "level": {
+      "read": "read",
+      "write": "change",
+      "test": "test",
+      "export": "export"
+    },
+    "alerts": {
+      "label": "Alerts",
+      "help": "alert list and details; change: handling (status, assignment, notes)",
+      "level": {
+        "write": "handling"
+      }
+    },
+    "incidents": {
+      "label": "Incidents and NIS2 reports",
+      "help": "handling: creating, alerts, notes, reports to the CSIRT",
+      "level": {
+        "write": "handling"
+      }
+    },
+    "events": {
+      "label": "Events (Mímir)",
+      "help": "event search"
+    },
+    "rules": {
+      "label": "Detection rules and MITRE",
+      "help": "test: testing rules on history and the correlation wizard; change: enabling, trials, panel rules"
+    },
+    "agents": {
+      "label": "Agents and groups (Huginn)",
+      "help": "change: groups, removing agents, uninstall tokens"
+    },
+    "deploy": {
+      "label": "Agent deployment (Bifröst)",
+      "help": "enrolment tokens and MSI installers"
+    },
+    "archive": {
+      "label": "NIS2 archive (Urd)",
+      "help": "export: packages for auditors; change: policy, verification, replay"
+    },
+    "decoders": {
+      "label": "Syslog decoders",
+      "help": "test: samples and decoder test; change: editing"
+    },
+    "quarantine": {
+      "label": "Quarantine",
+      "help": "change: reprocessing",
+      "level": {
+        "write": "reprocessing"
+      }
+    },
+    "identities": {
+      "label": "Identities",
+      "help": "organisation domains, account aliases"
+    },
+    "system": {
+      "label": "System health",
+      "help": "service health (Himinbjörg)"
+    },
+    "notify": {
+      "label": "Notifications",
+      "help": "channels (Discord, webhook)"
+    },
+    "backup": {
+      "label": "Backups",
+      "help": "settings, jobs and restore"
+    },
+    "users": {
+      "label": "Users and security",
+      "help": "accounts, permission profiles, MFA requirement; change = panel administrator"
+    },
+    "audit": {
+      "label": "Audit log",
+      "help": ""
+    }
+  },
+  "profiles": {
+    "title": "Permission profiles",
+    "intro": "A profile defines which panel modules an account can access and at what level (a higher level includes the lower ones). An account has one profile (chosen in Users). A profile with the change right in the “Users and security” module is a panel administrator – the panel will not let you end up without an active one.",
+    "new": "New profile",
+    "noAccess": "no access",
+    "copyName": "{{name}} (copy)",
+    "tooShort": "name too short",
+    "idTaken": "a profile with this identifier already exists",
+    "saved": "Profile “{{name}}” saved",
+    "deleted": "Profile “{{name}}” deleted",
+    "col": {
+      "profile": "Profile",
+      "permissions": "Permissions",
+      "accounts": "Accounts",
+      "module": "Module",
+      "access": "Access"
+    },
+    "builtin": "built-in",
+    "admin": "administrator",
+    "changedBy": "changed by {{by}}, {{date}}",
+    "edit": "Edit",
+    "copy": "Copy as new",
+    "hasUsers": "the profile has assigned accounts",
+    "delete": "Delete",
+    "editTitle": "Profile “{{name}}”",
+    "name": "Name",
+    "id": "identifier: {{id}}",
+    "description": "Description",
+    "descriptionPlaceholder": "e.g. SOC team – first line",
+    "none": "none",
+    "adminWarning": "The change right in “Users and security” makes the profile a panel administrator: creating accounts, assigning profiles (also to oneself), the MFA requirement.",
+    "save": "Save profile",
+    "deleteTitle": "Delete profile “{{name}}”",
+    "deleteText": "A profile without assigned accounts. The change is recorded in the audit log.",
+    "builtinDesc": {
+      "admin": "full access, including accounts, profiles and security settings",
+      "analyst": "working with alerts and data: alert handling, rule and decoder tests, no administration",
+      "viewer": "read-only access to alerts, events, rules and system health"
+    }
+  },
+  "ldap": {
+    "unavailable": "Domain sign-in unavailable",
+    "unavailableText": [
+      "Requires an encryption key on the server (",
+      "; the installer creates it automatically)."
+    ],
+    "title": "Domain sign-in",
+    "intro": "Active Directory accounts sign in to the panel with their own username and password (LDAPS – encrypted). Access and the permission profile come from AD groups: the first matching mapping on the list decides. Membership is checked at sign-in and every 5 minutes – removal from the group or disabling the account in AD ends the sessions. The second factor (TOTP) applies as for local accounts; the local administrator account stays as a break-glass account.",
+    "step1": "1. Connection to the domain controller",
+    "enabled": "Domain sign-in enabled",
+    "disabled": "Domain sign-in disabled",
+    "unsaved": " (unsaved)",
+    "urls": "Controller addresses",
+    "urlsHint": "ldaps://dc01.contoso.com:636 – one per line (the next ones are fallbacks)",
+    "serverName": "Name in the certificate (optional)",
+    "serverNameHint": "when the address is an IP or a name not in the controller certificate",
+    "ca": "Controllers' CA certificate (PEM)",
+    "caHint": "e.g. an export of the AD CS authority certificate; empty – the system's trusted certificates",
+    "bind": "Service account",
+    "bindHint": "read-only, e.g. svc-vardr@contoso.com or its DN",
+    "bindPassword": "Service account password",
+    "bindPasswordSaved": "saved – type to change",
+    "bindPasswordNew": "stored encrypted",
+    "base": "Account base",
+    "baseHint": "where to look for accounts, e.g. DC=contoso,DC=com",
+    "testOk": "the LDAPS connection and the service account sign-in work",
+    "error": "error",
+    "works": "works",
+    "test": "Test connection",
+    "step2": "2. Groups and profiles",
+    "groupsIntro": "Create groups for the panel in your own OU in AD (any names), enter the OU and choose a profile for the groups. Groups are identified by SID – renaming them in AD breaks nothing. Nested membership counts too.",
+    "groupsOu": "OU with groups",
+    "showGroups": "Show groups",
+    "col": {
+      "group": "Group",
+      "members": "Members",
+      "profile": "Panel profile"
+    },
+    "noGroups": "No groups in this OU.",
+    "noAccess": "— no access —",
+    "mappings": "Mappings (order decides – the first match wins):",
+    "noMappings": "None – no domain account can sign in to the panel.",
+    "up": "up",
+    "down": "down",
+    "removeMapping": "remove mapping",
+    "step3": "3. Check an account",
+    "login": "Domain username",
+    "loginPlaceholder": "john.smith",
+    "check": "Check (no password)",
+    "notFound": "No such account in the account base.",
+    "accountDisabled": " – account disabled in AD",
+    "securityGroups": "security groups: {{n}}.",
+    "willGet": "At sign-in they get the profile “{{profile}}” (group {{group}}).",
+    "noLogin": "Cannot sign in – not a member of any mapped group.",
+    "alsoMatches": "Also matches: {{list}}.",
+    "save": "Save settings",
+    "saveTitle": "Save domain sign-in settings",
+    "saveText": "The change is recorded in the audit log (without passwords) and takes effect immediately.",
+    "saved": "Domain sign-in settings saved"
+  },
+  "notify": {
+    "minLevel": "Alerts from level",
+    "rules": "Rules",
+    "rulesAll": "all",
+    "rulesOnly": "selected only",
+    "rulesExcept": "all except selected",
+    "onlyFrom": "Send only from rules",
+    "notFrom": "Do not send from rules",
+    "saveFilter": "Save filter",
+    "added": "Channel added – send a test to check the address.",
+    "changed": "Change saved.",
+    "title": "Notifications",
+    "intro": "Channels to which Vardr sends messages outside the system: detection alerts, incidents, health alerts (from Grafana) and the daily Urd archive anchor{{at}} – the hash of the latest manifest, whose copy at the recipient is independent proof of the archive's integrity. The webhook address is a secret: the panel shows only its beginning and end. Message language – below (“System language”).",
+    "at": " (at {{h}}:00)",
+    "sendAnchor": "Send anchor now",
+    "anchorSent": "Anchor sent.",
+    "add": "Add channel",
+    "noRelay": "Grafana alerts are not relayed – siem-api has no SIEM_ALERT_RELAY_TOKEN.",
+    "noAlertChannel": "No enabled channel receives detection alerts (Gjallarhorn) – alerts are only in the panel. Tick “{{event}}” on the channel that should receive them.",
+    "noChannels": "No channels yet – alerts and the anchor go nowhere. Add e.g. a Discord channel webhook (Channel settings → Integrations → Webhooks → Copy URL).",
+    "optOut": "opting out of: {{event}}",
+    "narrowing": "narrowing the alerts sent to the channel",
+    "lastOk": "last successful delivery {{date}}",
+    "nothingSent": "nothing sent yet",
+    "lastError": "last error {{date}}: {{error}}",
+    "enabled": "enabled",
+    "disabling": "disabling the channel",
+    "test": "Test",
+    "testSent": "Test message sent.",
+    "deleting": "deleting channel “{{name}}”",
+    "delete": "Delete",
+    "log": "Recent deliveries",
+    "col": {
+      "time": "Time",
+      "channel": "Channel",
+      "kind": "Kind",
+      "content": "Content",
+      "result": "Result"
+    },
+    "anchorOk": "matches the chain",
+    "anchorBad": "DOES NOT match the chain",
+    "sent": "sent",
+    "error": "error",
+    "newTitle": "New notification channel",
+    "name": "Name",
+    "url": "Webhook address",
+    "urlDiscord": "https://discord.com/api/webhooks/… – treat it like a password",
+    "urlWebhook": "https://… – Vardr sends a POST with JSON {event, severity, title, text, fields, at}",
+    "what": "What to send",
+    "cancel": "Cancel",
+    "addShort": "Add",
+    "confirmTitle": "Confirm with your password",
+    "confirmText": "{{what}} – this change limits what leaves the system (e.g. archive anchors), so it requires your password.",
+    "back": "Back",
+    "confirm": "Confirm",
+    "systemLanguage": "System language",
+    "systemLanguageHelp": "Language of notifications (alerts, incidents, Grafana health alerts, archive anchor) and the default language of NIS2 report drafts. Each account sees the panel in its own language. The change is recorded in the audit log.",
+    "systemLanguageSaved": "System language: {{language}}"
+  }
+}

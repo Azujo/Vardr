@@ -1,0 +1,129 @@
+# Decoders
+
+A decoder turns a non-Windows message into a normalized event. It handles two kinds of messages: syslog from the collector (firewalls, routers) and JSON records from the API connector (Entra ID). Decoders are YAML files:
+
+- **built into** the normalizer program (`internal/decode/builtin/`: `fortigate`, `mikrotik`, `entra-signin`, `entra-audit`);
+- **from the panel** (*Decoders*, administrator), kept in Saga with a version history and delivered to normalizers through the NATS KV `SIEM_DECODERS` within seconds, without a restart.
+
+A panel decoder with the same `id` as a built-in one replaces it. "Restore the built-in version" reverts this. Code: `internal/decode`.
+
+## How the normalizer picks a decoder
+
+1. **Header.** A syslog message is split into a header (RFC 3164, RFC 5424 or just `<PRI>`): priority, time, host, program, PID and content. An API record has no header – the program is the connector source (`entra:signin`, `entra:audit`).
+2. **Choice.** Decoders are checked from the highest `priority`. The first one whose `match` conditions fit wins.
+3. **No decoder.** A syslog message without a matching decoder goes to ClickHouse as the `syslog.generic` dataset (just the content and header). An API record without a decoder goes to quarantine.
+4. **Parser.** The decoder parses the content with its parser; if the content does not fit the parser (e.g. invalid JSON), the event goes to quarantine with the reason. After fixing the decoder it can be reprocessed (panel → Quarantine).
+
+Every event gets the header fields in `fields` (`syslog.peer` – the sender address, `syslog.app`, `syslog.severity`, `syslog.facility`, `syslog.format`) plus `decoder.id` and `decoder.version`. A header time without a zone is interpreted in the `SIEM_SYSLOG_TZ` zone (default Europe/Warsaw).
+
+Decoder validation errors (in the editor, wizard and tests) are shown in the account language.
+
+## Format
+
+```yaml
+id: mikrotik                      # 2–64 characters: lowercase letters, digits, . _ -
+title: MikroTik RouterOS – sign-ins, DHCP, firewall
+description: |
+  …
+version: 2                        # increase on every change (visible in the event)
+priority: 50                      # higher is checked earlier
+dataset: mikrotik.routeros        # event.dataset of the events; windows.* and syslog.generic are reserved
+match: …
+parser: …
+fields: …                         # mapping to common fields
+set: …                            # constant field values
+outcome: …                        # event.outcome from a field value
+time: …                           # event time from the content
+samples: […]                      # sample messages – decoder test
+```
+
+### match – when the decoder fits
+
+All given conditions must be met (AND):
+
+| Condition | Meaning |
+|---|---|
+| `peer: [192.168.88.1/32, 10.0.0.0/8]` | the sender address is in one of the networks |
+| `host: [MikroTik]` | host name from the header (case-insensitive) |
+| `app: [sshd]` | program name from the header (for API: the source, e.g. `entra:signin`) |
+| `app_regex: '^(system\|firewall)(,.*)?$'` | an RE2 expression on the program name |
+| `contains: ['logid=', 'devname=']` | the content contains all fragments |
+| `regex: '…'` | an RE2 expression on the content |
+| `any: [ {…}, {…} ]` | any of the alternatives (each a set of conditions as above, without a nested `any`) |
+
+Conditions should be narrow enough for the decoder not to capture other devices' messages. The panel shows overlaps: a test on the latest unrecognised messages with the full decoder set.
+
+### parser – parsing the content
+
+| `type` | Action | Options |
+|---|---|---|
+| `kv` | `key=value` pairs (quoted values may contain spaces) – FortiGate | – |
+| `json` | a JSON object; nested fields as `a.b.c`, arrays with an index (`targetResources.0.userPrincipalName`) | – |
+| `csv` | columns separated by a separator | `separator` (one character), `columns: [..]` |
+| `regex` | the first matching pattern; named groups `(?P<name>…)` are fields | `patterns: [{regex, set}]` – `set` holds constant fields for that pattern (e.g. `event.action: login`) |
+| `none` | no parsing (the content only in `message`) | – |
+
+All parser fields go to `fields` under their names (except the reserved header and decoder names). In rules and in Mímir they are available as `fields.name`.
+
+### fields – mapping to common fields
+
+```yaml
+fields:
+  host.name: devname
+  user.name: [user, srcuser, dstuser]     # the first non-empty one in the list
+  source.ip: [srcip, remip]
+  event.action: action
+  event.code: logid
+  message: [msg, logdesc]
+```
+
+Targets: `host.name`, `user.name`, `user.domain`, `source.ip`, `event.action`, `event.code` (a number), `event.provider`, `process.name`, `message` and any additional fields (e.g. `source.geo.country_iso_code`, `azure.app`), which go to `fields`. From `user.name` the normalizer derives the person (`user.identity`).
+
+### set, outcome, time
+
+```yaml
+set:                       # constant values (e.g. for the whole decoder)
+  event.action: sign-in
+
+outcome:                   # event.outcome from the first non-empty field
+  field: [status, action]
+  failure: [failed, deny, ssl-login-fail]
+  success: [success, accept, ssl-login]
+  otherwise: failure       # optional: the outcome for values outside the lists (e.g. error code ≠ 0)
+
+time:                      # event time from the content (more precise than the header)
+  fields: [date, time, tz]                   # joined with a space
+  layout: "2006-01-02 15:04:05 -0700"        # a Go layout or unix | unix_ms | unix_ns | rfc3339
+  timezone: Europe/Warsaw                    # when the time has no zone
+```
+
+`event.outcome` is key for correlations and sign-in rules: `failure` and `success` must be set for sign-ins, so that the event goes to the sign-in table (`siem.auth_events`) and to the "success after failures" rules. Sign-in conditions for new sources are added in `server/internal/detector/correlate.go` and `deploy/lab/clickhouse/init/03-auth-events.sh` (a test keeps them consistent).
+
+### samples
+
+Samples are real messages (with the syslog header). When saving in the panel every sample must match `match` and be parsed by the parser – a decoder with a non-matching sample will not be saved. Samples of built-in decoders are checked by tests (`internal/decode`).
+
+## Decoder wizard
+
+A decoder for a new device can be built without writing YAML and regular expressions: **Decoders → Wizard from samples** (unrecognised messages from the last 7 days or pasted ones) or **Quarantine → decoder wizard** at a group of syslog messages.
+
+1. **Samples.** The wizard splits the syslog headers and recognises the content kind: text, `key=value` pairs or JSON (it can be changed).
+2. **Marking fields.**
+   - *Text:* select a fragment of the message with the mouse and click a label, or drag the label onto the selection. Labels: time, user, domain, source and destination address, port, computer, action, outcome, code, program, content, custom field, **any** (a variable fragment, not stored – e.g. a protocol) and **recognition** (a fixed fragment by which the decoder will recognise these messages). Each kind of message (e.g. successful and failed sign-in) is marked separately – separate patterns are created, each with its own action and outcome.
+   - *key=value and JSON:* a label at each field; "require" – a recognition condition.
+3. **Settings.** Id, name, dataset, priority, recognition conditions (program, host, sender from the header), time format (recognised from the example, also a time made of several fields) and outcome values (success/failure).
+4. **Check.** The definition is tested on all samples while marking: ✓ recognised with fields, ✗ not (a click opens it for marking as another pattern), ↷ handled by another decoder.
+5. **Saving.** "Save and deploy" (administrator) or "Open in editor" to polish the YAML by hand.
+
+The wizard builds a pattern from the text around the selections: whitespace and numbers are generalised, long stretches are replaced with an anchor from the last words before the field. A word that changes in messages of this kind and is not a field should be marked as "any" – otherwise the pattern covers only messages with the same word (the check shows this).
+
+## A new device – step by step
+
+1. **Logs.** On the device set syslog to the collector address (UDP/TCP 514). Add the device network to the collector's `syslog.allow`.
+2. **Samples.** Messages without a decoder appear in Mímir as `dataset:syslog.generic`. Copy a few different ones.
+3. **New decoder.** In the panel (*Decoders → New decoder*) enter a `match` that selects only this device (e.g. `host`, `peer` or a characteristic content fragment) and a parser – or use the wizard.
+4. **Test.** Test on the samples and on unrecognised messages, complete `fields`, `outcome` and `time`. Save with a reason.
+5. **Check.** New messages have the decoder's `dataset`. Reprocess the quarantine entries (if any).
+6. **Rules.** A rule for a new source needs `logsource.product`. A new product is one entry in `internal/detect/compile.go` (`products`: product name → `event.dataset`) and a new detector version.
+
+A decoder proven in use is worth moving to `internal/decode/builtin/` (with samples in a test), so that it is in every installation.

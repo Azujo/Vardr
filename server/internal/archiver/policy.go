@@ -167,7 +167,7 @@ func refreshPolicy(ctx context.Context, s PolicyStore, pol *Policy, grace time.D
 	changed, cur, err := s.ProcessPolicyChanges(ctx, pol.Bounds, grace, time.Now().UTC())
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Warn("rozpatrzenie zmian polityki nieudane – obowiązuje poprzednia", "err", err)
+			log.Warn("processing policy changes failed – the previous one stays in force", "err", err)
 		}
 		return
 	}
@@ -176,25 +176,25 @@ func refreshPolicy(ctx context.Context, s PolicyStore, pol *Policy, grace time.D
 			"excluded_groups", c.ExcludedGroups, "excluded_agents", c.ExcludedAgents, "reason", c.Reason}
 		switch c.Status {
 		case urd.PolicyApplied:
-			log.Warn("polityka archiwum zmieniona", args...)
+			log.Warn("archive policy changed", args...)
 		case urd.PolicyScheduled:
-			log.Warn("zaplanowano osłabienie polityki archiwum", append(args, "weakening", c.Weakening, "effective_at", c.EffectiveAt)...)
+			log.Warn("archive policy weakening scheduled", append(args, "weakening", c.Weakening, "effective_at", c.EffectiveAt)...)
 		case urd.PolicyRejected:
-			log.Warn("zmiana polityki archiwum odrzucona", append(args, "error", c.Error)...)
+			log.Warn("archive policy change rejected", append(args, "error", c.Error)...)
 		default:
-			log.Info("zlecenie zmiany polityki zamknięte", "change", c.ID, "status", c.Status)
+			log.Info("policy change request closed", "change", c.ID, "status", c.Status)
 		}
 	}
 	assign, def, known, err := s.SourceGroups(ctx)
 	if err != nil {
-		log.Warn("odczyt grup agentów nieudany – wykluczenia grup chwilowo nie działają", "err", err)
+		log.Warn("reading agent groups failed – group exclusions temporarily do not work", "err", err)
 	} else if !known && len(cur.ExcludedGroups) > 0 {
-		log.Warn("brak dostępu do grup agentów (tabele panelu) – wykluczenia grup nie działają, archiwum zbiera wszystko")
+		log.Warn("no access to agent groups (panel tables) – group exclusions do not work, the archive collects everything")
 	}
 	known = known && err == nil
 	if known {
 		if err := pol.trackMembership(ctx, s, assign, def, time.Now().UTC()); err != nil {
-			log.Warn("zapis przynależności do grup nieudany – wykluczenia grup chwilowo nie działają", "err", err)
+			log.Warn("recording group membership failed – group exclusions temporarily do not work", "err", err)
 			known = false
 		}
 	}

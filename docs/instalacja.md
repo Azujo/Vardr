@@ -35,6 +35,8 @@ Co robi:
 7. uruchamia stos, czeka na panel, zakłada pierwsze konto administratora i pokazuje hasło startowe;
 8. na końcu pokazuje **hasło kopii zapasowych** – zapisz je poza serwerem, bez niego kopii nie da się odszyfrować.
 
+Komunikaty instalatora i skryptów serwera są po angielsku. Język panelu wybiera każde konto (menu konta), a język powiadomień i szkiców zgłoszeń NIS2 – administrator w panelu (*Powiadomienia → Język systemu*).
+
 Panel ma certyfikat lokalnego urzędu Vardra: zaimportuj `/opt/vardr/certs/ca.crt` do zaufanych urzędów w przeglądarce (instalator pokazuje odcisk SHA-256 do porównania). Agentów instaluje się z paczek pobieranych w panelu (*Agenci*).
 
 ## Aktualizacja
@@ -70,7 +72,7 @@ sudo docker compose ps              # stan usług
 sudo docker compose logs -f api     # log usługi
 sudo systemctl restart vardr        # restart stosu
 sudo ./backup.sh                    # kopia zapasowa teraz
-sudo ./backup.sh haslo pokaz        # hasło kopii
+sudo ./backup.sh password show      # hasło kopii (dawniej: haslo pokaz)
 ```
 
 Kopie zapasowe, przywracanie, archiwum i odtworzenie na nowym serwerze: [operacje.md](operacje.md).
@@ -79,7 +81,7 @@ Kopie zapasowe, przywracanie, archiwum i odtworzenie na nowym serwerze: [operacj
 
 ```bash
 sudo ./install.sh --uninstall           # usługi; dane i konfiguracja zostają
-sudo ./install.sh --uninstall --purge   # także bazy, archiwum i kopie (potwierdzenie słowem USUŃ)
+sudo ./install.sh --uninstall --purge   # także bazy, archiwum i kopie (potwierdzenie słowem DELETE albo USUŃ)
 ```
 
 ## Budowanie paczki

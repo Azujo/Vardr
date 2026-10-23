@@ -16,7 +16,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,6 +24,8 @@ import (
 	"net/url"
 	"os"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Ścieżki endpointów panelu (siem-api).
@@ -44,7 +45,7 @@ func PanelURL(ingestURL string) (string, error) {
 		return "", err
 	}
 	if u.Hostname() == "" {
-		return "", fmt.Errorf("brak nazwy hosta w %q", ingestURL)
+		return "", lang.Errorf("brak nazwy hosta w %q", "no host name in %q", ingestURL)
 	}
 	return "https://" + net.JoinHostPort(u.Hostname(), PanelPort), nil
 }
@@ -103,13 +104,13 @@ func post(ctx context.Context, client *http.Client, u string, body any) (Result,
 	if resp.StatusCode != http.StatusOK {
 		var ae apiError
 		if json.Unmarshal(raw, &ae) == nil && ae.Message != "" {
-			return Result{}, fmt.Errorf("panel odrzucił żądanie (HTTP %d): %s", resp.StatusCode, ae.Message)
+			return Result{}, lang.Errorf("panel odrzucił żądanie (HTTP %d): %s", "the panel rejected the request (HTTP %d): %s", resp.StatusCode, ae.Message)
 		}
-		return Result{}, fmt.Errorf("panel odrzucił żądanie (HTTP %d)", resp.StatusCode)
+		return Result{}, lang.Errorf("panel odrzucił żądanie (HTTP %d)", "the panel rejected the request (HTTP %d)", resp.StatusCode)
 	}
 	var res Result
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return Result{}, fmt.Errorf("niepoprawna odpowiedź panelu: %w", err)
+		return Result{}, lang.Errorf("niepoprawna odpowiedź panelu: %w", "invalid panel response: %w", err)
 	}
 	if err := checkCert(res); err != nil {
 		return Result{}, err
@@ -120,14 +121,14 @@ func post(ctx context.Context, client *http.Client, u string, body any) (Result,
 func checkCert(res Result) error {
 	b, _ := pem.Decode([]byte(res.Certificate))
 	if b == nil {
-		return errors.New("panel nie zwrócił certyfikatu")
+		return lang.Errorf("panel nie zwrócił certyfikatu", "the panel returned no certificate")
 	}
 	cert, err := x509.ParseCertificate(b.Bytes)
 	if err != nil {
 		return err
 	}
 	if cert.Subject.CommonName != res.AgentID || res.AgentID == "" {
-		return errors.New("certyfikat nie pasuje do nadanego identyfikatora agenta")
+		return lang.Errorf("certyfikat nie pasuje do nadanego identyfikatora agenta", "the certificate does not match the assigned agent identifier")
 	}
 	return nil
 }
@@ -226,10 +227,11 @@ func (r *Renewer) Run(ctx context.Context) {
 		}
 		if err := r.RenewNow(ctx); err != nil {
 			wait = time.Hour // ponawiamy częściej, gdy termin się zbliża
-			msg := fmt.Sprintf("odnowienie certyfikatu agenta nieudane (ważny jeszcze %d dni): %v", int(left.Hours()/24), err)
-			r.Log.Warn(msg, "eventlog", true)
+			days := int(left.Hours() / 24)
+			r.Log.Warn("renewing the agent certificate failed", "days_left", days, "err", err, "eventlog", true)
 			if r.Warn != nil && (!warned || left < 7*24*time.Hour) {
-				r.Warn(msg)
+				r.Warn(fmt.Sprintf(lang.L("odnowienie certyfikatu agenta nieudane (ważny jeszcze %d dni): %v",
+					"renewing the agent certificate failed (valid for %d more days): %v"), days, err))
 				warned = true
 			}
 			continue
@@ -252,6 +254,6 @@ func (r *Renewer) RenewNow(ctx context.Context) error {
 	if err := r.Holder.Reload(r.CertFile, r.KeyFile); err != nil {
 		return err
 	}
-	r.Log.Info("certyfikat agenta odnowiony", "not_after", res.NotAfter.Format(time.DateOnly), "eventlog", true)
+	r.Log.Info("agent certificate renewed", "not_after", res.NotAfter.Format(time.DateOnly), "eventlog", true)
 	return nil
 }

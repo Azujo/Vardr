@@ -34,6 +34,19 @@ falsepositives:
   - Administratorzy używający PowerShell Remoting
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Shell started remotely via WMI or WinRM"
+      description: |
+        The wmiprvse.exe (WMI) or wsmprovhost.exe (PowerShell Remoting, WinRM)
+        process started a shell or a system tool. This is what commands executed remotely
+        from another computer look like – e.g. wmiexec from Impacket or an attacker's
+        Invoke-Command.
+      instructions: |
+        {{CommandLine}} was started remotely on {{host.name}} (parent:
+        {{ParentImage}}). Check network logons (4624 type 3) to this computer just
+        before the event – from where and to which account. Commands like
+        "cmd.exe /Q /c … 1> \\127.0.0.1\ADMIN$\…" are an attacker's wmiexec.
   group_by: [host.name]
   suppress: 1h
   instructions: |

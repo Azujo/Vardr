@@ -12,7 +12,7 @@ import (
 
 // ErrTokenInvalid: token nie istnieje, wygasł, został unieważniony albo
 // wyczerpał limit użyć (bez rozróżniania – nie podpowiadamy atakującemu).
-var ErrTokenInvalid = errors.New("token rejestracyjny jest nieważny")
+var ErrTokenInvalid = errors.New("the enrollment token is invalid")
 
 // EnrollToken to token rejestracyjny agentów.
 type EnrollToken struct {

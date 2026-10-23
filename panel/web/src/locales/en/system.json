@@ -1,0 +1,145 @@
+{
+  "title": "Himinbjörg – system health",
+  "intro": "Health of Vardr services from metrics (Prometheus), refreshed every 30 s. Detailed charts and alerts – Grafana links below.",
+  "allOk": "all systems running",
+  "notConfigured": "siem-api has no Prometheus address (SIEM_PROMETHEUS_URL) – system health is unavailable.",
+  "attention": "Needs attention ({{count}})",
+  "charts": "charts in Grafana",
+  "status": {
+    "ok": "OK",
+    "off": "disabled",
+    "unknown": "no data",
+    "warn": "warning",
+    "crit": "problem"
+  },
+  "range": {
+    "1h": "1 h",
+    "6h": "6 h",
+    "24h": "24 h",
+    "7d": "7 days"
+  },
+  "grafana": {
+    "pipeline": "Pipeline health",
+    "pipelineHint": "throughput, queues, delays, CPU and memory of services",
+    "overview": "Events overview",
+    "overviewHint": "events, agents, sign-ins",
+    "firing": "Alerts – firing",
+    "firingHint": "what is alerting in Grafana right now",
+    "rules": "Alert rules",
+    "rulesHint": "all rules and their state",
+    "explore": "Explore (Prometheus)",
+    "exploreHint": "your own metric queries"
+  },
+  "group": {
+    "services": "Services",
+    "pipeline": "Pipeline",
+    "detection": "Detection",
+    "archive": "NIS2 archive",
+    "backup": "Backups",
+    "server": "Server",
+    "monitoring": "Monitoring"
+  },
+  "check": {
+    "up": {
+      "ingest": "Event intake (siem-ingest)",
+      "normalizer": "Normalizer",
+      "writer": "ClickHouse writer (siem-writer)",
+      "archiver": "NIS2 archive (siem-archiver)",
+      "detector": "Detection (siem-detector)",
+      "clickhouse": "ClickHouse"
+    },
+    "pipeline": {
+      "events": "Events accepted (5 min)",
+      "throttled": "Rejected batches (queue full)",
+      "queue": "Fullest queue",
+      "write_errors": "ClickHouse write errors (15 min)",
+      "quarantine": "Quarantine (last hour)"
+    },
+    "detection": {
+      "rules": "Enabled rules",
+      "rule_errors": "Rules with errors",
+      "index_lag": "Query engine – lag"
+    },
+    "archive": {
+      "integrity": "Integrity verification",
+      "last_verify": "Last verification",
+      "enabled": "Archiving",
+      "disk_free": "Free space on the archive disk"
+    },
+    "backup": {
+      "last": "Last backup",
+      "remote": "Last off-VM backup (NAS)"
+    },
+    "server": {
+      "disk_free": "Free space on the system disk",
+      "cpu": "CPU load (5 min)",
+      "memory": "Free memory"
+    },
+    "monitoring": {
+      "prometheus": "Prometheus"
+    }
+  },
+  "hint": {
+    "up": {
+      "ingest": "Agents buffer events locally; check `docker compose logs ingest`.",
+      "normalizer": "Batches wait in the SIEM_RAW queue; check the normalizer logs.",
+      "writer": "Events wait in the SIEM_EVENTS queue; check the writer and ClickHouse logs.",
+      "archiver": "Batches wait in the queue; once it is full, the server stops accepting events.",
+      "detector": "Rules are not evaluated – attacks will not raise alerts; check the detector logs.",
+      "clickhouse": "Search and the query engine do not work; the writer keeps retrying."
+    },
+    "pipeline": {
+      "throttled": "The queue is full – one of the stages cannot keep up. Check queue fill below.",
+      "queue": "The queue consumer (in brackets) cannot keep up. Above 80% ingest starts rejecting batches.",
+      "write_errors": "The writer keeps retrying; check the writer logs and ClickHouse health.",
+      "quarantine": "Events that could not be normalized or written – they are in siem.quarantine."
+    },
+    "detection": {
+      "rules": "The detector has no enabled rules – check the rules directory and the panel.",
+      "rule_errors": "Some rules do not work – details in the panel (Detection rules) and the detector logs.",
+      "index_lag": "The query engine checkpoint is stuck – check the detector logs and ClickHouse load."
+    },
+    "archive": {
+      "integrity": "Archive data was modified, removed or added outside the archiver – details: panel → Urd.",
+      "last_verify": "Verification should run every 6 h – check the archiver logs.",
+      "enabled": "Archiving is disabled by the policy or paused for lack of space – panel → Urd.",
+      "disk_free": "When the disk fills up, archiving pauses – enlarge the disk or shorten retention."
+    },
+    "backup": {
+      "last": "A backup should be made every night (cron 02:15, backup.sh) – check ~/siem-lab/backup.log.",
+      "remote": "Backups do not leave the VM – check the NAS connection and the backup SSH key."
+    },
+    "server": {
+      "disk_free": "Running out of space stops ClickHouse and the queues – remove old data or enlarge the disk.",
+      "cpu": "Sustained high load – the pipeline may fall behind at peak event rates.",
+      "memory": "Low memory – the system may kill services (OOM)."
+    },
+    "monitoring": {
+      "prometheus": "The panel has no source of service health – check the prometheus container ({{error}})."
+    }
+  },
+  "value": {
+    "no_data": "no data",
+    "service_missing": "service not visible",
+    "not_responding": "not responding",
+    "running": "running",
+    "eps": "{{n}} events/s",
+    "none": "none",
+    "batches_per_s": "{{n}} batches/s",
+    "queue": "{{n}}% ({{consumer}})",
+    "count": "{{n}}",
+    "stream_only": "disabled (SIEM_DETECTION_MODE=stream)",
+    "lag": "{{n}} s (including the 2 min delay)",
+    "integrity_problems": "mismatches found",
+    "compliant": "compliant",
+    "enabled": "enabled",
+    "disabled_or_paused": "disabled or paused",
+    "pct": "{{n}}%",
+    "query_error": "query error",
+    "unavailable": "unavailable",
+    "rules_one": "{{n}} rule",
+    "rules_other": "{{n}} rules",
+    "events_one": "{{n}} event",
+    "events_other": "{{n}} events"
+  }
+}

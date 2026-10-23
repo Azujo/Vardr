@@ -111,10 +111,10 @@ func (a *Admission) WatchFill(ctx context.Context, log *slog.Logger, interval ti
 			switch {
 			case f >= a.HighWater && !full:
 				full = true
-				log.Error("kolejka prawie pełna – odrzucam nowe paczki (agenci buforują u siebie)", "fill", f, "high_water", a.HighWater)
+				log.Error("queue almost full – rejecting new batches (agents buffer locally)", "fill", f, "high_water", a.HighWater)
 			case f < a.HighWater && full:
 				full = false
-				log.Info("kolejka odblokowana – przyjmuję paczki", "fill", f)
+				log.Info("queue unblocked – accepting batches", "fill", f)
 			}
 		}
 		select {

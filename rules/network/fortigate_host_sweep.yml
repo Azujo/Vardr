@@ -23,6 +23,19 @@ falsepositives:
   - Systemy monitorowania i inwentaryzacji sieci
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "FortiGate – network sweep (one address connects to many hosts)"
+      description: |
+        Connections from one address to at least 30 different destination addresses
+        within 2 minutes, denied by the firewall. This is what searching for live
+        computers on the network looks like (ping sweep, subnet scan) – by an attacker
+        from outside or from a compromised computer inside.
+      instructions: |
+        Address {{source.ip}} tried to connect to {{count}} different addresses
+        in {{window}}. If it is an internal computer and not a monitoring system
+        – isolate it and check what started it. An address from the internet –
+        block it on the firewall.
   group_by: [source.ip]
   threshold:
     count: 30

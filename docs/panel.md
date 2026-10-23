@@ -2,6 +2,14 @@
 
 Panel działa pod `https://<serwer>:8444` (w laboratorium `https://192.168.88.98:8444`). Pierwsze konto administratora zakłada się na serwerze: `docker compose run --rm api bootstrap-admin -username admin` (hasło startowe pojawia się raz; przy pierwszym logowaniu panel wymusza jego zmianę).
 
+## Języki
+
+Panel działa po polsku i po angielsku. Język wybiera każde konto w menu konta (*Język*: jak w przeglądarce, polski, English) – wybór jest zapisany na koncie. Przed zalogowaniem panel bierze język przeglądarki.
+
+**Język systemu** (*Powiadomienia → Język systemu*, administrator panelu, zapis w audycie) decyduje o treściach tworzonych przez serwer poza panelem: wiadomościach na kanałach powiadomień, opisach alertów zdrowia z Grafany, domyślnym języku szkiców zgłoszeń NIS2 oraz komunikatach usług zapisywanych dla panelu (wyniki kopii zapasowych, weryfikacji i obsługi niezgodności archiwum). Domyślnie polski.
+
+Reguły mają tytuł, opis i instrukcję w obu językach (`vardr.i18n`, [reguly.md](reguly.md#rozszerzenia-vardra)) – panel pokazuje je w języku konta, powiadomienia w języku systemu. Komunikaty walidacji (reguły, dekodery, ustawienia) panel pokazuje w języku konta; logi usług są po angielsku.
+
 ## Profile uprawnień
 
 Każde konto ma jeden **profil uprawnień** – macierz: moduł panelu → poziom dostępu. Poziomy w module są uporządkowane, wyższy obejmuje niższe (np. reguły: odczyt < test < zmiana; archiwum: odczyt < eksport < zmiana).
@@ -49,7 +57,7 @@ Incydent (*Wykrywanie → Incydenty*) łączy alerty, ustalenia i działania w j
 | Sprawozdanie pośrednie | na wezwanie CSIRT |
 | Sprawozdanie końcowe | miesiąc od zgłoszenia incydentu |
 
-- Dla każdego zgłoszenia panel przygotowuje **szkic** z danych incydentu (opis, chwila stwierdzenia, podejrzenie działania złośliwego, wpływ transgraniczny, skutki, systemy i konta z alertów, IoC, lista wykryć, przyczyna, działania). Pola, których Vardr nie zna (nazwa podmiotu, osoba do kontaktu), są oznaczone „[uzupełnij]”.
+- Dla każdego zgłoszenia panel przygotowuje **szkic** (po polsku albo po angielsku – wybór obok przycisku, domyślnie język systemu) z danych incydentu (opis, chwila stwierdzenia, podejrzenie działania złośliwego, wpływ transgraniczny, skutki, systemy i konta z alertów, IoC, lista wykryć, przyczyna, działania). Pola, których Vardr nie zna (nazwa podmiotu, osoba do kontaktu), są oznaczone „[uzupełnij]”.
 - Zgłoszenie wysyła się kanałem CSIRT (portal, e-mail) – poza Vardrem – a w panelu oznacza jako **wysłane** (chwila wysłania, numer sprawy). Treść zostaje zamrożona, termin przestaje się liczyć, wpis trafia do osi czasu i audytu.
 - **Przypomnienia** na kanałach powiadomień ze zdarzeniem „incydenty”: oznaczenie incydentu jako poważnego, 6 h przed terminem 24 h i 72 h, 3 dni przed terminem sprawozdania końcowego i po upływie terminu (każde raz).
 - **Paczka dowodowa**: przycisk w incydencie zleca eksport z archiwum NIS2 (Urd) – pełne godziny od pierwszego do ostatniego alertu ±1 h, tylko agenci z alertów; wymaga uprawnienia „Archiwum – eksport”, paczka czeka w *Archiwum NIS2 → Eksport dla audytora*. Działa także w zamkniętym incydencie (wpis trafia do osi czasu), podobnie jak kopiowanie i pobieranie zgłoszeń.
@@ -92,7 +100,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Start** | `/` | podsumowanie: otwarte alerty, agenci, archiwum NIS2, stan systemu |
 | **Huginn** | `/agents` | lista agentów: stan (online, bez łączności, zatrzymany bez tokenu, wycofany – certyfikat unieważniony po deinstalacji tokenem, osobny filtr), wersja, grupa, bufor, kanały; strona agenta z heartbeatem, limitami, stanem ochrony, dziennikiem prób sabotażu i tokenami deinstalacji; unieważnienie agenta; „Pobierz aktualizację agenta (MSI)” – instalator najnowszej wersji bez tokenu |
 | **Grupy agentów** | `/groups` | profil zdarzeń (stacja robocza, serwer, kontroler domeny), limity zasobów, ochrona, próg alarmu po utracie łączności, powiadomienie o powrocie |
-| **Mímir** | `/events` | wyszukiwarka zdarzeń z histogramem; szczegóły zdarzenia z polskim opisem i polami źródłowymi |
+| **Mímir** | `/events` | wyszukiwarka zdarzeń z histogramem; szczegóły zdarzenia z opisem i polami źródłowymi |
 | **Tożsamości** | `/identities` | osoby i ich konta, podpowiedzi połączeń, aliasy, domeny organizacji, konta wspólne urządzeń, „Sprawdź konto” |
 | **Gjallarhorn** | `/alerts` | alerty z filtrami (stan, poziom, reguła, komputer, konto, przypisany); strona alertu: zdarzenia (oś czasu), instrukcja dla analityka, powiązane alerty (komputer, konto, osoba ±24 h), notatki, przypisanie, zamknięcie z powodem |
 | **MITRE ATT&CK** | `/attack` | macierz pokrycia technik regułami (kolory: alerty w okresie, pokryta, tylko wyłączone reguły, brak), filtry platformy i okresu, szczegóły techniki z regułami, podtechnikami i alertami, eksport warstwy dla ATT&CK Navigator |
@@ -105,7 +113,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Użytkownicy** | `/admin/users` | konta, role, reset hasła |
 | **Dziennik audytu** | `/admin/audit` | kto, co i kiedy zmienił w panelu |
 | **Kopie zapasowe** | `/admin/backup` | zakładki: *Ustawienia* (harmonogram, zawartość, retencja, miejsce docelowe SFTP/SMB/S3 z poświadczeniami), *Historia* kopii, *Przywracanie* (lista kopii, sprawdzenie zawartości, przywrócenie bazy z konfiguracją i/lub Grafany z kopią obecnego stanu); kopia na żądanie, test połączenia |
-| **Powiadomienia** | `/admin/notifications` | kanały (Discord, webhook) z rodzajami wiadomości (alerty z filtrem poziomu i reguł, zdrowie, kotwica archiwum), test kanału |
+| **Powiadomienia** | `/admin/notifications` | kanały (Discord, webhook) z rodzajami wiadomości (alerty z filtrem poziomu i reguł, zdrowie, kotwica archiwum), test kanału, język systemu |
 
 ## Wyszukiwanie zdarzeń (Mímir)
 

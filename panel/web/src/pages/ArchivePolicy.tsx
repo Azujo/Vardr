@@ -30,6 +30,7 @@ import {
   archiveApi,
   formatDate,
   formatDuration,
+  groupLabel,
   groupsApi,
   policyStatusLabels,
   unarchivedReasonLabels,
@@ -41,6 +42,8 @@ import {
   type PolicyInfo,
   type Weakening,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 
 // Te same reguły co w serwerze (urd.Weakening) – tylko do podpowiedzi
 // w formularzu; rozstrzyga serwer.
@@ -56,7 +59,7 @@ function weakening(cur: Policy, next: { enabled: boolean; retention_days: number
 function until(iso?: string) {
   if (!iso) return "";
   const s = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
-  return s === 0 ? "za chwilę" : `za ${formatDuration(s)}`;
+  return s === 0 ? i18n.t("archive:policy.soon") : i18n.t("archive:policy.in", { d: formatDuration(s) });
 }
 
 function sources(c: { excluded_groups: number[]; excluded_agents: string[] }, groupName: (id: number) => string) {
@@ -68,6 +71,7 @@ function sources(c: { excluded_groups: number[]; excluded_agents: string[] }, gr
 // rozpatruje archiwizator – wzmocnienie od razu, osłabienie po karencji
 // i tylko po ponownym podaniu hasła.
 export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; onChanged: () => void }) {
+  const { t } = useTranslation("archive");
   const [info, setInfo] = useState<PolicyInfo | null>(null);
   const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [agents, setAgents] = useState<AgentView[]>([]);
@@ -118,8 +122,8 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
   }, [load]);
 
   const groupName = useCallback(
-    (id: number) => groups.find((g) => g.id === id)?.name ?? `grupa #${id} (usunięta)`,
-    [groups],
+    (id: number) => groups.find((g) => g.id === id)?.name ?? t("policy.deletedGroup", { id }),
+    [groups, t],
   );
   const target = useMemo(
     () => ({
@@ -144,7 +148,11 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
     setBusy(true);
     try {
       const r = await archiveApi.changePolicy({ ...target, reason, password: pw });
-      notifications.show({ color: r.weakening.length ? "orange" : "green", message: r.message, autoClose: 8000 });
+      notifications.show({
+        color: r.weakening.length ? "orange" : "green",
+        message: r.weakening.length ? t("policy.scheduledMsg") : t("policy.appliedMsg"),
+        autoClose: 8000,
+      });
       setConfirm(null);
       setPassword("");
       setReason("");
@@ -169,8 +177,8 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
 
   const cancel = async (c: PolicyChange) => {
     try {
-      const r = await archiveApi.cancelChange(c.id);
-      notifications.show({ color: "green", message: r.message });
+      await archiveApi.cancelChange(c.id);
+      notifications.show({ color: "green", message: t("policy.cancelledMsg") });
       load(false);
       onChanged();
     } catch (e) {
@@ -182,29 +190,37 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
   if (!info) return null;
   if (!pol)
     return (
-      <Alert color="gray">Polityka nie jest jeszcze zapisana – archiwizator zakłada ją przy pierwszym starcie.</Alert>
+      <Alert color="gray">{t("policy.none")}</Alert>
     );
 
   const sc = info.scheduled_change;
-  const groupOptions = groups.map((g) => ({ value: String(g.id), label: `${g.name} (${g.agents} agentów)` }));
+  const groupOptions = groups.map((g) => ({ value: String(g.id), label: t("groupOption", { name: g.name, n: g.agents }) }));
   for (const id of pol.excluded_groups)
     if (!groups.some((g) => g.id === id)) groupOptions.push({ value: String(id), label: groupName(id) });
 
   return (
     <Stack>
       {sc && (
-        <Alert color="orange" icon={<IconAlertTriangle />} title={`Zaplanowane osłabienie polityki – wejdzie w życie ${until(sc.effective_at)}`}>
+        <Alert color="orange" icon={<IconAlertTriangle />} title={t("policy.scheduledTitle", { when: until(sc.effective_at) })}>
           <Text size="sm">
-            {sc.requested_by} zlecił(a) {formatDate(sc.requested_at)}: {sc.weakening.map((w) => weakeningLabels[w]).join(", ")}.
-            Powód: „{sc.reason}”. Termin: {formatDate(sc.effective_at)}.
+            {t("policy.scheduledText", {
+              by: sc.requested_by,
+              date: formatDate(sc.requested_at),
+              what: sc.weakening.map((w) => weakeningLabels[w]).join(", "),
+              reason: sc.reason,
+              due: formatDate(sc.effective_at),
+            })}
           </Text>
           <Text size="sm" mt={4}>
-            Docelowo: archiwizacja {sc.enabled ? "włączona" : "WYŁĄCZONA"}, retencja {sc.retention_days} dni, wyłączone źródła:{" "}
-            {sources(sc, groupName)}.
+            {t("policy.target", {
+              state: sc.enabled ? t("policy.on") : t("policy.OFF"),
+              days: sc.retention_days,
+              sources: sources(sc, groupName),
+            })}
           </Text>
           {admin && (
             <Button mt="sm" size="xs" color="orange" variant="light" onClick={() => void cancel(sc)}>
-              Anuluj tę zmianę
+              {t("policy.cancelThis")}
             </Button>
           )}
         </Alert>
@@ -213,38 +229,31 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder>
           <Stack gap={6}>
-            <Title order={4}>Obowiązująca polityka</Title>
+            <Title order={4}>{t("policy.current")}</Title>
             <Group gap="xs">
-              <Text size="sm">Archiwizacja nowych paczek:</Text>
+              <Text size="sm">{t("policy.archivingNew")}</Text>
               <Badge color={pol.enabled ? "green" : "red"} variant="light">
-                {pol.enabled ? "włączona" : "wyłączona"}
+                {pol.enabled ? t("policy.on") : t("policy.off")}
               </Badge>
             </Group>
             <Text size="sm">
-              Retencja: <b>{pol.retention_days} dni</b>
+              {t("stat.retention")}: <b>{t("days", { n: pol.retention_days })}</b>
             </Text>
-            <Text size="sm">Wyłączone grupy: {pol.excluded_groups.length ? pol.excluded_groups.map(groupName).join(", ") : "—"}</Text>
-            <Text size="sm">Wyłączeni agenci: {pol.excluded_agents.length ? pol.excluded_agents.join(", ") : "—"}</Text>
+            <Text size="sm">{t("policy.exGroups", { list: pol.excluded_groups.length ? pol.excluded_groups.map(groupName).join(", ") : "—" })}</Text>
+            <Text size="sm">{t("policy.exAgents", { list: pol.excluded_agents.length ? pol.excluded_agents.join(", ") : "—" })}</Text>
             <Text size="xs" c="dimmed">
-              Ostatnia zmiana: {pol.updated_by}, {formatDate(pol.updated_at)}
+              {t("policy.lastChange", { by: pol.updated_by, date: formatDate(pol.updated_at) })}
             </Text>
           </Stack>
         </Card>
         <Card withBorder>
           <Stack gap={6}>
-            <Title order={4}>Granice z konfiguracji serwera</Title>
-            <Text size="sm">
-              Retencja: od <b>{b?.min_retention_days} dni</b> do <b>{b?.max_retention_days} dni</b>
-            </Text>
-            <Text size="sm">
-              Karencja osłabień: <b>{b?.grace_s ? formatDuration(b.grace_s) : "brak"}</b>
-            </Text>
-            <Text size="sm">
-              Zawsze pomijane (prefiksy agentów): {b?.exclude_prefixes.length ? b.exclude_prefixes.join(", ") : "—"}
-            </Text>
+            <Title order={4}>{t("policy.bounds")}</Title>
+            <Text size="sm">{t("policy.retentionRange", { min: b?.min_retention_days, max: b?.max_retention_days })}</Text>
+            <Text size="sm">{t("policy.grace", { d: b?.grace_s ? formatDuration(b.grace_s) : t("policy.none2") })}</Text>
+            <Text size="sm">{t("policy.prefixes", { list: b?.exclude_prefixes.length ? b.exclude_prefixes.join(", ") : "—" })}</Text>
             <Text size="xs" c="dimmed">
-              Ustawiane w konfiguracji archiwizatora (SIEM_ARCHIVE_MIN/MAX_RETENTION_DAYS, SIEM_ARCHIVE_POLICY_GRACE,
-              SIEM_ARCHIVE_EXCLUDE_AGENTS) – panel ich nie zmieni.
+              {t("policy.boundsHint")}
             </Text>
           </Stack>
         </Card>
@@ -256,22 +265,19 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
             <Stack gap="sm">
               <Group gap="xs">
                 <IconSettings size={20} />
-                <Title order={4}>Zmień politykę</Title>
+                <Title order={4}>{t("policy.change")}</Title>
               </Group>
               <Text size="sm" c="dimmed">
-                Włączenie archiwum, dłuższa retencja albo objęcie archiwum kolejnych źródeł działają w ciągu minuty. Wyłączenie,
-                krótsza retencja albo wyłączenie źródeł osłabiają ochronę: wymagają ponownego podania hasła, wchodzą w życie po
-                karencji ({b?.grace_s ? formatDuration(b.grace_s) : "brak"}) i do tego czasu można je anulować. Wyłączenie
-                dotyczy tylko nowych paczek – zarchiwizowane dane zostają do końca retencji. Każda zmiana trafia do audytu.
+                {t("policy.changeIntro", { grace: b?.grace_s ? formatDuration(b.grace_s) : t("policy.none2") })}
               </Text>
               <Switch
-                label="Archiwizuj nowe paczki logów"
+                label={t("policy.archiveNew")}
                 checked={enabled}
                 onChange={(e) => setEnabled(e.currentTarget.checked)}
               />
               <NumberInput
-                label="Retencja (dni)"
-                description={`od ${b?.min_retention_days} do ${b?.max_retention_days} dni`}
+                label={t("policy.retentionDays")}
+                description={t("policy.retentionHint", { min: b?.min_retention_days, max: b?.max_retention_days })}
                 min={b?.min_retention_days}
                 max={b?.max_retention_days}
                 value={days}
@@ -280,8 +286,8 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                 required
               />
               <MultiSelect
-                label="Grupy agentów wyłączone z archiwum"
-                description="agent przeniesiony do wyłączonej grupy (także tokenem rejestracyjnym) wypada z archiwum dopiero po karencji"
+                label={t("policy.exGroupsLabel")}
+                description={t("policy.exGroupsHint")}
                 data={groupOptions}
                 value={exGroups}
                 onChange={setExGroups}
@@ -289,16 +295,16 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                 clearable
               />
               <TagsInput
-                label="Agenci wyłączeni z archiwum"
-                description="identyfikatory agentów (podpowiedzi z listy agentów; Enter dodaje)"
+                label={t("policy.exAgentsLabel")}
+                description={t("policy.exAgentsHint")}
                 data={agents.map((a) => ({ value: a.id, label: `${a.id} (${a.hostname})` }))}
                 value={exAgents}
                 onChange={setExAgents}
                 clearable
               />
               <Textarea
-                label="Powód zmiany"
-                description="trafi do audytu i historii polityki"
+                label={t("policy.reason")}
+                description={t("policy.reasonHint")}
                 required
                 minLength={5}
                 maxLength={1000}
@@ -309,15 +315,15 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
               />
               {weak.length > 0 && dirty && (
                 <Alert color="orange" variant="light" icon={<IconLock />}>
-                  Ta zmiana osłabia ochronę ({weak.map((w) => weakeningLabels[w]).join(", ")}) – po zatwierdzeniu poprosimy o hasło.
+                  {t("policy.weakens", { what: weak.map((w) => weakeningLabels[w]).join(", ") })}
                 </Alert>
               )}
               <Group>
                 <Button type="submit" loading={busy} disabled={!dirty} color={weak.length ? "orange" : undefined}>
-                  Zleć zmianę
+                  {t("policy.submit")}
                 </Button>
                 <Button variant="subtle" onClick={() => reset(pol)} disabled={!dirty}>
-                  Przywróć obowiązujące
+                  {t("policy.resetForm")}
                 </Button>
               </Group>
             </Stack>
@@ -328,21 +334,21 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
       <Card withBorder>
         <Stack gap="xs">
           <Title order={4}>
-            Źródła bez archiwizacji ({info.unarchived.length} z {info.agents_total ?? 0} agentów)
+            {t("policy.unarchived", { n: info.unarchived.length, total: info.agents_total ?? 0 })}
           </Title>
           {info.unarchived.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Wszyscy zarejestrowani agenci są archiwizowani.
+              {t("policy.allArchived")}
             </Text>
           ) : (
             <Table.ScrollContainer minWidth={600}>
               <Table striped verticalSpacing={4}>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Agent</Table.Th>
-                    <Table.Th>Komputer</Table.Th>
-                    <Table.Th>Grupa</Table.Th>
-                    <Table.Th>Powód</Table.Th>
+                    <Table.Th>{t("col.agent")}</Table.Th>
+                    <Table.Th>{t("col.host")}</Table.Th>
+                    <Table.Th>{t("col.group")}</Table.Th>
+                    <Table.Th>{t("col.reason")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -350,10 +356,10 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                     <Table.Tr key={u.agent_id}>
                       <Table.Td>{u.agent_id}</Table.Td>
                       <Table.Td>{u.hostname}</Table.Td>
-                      <Table.Td>{u.group}</Table.Td>
+                      <Table.Td>{groupLabel(u.group)}</Table.Td>
                       <Table.Td>
                         {unarchivedReasonLabels[u.reason]}
-                        {u.effective_at && ` – od ${formatDate(u.effective_at)}`}
+                        {u.effective_at && ` – ${t("stat.since", { date: formatDate(u.effective_at) })}`}
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -363,7 +369,7 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
           )}
           {info.unarchived.length > 200 && (
             <Text size="xs" c="dimmed">
-              Pokazano 200 pierwszych.
+              {t("policy.first200")}
             </Text>
           )}
         </Stack>
@@ -371,17 +377,17 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
 
       {info.changes.length > 0 && (
         <Stack gap="xs">
-          <Title order={4}>Historia zmian polityki</Title>
+          <Title order={4}>{t("policy.history")}</Title>
           <Table.ScrollContainer minWidth={900}>
             <Table striped verticalSpacing="xs">
               <Table.Thead>
                 <Table.Tr style={{ whiteSpace: "nowrap" }}>
-                  <Table.Th>Nr</Table.Th>
-                  <Table.Th>Zlecono</Table.Th>
-                  <Table.Th>Kto / powód</Table.Th>
-                  <Table.Th>Docelowa polityka</Table.Th>
-                  <Table.Th>Osłabienie</Table.Th>
-                  <Table.Th>Stan</Table.Th>
+                  <Table.Th>{t("manifest.no")}</Table.Th>
+                  <Table.Th>{t("col.requested")}</Table.Th>
+                  <Table.Th>{t("col.byReason")}</Table.Th>
+                  <Table.Th>{t("policy.targetCol")}</Table.Th>
+                  <Table.Th>{t("policy.weakening")}</Table.Th>
+                  <Table.Th>{t("col.state")}</Table.Th>
                   <Table.Th />
                 </Table.Tr>
               </Table.Thead>
@@ -394,7 +400,7 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                       <Group gap={4}>
                         <Text size="sm">{c.requested_by}</Text>
                         {c.reauth && (
-                          <Tooltip label="potwierdzone hasłem">
+                          <Tooltip label={t("policy.reauth")}>
                             <IconLock size={14} />
                           </Tooltip>
                         )}
@@ -405,10 +411,10 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                     </Table.Td>
                     <Table.Td maw={300}>
                       <Text size="sm">
-                        {c.enabled ? "włączone" : "WYŁĄCZONE"}, {c.retention_days} dni
+                        {c.enabled ? t("policy.onN") : t("policy.OFFN")}, {t("days", { n: c.retention_days })}
                       </Text>
                       <Text size="xs" c="dimmed" lineClamp={2}>
-                        bez: {sources(c, groupName)}
+                        {t("policy.without", { list: sources(c, groupName) })}
                       </Text>
                     </Table.Td>
                     <Table.Td>
@@ -427,19 +433,19 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                         label={
                           c.error ||
                           (c.status === "scheduled"
-                            ? `wejdzie w życie ${formatDate(c.effective_at)}`
+                            ? t("policy.tipScheduled", { date: formatDate(c.effective_at) })
                             : c.status === "cancelled"
-                              ? `anulował(a) ${c.cancelled_by}, ${formatDate(c.cancelled_at)}`
+                              ? t("policy.tipCancelled", { by: c.cancelled_by, date: formatDate(c.cancelled_at) })
                               : c.applied_at
-                                ? `w życie od ${formatDate(c.applied_at)}`
-                                : "archiwizator rozpatrzy zlecenie w ciągu minuty")
+                                ? t("policy.tipApplied", { date: formatDate(c.applied_at) })
+                                : t("policy.tipPending"))
                         }
                         multiline
                         maw={400}
                       >
                         <Badge color={policyStatusLabels[c.status].color} variant="light">
                           {c.cancelled_at && (c.status === "pending" || c.status === "scheduled")
-                            ? "anulowanie…"
+                            ? t("policy.cancelling")
                             : policyStatusLabels[c.status].label}
                         </Badge>
                       </Tooltip>
@@ -447,7 +453,7 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
                     <Table.Td>
                       {admin && (c.status === "pending" || c.status === "scheduled") && !c.cancelled_at && (
                         <Button size="compact-xs" variant="subtle" color="gray" onClick={() => void cancel(c)}>
-                          anuluj
+                          {t("policy.cancel")}
                         </Button>
                       )}
                     </Table.Td>
@@ -459,7 +465,7 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
         </Stack>
       )}
 
-      <Modal opened={!!confirm} onClose={() => setConfirm(null)} title="Potwierdź osłabienie ochrony archiwum" centered>
+      <Modal opened={!!confirm} onClose={() => setConfirm(null)} title={t("policy.confirmTitle")} centered>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -467,18 +473,17 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
           }}
         >
           <Stack gap="sm">
-            <Text size="sm">Zmiana obejmuje:</Text>
+            <Text size="sm">{t("policy.includes")}</Text>
             <List size="sm">
               {(confirm ?? []).map((w) => (
                 <List.Item key={w}>{weakeningLabels[w]}</List.Item>
               ))}
             </List>
             <Text size="sm">
-              Wejdzie w życie po karencji ({b?.grace_s ? formatDuration(b.grace_s) : "od razu"}); do tego czasu panel i alert
-              pokazują ją jako zaplanowaną i można ją anulować.
+              {t("policy.confirmText", { grace: b?.grace_s ? formatDuration(b.grace_s) : t("policy.immediately") })}
             </Text>
             <PasswordInput
-              label="Twoje hasło"
+              label={t("yourPassword")}
               required
               autoFocus
               autoComplete="current-password"
@@ -487,10 +492,10 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setConfirm(null)}>
-                Wróć
+                {t("back")}
               </Button>
               <Button type="submit" color="orange" loading={busy}>
-                Potwierdź i zleć
+                {t("policy.confirm")}
               </Button>
             </Group>
           </Stack>

@@ -25,6 +25,8 @@ import (
 	"io"
 	"path"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Magic otwiera każdy plik segmentu (wersja formatu w ostatnim znaku).
@@ -81,7 +83,7 @@ func WriteRecord(w io.Writer, meta RecordMeta, payload []byte) (int64, error) {
 }
 
 // ErrCorrupt oznacza plik segmentu niezgodny z formatem.
-var ErrCorrupt = errors.New("uszkodzony segment")
+var ErrCorrupt = lang.Errorf("uszkodzony segment", "damaged segment")
 
 // Reader czyta rekordy segmentu.
 type Reader struct {
@@ -94,7 +96,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 	br := bufio.NewReaderSize(r, 256<<10)
 	magic := make([]byte, len(Magic))
 	if _, err := io.ReadFull(br, magic); err != nil || string(magic) != Magic {
-		return nil, fmt.Errorf("%w: brak nagłówka %s", ErrCorrupt, Magic)
+		return nil, lang.Errorf("%w: brak nagłówka %s", "%w: missing header %s", ErrCorrupt, Magic)
 	}
 	return &Reader{r: br}, nil
 }
@@ -105,11 +107,11 @@ func (r *Reader) part(limit uint32) ([]byte, error) {
 	}
 	n := binary.BigEndian.Uint32(r.hdr[:])
 	if n > limit {
-		return nil, fmt.Errorf("%w: rekord %d B", ErrCorrupt, n)
+		return nil, lang.Errorf("%w: rekord %d B", "%w: record %d B", ErrCorrupt, n)
 	}
 	b := make([]byte, n)
 	if _, err := io.ReadFull(r.r, b); err != nil {
-		return nil, fmt.Errorf("%w: ucięty rekord", ErrCorrupt)
+		return nil, lang.Errorf("%w: ucięty rekord", "%w: truncated record", ErrCorrupt)
 	}
 	return b, nil
 }
@@ -123,17 +125,17 @@ func (r *Reader) Next() (RecordMeta, []byte, error) {
 	}
 	if err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			err = fmt.Errorf("%w: ucięty nagłówek rekordu", ErrCorrupt)
+			err = lang.Errorf("%w: ucięty nagłówek rekordu", "%w: truncated record header", ErrCorrupt)
 		}
 		return meta, nil, err
 	}
 	if err := json.Unmarshal(mb, &meta); err != nil {
-		return meta, nil, fmt.Errorf("%w: metadane: %v", ErrCorrupt, err)
+		return meta, nil, lang.Errorf("%w: metadane: %v", "%w: metadata: %v", ErrCorrupt, err)
 	}
 	payload, err := r.part(maxPayloadBytes)
 	if err != nil {
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-			err = fmt.Errorf("%w: brak treści rekordu", ErrCorrupt)
+			err = lang.Errorf("%w: brak treści rekordu", "%w: missing record content", ErrCorrupt)
 		}
 		return meta, nil, err
 	}

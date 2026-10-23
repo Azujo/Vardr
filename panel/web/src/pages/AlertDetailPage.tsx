@@ -27,11 +27,13 @@ import { Link, useParams } from "react-router-dom";
 import {
   ago,
   alertStatusLabels,
+  alertText,
   alertsApi,
   eventsApi,
   formatDate,
-  incidentStatusLabels,
+  incidentStatusColors,
   levelLabels,
+  ruleText,
   type Alert,
   type AlertActivity,
   type AlertStatus,
@@ -41,6 +43,8 @@ import {
   type RuleAttribution,
   type RuleInfo,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
 import AddToIncident from "./AddToIncident";
@@ -58,6 +62,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // Zdarzenie alertu: szczegóły pobierane z Mímira po rozwinięciu.
 function EventPanel({ id, time }: { id: string; time: string }) {
+  const { t } = useTranslation("alerts");
   const [ev, setEv] = useState<EventDetail | null>(null);
   const [err, setErr] = useState("");
   const heartbeat = id.startsWith("heartbeat:");
@@ -72,15 +77,15 @@ function EventPanel({ id, time }: { id: string; time: string }) {
     const agent = id.split(":")[1];
     return (
       <Stack gap="xs">
-        <Text size="sm">Ostatni heartbeat agenta przed przerwą – zdarzenie systemowe (nie ma go w Mímirze).</Text>
+        <Text size="sm">{t("detail.heartbeat")}</Text>
         <Anchor component={Link} to={`/agents/${encodeURIComponent(agent)}`} size="sm">
-          Agent {agent} w Huginnie →
+          {t("detail.agentLink", { agent })}
         </Anchor>
       </Stack>
     );
   }
   if (err) return <Text size="sm" c="red">{err}</Text>;
-  if (!ev) return <Text size="sm" c="dimmed">wczytywanie…</Text>;
+  if (!ev) return <Text size="sm" c="dimmed">{t("common:loading")}</Text>;
   return (
     <Stack gap="xs">
       <Table withTableBorder verticalSpacing={2} fz="sm">
@@ -98,7 +103,7 @@ function EventPanel({ id, time }: { id: string; time: string }) {
         </Table.Tbody>
       </Table>
       <Anchor component={Link} to={`/events?q=${encodeURIComponent(`host:${ev.host}`)}`} size="sm">
-        Zdarzenia z tego komputera w Mímirze →
+        {t("detail.hostEvents")}
       </Anchor>
     </Stack>
   );
@@ -115,19 +120,22 @@ const aliases: Record<string, string[]> = {
 // renderInstructions: zmienne {{Pole}} z wartości zdarzenia (dla alertów
 // sprzed zapisywania gotowej instrukcji); bez zdarzenia – „(brak)”.
 function renderInstructions(text: string, ev: EventDetail | null): string {
+  const none = i18n.t("alerts:detail.none");
   return text.replace(/\{\{\s*([A-Za-z0-9_.]+)\s*\}\}/g, (_, name: string) => {
-    if (!ev) return "(brak)";
+    if (!ev) return none;
     const special: Record<string, string> = { Computer: ev.host, Hostname: ev.host, EventID: String(ev.code) };
     let v = special[name];
     for (const n of aliases[name] ?? [name]) {
       if (!v && ev.fields[n]) v = ev.fields[n];
     }
-    return v && v !== "-" ? v : "(brak)";
+    return v && v !== "-" ? v : none;
   });
 }
 
 export default function AlertDetailPage() {
   const { id } = useParams();
+  const { t } = useTranslation("alerts");
+  const { t: ti } = useTranslation("incidents");
   const { user, can } = useAuth();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [events, setEvents] = useState<{ event_id: string; event_time: string }[]>([]);
@@ -187,8 +195,12 @@ export default function AlertDetailPage() {
     }
   };
 
+  // Teksty w języku konta (reguła z tłumaczeniem, alert sprzed tłumaczeń –
+  // instrukcja z szablonu reguły).
+  const rt = rule ? ruleText(rule) : null;
+  const at = alert ? alertText(alert, rule) : null;
   // Starsze alerty nie mają gotowej instrukcji – pierwsze zdarzenie do uzupełnienia zmiennych.
-  const needsRender = !!alert && !alert.instructions && !!rule?.instructions?.includes("{{");
+  const needsRender = !!at && !at.instructions && !!rt?.instructions.includes("{{");
   useEffect(() => {
     if (!needsRender || events.length === 0) return;
     const first = events[events.length - 1];
@@ -227,7 +239,7 @@ export default function AlertDetailPage() {
     <Stack>
       <Anchor component={Link} to="/alerts" size="sm">
         <Group gap={4}>
-          <IconArrowLeft size={14} /> alerty
+          <IconArrowLeft size={14} /> {t("detail.back")}
         </Group>
       </Anchor>
       <Group justify="space-between" align="flex-start">
@@ -241,10 +253,10 @@ export default function AlertDetailPage() {
             </Badge>
           </Group>
           <Title order={2} mt="xs">
-            {alert.rule_title}
+            {at!.title}
           </Title>
           <Text c="dimmed" size="sm">
-            Alert #{alert.id} · {alert.summary}
+            {t("detail.subtitle", { id: alert.id, summary: at!.summary })}
           </Text>
           <Box mt={6}>
             <AttackBadges ra={attack[alert.rule_id]} />
@@ -254,9 +266,9 @@ export default function AlertDetailPage() {
           <Group>
             <Select
               w={190}
-              placeholder="nieprzypisany"
+              placeholder={t("detail.unassigned")}
               clearable
-              aria-label="przypisany analityk"
+              aria-label={t("detail.assignee")}
               leftSection={<IconUserCheck size={14} />}
               data={assignees}
               value={alert.assignee || null}
@@ -269,17 +281,17 @@ export default function AlertDetailPage() {
                   await setStatus("acknowledged");
                 }}
               >
-                Biorę do analizy
+                {t("detail.take")}
               </Button>
             )}
             {alert.status !== "closed" && (
               <Button color="gray" variant="light" onClick={() => setClosing(true)}>
-                Zamknij
+                {t("close")}
               </Button>
             )}
             {alert.status === "closed" && (
               <Button variant="light" onClick={() => void setStatus("open")}>
-                Otwórz ponownie
+                {t("reopen")}
               </Button>
             )}
           </Group>
@@ -288,22 +300,22 @@ export default function AlertDetailPage() {
 
       <Card withBorder>
         <SimpleGrid cols={{ base: 2, md: 4 }}>
-          <Field label="Komputer">{alert.host_name}</Field>
-          <Field label="Konto">
+          <Field label={t("col.host")}>{alert.host_name}</Field>
+          <Field label={t("col.user")}>
             {alert.user_identity && alert.user_identity !== alert.user_name.toLowerCase()
-              ? `${alert.user_name || "—"} (osoba: ${alert.user_identity})`
+              ? t("detail.userPerson", { user: alert.user_name || "—", person: alert.user_identity })
               : alert.user_name}
           </Field>
-          <Field label="Adres źródłowy">{alert.source_ip}</Field>
-          <Field label="Agent">{alert.agent_id}</Field>
-          <Field label="Pierwsze zdarzenie">{formatDate(alert.first_seen)}</Field>
-          <Field label="Ostatnie zdarzenie">{formatDate(alert.last_seen)}</Field>
-          <Field label="Trafienia">{String(alert.hits)}</Field>
-          <Field label="Silnik">{({ index_query: "zapytania (ClickHouse)", stream: "w locie", system: "reguła wbudowana", correlation: "korelacja (wiele źródeł)" } as Record<string, string>)[alert.engine] ?? alert.engine}</Field>
+          <Field label={t("detail.sourceIp")}>{alert.source_ip}</Field>
+          <Field label={t("detail.agent")}>{alert.agent_id}</Field>
+          <Field label={t("detail.firstSeen")}>{formatDate(alert.first_seen)}</Field>
+          <Field label={t("col.lastSeen")}>{formatDate(alert.last_seen)}</Field>
+          <Field label={t("col.hits")}>{String(alert.hits)}</Field>
+          <Field label={t("detail.engine")}>{t(`engineLong.${alert.engine}`, { defaultValue: alert.engine })}</Field>
         </SimpleGrid>
         {Object.keys(alert.group_fields).length > 0 && (
           <Text size="sm" mt="sm">
-            Klucz alertu:{" "}
+            {t("detail.key")}{" "}
             {Object.entries(alert.group_fields).map(([k, v]) => (
               <Code key={k} mr="xs">
                 {k} = {v}
@@ -313,7 +325,11 @@ export default function AlertDetailPage() {
         )}
         {alert.status === "closed" && (
           <Text size="sm" mt="sm" c="dimmed">
-            Zamknął {alert.closed_by}, {formatDate(alert.closed_at)}: {alert.close_reason}
+            {t("detail.closedBy", { by: alert.closed_by, date: formatDate(alert.closed_at), reason:
+                alert.closed_by === "system" && i18n.resolvedLanguage !== "pl" && i18n.exists(`autoClose.${alert.rule_id}`, { ns: "alerts" })
+                  ? t(`autoClose.${alert.rule_id}`)
+                  : alert.close_reason,
+            })}
           </Text>
         )}
       </Card>
@@ -321,17 +337,17 @@ export default function AlertDetailPage() {
       <Group gap="xs">
         {around && (
           <Button component={Link} to={around} variant="light" size="xs" leftSection={<IconSearch size={14} />}>
-            Zdarzenia z tego komputera ±15 min (Mímir)
+            {t("detail.around")}
           </Button>
         )}
         {alert.host_name && (
           <Button component={Link} to={`/alerts?status=all&host=${encodeURIComponent(alert.host_name)}`} variant="subtle" size="xs">
-            Wszystkie alerty komputera
+            {t("detail.allHost")}
           </Button>
         )}
         {alert.user_name && (
           <Button component={Link} to={`/alerts?status=all&user=${encodeURIComponent(alert.user_name)}`} variant="subtle" size="xs">
-            Wszystkie alerty konta
+            {t("detail.allUser")}
           </Button>
         )}
       </Group>
@@ -339,16 +355,16 @@ export default function AlertDetailPage() {
       {(incidents.length > 0 || can("incidents", "write")) && (
         <Card withBorder>
           <Group justify="space-between">
-            <Title order={4}>Incydenty</Title>
+            <Title order={4}>{t("detail.incidents")}</Title>
             {can("incidents", "write") && (
               <Button size="xs" variant="light" color="red" onClick={() => setToIncident(true)}>
-                Do incydentu
+                {t("toIncident")}
               </Button>
             )}
           </Group>
           {incidents.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Alert nie należy do żadnego incydentu.
+              {t("detail.noIncident")}
             </Text>
           ) : (
             incidents.map((i) => (
@@ -356,36 +372,36 @@ export default function AlertDetailPage() {
                 <Anchor component={Link} to={`/incidents/${i.id}`} size="sm">
                   #{i.id} {i.title}
                 </Anchor>
-                <Badge size="sm" variant="light" color={incidentStatusLabels[i.status].color}>
-                  {incidentStatusLabels[i.status].label}
+                <Badge size="sm" variant="light" color={incidentStatusColors[i.status]}>
+                  {ti(`status.${i.status}`)}
                 </Badge>
               </Group>
             ))
           )}
-          <AddToIncident alertIds={[alert.id]} defaultTitle={alert.rule_title} opened={toIncident} onClose={() => setToIncident(false)} />
+          <AddToIncident alertIds={[alert.id]} defaultTitle={at!.title} opened={toIncident} onClose={() => setToIncident(false)} />
         </Card>
       )}
 
       {rule && (
         <Card withBorder>
-          <Title order={4}>Reguła</Title>
+          <Title order={4}>{t("detail.rule")}</Title>
           <AttributionLine a={attribution} />
-          {rule.description && (
+          {rt!.description && (
             <Text size="sm" mt="xs" style={{ whiteSpace: "pre-line" }}>
-              {rule.description}
+              {rt!.description}
             </Text>
           )}
-          {(alert.instructions || rule.instructions) && (
-            <MAlert color="blue" mt="sm" title="Co zrobić">
+          {(at!.instructions || rt!.instructions) && (
+            <MAlert color="blue" mt="sm" title={t("detail.whatToDo")}>
               <Text size="sm" style={{ whiteSpace: "pre-line" }}>
-                {alert.instructions || renderInstructions(rule.instructions, firstEvent)}
+                {at!.instructions || renderInstructions(rt!.instructions, firstEvent)}
               </Text>
             </MAlert>
           )}
           <Group gap={4} mt="sm">
-            {rule.tags.map((t) => (
-              <Badge key={t} variant="outline" size="sm">
-                {t}
+            {rule.tags.map((tag) => (
+              <Badge key={tag} variant="outline" size="sm">
+                {tag}
               </Badge>
             ))}
           </Group>
@@ -395,12 +411,12 @@ export default function AlertDetailPage() {
       <SimpleGrid cols={{ base: 1, lg: 2 }}>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Przebieg i notatki
+            {t("detail.history")}
           </Title>
           <Timeline bulletSize={22} lineWidth={2}>
-            <Timeline.Item bullet={<IconArrowsExchange size={12} />} title="Alert utworzony">
+            <Timeline.Item bullet={<IconArrowsExchange size={12} />} title={t("detail.created")}>
               <Text size="xs" c="dimmed">
-                {formatDate(alert.created_at)} · silnik: {alert.engine}
+                {formatDate(alert.created_at)} · {t("detail.engineShort", { engine: t(`engine.${alert.engine}`, { defaultValue: alert.engine }) })}
               </Text>
             </Timeline.Item>
             {activity.map((a) => (
@@ -409,11 +425,11 @@ export default function AlertDetailPage() {
                 bullet={a.kind === "note" ? <IconMessage size={12} /> : a.kind === "assign" ? <IconUserCheck size={12} /> : <IconArrowsExchange size={12} />}
                 title={
                   a.kind === "note"
-                    ? `Notatka – ${a.actor}`
+                    ? t("detail.noteBy", { actor: a.actor })
                     : a.kind === "assign"
                       ? a.details?.to
-                        ? `${a.actor} przypisał(a) do ${a.details.to}`
-                        : `${a.actor} usunął(ęła) przypisanie`
+                        ? t("detail.assigned", { actor: a.actor, to: a.details.to })
+                        : t("detail.unassignedBy", { actor: a.actor })
                       : `${a.actor}: ${a.details?.to ? alertStatusLabels[a.details.to as AlertStatus]?.label ?? a.details.to : ""}`
                 }
               >
@@ -431,7 +447,7 @@ export default function AlertDetailPage() {
           {canEdit && (
             <Stack gap="xs" mt="md">
               <Textarea
-                placeholder="Notatka: co sprawdzono, z kim rozmawiano, numer zgłoszenia…"
+                placeholder={t("detail.notePlaceholder")}
                 autosize
                 minRows={2}
                 maxLength={4000}
@@ -440,7 +456,7 @@ export default function AlertDetailPage() {
               />
               <Group justify="flex-end">
                 <Button size="xs" disabled={!note.trim()} onClick={() => void addNote()}>
-                  Dodaj notatkę
+                  {t("detail.addNote")}
                 </Button>
               </Group>
             </Stack>
@@ -448,14 +464,14 @@ export default function AlertDetailPage() {
         </Card>
         <Card withBorder>
           <Title order={4} mb="xs">
-            Powiązane alerty ({related.length})
+            {t("detail.related", { count: related.length })}
           </Title>
           <Text size="xs" c="dimmed" mb="xs">
-            Ten sam komputer, konto albo osoba (to samo konto w AD, Entra ID i na VPN), ±24 h od zdarzeń tego alertu.
+            {t("detail.relatedHint")}
           </Text>
           {related.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Brak.
+              {t("detail.noRelated")}
             </Text>
           ) : (
             <Table verticalSpacing={4} fz="sm" highlightOnHover>
@@ -469,7 +485,7 @@ export default function AlertDetailPage() {
                     </Table.Td>
                     <Table.Td>
                       <Anchor component={Link} to={`/alerts/${r.id}`} size="sm">
-                        #{r.id} {r.rule_title}
+                        #{r.id} {alertText(r, r.rule_id === alert.rule_id ? rule : undefined).title}
                       </Anchor>
                       <Text size="xs" c="dimmed">
                         {r.host_name}
@@ -494,8 +510,9 @@ export default function AlertDetailPage() {
 
       <Card withBorder>
         <Title order={4} mb="xs">
-          Zdarzenia ({events.length}
-          {alert.hits > events.length ? ` z ${alert.hits}` : ""})
+          {alert.hits > events.length
+            ? t("detail.eventsOf", { count: events.length, hits: alert.hits })
+            : t("detail.events", { count: events.length })}
         </Title>
         <Accordion variant="separated">
           {events.map((e) => (
@@ -513,11 +530,11 @@ export default function AlertDetailPage() {
         </Accordion>
       </Card>
 
-      <Modal opened={closing} onClose={() => setClosing(false)} title="Zamknij alert" centered>
+      <Modal opened={closing} onClose={() => setClosing(false)} title={t("detail.closeTitle")} centered>
         <Stack>
           <Textarea
-            label="Powód"
-            description="np. fałszywy alarm, wyjaśnione z użytkownikiem, incydent nr…"
+            label={t("reason")}
+            description={t("detail.reasonHint")}
             autosize
             minRows={2}
             value={reason}
@@ -525,9 +542,9 @@ export default function AlertDetailPage() {
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setClosing(false)}>
-              Wróć
+              {t("detail.cancel")}
             </Button>
-            <Button onClick={() => void setStatus("closed", reason)}>Zamknij alert</Button>
+            <Button onClick={() => void setStatus("closed", reason)}>{t("detail.closeTitle")}</Button>
           </Group>
         </Stack>
       </Modal>

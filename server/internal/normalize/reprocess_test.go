@@ -49,7 +49,7 @@ func TestReprocessAfterDecoderFix(t *testing.T) {
 		e.Fields["siem.quarantined_at"] != ingested.Format(time.RFC3339Nano) || e.Fields["syslog.peer"] != "10.7.1.2" {
 		t.Fatalf("odzyskane zdarzenie: %+v", e)
 	}
-	if !strings.Contains(rep.Failed[0].Reason, "XML") || !strings.Contains(rep.Failed[1].Reason, "nie da się przetworzyć") {
+	if !strings.Contains(rep.Failed[0].Reason, "XML") || !strings.Contains(rep.Failed[1].Reason, "cannot be reprocessed") {
 		t.Fatalf("powody: %+v", rep.Failed)
 	}
 }

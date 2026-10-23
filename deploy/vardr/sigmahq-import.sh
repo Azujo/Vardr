@@ -1,10 +1,11 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Import reguł SigmaHQ na serwerze z instalacji (install.sh) – odpowiednik
-# procedury z docs/reguly.md („Import reguł SigmaHQ”) bez repozytorium Vardra.
+# SigmaHQ rule import on an installed server (install.sh) – the equivalent of
+# the procedure in docs/en/rules.md ("Importing SigmaHQ rules") without the
+# Vardr repository.
 #
-#   sudo ./sigmahq-import.sh            pobranie/aktualizacja reguł SigmaHQ
-#   sudo ./sigmahq-import.sh --remove   usunięcie reguł SigmaHQ z serwera
+#   sudo ./sigmahq-import.sh            download/update SigmaHQ rules
+#   sudo ./sigmahq-import.sh --remove   remove SigmaHQ rules from the server
 #
 # Reguły dla zbieranych źródeł trafiają do rules/<wersja>/sigmahq, te
 # z parserem Vardra niezgodne są pomijane, a wszystkie zaimportowane są
@@ -20,8 +21,8 @@ set -euo pipefail
 cd "$(dirname "$0")"
 umask 022
 
-[ "$(id -u)" = 0 ] || { echo "uruchom jako root (sudo $0)" >&2; exit 1; }
-[ -L rules/current ] || { echo "brak rules/current – uruchom w katalogu instalacji Vardra" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || { echo "run as root (sudo $0)" >&2; exit 1; }
+[ -L rules/current ] || { echo "no rules/current – run in the Vardr installation directory" >&2; exit 1; }
 env_get() { sed -n "s/^$1=//p" .env | tail -1; }
 owner="$(env_get VARDR_UID):$(env_get VARDR_GID)"
 
@@ -41,7 +42,7 @@ cp -a rules/current/. "$work/$new/"
 rm -rf "$work/$new/sigmahq"
 
 if [ "${1:-}" != --remove ]; then
-  echo "== pobieranie SigmaHQ (github.com/SigmaHQ/sigma)"
+  echo "== downloading SigmaHQ (github.com/SigmaHQ/sigma)"
   curl -fsSL https://codeload.github.com/SigmaHQ/sigma/tar.gz/refs/heads/master | tar -xz -C "$work"
   src="$work/sigma-master"
   for d in $dirs; do
@@ -51,7 +52,7 @@ if [ "${1:-}" != --remove ]; then
   done
   # Tylko reguły stabilne i testowe (bez experimental, deprecated, unsupported).
   grep -rlE '^status: (experimental|deprecated|unsupported)' "$work/$new/sigmahq" | xargs -r rm
-  echo "== sprawdzenie parserem Vardra"
+  echo "== checking with the Vardr parser"
   bin/siem-detector check "$work/$new" > "$work/check.txt" 2>&1 || true
   bad=$(sed -nE 's/^BŁĄD +(sigmahq\/[^:]+\.ya?ml):.*/\1/p' "$work/check.txt" | sort -u)
   # shellcheck disable=SC2086
@@ -60,17 +61,17 @@ if [ "${1:-}" != --remove ]; then
   find "$work/$new/sigmahq" -name '*.yml' -exec sh -c 'printf "\nvardr:\n  enabled: false\n" >> "$1"' _ {} \;
   cp "$src/LICENSE" "$work/$new/sigmahq/LICENSE.SigmaHQ.md" 2>/dev/null || true
   cat > "$work/$new/sigmahq/README.md" <<EOF
-# Reguły SigmaHQ
+# SigmaHQ rules
 
-Reguły z https://github.com/SigmaHQ/sigma (import $(date -I), sigmahq-import.sh),
-licencja Detection Rule License (DRL) 1.1: https://github.com/SigmaHQ/Detection-Rule-License
-Autorzy każdej reguły – pole \`author\` w pliku (widoczne w panelu przy regule i alercie).
+Rules from https://github.com/SigmaHQ/sigma (imported $(date -I), sigmahq-import.sh),
+license Detection Rule License (DRL) 1.1: https://github.com/SigmaHQ/Detection-Rule-License
+Authors of each rule – the \`author\` field in the file (shown in the panel with the rule and alert).
 EOF
 fi
 
 if ! bin/siem-detector check "$work/$new" > "$work/check.txt" 2>&1; then
-  grep -m 20 -E '^BŁĄD' "$work/check.txt" >&2 || true
-  echo "BŁĄD: nowy zestaw reguł nie przechodzi sprawdzenia – nic nie zmieniono" >&2
+  grep -m 20 -E '^(ERROR|BŁĄD)' "$work/check.txt" >&2 || true
+  echo "ERROR: the new rule set does not pass the check – nothing was changed" >&2
   exit 1
 fi
 
@@ -82,8 +83,8 @@ find rules -mindepth 1 -maxdepth 1 -type d -name 'v*' | sort | head -n -3 | xarg
 
 n=$(find "rules/$new/sigmahq" -name '*.yml' 2>/dev/null | wc -l || true)
 if [ "${1:-}" = --remove ]; then
-  echo "Reguły SigmaHQ usunięte (wersja reguł $new)."
+  echo "SigmaHQ rules removed (rules version $new)."
 else
-  echo "Zaimportowano $n reguł SigmaHQ (wyłączone, wersja reguł $new; pominięte niezgodne: $(echo "$bad" | grep -c . || true))."
-  echo "Detektor wczyta je w ciągu 30 s. Włączanie: panel → Reguły, filtr SigmaHQ (najlepiej przez tryb próbny)."
+  echo "Imported $n SigmaHQ rules (disabled, rules version $new; incompatible skipped: $(echo "$bad" | grep -c . || true))."
+  echo "The detector loads them within 30 s. Enabling: panel → Detection rules, SigmaHQ filter (preferably via trial mode)."
 fi

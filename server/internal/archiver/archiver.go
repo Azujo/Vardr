@@ -150,7 +150,7 @@ func (r *Archiver) Tick(ctx context.Context) error {
 	r.sealedFor = hour
 	if n > 0 {
 		r.M.Manifests.Add(float64(n))
-		r.Log.Info("zamknięto godziny archiwum", "manifests", n)
+		r.Log.Info("archive hours closed", "manifests", n)
 	}
 	return nil
 }
@@ -244,12 +244,12 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 			free, total, paused := c.Health.Get()
 			st.DiskFreeBytes, st.DiskTotalBytes, st.Paused = int64(free), int64(total), paused
 			if err := c.State.SaveState(ctx, st); err != nil && ctx.Err() == nil {
-				log.Warn("zapis stanu archiwizatora nieudany", "err", err)
+				log.Warn("recording the archiver state failed", "err", err)
 			}
 			if by, ok, err := c.State.TakeVerifyRequest(ctx); err != nil && ctx.Err() == nil {
-				log.Warn("odczyt zleceń weryfikacji nieudany", "err", err)
+				log.Warn("reading verification requests failed", "err", err)
 			} else if ok {
-				log.Info("weryfikacja zlecona z panelu", "by", by)
+				log.Info("verification requested from the panel", "by", by)
 				verifyAt = time.Now()
 			}
 		}
@@ -267,9 +267,9 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 			}
 			if err != nil {
 				m.Errors.WithLabelValues("expire").Inc()
-				log.Error("usuwanie danych po retencji nieudane", "err", err)
+				log.Error("removing data after retention failed", "err", err)
 			} else if n > 0 {
-				log.Info("usunięto dane po retencji", "hours", n, "retention", retention.String())
+				log.Info("data removed after retention", "hours", n, "retention", retention.String())
 			}
 		}
 		if !time.Now().Before(verifyAt) {
@@ -288,7 +288,7 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver, opt urd.VerifyOptions) urd.Verification {
 	v := a.Verify(ctx, opt)
 	if _, err := a.Cat.SaveVerification(context.WithoutCancel(ctx), v); err != nil {
-		log.Error("zapis wyniku weryfikacji nieudany", "err", err)
+		log.Error("recording the verification result failed", "err", err)
 	}
 	ok := 0.0
 	if v.OK {
@@ -301,9 +301,9 @@ func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics
 		"unverified", v.Unverified, "hashed_batches", v.Records, "hashed_bytes", v.Bytes,
 		"took", v.FinishedAt.Sub(v.StartedAt).Round(time.Millisecond).String()}
 	if v.OK {
-		log.Info("weryfikacja archiwum: zgodne", args...)
+		log.Info("archive verification: consistent", args...)
 	} else {
-		log.Error("weryfikacja archiwum: NIEZGODNOŚCI", append(args, "problems", v.Problems)...)
+		log.Error("archive verification: INCONSISTENCIES", append(args, "problems", v.Problems)...)
 	}
 	return v
 }

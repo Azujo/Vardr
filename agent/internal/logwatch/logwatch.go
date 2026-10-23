@@ -16,6 +16,8 @@ import (
 	"log/slog"
 	"math"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Info to stan dziennika odczytany z Windows (EvtGetLogInfo i konfiguracja kanału).
@@ -147,7 +149,7 @@ func (w *Watcher) Check() {
 	for _, ch := range w.Channels {
 		info, err := w.Info(ch.Name)
 		if err != nil {
-			w.Log.Debug("odczyt stanu dziennika nieudany", "channel", ch.Name, "err", err)
+			w.Log.Debug("reading the log state failed", "channel", ch.Name, "err", err)
 			continue
 		}
 		w.check(ch, info)
@@ -197,10 +199,11 @@ func (w *Watcher) check(ch Channel, info Info) {
 func (w *Watcher) report(name string, info Info, a Assessment, st *chanState) {
 	if a.Lost > 0 && info.Oldest-1 > st.lostUpTo {
 		from := max(st.lostUpTo+1, info.Oldest-a.Lost)
-		msg := fmt.Sprintf("kanał %s: dziennik Windows nadpisał do %d rekordów (%d–%d), zanim agent je wysłał – możliwa luka w danych",
-			name, info.Oldest-from, from, info.Oldest-1)
-		w.Log.Error(msg, "channel", name, "eventlog", true)
-		w.warn(msg)
+		w.Log.Error(fmt.Sprintf("channel %s: the Windows log overwrote up to %d records (%d–%d) before the agent sent them – possible data gap",
+			name, info.Oldest-from, from, info.Oldest-1), "channel", name, "eventlog", true)
+		w.warn(fmt.Sprintf(lang.L("kanał %s: dziennik Windows nadpisał do %d rekordów (%d–%d), zanim agent je wysłał – możliwa luka w danych",
+			"channel %s: the Windows log overwrote up to %d records (%d–%d) before the agent sent them – possible data gap"),
+			name, info.Oldest-from, from, info.Oldest-1))
 		st.lostUpTo = info.Oldest - 1
 	}
 
@@ -218,19 +221,22 @@ func (w *Watcher) report(name string, info Info, a Assessment, st *chanState) {
 	}
 	switch {
 	case level > st.level:
-		msg := fmt.Sprintf("kanał %s: niewysłane zdarzenia zajmują %.0f%% dziennika Windows – przy dłuższym braku łączności zostaną nadpisane",
+		logMsg := fmt.Sprintf("channel %s: unsent events take %.0f%% of the Windows log – they will be overwritten if the connection stays down",
+			name, a.Risk*100)
+		msg := fmt.Sprintf(lang.L("kanał %s: niewysłane zdarzenia zajmują %.0f%% dziennika Windows – przy dłuższym braku łączności zostaną nadpisane",
+			"channel %s: unsent events take %.0f%% of the Windows log – they will be overwritten if the connection stays down"),
 			name, a.Risk*100)
 		if a.TimeLeft > 0 {
-			msg += fmt.Sprintf(" (szacunkowo za %s)", humanDuration(a.TimeLeft))
+			msg += fmt.Sprintf(lang.L(" (szacunkowo za %s)", " (in about %s)"), humanDuration(a.TimeLeft))
 		}
 		if level == 2 {
-			w.Log.Error(msg, append(attrs, "eventlog", true)...)
+			w.Log.Error(logMsg, append(attrs, "eventlog", true)...)
 		} else {
-			w.Log.Warn(msg, append(attrs, "eventlog", true)...)
+			w.Log.Warn(logMsg, append(attrs, "eventlog", true)...)
 		}
 		w.warn(msg)
 	case level == 0 && st.level > 0:
-		w.Log.Info(fmt.Sprintf("kanał %s: zaległość w dzienniku Windows odrobiona", name), attrs...)
+		w.Log.Info(fmt.Sprintf("channel %s: Windows log backlog cleared", name), attrs...)
 	}
 	st.level = level
 }
@@ -239,11 +245,11 @@ func (w *Watcher) report(name string, info Info, a Assessment, st *chanState) {
 func (w *Watcher) advise(name string, info Info) {
 	const mb = 1 << 20
 	if info.Retention {
-		w.Log.Warn(fmt.Sprintf("kanał %s: dziennik ustawiony na „nie nadpisuj” – po zapełnieniu Windows przestanie zapisywać nowe zdarzenia", name),
+		w.Log.Warn(fmt.Sprintf("channel %s: the log is set to \"do not overwrite\" – when full, Windows will stop recording new events", name),
 			"channel", name, "max_size_mb", info.MaxSize/mb, "eventlog", true)
 	}
 	if name == "Security" && info.MaxSize > 0 && info.MaxSize < 128*mb {
-		w.Log.Warn("dziennik Security jest mały – przy przerwie w łączności zdarzenia mogą zostać nadpisane; zalecane min. 128 MB na stacjach i 512 MB–1 GB na serwerach i kontrolerach domeny (GPO, patrz README)",
+		w.Log.Warn("the Security log is small – events may be overwritten during a connection outage; recommended at least 128 MB on workstations and 512 MB–1 GB on servers and domain controllers (GPO, see the docs)",
 			"channel", name, "max_size_mb", info.MaxSize/mb, "eventlog", true)
 	}
 }
@@ -257,7 +263,7 @@ func (w *Watcher) warn(msg string) {
 func humanDuration(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return "mniej niż minutę"
+		return lang.L("mniej niż minutę", "less than a minute")
 	case d < time.Hour:
 		return fmt.Sprintf("%d min", int(d.Minutes()))
 	case d < 48*time.Hour:

@@ -1,0 +1,367 @@
+{
+  "title": "Reguły detekcji",
+  "intro": "Reguły w formacie Sigma (YAML) z katalogu rules/ – wdrażane poleceniem deploy.sh rules albo importem SigmaHQ; detektor przeładowuje je w ciągu 30 s. Każda zmiana treści to nowa wersja (historia w szczegółach). Administrator może regułę wyłączyć albo włączyć z panelu – z powodem i w audycie. Reguły korelacyjne z kreatora są zapisywane w panelu (plik panel/…).",
+  "newCorrelation": "Nowa korelacja (kreator)",
+  "testNew": "Przetestuj nową regułę",
+  "testNewTitle": "Test nowej reguły",
+  "trials": "Próby reguł",
+  "sigmaImport": "Import reguł SigmaHQ",
+  "notConfigured": "Detektor (siem-detector) jeszcze nie działał – brak wczytanych reguł.",
+  "fileErrors": "Pliki z błędami ({{count}}) – te reguły nie działają",
+  "newRuleTitle": "Nowa reguła",
+  "newRuleId": "moja-regula-1",
+  "mode": {
+    "stream": "w locie",
+    "index_query": "zapytania",
+    "both": "oba silniki",
+    "system": "wbudowana",
+    "correlation": "korelacja",
+    "builtinCorrelation": "korelacja (wbudowana)"
+  },
+  "filter": {
+    "search": "szukaj: tytuł, id, plik, tag (np. attack.t1059)",
+    "source": {
+      "all": "Wszystkie",
+      "own": "Własne",
+      "panel": "Z panelu",
+      "builtin": "Wbudowane"
+    },
+    "state": {
+      "all": "każdy stan",
+      "on": "włączone",
+      "off": "wyłączone",
+      "trial": "w trybie próbnym",
+      "panel": "ustawione w panelu"
+    },
+    "anyLevel": "każdy poziom",
+    "count": "{{shown}} z {{total}}"
+  },
+  "selected": "Zaznaczone: {{count}}",
+  "clearSelection": "wyczyść zaznaczenie",
+  "selectFiltered": "zaznacz wszystkie z filtra",
+  "selectFilteredTitle": "zaznacz wszystkie reguły z filtra ({{count}})",
+  "selectRule": "zaznacz regułę",
+  "col": {
+    "enabled": "Włączona",
+    "level": "Poziom",
+    "rule": "Reguła",
+    "engine": "Silnik",
+    "threshold": "Próg / łączenie",
+    "openAlerts": "Otwarte alerty",
+    "file": "Plik"
+  },
+  "trialTip": "Tryb próbny od {{date}} ({{by}}{{reason}}): trafienia bez alertów, wyniki w „Próbach reguł”.",
+  "trialBadge": "próbna",
+  "overrideTip": "Ustawione w panelu: {{by}}, {{date}}{{reason}}. W pliku: {{file}}.",
+  "enabledWord": "włączona",
+  "disabledWord": "wyłączona",
+  "threshold": "próg: {{count}} zdarzeń w {{window}}",
+  "thresholdDistinct": "próg: {{count}} różnych {{field}} w {{window}}",
+  "eachEvent": "każde zdarzenie osobno",
+  "ruleMeta": "id {{id}} · wersja {{version}} · wczytana {{date}}",
+  "panelRule": "reguła z panelu (kreator korelacji)",
+  "edit": "Edytuj",
+  "tab": {
+    "source": "Treść",
+    "versions": "Wersje",
+    "test": "Test"
+  },
+  "reason": "Powód",
+  "yourPassword": "Twoje hasło",
+  "optional": "opcjonalnie",
+  "versions": {
+    "none": "Brak historii.",
+    "info": "v{{version}}: wczytana {{date}} z pliku {{file}} · SHA-256 {{sha}}…",
+    "changesSince": " · zmiany względem v{{version}}:",
+    "first": " · pierwsza wersja"
+  },
+  "delete": {
+    "button": "Usuń",
+    "title": "Usunięcie reguły „{{title}}”",
+    "warning": "Usunięta zostanie cała reguła z panelu (korelacja i jej reguły bazowe z tego samego zapisu). Historia wersji i alerty zostają. Podaj powód (trafi do audytu) i potwierdź hasłem.",
+    "confirm": "Usuń regułę",
+    "done": "Usunięto – detektor przestanie oceniać regułę w ciągu 30 s."
+  },
+  "toggle": {
+    "titleTrial": "Tryb próbny reguły „{{title}}”",
+    "titleDisable": "Wyłączenie reguły „{{title}}”",
+    "titleEnable": "Włączenie reguły „{{title}}”",
+    "trialInfo": "W trybie próbnym reguła liczy trafienia (komputery, dni, ostatnie zdarzenie) bez alertów i powiadomień – wyniki w „Próbach reguł”. Po tygodniu–dwóch widać, czy można ją włączyć.",
+    "trialWarning": "Na czas próby reguła nie wywoła alertów – także przy prawdziwym ataku. Podaj powód (trafi do audytu) i potwierdź hasłem.",
+    "disableWarning": "Wyłączona reguła nie wywoła alertów – także przy prawdziwym ataku. Podaj powód (trafi do audytu) i potwierdź hasłem.",
+    "trialFirst": "Najpierw tryb próbny (bez alertów)",
+    "reasonHint": "np. fałszywe alarmy z serwera kopii do czasu poprawki reguły",
+    "backToFile": "wróć do ustawienia z pliku ({{state}})",
+    "restore": "Przywróć z pliku",
+    "startTrial": "Uruchom próbę",
+    "disable": "Wyłącz regułę",
+    "enable": "Włącz regułę",
+    "done": "Zmiana zacznie działać w ciągu 30 s (przeładowanie reguł w detektorze).",
+    "doneTrial": "Tryb próbny zacznie działać w ciągu 30 s – trafienia bez alertów w „Próbach reguł”."
+  },
+  "bulk": {
+    "trial": "Tryb próbny",
+    "enable": "Włącz",
+    "disable": "Wyłącz",
+    "file": "Ustawienie z pliku",
+    "title": "{{action}} – zaznaczone reguły: {{count}}",
+    "info": {
+      "trial": "Reguły będą liczyć trafienia bez alertów i powiadomień (strona „Próby reguł”). Włączone reguły z zaznaczenia przestaną alarmować na czas próby.",
+      "enable": "Reguły zaczną tworzyć alerty i powiadomienia. Włączenie wielu reguł bez próby może zalać analityków fałszywymi alarmami.",
+      "disable": "Wyłączone reguły nie wywołają alertów – także przy prawdziwym ataku.",
+      "file": "Reguły wrócą do ustawienia z pliku (enabled w treści reguły); ustawienia z panelu znikną."
+    },
+    "skipInfo": "Reguły, których zmiana nie dotyczy (np. już w tym stanie albo wbudowane), zostaną pominięte. Zmiana trafi do audytu, detektor zastosuje ją w ciągu 30 s.",
+    "reasonHint": "np. ocena reguł SigmaHQ dla Windows przed włączeniem",
+    "done": "Zmienione reguły: {{changed}} (bez zmian: {{skipped}}) – detektor zastosuje zmiany w ciągu 30 s."
+  },
+  "tester": {
+    "intro": "Reguła (YAML) jest sprawdzana i wykonywana na zdarzeniach z ClickHouse – nic nie jest wdrażane ani zapisywane. Alerty liczone tak jak w detektorze (łączenie, progi). Zmienioną regułę wdraża się plikiem w repozytorium",
+    "error": "błąd",
+    "range": {
+      "1": "ostatnia godzina",
+      "24": "ostatnie 24 h",
+      "72": "ostatnie 3 dni",
+      "168": "ostatnie 7 dni"
+    },
+    "run": "Przetestuj",
+    "failed": "Reguła nie przeszła",
+    "attackTags": "Tagi MITRE ATT&CK do poprawy",
+    "matched": "Pasujących zdarzeń:",
+    "alerts": "alertów, które by powstały:",
+    "truncated": " (z pierwszych 20 000 zdarzeń)",
+    "colKey": "Klucz / komputer",
+    "colEvents": "Zdarzenia",
+    "colFrom": "Od",
+    "colTo": "Do",
+    "lastEvents": "Ostatnie pasujące zdarzenia",
+    "sql": "warunek SQL (silnik zapytań)"
+  },
+  "trialsPage": {
+    "back": "reguły detekcji",
+    "intro": "Reguła w trybie próbnym jest oceniana na bieżących zdarzeniach (silnik w locie), ale nie tworzy alertów ani powiadomień – liczy tylko trafienia od początku próby. Tryb próbny ustawisz na stronie reguł (pojedynczo albo dla zaznaczonych, np. wszystkich reguł SigmaHQ wysokiego poziomu). Reguły progowe liczą trafienia warunku, bez progu.",
+    "empty": [
+      "Żadna reguła nie jest w trybie próbnym. Na stronie ",
+      "reguł",
+      " zaznacz reguły (np. filtr SigmaHQ, poziom wysoki i krytyczny) i wybierz „Tryb próbny”."
+    ],
+    "all": "Wszystkie ({{count}})",
+    "enable": "Włącz (z alertami)",
+    "disable": "Wyłącz (koniec próby)",
+    "col": {
+      "verdict": "Ocena",
+      "trial": "Próba",
+      "hits": "Trafienia",
+      "hosts": "Komputery",
+      "last": "Ostatnie trafienie"
+    },
+    "verdict": {
+      "short": {
+        "label": "za krótko",
+        "short": "za krótko",
+        "help": "próba trwa krócej niż dobę – poczekaj na wynik"
+      },
+      "quiet": {
+        "label": "cicha – można włączyć",
+        "short": "cicha",
+        "help": "brak trafień – reguła nie hałasuje na tych danych"
+      },
+      "rare": {
+        "label": "rzadka",
+        "short": "rzadka",
+        "help": "mniej niż 1 trafienie dziennie – przejrzyj przykłady i włącz"
+      },
+      "moderate": {
+        "label": "umiarkowana",
+        "short": "umiarkowana",
+        "help": "1–20 trafień dziennie – sprawdź, czy to prawdziwe zdarzenia, rozważ wyjątki"
+      },
+      "noisy": {
+        "label": "głośna",
+        "short": "głośna",
+        "help": "ponad 20 trafień dziennie – bez dostrojenia zaleje alertami"
+      }
+    },
+    "gone": "(reguły nie ma już w katalogu)",
+    "since": "od {{date}}",
+    "days": "{{n}} dni",
+    "perDay": "{{n}}/dzień",
+    "noHost": "(brak)",
+    "footer": [
+      "Próby działają w silniku w locie (",
+      " stream albo both). Trafienia są przechowywane 35 dni; ponowne rozpoczęcie próby liczy od zera."
+    ]
+  },
+  "sigma": {
+    "intro": "to otwarta baza reguł Sigma. Vardr obsługuje podzbiór Sigmy – import kopiuje reguły dla zbieranych źródeł do rules/sigmahq/, odrzuca te, których parser nie obsługuje, i wdraża resztę wyłączoną. Na serwerze z instalatora wystarczy jeden skrypt; z repozytorium Vardra – polecenia w katalogu projektu. Opis: docs/reguly.md, „Import reguł SigmaHQ”.",
+    "server": "Serwer (instalator)",
+    "ps": "Repozytorium – PowerShell",
+    "bash": "Repozytorium – Git Bash",
+    "copy": "kopiuj",
+    "copied": "skopiowano",
+    "copyCmd": "kopiuj polecenie",
+    "serverSteps": [
+      {
+        "title": "Import albo aktualizacja reguł (na serwerze Vardra)",
+        "note": "Pobiera SigmaHQ z GitHuba, kopiuje reguły dla zbieranych źródeł, pomija niezgodne z parserem i wszystkie zostawia wyłączone. Aktualizacja Vardra zachowuje zaimportowane reguły."
+      },
+      {
+        "title": "Usunięcie reguł SigmaHQ (opcjonalnie)"
+      }
+    ],
+    "repoSteps": [
+      {
+        "title": "Pobranie repozytorium SigmaHQ obok projektu (aktualizacja: git -C ../sigma pull)"
+      },
+      {
+        "title": "Kopiowanie kategorii dla źródeł, które zbieramy",
+        "note": "Przy aktualizacji najpierw usuń stary katalog rules/sigmahq – włączenia z panelu zostają (są zapisane po id reguły)."
+      },
+      {
+        "title": "Tylko reguły dojrzałe (stable i test)"
+      },
+      {
+        "title": "Sprawdzenie parserem Vardra"
+      },
+      {
+        "title": "Usunięcie reguł, których Vardr nie obsługuje (potem krok 4 jeszcze raz – 0 błędów)"
+      },
+      {
+        "title": "Wszystkie zaimportowane reguły wyłączone w plikach",
+        "note": "Bez tego po wdrożeniu włączyłyby się setki reguł naraz."
+      },
+      {
+        "title": "Wdrożenie"
+      }
+    ],
+    "after": "Po wdrożeniu",
+    "after1": "Reguły z SigmaHQ są na liście wyłączone (plik sigmahq/…) i nie obciążają detekcji.",
+    "after2": "Wybraną regułę sprawdź zakładką Test na zdarzeniach z 7 dni; bez fałszywych alarmów – włącz przełącznikiem. Włączenie przetrwa ponowny import.",
+    "after3": "Reguła na zdarzenia, których agent nie zbiera, wczyta się, ale test pokaże 0 zdarzeń.",
+    "license": "Licencja reguł SigmaHQ:",
+    "licenseText": "– użycie, zmiany i dystrybucja dozwolone, pod warunkiem zachowania autora (pole author), źródła i licencji. Nie usuwaj z reguł pól author i references."
+  },
+  "wizard": {
+    "title": "Kreator korelacji",
+    "intro": "Wskaż przykładowe zdarzenia, które razem świadczą o ataku (np. utworzenie konta, a potem dodanie go do grupy administratorów). Kreator zaproponuje kroki, wspólny klucz i okno czasu, złoży regułę Sigma Correlation i pozwoli sprawdzić ją na historii przed zapisem.",
+    "type": {
+      "label": "Typ",
+      "event_count": "liczba zdarzeń (event_count)",
+      "value_count": "liczba różnych wartości pola (value_count)",
+      "temporal": "wszystkie kroki w oknie, dowolna kolejność (temporal)",
+      "temporal_ordered": "wszystkie kroki w oknie, w kolejności (temporal_ordered)"
+    },
+    "event": {
+      "4624": "Udane logowanie",
+      "4625": "Nieudane logowanie",
+      "4634": "Wylogowanie",
+      "4648": "Logowanie z jawnie podanym kontem",
+      "4672": "Logowanie z uprawnieniami specjalnymi",
+      "4688": "Utworzenie procesu",
+      "4720": "Utworzono konto",
+      "4722": "Włączono konto",
+      "4724": "Reset hasła konta",
+      "4725": "Wyłączono konto",
+      "4726": "Usunięto konto",
+      "4728": "Dodano do grupy globalnej",
+      "4732": "Dodano do grupy lokalnej",
+      "4740": "Zablokowano konto",
+      "4756": "Dodano do grupy uniwersalnej",
+      "4768": "Bilet Kerberos TGT",
+      "4769": "Bilet usługi Kerberos",
+      "4771": "Błąd uwierzytelnienia Kerberos",
+      "4776": "Weryfikacja poświadczeń NTLM",
+      "1102": "Wyczyszczono dziennik zabezpieczeń",
+      "7045": "Zainstalowano usługę"
+    },
+    "eventN": "{{dataset}}: zdarzenie {{code}}",
+    "v": {
+      "noEvents": "dodaj przykładowe zdarzenia",
+      "title": "podaj tytuł",
+      "noFields": "krok „{{step}}”: wybierz co najmniej jedno pole nowej reguły bazowej",
+      "threshold": "krok „{{step}}”: reguła progowa nie może być bazą korelacji – wybierz inną albo nową",
+      "twoSteps": "korelacja czasowa wymaga co najmniej dwóch różnych kroków",
+      "field": "wybierz pole, którego różne wartości liczyć",
+      "count": "liczba: od 2 do 10 000",
+      "key": "klucz nie pasuje do kroków – wybierz go ponownie"
+    },
+    "yaml": {
+      "baseTitle": "{{step}} – krok {{n}} korelacji „{{title}}”",
+      "baseDescription": "Reguła bazowa korelacji „{{title}}” z kreatora w panelu."
+    },
+    "searchPlaceholder": "np. code:4720 albo user:jan albo action:login outcome:failure",
+    "days7": "7 dni",
+    "search": "Szukaj",
+    "pick": "dodaj do przykładów",
+    "unpick": "usuń z przykładów",
+    "step": "krok {{n}}",
+    "baseRule": "Reguła bazowa",
+    "thresholdRule": " (progowa – nie może być bazą)",
+    "newFromFields": "Nowa reguła z pól tego zdarzenia",
+    "noMatching": "żadna wdrożona reguła nie pasuje do tego zdarzenia – kreator utworzy regułę bazową",
+    "matching": "pasujące wdrożone reguły: {{count}}",
+    "fieldsHint": "Zaznacz pola, które muszą się zgadzać, żeby zdarzenie było tym krokiem (zwykle rodzaj zdarzenia, np. EventID, akcja, wynik – nie konto ani adres, bo te łączy klucz korelacji).",
+    "noSigmaProduct": "Źródło bez odpowiednika w Sigmie – reguła wybierze zdarzenia polem event.dataset.",
+    "keySame": "{{field}} (np. {{value}})",
+    "keyAlias": "{{name}}: {{fields}} (np. {{value}})",
+    "keyInStep": "{{field}} w kroku {{n}}",
+    "editTitle": "Edycja reguły z panelu",
+    "editNote": [
+      "Reguła korelacyjna z regułami bazowymi (dokumenty rozdzielone ",
+      "). Id korelacji musi zostać {{id}}."
+    ],
+    "changeNote": "Opis zmiany (audyt)",
+    "save": "Zapisz",
+    "saved": "Zapisano – detektor wczyta regułę w ciągu 30 s.",
+    "then": ", potem ",
+    "series": "Seria: {{title}}",
+    "s1": "Zdarzenia",
+    "s1d": "przykłady",
+    "s2": "Kroki",
+    "s2d": "reguły bazowe",
+    "s3": "Warunek",
+    "s3d": "klucz, typ, okno",
+    "s4": "Opis i test",
+    "s4d": "zapis",
+    "picked": "Wybrane zdarzenia ({{n}}/{{max}})",
+    "clear": "wyczyść",
+    "noPicks": "Brak. Dodaj zdarzenia wyszukiwarką niżej albo w Mímirze (szczegóły zdarzenia → „Dodaj do kreatora korelacji”). Dla serii jednego rodzaju (np. nieudane logowania z wielu adresów) wystarczy kilka przykładów tego samego zdarzenia.",
+    "toSteps": "Dalej: kroki",
+    "missing": "{{count}} z wybranych zdarzeń nie ma już w bazie (retencja) – pominięte.",
+    "stepsIntro": "Każde zdarzenie to krok korelacji: istniejąca reguła, która do niego pasuje, albo nowa reguła bazowa z wybranych pól. Zdarzenia z tym samym wyborem tworzą jeden krok. Kolejność kroków – według czasu pierwszego przykładu.",
+    "steps": "Kroki ({{count}})",
+    "existing": "istniejąca reguła",
+    "newBase": "nowa reguła bazowa",
+    "examples": "przykładów: {{count}}",
+    "noFieldsShort": "brak pól!",
+    "back": "Wstecz",
+    "toCondition": "Dalej: warunek",
+    "key": "Co łączy zdarzenia (klucz)",
+    "keyHintSteps": "Wartość, która występuje we wszystkich krokach – kreator znalazł ją w przykładach. Różne nazwy pól w krokach to aliasy.",
+    "keyHintOne": "Wartość wspólna wszystkim przykładom – liczone są zdarzenia z tą samą wartością.",
+    "noKey": "bez klucza – wszystkie zdarzenia razem (rzadko ma sens)",
+    "noCommon": "Przykłady nie mają wspólnej wartości. Dodaj zdarzenia dotyczące tego samego konta, komputera albo adresu.",
+    "window": "Okno czasu",
+    "suggested": "{{w}} (podpowiedź)",
+    "span": "przykłady rozłożone na {{span}}",
+    "minValues": "Co najmniej różnych wartości",
+    "minEvents": "Co najmniej zdarzeń",
+    "valueField": "Pole, którego różne wartości liczyć",
+    "valueFieldOpt": "{{field}} ({{n}} różnych w przykładach)",
+    "toTest": "Dalej: opis i test",
+    "ruleTitle": "Tytuł",
+    "description": "Opis",
+    "descriptionHint": "co wykrywa i dlaczego to groźne",
+    "instructions": "Instrukcja dla analityka",
+    "instructionsHint": "pola ostatniego zdarzenia ({{example}}) oraz {{vars}}",
+    "generate": "Reguły bazowe nadal tworzą własne alerty (generate: true)",
+    "generateHint": "wyłączone – reguły bazowe tylko zasilają korelację",
+    "generateWarning": "Korelacja używa wdrożonych reguł. Bez „generate” te reguły przestaną same tworzyć alerty (o ile żadna inna korelacja ich nie potrzebuje) – zwykle tego nie chcesz.",
+    "edited": "YAML zmieniony ręcznie – zmiany pól wyżej go nadpiszą.",
+    "backToGenerated": "Wróć do wygenerowanego",
+    "testNote": "Wygenerowana reguła (YAML) – możesz ją poprawić ręcznie. „Przetestuj” liczy alerty, które powstałyby na zdarzeniach z wybranego okresu; nic nie jest zapisywane.",
+    "saveRule": "Zapisz regułę",
+    "adminOnly": "Zapis wymaga roli administratora – skopiuj regułę i przekaż ją administratorowi.",
+    "copyYaml": "kopiuj YAML"
+  }
+}

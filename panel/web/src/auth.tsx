@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { setLanguage } from "./i18n";
 import { ApiError, api, hasPerm, setCsrfToken, setUnauthenticatedHandler, type Permissions, type SessionInfo, type User } from "./api";
 
 interface AuthState {
@@ -13,6 +14,8 @@ interface AuthState {
   can: (mod: string, level: string) => boolean;
   logout: () => Promise<void>;
   applySession: (s: SessionInfo) => void;
+  // Język zapisany na koncie zmieniony w tej sesji (bez ponownego pobierania sesji).
+  setUserLanguage: (language: string) => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -31,6 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPerms(s.permissions ?? {});
     setProfile(s.profile ?? null);
     setNotice("");
+    // Język zapisany na koncie wygrywa z językiem tej przeglądarki.
+    if (s.user.language) setLanguage(s.user.language);
   }, []);
 
   useEffect(() => {
@@ -49,6 +54,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, [applySession]);
 
+  const setUserLanguage = useCallback((language: string) => {
+    setUser((u) => (u ? { ...u, language } : u));
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -58,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <AuthContext.Provider value={{ user, loading, notice, profile, can, logout, applySession }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, notice, profile, can, logout, applySession, setUserLanguage }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

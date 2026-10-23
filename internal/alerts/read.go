@@ -38,17 +38,34 @@ type Alert struct {
 	ClosedBy     string            `json:"closed_by,omitempty"`
 	CloseReason  string            `json:"close_reason,omitempty"`
 	Assignee     string            `json:"assignee,omitempty"`
+	// I18n: tytuł, opis i instrukcja w innych językach (kod języka → teksty).
+	I18n map[string]AlertText `json:"i18n,omitempty"`
+}
+
+// Text: teksty alertu w języku lang, brakujące – z oryginału.
+func (a Alert) Text(lang string) AlertText {
+	t := a.I18n[lang]
+	if t.Title == "" {
+		t.Title = a.RuleTitle
+	}
+	if t.Summary == "" {
+		t.Summary = a.Summary
+	}
+	if t.Instructions == "" {
+		t.Instructions = a.Instructions
+	}
+	return t
 }
 
 const alertCols = `id, rule_id, rule_title, level, engine, group_key, group_fields, status, hits, first_seen, last_seen,
 	created_at, updated_at, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, closed_at,
-	coalesce(closed_by, ''), coalesce(close_reason, ''), assignee, user_identity`
+	coalesce(closed_by, ''), coalesce(close_reason, ''), assignee, user_identity, i18n`
 
 func scanAlert(r pgx.Row) (Alert, error) {
 	var a Alert
 	err := r.Scan(&a.ID, &a.RuleID, &a.RuleTitle, &a.Level, &a.Engine, &a.GroupKey, &a.GroupFields, &a.Status, &a.Hits,
 		&a.FirstSeen, &a.LastSeen, &a.CreatedAt, &a.UpdatedAt, &a.AgentID, &a.HostName, &a.UserName, &a.SourceIP,
-		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason, &a.Assignee, &a.UserIdentity)
+		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason, &a.Assignee, &a.UserIdentity, &a.I18n)
 	if a.GroupFields == nil {
 		a.GroupFields = map[string]string{}
 	}
@@ -215,7 +232,7 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 	rows, err := p.pool.Query(ctx, `SELECT r.id, r.title, r.level, r.description, r.tags, r.file, r.source, r.mode, r.enabled,
 		r.group_by, r.suppress_s, r.instructions, r.threshold, r.loaded_at, r.removed_at,
 		(SELECT count(*) FROM gjallarhorn.alerts a WHERE a.rule_id = r.id AND a.status <> 'closed'),
-		r.file_enabled, r.version, o.enabled, o.reason, o.changed_by, o.changed_at, o.trial
+		r.file_enabled, r.version, o.enabled, o.reason, o.changed_by, o.changed_at, o.trial, r.i18n
 		FROM gjallarhorn.rules r LEFT JOIN gjallarhorn.rule_overrides o ON o.rule_id = r.id
 		WHERE r.removed_at IS NULL ORDER BY r.level DESC, r.title`)
 	if err != nil {
@@ -229,7 +246,7 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 		var ot *bool
 		err := r.Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled,
 			&x.GroupBy, &x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.OpenAlerts,
-			&x.FileEnabled, &x.Version, &oe, &or_, &ob, &oa, &ot)
+			&x.FileEnabled, &x.Version, &oe, &or_, &ob, &oa, &ot, &x.I18n)
 		if oe != nil {
 			x.Override = &Override{Enabled: *oe, Trial: *ot, Reason: *or_, ChangedBy: *ob, ChangedAt: *oa}
 		}
@@ -238,7 +255,7 @@ func (p *PG) Rules(ctx context.Context) ([]RuleInfo, []RuleError, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err = p.pool.Query(ctx, `SELECT file, error, seen_at FROM gjallarhorn.rule_errors ORDER BY file`)
+	rows, err = p.pool.Query(ctx, `SELECT file, error, seen_at, error_en FROM gjallarhorn.rule_errors ORDER BY file`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -254,11 +271,11 @@ func (p *PG) Rule(ctx context.Context, id string) (RuleInfo, error) {
 	var oa *time.Time
 	err := p.pool.QueryRow(ctx, `SELECT r.id, r.title, r.level, r.description, r.tags, r.file, r.source, r.mode, r.enabled,
 		r.group_by, r.suppress_s, r.instructions, r.threshold, r.loaded_at, r.removed_at, r.file_enabled, r.version,
-		o.enabled, o.reason, o.changed_by, o.changed_at, o.trial
+		o.enabled, o.reason, o.changed_by, o.changed_at, o.trial, r.i18n
 		FROM gjallarhorn.rules r LEFT JOIN gjallarhorn.rule_overrides o ON o.rule_id = r.id WHERE r.id = $1`, id).
 		Scan(&x.ID, &x.Title, &x.Level, &x.Description, &x.Tags, &x.File, &x.Source, &x.Mode, &x.Enabled, &x.GroupBy,
 			&x.SuppressS, &x.Instructions, &x.Threshold, &x.LoadedAt, &x.RemovedAt, &x.FileEnabled, &x.Version,
-			&oe, &or_, &ob, &oa, &ot)
+			&oe, &or_, &ob, &oa, &ot, &x.I18n)
 	if oe != nil {
 		x.Override = &Override{Enabled: *oe, Trial: *ot, Reason: *or_, ChangedBy: *ob, ChangedAt: *oa}
 	}

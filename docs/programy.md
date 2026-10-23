@@ -2,7 +2,7 @@
 
 Każdy program serwera to jeden plik wykonywalny Go, konfigurowany zmiennymi środowiskowymi (w laboratorium: `deploy/lab/docker-compose.yml` i `.env`). Agenci są konfigurowani plikiem YAML i z panelu. Wszystkie programy serwera:
 
-- logują w JSON na standardowe wyjście (`docker compose logs <usługa>`);
+- logują w JSON na standardowe wyjście (`docker compose logs <usługa>`), po angielsku;
 - wystawiają metryki Prometheus na `SIEM_METRICS_ADDR` (domyślnie `:9100`, tylko w sieci Dockera), a z `SIEM_PPROF=1` także profiler `/debug/pprof/`;
 - łączą się z NATS pod `SIEM_NATS_URL` (domyślnie `nats://nats:4222`) i same zakładają potrzebne strumienie i konsumentów;
 - kończą się czysto po SIGTERM: dokańczają bieżącą paczkę, nie potwierdzając niedokończonej.
@@ -35,7 +35,7 @@ Kod: `agent/cmd/vardr-agent`. Usługa Windows `SiemAgent`, instalowana w `C:\Pro
 | `enroll -server <adres> -token <token> -dir <katalog>` | rejestracja bez instalacji usługi |
 | `version` | wersja |
 
-Opcja `-config <plik>` wskazuje inną konfigurację. Instalator MSI (`deploy/lab/msi`, budowany przez `deploy.sh agent`) wywołuje te same polecenia; deinstalacja chronionego agenta przez MSI wymaga `UNINSTALL_TOKEN=`.
+Komunikaty poleceń są w języku Windows (polski albo angielski; wymuszenie: `VARDR_LANG=pl|en`). Opcja `-config <plik>` wskazuje inną konfigurację. Instalator MSI (`deploy/lab/msi`, budowany przez `deploy.sh agent`) wywołuje te same polecenia; deinstalacja chronionego agenta przez MSI wymaga `UNINSTALL_TOKEN=`.
 
 **Konfiguracja lokalna** (`agent.yaml`, przykład: `agent/configs/agent.example.yaml`):
 
@@ -201,7 +201,10 @@ Kod: `panel/cmd/siem-api`, `panel/internal/*`, frontend `panel/web`. Backend HTT
 siem-api                                   serwer (domyślnie)
 siem-api bootstrap-admin -username admin   pierwsze konto administratora (wypisuje hasło startowe)
 siem-api reset-password -username jan      nowe hasło startowe
+siem-api reset-mfa -username jan           usunięcie drugiego składnika konta
 ```
+
+Komunikaty tych poleceń są po angielsku.
 
 W laboratorium: `docker compose run --rm api bootstrap-admin -username admin`.
 
@@ -235,6 +238,6 @@ Kod: `server/cmd/siem-loadgen`, `server/internal/loadgen`. Generator ruchu: symu
 | `fortisim` | `tools/cmd/fortisim` | symulator syslog FortiGate: `-target 192.168.88.98:514 -proto udp\|tcp -scenario traffic\|portscan\|sweep\|vpn-ok\|vpn-brute\|vpn-spray\|admin-brute\|utm\|mix -count N -every 100ms -user -attacker -header bare\|rfc3164\|rfc5424 -dry` |
 | `entrasim` | `tools/cmd/entrasim`, `internal/entrasim` | symulator Microsoft Graph (kontener `entrasim`): tło logowań i scenariusze na żądanie – `curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'`; scenariusze `normal`, `spray`, `brute`, `success-after-failures`, `foreign`, `mfa-fatigue`, `admin-role` (parametry `user=`, `attacker=`) |
 | `attackgen` | `tools/cmd/attackgen` | słownik MITRE ATT&CK z oficjalnego pakietu STIX: `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json` |
-| `odczytaj` | `tools/cmd/odczytaj` | czytnik eksportu archiwum dla audytora (Windows, bez instalacji): sprawdza integralność paczki i zapisuje raport oraz zdarzenia dnia po polsku w podfolderze `ODCZYT` |
+| `odczytaj` | `tools/cmd/odczytaj` | czytnik eksportu archiwum dla audytora (Windows, bez instalacji): sprawdza integralność paczki i zapisuje raport oraz zdarzenia dnia w podfolderze `ODCZYT` – po polsku albo po angielsku, według języka Windows (`VARDR_LANG`) |
 
 Budowanie: [rozwoj.md](rozwoj.md#budowanie).

@@ -30,6 +30,19 @@ correlation:
 falsepositives:
   - Zakładanie kont administracyjnych przez dział IT (sprawdź zgłoszenie)
 vardr:
+  i18n:
+    en:
+      title: "New account immediately added to a privileged group"
+      description: |
+        Account created (4720) and added to an administrative group within an hour
+        (4728/4732/4756). A typical way to persist access: the attacker creates
+        their own account and grants it privileges right away. Events are joined by the
+        account SID (TargetSid in 4720, MemberSid when added to the group).
+      instructions: |
+        Account {{key}} was created and added to group {{TargetUserName}} within
+        {{window}} ({{count}} events). Check who performed both operations and whether
+        there was a request. If not – disable the account, remove it from the group
+        and review the logons of this account and of the account that made the change.
   instructions: |
     Konto {{key}} utworzono i w ciągu {{window}} dodano do grupy
     {{TargetUserName}} ({{count}} zdarzeń). Sprawdź, kto wykonał obie

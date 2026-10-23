@@ -15,6 +15,7 @@ import (
 
 	"siem/agent/internal/limits"
 	"siem/agent/internal/logging"
+	"siem/internal/lang"
 )
 
 // Config to konfiguracja agenta. Docelowo będzie pobierana z serwera
@@ -216,16 +217,16 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("server.url jest wymagane"))
 	}
 	if c.Server.CAFile == "" || c.Server.CertFile == "" || c.Server.KeyFile == "" {
-		errs = append(errs, errors.New("server.ca_file, server.cert_file i server.key_file są wymagane (mTLS)"))
+		errs = append(errs, lang.Errorf("server.ca_file, server.cert_file i server.key_file są wymagane (mTLS)", "server.ca_file, server.cert_file and server.key_file are required (mTLS)"))
 	}
 	if c.StartAt != StartAtNow && c.StartAt != StartAtOldest {
-		errs = append(errs, fmt.Errorf("start_at: dozwolone %q lub %q", StartAtNow, StartAtOldest))
+		errs = append(errs, lang.Errorf("start_at: dozwolone %q lub %q", "start_at: allowed %q or %q", StartAtNow, StartAtOldest))
 	}
 	if c.Batch.MaxEvents < 1 || c.Batch.MaxEvents > 5000 {
-		errs = append(errs, errors.New("batch.max_events musi być w zakresie 1–5000"))
+		errs = append(errs, lang.Errorf("batch.max_events musi być w zakresie 1–5000", "batch.max_events must be in the range 1–5000"))
 	}
 	if c.Batch.MaxBytes < 64<<10 {
-		errs = append(errs, errors.New("batch.max_bytes musi wynosić co najmniej 64 KiB"))
+		errs = append(errs, lang.Errorf("batch.max_bytes musi wynosić co najmniej 64 KiB", "batch.max_bytes must be at least 64 KiB"))
 	}
 	if c.Limits.MemorySoftMB != nil && c.Limits.MemoryHardMB != nil {
 		if err := c.Limits.Resource().Validate(); err != nil {
@@ -233,41 +234,41 @@ func (c *Config) Validate() error {
 		}
 	}
 	if c.Batch.MaxEventBytes < 4<<10 || c.Batch.MaxEventBytes > c.Batch.MaxBytes {
-		errs = append(errs, errors.New("batch.max_event_bytes musi wynosić od 4 KiB do batch.max_bytes"))
+		errs = append(errs, lang.Errorf("batch.max_event_bytes musi wynosić od 4 KiB do batch.max_bytes", "batch.max_event_bytes must be between 4 KiB and batch.max_bytes"))
 	}
 	if c.Limits.MaxProcs < 1 || c.Limits.MaxProcs > 64 {
-		errs = append(errs, errors.New("limits.max_procs musi być w zakresie 1–64"))
+		errs = append(errs, lang.Errorf("limits.max_procs musi być w zakresie 1–64", "limits.max_procs must be in the range 1–64"))
 	}
 	if _, err := logging.Level(c.Logging.Level); err != nil {
 		errs = append(errs, fmt.Errorf("logging.level: %w", err))
 	}
 	if c.Logging.MaxSizeMB < 1 || c.Logging.MaxFiles < 1 || c.Logging.MaxFiles > 20 {
-		errs = append(errs, errors.New("logging.max_size_mb ≥ 1, logging.max_files w zakresie 1–20"))
+		errs = append(errs, lang.Errorf("logging.max_size_mb ≥ 1, logging.max_files w zakresie 1–20", "logging.max_size_mb ≥ 1, logging.max_files in the range 1–20"))
 	}
 	if c.Limits.MaxEPS < 0 || c.Limits.MaxSendKBps < 0 {
-		errs = append(errs, errors.New("limits.max_eps i limits.max_send_kbps nie mogą być ujemne"))
+		errs = append(errs, lang.Errorf("limits.max_eps i limits.max_send_kbps nie mogą być ujemne", "limits.max_eps and limits.max_send_kbps cannot be negative"))
 	}
 	if c.Buffer.MaxMB != nil && (*c.Buffer.MaxMB < 0 || *c.Buffer.MaxMB > 102400) {
-		errs = append(errs, errors.New("buffer.max_mb: 0 (wyłączony) – 102400"))
+		errs = append(errs, lang.Errorf("buffer.max_mb: 0 (wyłączony) – 102400", "buffer.max_mb: 0 (disabled) – 102400"))
 	}
 	if c.Buffer.OnFull != "" && c.Buffer.OnFull != "pause" && c.Buffer.OnFull != "drop_oldest" {
-		errs = append(errs, errors.New("buffer.on_full: pause albo drop_oldest"))
+		errs = append(errs, lang.Errorf("buffer.on_full: pause albo drop_oldest", "buffer.on_full: pause or drop_oldest"))
 	}
 	if c.Buffer.MinFreeMB < 0 {
-		errs = append(errs, errors.New("buffer.min_free_mb nie może być ujemne"))
+		errs = append(errs, lang.Errorf("buffer.min_free_mb nie może być ujemne", "buffer.min_free_mb cannot be negative"))
 	}
 	if len(c.Channels) == 0 {
-		errs = append(errs, errors.New("brak skonfigurowanych kanałów"))
+		errs = append(errs, lang.Errorf("brak skonfigurowanych kanałów", "no channels configured"))
 	}
 	seen := map[string]bool{}
 	for i, ch := range c.Channels {
 		if ch.Name == "" {
-			errs = append(errs, fmt.Errorf("channels[%d]: brak nazwy", i))
+			errs = append(errs, lang.Errorf("channels[%d]: brak nazwy", "channels[%d]: missing name", i))
 		}
 		if seen[ch.Name] {
-			errs = append(errs, fmt.Errorf("channels[%d]: kanał %q zdefiniowany wielokrotnie", i, ch.Name))
+			errs = append(errs, lang.Errorf("channels[%d]: kanał %q zdefiniowany wielokrotnie", "channels[%d]: channel %q defined more than once", i, ch.Name))
 		}
 		seen[ch.Name] = true
 	}
-	return errors.Join(errs...)
+	return lang.Join(errs...)
 }

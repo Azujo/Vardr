@@ -197,11 +197,11 @@ func (s *Spool) Send(ctx context.Context, b *contract.Batch) error {
 		if !errors.Is(err, errFull) {
 			// Zapis na dysk nieudany – zachowanie jak bez bufora.
 			s.setErr(err)
-			s.Log.Error("zapis paczki do bufora dyskowego nieudany – czekam na serwer", "err", err)
+			s.Log.Error("writing the batch to the disk buffer failed – waiting for the server", "err", err)
 			return s.Next.Send(ctx, b)
 		}
 		if !s.full.Swap(true) {
-			s.Log.Warn("bufor dyskowy pełny", "on_full", s.onFull.Load(), "bytes", s.Stats().Bytes, "limit", s.maxBytes.Load())
+			s.Log.Warn("disk buffer full", "on_full", s.onFull.Load(), "bytes", s.Stats().Bytes, "limit", s.maxBytes.Load())
 		}
 		if s.onFull.Load() == OnFullDropOldest && s.dropOldest() {
 			continue
@@ -212,7 +212,7 @@ func (s *Spool) Send(ctx context.Context, b *contract.Batch) error {
 	}
 }
 
-var errFull = errors.New("bufor pełny")
+var errFull = errors.New("buffer full")
 
 func (s *Spool) write(b *contract.Batch) error {
 	data, err := encode(b)
@@ -259,7 +259,7 @@ func (s *Spool) dropOldest() bool {
 	_ = os.Remove(filepath.Join(s.Dir, e.name))
 	s.dropped.Add(int64(e.events))
 	s.dropB.Add(1)
-	s.Log.Error("bufor pełny – usunięto najstarszą paczkę (utrata zdarzeń)", "events", e.events, "spooled_at", e.at)
+	s.Log.Error("buffer full – the oldest batch was removed (events lost)", "events", e.events, "spooled_at", e.at)
 	return true
 }
 
@@ -295,7 +295,7 @@ func (s *Spool) Run(ctx context.Context) {
 		if err != nil {
 			// Uszkodzony plik (np. dysk): odkładamy obok, żeby nie blokował kolejki.
 			s.setErr(err)
-			s.Log.Error("paczka w buforze nieczytelna – przeniesiona do bad/", "file", e.name, "err", err)
+			s.Log.Error("unreadable batch in the buffer – moved to bad/", "file", e.name, "err", err)
 			_ = os.MkdirAll(filepath.Join(s.Dir, "bad"), 0o700)
 			_ = os.Rename(path, filepath.Join(s.Dir, "bad", e.name))
 		} else if err := s.Next.Send(ctx, b); err != nil {
@@ -312,7 +312,7 @@ func (s *Spool) Run(ctx context.Context) {
 		s.mu.Unlock()
 		if empty {
 			s.full.Store(false)
-			s.Log.Info("bufor dyskowy opróżniony – wszystkie paczki dosłane")
+			s.Log.Info("disk buffer emptied – all batches sent")
 		}
 	}
 }

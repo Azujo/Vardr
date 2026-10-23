@@ -20,6 +20,17 @@ falsepositives:
   - Rzadkie, planowane czyszczenie dziennika przez administratora
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Security log cleared"
+      description: |
+        The Security log was cleared. Attackers clear the log to cover their tracks;
+        in normal operation this almost never happens. Events from before clearing are
+        in Vardr (and in the Urd archive), provided the agent managed to send them.
+      instructions: |
+        The log was cleared by {{SubjectDomainName}}\{{SubjectUserName}} on computer
+        {{Computer}}. Find out whether the clearing was planned and review in Mímir
+        the events from this computer from the period before clearing.
   instructions: |
     Dziennik wyczyścił {{SubjectDomainName}}\{{SubjectUserName}} na komputerze
     {{Computer}}. Ustal, czy czyszczenie było planowane, i przejrzyj w Mímirze

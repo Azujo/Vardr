@@ -17,8 +17,8 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("nie znaleziono")
-	ErrConflict = errors.New("już istnieje")
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("already exists")
 )
 
 // Role użytkowników panelu.
@@ -50,6 +50,8 @@ type User struct {
 	Source     string `json:"source"`
 	ExternalID string `json:"-"`
 	LDAPDN     string `json:"-"`
+	// Language: język panelu wybrany przez użytkownika; pusty – z przeglądarki.
+	Language string `json:"language"`
 }
 
 // Źródła kont.
@@ -88,6 +90,7 @@ type UserPatch struct {
 	DisplayName *string
 	Role        *string
 	Disabled    *bool
+	Language    *string
 }
 
 // PG to implementacja na PostgreSQL.
@@ -99,7 +102,7 @@ type PG struct {
 func Open(ctx context.Context, url string) (*PG, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("adres bazy: %w", err)
+		return nil, fmt.Errorf("database address: %w", err)
 	}
 	cfg.MaxConns = 10
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -120,12 +123,12 @@ func (s *PG) Close() { s.pool.Close() }
 func (s *PG) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 const userCols = `id, username, display_name, password_hash, role, disabled, must_change_password,
-	failed_logins, locked_until, last_login_at, created_at, updated_at, source, coalesce(external_id, ''), ldap_dn`
+	failed_logins, locked_until, last_login_at, created_at, updated_at, source, coalesce(external_id, ''), ldap_dn, language`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
 	err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Disabled, &u.MustChangePassword,
-		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.Source, &u.ExternalID, &u.LDAPDN)
+		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.Source, &u.ExternalID, &u.LDAPDN, &u.Language)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -183,8 +186,9 @@ func (s *PG) UpdateUser(ctx context.Context, id int64, p UserPatch) (User, error
 			display_name = COALESCE($2, display_name),
 			role         = COALESCE($3, role),
 			disabled     = COALESCE($4, disabled),
+			language     = COALESCE($5, language),
 			updated_at   = now()
-		WHERE id = $1 RETURNING `+userCols, id, p.DisplayName, p.Role, p.Disabled))
+		WHERE id = $1 RETURNING `+userCols, id, p.DisplayName, p.Role, p.Disabled, p.Language))
 }
 
 // SetPassword ustawia nowy hash hasła i zdejmuje blokadę po nieudanych logowaniach.

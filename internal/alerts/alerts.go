@@ -32,10 +32,10 @@ const (
 )
 
 // ErrNotConfigured: schemat gjallarhorn nie istnieje (detektor nie działał).
-var ErrNotConfigured = errors.New("detekcja nie jest skonfigurowana")
+var ErrNotConfigured = errors.New("detection is not configured")
 
 // ErrNotFound: nie ma takiego alertu.
-var ErrNotFound = errors.New("nie ma takiego alertu")
+var ErrNotFound = errors.New("no such alert")
 
 // PG to magazyn alertów.
 type PG struct{ pool *pgxpool.Pool }
@@ -44,7 +44,7 @@ type PG struct{ pool *pgxpool.Pool }
 func Open(ctx context.Context, url string) (*PG, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("adres bazy: %w", err)
+		return nil, fmt.Errorf("database address: %w", err)
 	}
 	cfg.MaxConns = 4
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -113,7 +113,7 @@ func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
 		num, _, _ := strings.Cut(name, "_")
 		version, err := strconv.Atoi(num)
 		if err != nil {
-			return applied, fmt.Errorf("niepoprawna nazwa migracji %s", name)
+			return applied, fmt.Errorf("invalid migration name %s", name)
 		}
 		if containsInt(done, version) {
 			continue
@@ -129,7 +129,7 @@ func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
 			_, err := tx.Exec(ctx, "INSERT INTO gjallarhorn.schema_migrations (version, name) VALUES ($1, $2)", version, name)
 			return err
 		}); err != nil {
-			return applied, fmt.Errorf("migracja %s: %w", name, err)
+			return applied, fmt.Errorf("migration %s: %w", name, err)
 		}
 		applied = append(applied, name)
 	}
@@ -183,6 +183,22 @@ type RuleInfo struct {
 	LoadedAt     time.Time  `json:"loaded_at"`
 	RemovedAt    *time.Time `json:"removed_at,omitempty"`
 	OpenAlerts   int        `json:"open_alerts"`
+	// I18n: tytuł, opis i instrukcja w innych językach (kod języka → teksty).
+	I18n map[string]RuleText `json:"i18n,omitempty"`
+}
+
+// RuleText to teksty reguły w jednym języku (puste – jak w oryginale).
+type RuleText struct {
+	Title        string `json:"title,omitempty"`
+	Description  string `json:"description,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
+}
+
+// AlertText to teksty alertu w jednym języku (puste – jak w oryginale).
+type AlertText struct {
+	Title        string `json:"title,omitempty"`
+	Summary      string `json:"summary,omitempty"`
+	Instructions string `json:"instructions,omitempty"`
 }
 
 // Threshold to próg reguły progowej (opis dla panelu).
@@ -197,6 +213,8 @@ type RuleError struct {
 	File   string    `json:"file"`
 	Error  string    `json:"error"`
 	SeenAt time.Time `json:"seen_at"`
+	// ErrorEn: opis po angielsku (pusty – tylko polski).
+	ErrorEn string `json:"error_en,omitempty"`
 }
 
 // SyncRules zapisuje wczytane reguły (usunięte oznacza removed_at) i błędy.
@@ -205,14 +223,15 @@ func (p *PG) SyncRules(ctx context.Context, rules []RuleInfo, errs []RuleError, 
 		ids := make([]string, 0, len(rules))
 		for _, r := range rules {
 			ids = append(ids, r.ID)
+			tr, _ := json.Marshal(nonNilMap(r.I18n))
 			if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.rules (id, title, level, description, tags, file, source, mode,
-				enabled, group_by, suppress_s, instructions, threshold, loaded_at, removed_at, file_enabled)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL, $15)
+				enabled, group_by, suppress_s, instructions, threshold, loaded_at, removed_at, file_enabled, i18n)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NULL, $15, $16)
 				ON CONFLICT (id) DO UPDATE SET title = $2, level = $3, description = $4, tags = $5, file = $6, source = $7,
 				mode = $8, enabled = $9, group_by = $10, suppress_s = $11, instructions = $12, threshold = $13, loaded_at = $14,
-				removed_at = NULL, file_enabled = $15`,
+				removed_at = NULL, file_enabled = $15, i18n = $16`,
 				r.ID, r.Title, r.Level, r.Description, nonNil(r.Tags), r.File, r.Source, r.Mode, r.Enabled, nonNil(r.GroupBy),
-				r.SuppressS, r.Instructions, r.Threshold, now, r.FileEnabled); err != nil {
+				r.SuppressS, r.Instructions, r.Threshold, now, r.FileEnabled, tr); err != nil {
 				return err
 			}
 		}
@@ -227,8 +246,8 @@ func (p *PG) SyncRules(ctx context.Context, rules []RuleInfo, errs []RuleError, 
 			return err
 		}
 		for _, e := range errs {
-			if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.rule_errors (file, error, seen_at) VALUES ($1, $2, $3)`,
-				e.File, e.Error, now); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.rule_errors (file, error, seen_at, error_en) VALUES ($1, $2, $3, $4)`,
+				e.File, e.Error, now, e.ErrorEn); err != nil {
 				return err
 			}
 		}
@@ -264,6 +283,8 @@ type Hit struct {
 	Identity string
 	// Instructions: instrukcja reguły z podstawionymi wartościami zdarzenia.
 	Instructions string
+	// I18n: tytuł, opis i instrukcja w innych językach (kod języka → teksty).
+	I18n map[string]AlertText
 	// CountOnly (korelacje, etap 8): trafienie tylko podbija licznik i czas
 	// otwartego alertu klucza o Count (0 = 1) – bez dołączania zdarzenia.
 	// Bez otwartego alertu zapisuje się jak zwykłe trafienie.
@@ -522,12 +543,13 @@ func recordHits(ctx context.Context, tx pgx.Tx, hits []Hit, res *RecordResult) e
 			continue
 		}
 		gf, _ := json.Marshal(nonNilMap(h.GroupFields))
+		tr, _ := json.Marshal(nonNilMap(h.I18n))
 		var id int64
 		if err := tx.QueryRow(ctx, `INSERT INTO gjallarhorn.alerts (rule_id, rule_title, level, engine, group_key, group_fields,
-			first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, user_identity)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+			first_seen, last_seen, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, user_identity, i18n)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
 			h.RuleID, h.RuleTitle, h.Level, h.Engine, h.GroupKey, gf, h.EventTime, h.AgentID, h.HostName, h.UserName,
-			h.SourceIP, h.EventID, h.Summary, h.Instructions, h.Identity).Scan(&id); err != nil {
+			h.SourceIP, h.EventID, h.Summary, h.Instructions, h.Identity, tr).Scan(&id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO gjallarhorn.outbox (alert_id) VALUES ($1)`, id); err != nil {
@@ -625,9 +647,9 @@ func (p *PG) OpenAlerts(ctx context.Context, rule string, since time.Time) (map[
 	return out, rows.Err()
 }
 
-func nonNilMap(m map[string]string) map[string]string {
+func nonNilMap[V any](m map[string]V) map[string]V {
 	if m == nil {
-		return map[string]string{}
+		return map[string]V{}
 	}
 	return m
 }

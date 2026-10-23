@@ -18,21 +18,31 @@ import (
 
 	"siem/agent/internal/guard"
 	"siem/agent/internal/secure"
+	"siem/internal/lang"
 )
 
-var stateNames = map[svc.State]string{
-	svc.Stopped: "zatrzymany", svc.StartPending: "uruchamianie", svc.StopPending: "zatrzymywanie",
-	svc.Running: "działa", svc.Paused: "wstrzymany", svc.ContinuePending: "wznawianie", svc.PausePending: "wstrzymywanie",
+var stateNames = map[svc.State][2]string{
+	svc.Stopped: {"zatrzymany", "stopped"}, svc.StartPending: {"uruchamianie", "starting"}, svc.StopPending: {"zatrzymywanie", "stopping"},
+	svc.Running: {"działa", "running"}, svc.Paused: {"wstrzymany", "paused"}, svc.ContinuePending: {"wznawianie", "resuming"},
+	svc.PausePending: {"wstrzymywanie", "pausing"},
 }
 
-var errNotInstalled = errors.New("agent nie jest zainstalowany (brak usługi " + serviceName + ") – zainstaluj: vardr-agent install")
+// stateName: stan usługi w języku systemu.
+func stateName(s svc.State) string {
+	n := stateNames[s]
+	return lang.L(n[0], n[1])
+}
+
+var errNotInstalled = lang.Errorf("agent nie jest zainstalowany (brak usługi "+serviceName+") – zainstaluj: vardr-agent install",
+	"the agent is not installed (no "+serviceName+" service) – install it: vardr-agent install")
 
 // requireAdmin zwraca czytelny błąd, gdy polecenie wymaga administratora.
 func requireAdmin(what string) error {
 	if secure.IsPrivileged() {
 		return nil
 	}
-	return fmt.Errorf("%s wymaga uprawnień administratora – uruchom PowerShell lub cmd jako administrator", what)
+	return fmt.Errorf(lang.L("%s wymaga uprawnień administratora – uruchom PowerShell lub cmd jako administrator",
+		"%s requires administrator rights – run PowerShell or cmd as administrator"), what)
 }
 
 // queryService odczytuje stan usługi z minimalnymi prawami (działa także
@@ -62,7 +72,7 @@ func queryService() (svc.Status, error) {
 func withService(fn func(*mgr.Service) error) error {
 	scm, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
 	if err != nil {
-		return fmt.Errorf("brak dostępu do menedżera usług: %w", err)
+		return fmt.Errorf(lang.L("brak dostępu do menedżera usług: %w", "no access to the service manager: %w"), err)
 	}
 	defer windows.CloseServiceHandle(scm)
 	name, _ := windows.UTF16PtrFromString(serviceName)
@@ -85,8 +95,10 @@ func withService(fn func(*mgr.Service) error) error {
 // protectedErr tłumaczy odmowę dostępu przy zatrzymaniu lub usunięciu usługi.
 func protectedErr(err error) error {
 	if errors.Is(err, windows.ERROR_ACCESS_DENIED) {
-		return errors.New("usługa agenta jest chroniona – zatrzymanie i deinstalacja wymagają tokenu z panelu " +
-			"(Huginn → agent → Token deinstalacji): -token XXXXX-XXXXX-XXXXX-XXXXX")
+		return errors.New(lang.L("usługa agenta jest chroniona – zatrzymanie i deinstalacja wymagają tokenu z panelu "+
+			"(Huginn → agent → Token deinstalacji): -token XXXXX-XXXXX-XXXXX-XXXXX",
+			"the agent service is protected – stopping and uninstalling require a token from the panel "+
+				"(Huginn → agent → Uninstall token): -token XXXXX-XXXXX-XXXXX-XXXXX"))
 	}
 	return err
 }
@@ -102,20 +114,21 @@ func waitState(s *mgr.Service, want svc.State, timeout time.Duration) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("usługa nie osiągnęła stanu „%s” w ciągu %s (obecnie: %s) – sprawdź vardr-agent status",
-				stateNames[want], timeout, stateNames[st.State])
+			return fmt.Errorf(lang.L("usługa nie osiągnęła stanu „%s” w ciągu %s (obecnie: %s) – sprawdź vardr-agent status",
+				"the service did not reach the state \"%s\" within %s (now: %s) – check vardr-agent status"),
+				stateName(want), timeout, stateName(st.State))
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
 }
 
 func startService() error {
-	if err := requireAdmin("Uruchomienie agenta"); err != nil {
+	if err := requireAdmin(lang.L("Uruchomienie agenta", "Starting the agent")); err != nil {
 		return err
 	}
 	return withService(func(s *mgr.Service) error {
 		if st, _ := s.Query(); st.State == svc.Running {
-			fmt.Println("Agent już działa.")
+			fmt.Println(lang.L("Agent już działa.", "The agent is already running."))
 			return nil
 		}
 		if err := s.Start(); err != nil {
@@ -124,17 +137,17 @@ func startService() error {
 		if err := waitState(s, svc.Running, 15*time.Second); err != nil {
 			return err
 		}
-		fmt.Println("Agent uruchomiony.")
+		fmt.Println(lang.L("Agent uruchomiony.", "Agent started."))
 		return nil
 	})
 }
 
 func stopService(cfgPath, token string) error {
-	if err := requireAdmin("Zatrzymanie agenta"); err != nil {
+	if err := requireAdmin(lang.L("Zatrzymanie agenta", "Stopping the agent")); err != nil {
 		return err
 	}
 	if st, err := queryService(); err == nil && st.State == svc.Stopped {
-		fmt.Println("Agent jest już zatrzymany.")
+		fmt.Println(lang.L("Agent jest już zatrzymany.", "The agent is already stopped."))
 		return nil
 	}
 	if err := authorize(cfgPath, "stop", token); err != nil {
@@ -142,7 +155,7 @@ func stopService(cfgPath, token string) error {
 	}
 	return withService(func(s *mgr.Service) error {
 		if st, _ := s.Query(); st.State == svc.Stopped {
-			fmt.Println("Agent jest już zatrzymany.")
+			fmt.Println(lang.L("Agent jest już zatrzymany.", "The agent is already stopped."))
 			return nil
 		}
 		if _, err := s.Control(svc.Stop); err != nil {
@@ -151,7 +164,7 @@ func stopService(cfgPath, token string) error {
 		if err := waitState(s, svc.Stopped, 30*time.Second); err != nil {
 			return err
 		}
-		fmt.Println("Agent zatrzymany.")
+		fmt.Println(lang.L("Agent zatrzymany.", "Agent stopped."))
 		return nil
 	})
 }
@@ -159,7 +172,7 @@ func stopService(cfgPath, token string) error {
 // restartService uruchamia agenta ponownie w procesie usługi (polecenie
 // agenta – bez zatrzymywania usługi, więc także przy włączonej ochronie).
 func restartService() error {
-	if err := requireAdmin("Ponowne uruchomienie agenta"); err != nil {
+	if err := requireAdmin(lang.L("Ponowne uruchomienie agenta", "Restarting the agent")); err != nil {
 		return err
 	}
 	st, err := queryService()
@@ -173,9 +186,10 @@ func restartService() error {
 		_, err := s.Control(svc.Cmd(guard.ControlRestart))
 		return err
 	}); err != nil {
-		return fmt.Errorf("polecenie restartu: %w", err)
+		return fmt.Errorf(lang.L("polecenie restartu: %w", "restart command: %w"), err)
 	}
-	fmt.Println("Agent uruchamia się ponownie (w procesie usługi) – stan: vardr-agent status.")
+	fmt.Println(lang.L("Agent uruchamia się ponownie (w procesie usługi) – stan: vardr-agent status.",
+		"The agent is restarting (in the service process) – state: vardr-agent status."))
 	return nil
 }
 
@@ -201,10 +215,10 @@ func moveServiceBinary(cfgPath string) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("zmiana programu usługi na %s: %w", installExe, err)
+		return fmt.Errorf(lang.L("zmiana programu usługi na %s: %w", "changing the service program to %s: %w"), installExe, err)
 	}
 	if moved {
-		fmt.Printf("Usługa %s uruchamia teraz %s\n", serviceName, installExe)
+		fmt.Printf(lang.L("Usługa %s uruchamia teraz %s\n", "Service %s now runs %s\n"), serviceName, installExe)
 	}
 	// Usługa uruchamia installExe – pozostałości wersji 0.7.x są zbędne.
 	for _, old := range []string{legacyExe, legacyExe + ".previous"} {
@@ -220,16 +234,16 @@ func moveServiceBinary(cfgPath string) error {
 func registerService(exe, cfgPath string) error {
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("brak dostępu do menedżera usług: %w", err)
+		return fmt.Errorf(lang.L("brak dostępu do menedżera usług: %w", "no access to the service manager: %w"), err)
 	}
 	defer m.Disconnect()
 	if s, err := m.OpenService(serviceName); err == nil {
 		s.Close()
-		return fmt.Errorf("usługa %s już istnieje", serviceName)
+		return fmt.Errorf(lang.L("usługa %s już istnieje", "service %s already exists"), serviceName)
 	}
 	s, err := m.CreateService(serviceName, exe, mgr.Config{
 		DisplayName: serviceDisplayName,
-		Description: serviceDescription,
+		Description: lang.L(serviceDescriptionPL, serviceDescriptionEN),
 		StartType:   mgr.StartAutomatic,
 	}, "-config", cfgPath)
 	if err != nil {

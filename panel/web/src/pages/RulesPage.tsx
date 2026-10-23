@@ -45,12 +45,15 @@ import {
   formatDate,
   levelLabels,
   panelRuleId,
+  ruleText,
   rulesApi,
   type BulkRuleAction,
   type RuleAttribution,
   type RuleInfo,
   type RuleVersion,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n, { serverText } from "../i18n";
 import { useAuth } from "../auth";
 import { AttackTags, AttributionLine } from "../attack";
 import { lineDiff } from "../diff";
@@ -58,23 +61,17 @@ import RuleBulkModal, { bulkLabels } from "./RuleBulkModal";
 import RuleTester from "./RuleTester";
 import SigmaImportHelp from "./SigmaImportHelp";
 
-const modeLabels: Record<string, string> = {
-  stream: "w locie",
-  index_query: "zapytania",
-  both: "oba silniki",
-  system: "wbudowana",
-  correlation: "korelacja",
-};
-
 function modeLabel(r: RuleInfo): string {
-  if (r.mode === "correlation" && r.file === "(wbudowana)") return "korelacja (wbudowana)";
-  return modeLabels[r.mode] ?? r.mode;
+  if (r.mode === "correlation" && r.file === "(wbudowana)") return i18n.t("rules:mode.builtinCorrelation");
+  return i18n.t(`rules:mode.${r.mode}`, { defaultValue: r.mode });
 }
 
 // Tryb próbny: reguły Sigmy oceniane przez detektor (bez korelacji, reguł
 // wbudowanych i reguł bazowych korelacji).
 export function trialCapable(r: RuleInfo): boolean {
-  return r.mode !== "system" && r.mode !== "correlation" && !r.description.startsWith("Reguła bazowa korelacji");
+  if (r.mode === "system" || r.mode === "correlation") return false;
+  if (r.file.startsWith("panel/")) return false; // reguły bazowe z kreatora korelacji
+  return !r.description.startsWith("Reguła bazowa korelacji");
 }
 
 export function ruleSource(r: RuleInfo): "sigmahq" | "panel" | "builtin" | "own" {
@@ -92,8 +89,8 @@ function fmtDuration(s: number): string {
   return `${s} s`;
 }
 
-const newRuleTemplate = `title: Nowa reguła
-id: moja-regula-1
+const newRuleTemplate = () => `title: ${i18n.t("rules:newRuleTitle")}
+id: ${i18n.t("rules:newRuleId")}
 level: medium
 logsource:
   product: windows
@@ -110,6 +107,7 @@ vardr:
 `;
 
 function Versions({ id }: { id: string }) {
+  const { t } = useTranslation("rules");
   const [versions, setVersions] = useState<RuleVersion[]>([]);
   const [sel, setSel] = useState<number | null>(null);
   useEffect(() => {
@@ -124,7 +122,7 @@ function Versions({ id }: { id: string }) {
   const cur = versions.find((v) => v.version === sel);
   const prev = versions.find((v) => sel !== null && v.version === sel - 1);
   const diff = useMemo(() => (cur && prev ? lineDiff(prev.source, cur.source) : null), [cur, prev]);
-  if (versions.length === 0) return <Text size="sm">Brak historii.</Text>;
+  if (versions.length === 0) return <Text size="sm">{t("versions.none")}</Text>;
   return (
     <Stack gap="xs">
       <Group gap="xs">
@@ -142,8 +140,8 @@ function Versions({ id }: { id: string }) {
       </Group>
       {cur && (
         <Text size="xs" c="dimmed">
-          v{cur.version}: wczytana {formatDate(cur.loaded_at)} z pliku {cur.file} · SHA-256 {cur.sha256.slice(0, 16)}…
-          {prev ? ` · zmiany względem v${prev.version}:` : " · pierwsza wersja"}
+          {t("versions.info", { version: cur.version, date: formatDate(cur.loaded_at), file: cur.file, sha: cur.sha256.slice(0, 16) })}
+          {prev ? t("versions.changesSince", { version: prev.version }) : t("versions.first")}
         </Text>
       )}
       <ScrollArea.Autosize mah={460}>
@@ -169,11 +167,12 @@ function Versions({ id }: { id: string }) {
 }
 
 export default function RulesPage() {
+  const { t } = useTranslation("rules");
   const { can } = useAuth();
   const admin = can("rules", "write");
   const canTest = can("rules", "test");
   const [rules, setRules] = useState<RuleInfo[]>([]);
-  const [errors, setErrors] = useState<{ file: string; error: string }[]>([]);
+  const [errors, setErrors] = useState<{ file: string; error: string; error_en?: string }[]>([]);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
   const [show, setShow] = useState<RuleInfo | null>(null);
@@ -213,7 +212,7 @@ export default function RulesPage() {
     setBusy(true);
     try {
       const r = await rulesApi.setEnabled(toggle.rule.id, toggle.enabled, reason, password, !!toggle.trial);
-      notifications.show({ color: "green", message: r.message });
+      notifications.show({ color: "green", message: r.trial ? t("toggle.doneTrial") : t("toggle.done") });
       setToggle(null);
       setReason("");
       setPassword("");
@@ -230,8 +229,8 @@ export default function RulesPage() {
     if (!del) return;
     setBusy(true);
     try {
-      const r = await rulesApi.deletePanelRule(del.id, reason, password);
-      notifications.show({ color: "green", message: r.message });
+      await rulesApi.deletePanelRule(del.id, reason, password);
+      notifications.show({ color: "green", message: t("delete.done") });
       setDel(null);
       setShow(null);
       setReason("");
@@ -258,6 +257,7 @@ export default function RulesPage() {
       if (!needle) return true;
       return (
         r.title.toLowerCase().includes(needle) ||
+        ruleText(r).title.toLowerCase().includes(needle) ||
         r.id.toLowerCase().includes(needle) ||
         r.file.toLowerCase().includes(needle) ||
         r.tags.some((t) => t.toLowerCase().includes(needle))
@@ -280,40 +280,38 @@ export default function RulesPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Reguły detekcji</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Reguły w formacie Sigma (YAML) z katalogu <Code>rules/</Code> w repozytorium – wdrażane poleceniem{" "}
-            <Code>deploy.sh rules</Code>, detektor przeładowuje je w ciągu 30 s. Każda zmiana treści to nowa wersja (historia
-            w szczegółach). Administrator może regułę wyłączyć albo włączyć z panelu – z powodem i w audycie. Reguły
-            korelacyjne z kreatora są zapisywane w panelu (plik <Code>panel/…</Code>).
+            {t("intro")}
           </Text>
         </div>
         {canTest && (
           <Group gap="xs">
             <Button variant="light" leftSection={<IconLink size={16} />} component={Link} to="/rules/correlation">
-              Nowa korelacja (kreator)
+              {t("newCorrelation")}
             </Button>
             <Button variant="light" leftSection={<IconFlask size={16} />} onClick={() => setTestNew(true)}>
-              Przetestuj nową regułę
+              {t("testNew")}
             </Button>
             <Button variant="light" color="yellow" leftSection={<IconHourglass size={16} />} component={Link} to="/rules/trial">
-              Próby reguł{trials > 0 ? ` (${trials})` : ""}
+              {t("trials")}
+              {trials > 0 ? ` (${trials})` : ""}
             </Button>
             {admin && (
               <Button variant="subtle" leftSection={<IconDownload size={16} />} onClick={() => setSigmaHelp(true)}>
-                Import reguł SigmaHQ
+                {t("sigmaImport")}
               </Button>
             )}
           </Group>
         )}
       </Group>
       {error && <MAlert color="red">{error}</MAlert>}
-      {!configured && <MAlert color="gray">Detektor (siem-detector) jeszcze nie działał – brak wczytanych reguł.</MAlert>}
+      {!configured && <MAlert color="gray">{t("notConfigured")}</MAlert>}
       {errors.length > 0 && (
-        <MAlert color="red" title={`Pliki z błędami (${errors.length}) – te reguły nie działają`}>
+        <MAlert color="red" title={t("fileErrors", { count: errors.length })}>
           {errors.map((e) => (
             <Text size="sm" key={e.file}>
-              <Code>{e.file}</Code>: {e.error}
+              <Code>{e.file}</Code>: {serverText(e.error, e.error_en)}
             </Text>
           ))}
         </MAlert>
@@ -321,7 +319,7 @@ export default function RulesPage() {
       {rules.length > 0 && (
         <Group gap="xs" align="flex-end">
           <TextInput
-            placeholder="szukaj: tytuł, id, plik, tag (np. attack.t1059)"
+            placeholder={t("filter.search")}
             leftSection={<IconSearch size={14} />}
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
@@ -331,11 +329,11 @@ export default function RulesPage() {
             value={source}
             onChange={setSource}
             data={[
-              { value: "all", label: "Wszystkie" },
-              { value: "own", label: "Własne" },
+              { value: "all", label: t("filter.source.all") },
+              { value: "own", label: t("filter.source.own") },
               { value: "sigmahq", label: "SigmaHQ" },
-              { value: "panel", label: "Z panelu" },
-              { value: "builtin", label: "Wbudowane" },
+              { value: "panel", label: t("filter.source.panel") },
+              { value: "builtin", label: t("filter.source.builtin") },
             ]}
           />
           <Select
@@ -344,30 +342,30 @@ export default function RulesPage() {
             onChange={setStateF}
             allowDeselect={false}
             data={[
-              { value: "all", label: "każdy stan" },
-              { value: "on", label: "włączone" },
-              { value: "off", label: "wyłączone" },
-              { value: "trial", label: "w trybie próbnym" },
-              { value: "panel", label: "ustawione w panelu" },
+              { value: "all", label: t("filter.state.all") },
+              { value: "on", label: t("filter.state.on") },
+              { value: "off", label: t("filter.state.off") },
+              { value: "trial", label: t("filter.state.trial") },
+              { value: "panel", label: t("filter.state.panel") },
             ]}
           />
           <MultiSelect
             w={260}
-            placeholder={levels.length ? "" : "każdy poziom"}
+            placeholder={levels.length ? "" : t("filter.anyLevel")}
             value={levels}
             onChange={setLevels}
             clearable
             data={Object.entries(levelLabels).map(([value, l]) => ({ value, label: l.label }))}
           />
           <Text size="sm" c="dimmed">
-            {filtered.length} z {rules.length}
+            {t("filter.count", { shown: filtered.length, total: rules.length })}
           </Text>
         </Group>
       )}
       {admin && selected.size > 0 && (
         <Group gap="xs">
           <Text size="sm" fw={500}>
-            Zaznaczone: {selected.size}
+            {t("selected", { count: selected.size })}
           </Text>
           {(["trial", "enable", "disable", "file"] as BulkRuleAction[]).map((a) => (
             <Button
@@ -381,7 +379,7 @@ export default function RulesPage() {
             </Button>
           ))}
           <Button size="xs" variant="subtle" onClick={() => setSelected(new Set())}>
-            wyczyść zaznaczenie
+            {t("clearSelection")}
           </Button>
         </Group>
       )}
@@ -407,18 +405,18 @@ export default function RulesPage() {
                           return n;
                         });
                       }}
-                      aria-label="zaznacz wszystkie z filtra"
-                      title={`zaznacz wszystkie reguły z filtra (${filtered.length})`}
+                      aria-label={t("selectFiltered")}
+                      title={t("selectFilteredTitle", { count: filtered.length })}
                     />
                   </Table.Th>
                 )}
-                <Table.Th>Włączona</Table.Th>
-                <Table.Th>Poziom</Table.Th>
-                <Table.Th>Reguła</Table.Th>
-                <Table.Th>Silnik</Table.Th>
-                <Table.Th>Próg / łączenie</Table.Th>
-                <Table.Th>Otwarte alerty</Table.Th>
-                <Table.Th>Plik</Table.Th>
+                <Table.Th>{t("col.enabled")}</Table.Th>
+                <Table.Th>{t("col.level")}</Table.Th>
+                <Table.Th>{t("col.rule")}</Table.Th>
+                <Table.Th>{t("col.engine")}</Table.Th>
+                <Table.Th>{t("col.threshold")}</Table.Th>
+                <Table.Th>{t("col.openAlerts")}</Table.Th>
+                <Table.Th>{t("col.file")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -437,7 +435,7 @@ export default function RulesPage() {
                         size="xs"
                         checked={selected.has(r.id)}
                         onChange={(e) => toggleSel(r.id, e.currentTarget.checked)}
-                        aria-label="zaznacz regułę"
+                        aria-label={t("selectRule")}
                       />
                     </Table.Td>
                   )}
@@ -448,16 +446,20 @@ export default function RulesPage() {
                         checked={r.enabled}
                         disabled={!admin || r.mode === "system"}
                         onChange={(e) => setToggle({ rule: r, enabled: e.currentTarget.checked })}
-                        aria-label="reguła włączona"
+                        aria-label={t("col.enabled")}
                       />
                       {r.override?.trial && (
                         <Tooltip
                           multiline
                           w={300}
-                          label={`Tryb próbny od ${formatDate(r.override.changed_at)} (${r.override.changed_by}${r.override.reason ? ` – ${r.override.reason}` : ""}): trafienia bez alertów, wyniki w „Próbach reguł”.`}
+                          label={t("trialTip", {
+                            date: formatDate(r.override.changed_at),
+                            by: r.override.changed_by,
+                            reason: r.override.reason ? ` – ${r.override.reason}` : "",
+                          })}
                         >
                           <Badge size="xs" color="yellow" component={Link} to="/rules/trial" style={{ cursor: "pointer" }}>
-                            próbna
+                            {t("trialBadge")}
                           </Badge>
                         </Tooltip>
                       )}
@@ -465,7 +467,12 @@ export default function RulesPage() {
                         <Tooltip
                           multiline
                           w={300}
-                          label={`Ustawione w panelu: ${r.override.changed_by}, ${formatDate(r.override.changed_at)}${r.override.reason ? ` – ${r.override.reason}` : ""}. W pliku: ${r.file_enabled ? "włączona" : "wyłączona"}.`}
+                          label={t("overrideTip", {
+                            by: r.override.changed_by,
+                            date: formatDate(r.override.changed_at),
+                            reason: r.override.reason ? ` – ${r.override.reason}` : "",
+                            file: r.file_enabled ? t("enabledWord") : t("disabledWord"),
+                          })}
                         >
                           <Badge size="xs" variant="outline" color="grape">
                             panel
@@ -479,10 +486,10 @@ export default function RulesPage() {
                   </Table.Td>
                   <Table.Td maw={420}>
                     <Text size="sm" fw={500}>
-                      {r.title}
+                      {ruleText(r).title}
                     </Text>
                     <Text size="xs" c="dimmed" lineClamp={1}>
-                      {r.description}
+                      {ruleText(r).description}
                     </Text>
                     <AttackTags tags={r.tags} size="xs" />
                   </Table.Td>
@@ -490,8 +497,9 @@ export default function RulesPage() {
                   <Table.Td>
                     {r.threshold && (
                       <Text size="xs" fw={500}>
-                        próg: {r.threshold.count} {r.threshold.distinct ? `różnych ${r.threshold.distinct}` : "zdarzeń"} w{" "}
-                        {fmtDuration(r.threshold.window_s)}
+                        {r.threshold.distinct
+                          ? t("thresholdDistinct", { count: r.threshold.count, field: r.threshold.distinct, window: fmtDuration(r.threshold.window_s) })
+                          : t("threshold", { count: r.threshold.count, window: fmtDuration(r.threshold.window_s) })}
                       </Text>
                     )}
                     {r.group_by.length ? (
@@ -500,7 +508,7 @@ export default function RulesPage() {
                       </Text>
                     ) : r.threshold ? null : (
                       <Text size="xs" c="dimmed">
-                        każde zdarzenie osobno
+                        {t("eachEvent")}
                       </Text>
                     )}
                   </Table.Td>
@@ -536,7 +544,7 @@ export default function RulesPage() {
         }}
       />
 
-      <Modal opened={!!show} onClose={() => setShow(null)} title={show?.title} size="xl">
+      <Modal opened={!!show} onClose={() => setShow(null)} title={show && ruleText(show).title} size="xl">
         {show && (
           <Stack gap="xs">
             <AttributionLine a={attributions[show.id]} />
@@ -551,12 +559,12 @@ export default function RulesPage() {
                 ))}
             </Group>
             <Text size="xs" c="dimmed">
-              id {show.id} · wersja {show.version} · wczytana {formatDate(show.loaded_at)}
+              {t("ruleMeta", { id: show.id, version: show.version, date: formatDate(show.loaded_at) })}
             </Text>
             {panelRuleId(show.file) && (
               <Group gap="xs">
                 <Badge variant="light" color="grape">
-                  reguła z panelu (kreator korelacji)
+                  {t("panelRule")}
                 </Badge>
                 {admin && (
                   <>
@@ -567,16 +575,16 @@ export default function RulesPage() {
                       component={Link}
                       to={`/rules/correlation?edit=${encodeURIComponent(panelRuleId(show.file)!)}`}
                     >
-                      Edytuj
+                      {t("edit")}
                     </Button>
                     <Button
                       size="xs"
                       variant="light"
                       color="red"
                       leftSection={<IconTrash size={14} />}
-                      onClick={() => setDel({ id: panelRuleId(show.file)!, title: show.title })}
+                      onClick={() => setDel({ id: panelRuleId(show.file)!, title: ruleText(show).title })}
                     >
-                      Usuń
+                      {t("delete.button")}
                     </Button>
                   </>
                 )}
@@ -585,14 +593,14 @@ export default function RulesPage() {
             <Tabs value={tab} onChange={setTab}>
               <Tabs.List>
                 <Tabs.Tab value="source" leftSection={<IconFileCode size={14} />}>
-                  Treść
+                  {t("tab.source")}
                 </Tabs.Tab>
                 <Tabs.Tab value="versions" leftSection={<IconHistory size={14} />}>
-                  Wersje
+                  {t("tab.versions")}
                 </Tabs.Tab>
                 {canTest && show.mode !== "system" && !(show.mode === "correlation" && show.file === "(wbudowana)") && (
                   <Tabs.Tab value="test" leftSection={<IconFlask size={14} />}>
-                    Test
+                    {t("tab.test")}
                   </Tabs.Tab>
                 )}
               </Tabs.List>
@@ -612,30 +620,29 @@ export default function RulesPage() {
         )}
       </Modal>
 
-      <Modal opened={!!del} onClose={() => setDel(null)} title={del ? `Usunięcie reguły „${del.title}”` : ""} centered>
+      <Modal opened={!!del} onClose={() => setDel(null)} title={del ? t("delete.title", { title: del.title }) : ""} centered>
         {del && (
           <Stack>
             <MAlert color="orange">
-              Usunięta zostanie cała reguła z panelu (korelacja i jej reguły bazowe z tego samego zapisu). Historia wersji i alerty
-              zostają. Podaj powód (trafi do audytu) i potwierdź hasłem.
+              {t("delete.warning")}
             </MAlert>
-            <Textarea label="Powód" autosize minRows={2} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <Textarea label={t("reason")} autosize minRows={2} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
+            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
             <Group justify="flex-end">
               <Button color="red" loading={busy} disabled={reason.trim().length < 3 || !password} onClick={() => void applyDelete()}>
-                Usuń regułę
+                {t("delete.confirm")}
               </Button>
             </Group>
           </Stack>
         )}
       </Modal>
 
-      <Modal opened={sigmaHelp} onClose={() => setSigmaHelp(false)} title="Import reguł SigmaHQ" size="xl">
+      <Modal opened={sigmaHelp} onClose={() => setSigmaHelp(false)} title={t("sigmaImport")} size="xl">
         {sigmaHelp && <SigmaImportHelp />}
       </Modal>
 
-      <Modal opened={testNew} onClose={() => setTestNew(false)} title="Test nowej reguły" size="xl">
-        {testNew && <RuleTester initial={newRuleTemplate} />}
+      <Modal opened={testNew} onClose={() => setTestNew(false)} title={t("testNewTitle")} size="xl">
+        {testNew && <RuleTester initial={newRuleTemplate()} />}
       </Modal>
 
       <Modal
@@ -646,7 +653,7 @@ export default function RulesPage() {
         }}
         title={
           toggle
-            ? `${toggle.trial ? "Tryb próbny" : disabling ? "Wyłączenie" : "Włączenie"} reguły „${toggle.rule.title}”`
+            ? t(toggle.trial ? "toggle.titleTrial" : disabling ? "toggle.titleDisable" : "toggle.titleEnable", { title: ruleText(toggle.rule).title })
             : ""
         }
         centered
@@ -655,32 +662,30 @@ export default function RulesPage() {
           <Stack>
             {toggle.trial && (
               <MAlert color="yellow">
-                W trybie próbnym reguła liczy trafienia (komputery, dni, ostatnie zdarzenie) bez alertów i powiadomień – wyniki
-                w „Próbach reguł”. Po tygodniu–dwóch widać, czy można ją włączyć.
+                {t("toggle.trialInfo")}
               </MAlert>
             )}
             {disabling && (
               <MAlert color="orange">
-                {toggle.trial ? "Na czas próby reguła" : "Wyłączona reguła"} nie wywoła alertów – także przy prawdziwym ataku. Podaj
-                powód (trafi do audytu) i potwierdź hasłem.
+                {toggle.trial ? t("toggle.trialWarning") : t("toggle.disableWarning")}
               </MAlert>
             )}
             {!toggle.trial && toggle.enabled && trialCapable(toggle.rule) && !toggle.rule.override?.trial && (
               <Button size="xs" variant="light" color="yellow" leftSection={<IconHourglass size={14} />}
                 onClick={() => setToggle({ ...toggle, trial: true })}>
-                Najpierw tryb próbny (bez alertów)
+                {t("toggle.trialFirst")}
               </Button>
             )}
             <Textarea
-              label="Powód"
-              description={disabling ? "np. fałszywe alarmy z serwera kopii do czasu poprawki reguły" : "opcjonalnie"}
+              label={t("reason")}
+              description={disabling ? t("toggle.reasonHint") : t("optional")}
               autosize
               minRows={2}
               value={reason}
               onChange={(e) => setReason(e.currentTarget.value)}
             />
             {(needPassword || disabling) && (
-              <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+              <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
             )}
             <Group justify="space-between">
               {toggle.rule.override ? (
@@ -690,7 +695,7 @@ export default function RulesPage() {
                   onClick={() => setToggle({ rule: toggle.rule, enabled: null })}
                   disabled={toggle.enabled === null}
                 >
-                  wróć do ustawienia z pliku ({toggle.rule.file_enabled ? "włączona" : "wyłączona"})
+                  {t("toggle.backToFile", { state: toggle.rule.file_enabled ? t("enabledWord") : t("disabledWord") })}
                 </Button>
               ) : (
                 <span />
@@ -702,12 +707,12 @@ export default function RulesPage() {
                 onClick={() => void applyToggle()}
               >
                 {toggle.enabled === null
-                  ? "Przywróć z pliku"
+                  ? t("toggle.restore")
                   : toggle.trial
-                    ? "Uruchom próbę"
+                    ? t("toggle.startTrial")
                     : disabling
-                      ? "Wyłącz regułę"
-                      : "Włącz regułę"}
+                      ? t("toggle.disable")
+                      : t("toggle.enable")}
               </Button>
             </Group>
           </Stack>

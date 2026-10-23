@@ -30,6 +30,8 @@ import {
   levelLabels,
   notifyApi,
   notifyEventLabels,
+  ruleText,
+  settingsApi,
   type AlertFilter,
   type AlertLevel,
   type ChannelRequest,
@@ -37,6 +39,9 @@ import {
   type NotifyEvent,
   type NotifyLogEntry,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import { useAuth } from "../auth";
+import { languages } from "../i18n";
 
 const allEvents: NotifyEvent[] = ["alert", "incident", "health", "anchor"];
 
@@ -56,6 +61,7 @@ function AlertFilterEditor({
   rules: { value: string; label: string }[];
   onSave: (f: AlertFilter) => void;
 }) {
+  const { t } = useTranslation("admin");
   const [f, setF] = useState<AlertFilter>(value);
   useEffect(() => setF(value), [value]);
   const mode = f.rules_mode ?? "all";
@@ -65,7 +71,7 @@ function AlertFilterEditor({
       <Select
         size="xs"
         w={170}
-        label="Alerty od poziomu"
+        label={t("notify.minLevel")}
         allowDeselect={false}
         data={levels.map((l) => ({ value: l, label: levelLabels[l].label }))}
         value={f.min_level ?? "informational"}
@@ -74,12 +80,12 @@ function AlertFilterEditor({
       <Select
         size="xs"
         w={200}
-        label="Reguły"
+        label={t("notify.rules")}
         allowDeselect={false}
         data={[
-          { value: "all", label: "wszystkie" },
-          { value: "only", label: "tylko wybrane" },
-          { value: "except", label: "wszystkie poza wybranymi" },
+          { value: "all", label: t("notify.rulesAll") },
+          { value: "only", label: t("notify.rulesOnly") },
+          { value: "except", label: t("notify.rulesExcept") },
         ]}
         value={mode}
         onChange={(v) =>
@@ -91,7 +97,7 @@ function AlertFilterEditor({
           size="xs"
           miw={260}
           maw={520}
-          label={mode === "only" ? "Wysyłaj tylko z reguł" : "Nie wysyłaj z reguł"}
+          label={mode === "only" ? t("notify.onlyFrom") : t("notify.notFrom")}
           searchable
           data={rules}
           value={f.rules ?? []}
@@ -100,7 +106,7 @@ function AlertFilterEditor({
       )}
       {changed && (
         <Button size="xs" disabled={mode !== "all" && !(f.rules ?? []).length} onClick={() => onSave(f)}>
-          Zapisz filtr
+          {t("notify.saveFilter")}
         </Button>
       )}
     </Group>
@@ -109,6 +115,7 @@ function AlertFilterEditor({
 
 // Kanały powiadomień: dokąd Vardr wysyła wiadomości poza system.
 export default function NotificationsPage() {
+  const { t } = useTranslation("admin");
   const [channels, setChannels] = useState<NotifyChannel[]>([]);
   const [log, setLog] = useState<NotifyLogEntry[]>([]);
   const [anchorHour, setAnchorHour] = useState(-1);
@@ -126,10 +133,27 @@ export default function NotificationsPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [ruleOptions, setRuleOptions] = useState<{ value: string; label: string }[]>([]);
+  const { can } = useAuth();
+  const [sysLang, setSysLang] = useState<{ language: string; supported: string[]; editable: boolean } | null>(null);
+  useEffect(() => {
+    settingsApi
+      .language()
+      .then(setSysLang)
+      .catch(() => setSysLang(null));
+  }, []);
+  const changeSysLang = async (language: string) => {
+    try {
+      await settingsApi.setLanguage(language);
+      setSysLang((s) => s && { ...s, language });
+      notifications.show({ color: "green", message: t("notify.systemLanguageSaved", { language: languages[language] ?? language }) });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   useEffect(() => {
     alertsApi
       .rules()
-      .then((r) => setRuleOptions(r.rules.map((x) => ({ value: x.id, label: x.title }))))
+      .then((r) => setRuleOptions(r.rules.map((x) => ({ value: x.id, label: ruleText(x).title }))))
       .catch(() => setRuleOptions([]));
   }, []);
 
@@ -156,7 +180,7 @@ export default function NotificationsPage() {
     setBusy(true);
     try {
       await notifyApi.create({ ...form, enabled: true });
-      notifications.show({ color: "green", message: "Kanał dodany – wyślij test, żeby sprawdzić adres." });
+      notifications.show({ color: "green", message: t("notify.added") });
       setAdding(false);
       setForm({ name: "", kind: "discord", url: "", events: ["alert", "health", "anchor"] });
       load();
@@ -192,7 +216,7 @@ export default function NotificationsPage() {
     setBusy(true);
     try {
       await pending.run(password);
-      notifications.show({ color: "green", message: "Zmiana zapisana." });
+      notifications.show({ color: "green", message: t("notify.changed") });
       setPending(null);
       setPassword("");
     } catch (err) {
@@ -202,10 +226,10 @@ export default function NotificationsPage() {
     }
   };
 
-  const action = async (fn: () => Promise<{ message: string }>) => {
+  const action = async (fn: () => Promise<{ message: string }>, done: string) => {
     try {
-      const r = await fn();
-      notifications.show({ color: "green", message: r.message });
+      await fn();
+      notifications.show({ color: "green", message: done });
     } catch (e) {
       notifications.show({ color: "red", message: errMsg(e) });
     } finally {
@@ -217,40 +241,53 @@ export default function NotificationsPage() {
     <Stack>
       <Group justify="space-between" align="flex-start">
         <div>
-          <Title order={2}>Powiadomienia</Title>
+          <Title order={2}>{t("notify.title")}</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Kanały, na które Vardr wysyła wiadomości poza system: alerty zdrowia (z Grafany) i codzienną kotwicę archiwum
-            Urd {anchorHour >= 0 && `(o ${anchorHour}:00)`} – hash najnowszego manifestu, którego kopia u odbiorcy jest
-            niezależnym dowodem nienaruszalności archiwum. Później te same kanały dostaną alerty detekcji. Adres webhooka jest
-            sekretem: panel pokazuje tylko jego początek i koniec.
+            {t("notify.intro", { at: anchorHour >= 0 ? t("notify.at", { h: anchorHour }) : "" })}
           </Text>
         </div>
         <Group>
-          <Button variant="light" leftSection={<IconAnchor size={18} />} onClick={() => void action(notifyApi.sendAnchor)}>
-            Wyślij kotwicę teraz
+          <Button variant="light" leftSection={<IconAnchor size={18} />} onClick={() => void action(notifyApi.sendAnchor, t("notify.anchorSent"))}>
+            {t("notify.sendAnchor")}
           </Button>
           <Button leftSection={<IconPlus size={18} />} onClick={() => setAdding(true)}>
-            Dodaj kanał
+            {t("notify.add")}
           </Button>
         </Group>
       </Group>
       {error && <Alert color="red">{error}</Alert>}
       {!relay && (
         <Alert color="orange">
-          Alerty z Grafany nie są przekazywane – siem-api nie ma SIEM_ALERT_RELAY_TOKEN (README, sekcja Alerty).
+          {t("notify.noRelay")}
         </Alert>
       )}
       {channels.length > 0 && !channels.some((c) => c.enabled && c.events.includes("alert")) && (
         <Alert color="orange" icon={<IconBell />}>
-          Żaden włączony kanał nie odbiera alertów detekcji (Gjallarhorn) – alerty są tylko w panelu. Zaznacz „
-          {notifyEventLabels.alert}” przy kanale, który ma je dostawać.
+          {t("notify.noAlertChannel", { event: notifyEventLabels.alert })}
         </Alert>
       )}
       {channels.length === 0 && (
         <Alert color="gray" icon={<IconBell />}>
-          Nie ma jeszcze kanałów – alerty i kotwica nigdzie nie wychodzą. Dodaj np. webhook kanału Discorda (Ustawienia
-          kanału → Integracje → Webhooki → Kopiuj adres URL).
+          {t("notify.noChannels")}
         </Alert>
+      )}
+      {sysLang && (
+        <Card withBorder>
+          <Group justify="space-between" align="center">
+            <div>
+              <Text fw={600}>{t("notify.systemLanguage")}</Text>
+              <Text size="sm" c="dimmed" maw={720}>
+                {t("notify.systemLanguageHelp")}
+              </Text>
+            </div>
+            <SegmentedControl
+              value={sysLang.language}
+              disabled={!sysLang.editable || !can("users", "write")}
+              data={sysLang.supported.map((l) => ({ value: l, label: languages[l] ?? l }))}
+              onChange={(v) => void changeSysLang(v)}
+            />
+          </Group>
+        </Card>
       )}
 
       {channels.map((c) => (
@@ -273,7 +310,7 @@ export default function NotificationsPage() {
                     onChange={(e) => {
                       const on = e.currentTarget.checked;
                       const events = on ? [...c.events, ev] : c.events.filter((x) => x !== ev);
-                      void update(c, { events }, `rezygnacja z: ${notifyEventLabels[ev]}`);
+                      void update(c, { events }, t("notify.optOut", { event: notifyEventLabels[ev] }));
                     }}
                   />
                 ))}
@@ -282,22 +319,22 @@ export default function NotificationsPage() {
                 <AlertFilterEditor
                   value={c.alert_filter ?? {}}
                   rules={ruleOptions}
-                  onSave={(f) => void update(c, { alert_filter: f }, "zawężenie alertów wysyłanych na kanał")}
+                  onSave={(f) => void update(c, { alert_filter: f }, t("notify.narrowing"))}
                 />
               )}
               <Text size="xs" c={c.last_error && (!c.last_ok_at || c.last_error_at! > c.last_ok_at) ? "red" : "dimmed"}>
-                {c.last_ok_at ? `ostatnia udana wysyłka ${formatDate(c.last_ok_at)}` : "jeszcze nic nie wysłano"}
-                {c.last_error && c.last_error_at && ` • ostatni błąd ${formatDate(c.last_error_at)}: ${c.last_error}`}
+                {c.last_ok_at ? t("notify.lastOk", { date: formatDate(c.last_ok_at) }) : t("notify.nothingSent")}
+                {c.last_error && c.last_error_at && ` • ${t("notify.lastError", { date: formatDate(c.last_error_at), error: c.last_error })}`}
               </Text>
             </Stack>
             <Group gap="xs">
               <Switch
-                label="włączony"
+                label={t("notify.enabled")}
                 checked={c.enabled}
-                onChange={(e) => void update(c, { enabled: e.currentTarget.checked }, "wyłączenie kanału")}
+                onChange={(e) => void update(c, { enabled: e.currentTarget.checked }, t("notify.disabling"))}
               />
-              <Button size="xs" variant="light" leftSection={<IconSend size={14} />} onClick={() => void action(() => notifyApi.test(c.id))}>
-                Test
+              <Button size="xs" variant="light" leftSection={<IconSend size={14} />} onClick={() => void action(() => notifyApi.test(c.id), t("notify.testSent"))}>
+                {t("notify.test")}
               </Button>
               <Button
                 size="xs"
@@ -306,7 +343,7 @@ export default function NotificationsPage() {
                 leftSection={<IconTrash size={14} />}
                 onClick={() =>
                   setPending({
-                    label: `usunięcie kanału „${c.name}”`,
+                    label: t("notify.deleting", { name: c.name }),
                     run: async (pw) => {
                       await notifyApi.remove(c.id, pw);
                       load();
@@ -314,7 +351,7 @@ export default function NotificationsPage() {
                   })
                 }
               >
-                Usuń
+                {t("notify.delete")}
               </Button>
             </Group>
           </Group>
@@ -323,16 +360,16 @@ export default function NotificationsPage() {
 
       {log.length > 0 && (
         <Stack gap="xs">
-          <Title order={4}>Ostatnie wysyłki</Title>
+          <Title order={4}>{t("notify.log")}</Title>
           <Table.ScrollContainer minWidth={800}>
             <Table striped verticalSpacing={4}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Czas</Table.Th>
-                  <Table.Th>Kanał</Table.Th>
-                  <Table.Th>Rodzaj</Table.Th>
-                  <Table.Th>Treść</Table.Th>
-                  <Table.Th>Wynik</Table.Th>
+                  <Table.Th>{t("notify.col.time")}</Table.Th>
+                  <Table.Th>{t("notify.col.channel")}</Table.Th>
+                  <Table.Th>{t("notify.col.kind")}</Table.Th>
+                  <Table.Th>{t("notify.col.content")}</Table.Th>
+                  <Table.Th>{t("notify.col.result")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -349,18 +386,18 @@ export default function NotificationsPage() {
                         <Tooltip label={l.anchor_sha256} maw={600} multiline>
                           <Text size="xs" ff="monospace" c="dimmed">
                             #{l.anchor_seq} {l.anchor_sha256.slice(0, 16)}…{" "}
-                            {l.anchor_match === true && <Badge size="xs" color="green" variant="light">zgodna z łańcuchem</Badge>}
-                            {l.anchor_match === false && <Badge size="xs" color="red">NIEZGODNA z łańcuchem</Badge>}
+                            {l.anchor_match === true && <Badge size="xs" color="green" variant="light">{t("notify.anchorOk")}</Badge>}
+                            {l.anchor_match === false && <Badge size="xs" color="red">{t("notify.anchorBad")}</Badge>}
                           </Text>
                         </Tooltip>
                       )}
                     </Table.Td>
                     <Table.Td>
                       {l.ok ? (
-                        <Badge color="green" variant="light">wysłano</Badge>
+                        <Badge color="green" variant="light">{t("notify.sent")}</Badge>
                       ) : (
                         <Tooltip label={l.error} maw={500} multiline>
-                          <Badge color="red" variant="light">błąd</Badge>
+                          <Badge color="red" variant="light">{t("notify.error")}</Badge>
                         </Tooltip>
                       )}
                     </Table.Td>
@@ -372,7 +409,7 @@ export default function NotificationsPage() {
         </Stack>
       )}
 
-      <Modal opened={adding} onClose={() => setAdding(false)} title="Nowy kanał powiadomień" centered>
+      <Modal opened={adding} onClose={() => setAdding(false)} title={t("notify.newTitle")} centered>
         <form onSubmit={add}>
           <Stack gap="sm">
             <SegmentedControl
@@ -383,20 +420,16 @@ export default function NotificationsPage() {
                 { value: "webhook", label: "Webhook (JSON)" },
               ]}
             />
-            <TextInput label="Nazwa" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} />
+            <TextInput label={t("notify.name")} required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} />
             <PasswordInput
-              label="Adres webhooka"
-              description={
-                form.kind === "discord"
-                  ? "https://discord.com/api/webhooks/… – traktuj jak hasło"
-                  : "https://… – Vardr wysyła POST z JSON {event, severity, title, text, fields, at}"
-              }
+              label={t("notify.url")}
+              description={form.kind === "discord" ? t("notify.urlDiscord") : t("notify.urlWebhook")}
               required
               value={form.url}
               onChange={(e) => setForm({ ...form, url: e.currentTarget.value })}
             />
             <Checkbox.Group
-              label="Co wysyłać"
+              label={t("notify.what")}
               value={form.events}
               onChange={(v) => setForm({ ...form, events: v as NotifyEvent[] })}
             >
@@ -408,24 +441,24 @@ export default function NotificationsPage() {
             </Checkbox.Group>
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setAdding(false)}>
-                Anuluj
+                {t("notify.cancel")}
               </Button>
               <Button type="submit" loading={busy}>
-                Dodaj
+                {t("notify.addShort")}
               </Button>
             </Group>
           </Stack>
         </form>
       </Modal>
 
-      <Modal opened={!!pending} onClose={() => setPending(null)} title="Potwierdź hasłem" centered>
+      <Modal opened={!!pending} onClose={() => setPending(null)} title={t("notify.confirmTitle")} centered>
         <form onSubmit={confirm}>
           <Stack gap="sm">
             <Text size="sm">
-              {pending?.label} – ta zmiana ogranicza, co wychodzi poza system (np. kotwice archiwum), dlatego wymaga hasła.
+              {t("notify.confirmText", { what: pending?.label })}
             </Text>
             <PasswordInput
-              label="Twoje hasło"
+              label={t("yourPassword")}
               required
               autoFocus
               autoComplete="current-password"
@@ -434,10 +467,10 @@ export default function NotificationsPage() {
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setPending(null)}>
-                Wróć
+                {t("notify.back")}
               </Button>
               <Button type="submit" color="orange" loading={busy}>
-                Potwierdź
+                {t("notify.confirm")}
               </Button>
             </Group>
           </Stack>

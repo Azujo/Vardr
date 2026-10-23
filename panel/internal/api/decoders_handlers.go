@@ -14,6 +14,7 @@ import (
 
 	"siem/internal/contract"
 	"siem/internal/decode"
+	"siem/internal/lang"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/events"
 )
@@ -131,6 +132,7 @@ type decoderView struct {
 	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 	UpdatedBy     string     `json:"updated_by,omitempty"`
 	Error         string     `json:"error,omitempty"`
+	ErrorEn       string     `json:"error_en,omitempty"`
 }
 
 func (s *Server) listDecoders(w http.ResponseWriter, r *http.Request) {
@@ -147,10 +149,10 @@ func (s *Server) listDecoders(w http.ResponseWriter, r *http.Request) {
 	for i, d := range set.List() {
 		order[d.ID] = i + 1
 	}
-	failed := map[string]string{}
+	failed, failedEn := map[string]string{}, map[string]string{}
 	for _, e := range errs {
 		if id, _, ok := strings.Cut(strings.TrimPrefix(e.Error(), "dekoder "), ":"); ok {
-			failed[id] = e.Error()
+			failed[id], failedEn[id] = e.Error(), lang.English(e)
 		}
 	}
 	sources := decode.BuiltinSources()
@@ -166,7 +168,7 @@ func (s *Server) listDecoders(w http.ResponseWriter, r *http.Request) {
 		if c, ok := custom[b.ID]; ok {
 			v.Enabled, v.Revision, v.UpdatedAt, v.UpdatedBy = c.Enabled, c.Revision, &c.UpdatedAt, c.UpdatedBy
 			if c.Source != "" {
-				v.Modified, v.Source, v.BuiltinSource, v.Error = true, c.Source, sources[b.ID], failed[b.ID]
+				v.Modified, v.Source, v.BuiltinSource, v.Error, v.ErrorEn = true, c.Source, sources[b.ID], failed[b.ID], failedEn[b.ID]
 				if d, err := decode.Parse([]byte(c.Source), s.Decoders.loc()); err == nil {
 					fill(&v, d)
 				}
@@ -179,7 +181,7 @@ func (s *Server) listDecoders(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		v := decoderView{ID: id, Origin: "custom", Enabled: c.Enabled, Source: c.Source, Order: order[id], Revision: c.Revision,
-			UpdatedAt: &c.UpdatedAt, UpdatedBy: c.UpdatedBy, Error: failed[id], Title: id}
+			UpdatedAt: &c.UpdatedAt, UpdatedBy: c.UpdatedBy, Error: failed[id], ErrorEn: failedEn[id], Title: id}
 		if d, err := decode.Parse([]byte(c.Source), s.Decoders.loc()); err == nil {
 			fill(&v, d)
 		}
@@ -222,6 +224,7 @@ type decodeResult struct {
 	Event     map[string]string `json:"event"`
 	Fields    map[string]string `json:"fields"`
 	Error     string            `json:"error,omitempty"` // kwarantanna
+	ErrorEn   string            `json:"error_en,omitempty"`
 }
 
 // maxTestSamples: najwięcej wiadomości w jednym teście.
@@ -250,7 +253,7 @@ func (s *Server) testDecoder(w http.ResponseWriter, r *http.Request) {
 		}
 		d, err := decode.Parse([]byte(req.Source), loc)
 		if err != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+			writeJSON(w, http.StatusOK, failed(err))
 			return
 		}
 		cand = d
@@ -337,7 +340,7 @@ func decodeOne(raw, peer, src string, i int, now time.Time, set *decode.Set, loc
 	}
 	e, err := decode.Event(contract.Event{ID: "test:" + strconv.Itoa(i), Source: src, Raw: raw, Peer: peer}, "test", now, set, loc)
 	if err != nil {
-		res.Error = err.Error()
+		res.Error, res.ErrorEn = err.Error(), lang.English(err)
 		if d := set.Find(h, addr); d != nil {
 			res.Decoder, res.Dataset = d.ID, d.Dataset
 		}
@@ -388,7 +391,7 @@ func (s *Server) saveDecoder(w http.ResponseWriter, r *http.Request) {
 	}
 	d, err := decode.Parse([]byte(req.Source), s.Decoders.loc())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_decoder", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_decoder", err)
 		return
 	}
 	if d.ID != id {
@@ -400,7 +403,7 @@ func (s *Server) saveDecoder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := d.CheckSamples(s.now().UTC()); err != nil {
-		writeError(w, http.StatusBadRequest, "sample_failed", err.Error())
+		writeErr(w, http.StatusBadRequest, "sample_failed", err)
 		return
 	}
 	builtin, custom, err := s.Decoders.state(r.Context())
@@ -432,7 +435,7 @@ func (s *Server) publishDecoder(w http.ResponseWriter, r *http.Request, id strin
 		resp["revision"] = d.Revision
 	}
 	if s.Decoders.Publish == nil {
-		resp["message"] = "zapisano; brak połączenia z NATS – normalizatory dostaną zmianę po jego przywróceniu"
+		resp["delivery"], resp["message"] = "no_nats", "zapisano; brak połączenia z NATS – normalizatory dostaną zmianę po jego przywróceniu"
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
@@ -444,10 +447,10 @@ func (s *Server) publishDecoder(w http.ResponseWriter, r *http.Request, id strin
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 	defer cancel()
 	if err := s.Decoders.Publish(ctx, id, c); err != nil {
-		s.Log.Warn("dostarczenie dekodera do NATS nieudane – ponowi synchronizacja okresowa", "id", id, "err", err)
-		resp["message"] = "zapisano; dostarczenie do normalizatorów nieudane – panel ponowi je w ciągu 5 minut"
+		s.Log.Warn("delivering the decoder to NATS failed – the periodic sync will retry", "id", id, "err", err)
+		resp["delivery"], resp["message"] = "failed", "zapisano; dostarczenie do normalizatorów nieudane – panel ponowi je w ciągu 5 minut"
 	} else {
-		resp["message"] = "zapisano; normalizatory stosują zmianę w ciągu kilku sekund"
+		resp["delivery"], resp["message"] = "ok", "zapisano; normalizatory stosują zmianę w ciągu kilku sekund"
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -486,7 +489,7 @@ func (s *Server) setDecoderEnabled(w http.ResponseWriter, r *http.Request) {
 	}
 	was := !existed || prev.Enabled
 	if was == req.Enabled {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "bez zmian"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "delivery": "unchanged", "message": "bez zmian"})
 		return
 	}
 	if !req.Enabled {
@@ -606,7 +609,7 @@ func (s *Server) decoderSamples(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	out, err := s.Decoders.Samples.SyslogSamples(ctx, q.Get("decoder"), peer, s.now().Add(-time.Duration(hours)*time.Hour), limit)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		writeErr(w, http.StatusBadGateway, "events_failed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"samples": out})
@@ -617,7 +620,7 @@ func readJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) b
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "niepoprawne dane żądania: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_request", lang.Errorf("niepoprawne dane żądania: %w", "invalid request data: %w", err))
 		return false
 	}
 	return true

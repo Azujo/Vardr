@@ -65,24 +65,24 @@ type options struct {
 
 func main() {
 	var o options
-	flag.StringVar(&o.url, "url", "https://localhost:8443/v1/ingest", "adres endpointu ingest")
-	flag.StringVar(&o.pkiDir, "pki", "certs", "katalog z ca.crt i ca.key (laboratoryjne CA)")
-	flag.StringVar(&o.prefix, "prefix", "agt-load", "prefiks identyfikatorów agentów")
-	flag.IntVar(&o.agents, "agents", 100, "liczba symulowanych agentów")
-	flag.Float64Var(&o.eps, "eps", 5, "zdarzeń na sekundę na agenta")
-	flag.DurationVar(&o.duration, "duration", 2*time.Minute, "czas generowania zdarzeń")
-	flag.DurationVar(&o.ramp, "ramp", 20*time.Second, "czas rozruchu (agenci startują równomiernie)")
-	flag.IntVar(&o.batch, "batch", 500, "maks. zdarzeń w paczce (jak agent)")
-	flag.DurationVar(&o.flush, "flush", 10*time.Second, "maks. czas zbierania małej paczki (agent od 0.7.1: do 10 s poniżej 50 zdarzeń)")
-	flag.IntVar(&o.maxBacklog, "backlog", 50000, "pojemność bufora agenta (symulacja dziennika Windows)")
-	flag.DurationVar(&o.timeout, "timeout", 30*time.Second, "limit czasu żądania")
-	flag.BoolVar(&o.heartbeat, "heartbeat", true, "wysyłaj heartbeaty (co minutę, jak agent) – agenci widoczni w panelu")
-	failures := flag.Float64("failures", 0.2, "udział nieudanych logowań 4625 w % (5 = ciągły brute force na wszystkich kontach)")
+	flag.StringVar(&o.url, "url", "https://localhost:8443/v1/ingest", "ingest endpoint address")
+	flag.StringVar(&o.pkiDir, "pki", "certs", "directory with ca.crt and ca.key (lab CA)")
+	flag.StringVar(&o.prefix, "prefix", "agt-load", "agent identifier prefix")
+	flag.IntVar(&o.agents, "agents", 100, "number of simulated agents")
+	flag.Float64Var(&o.eps, "eps", 5, "events per second per agent")
+	flag.DurationVar(&o.duration, "duration", 2*time.Minute, "event generation duration")
+	flag.DurationVar(&o.ramp, "ramp", 20*time.Second, "ramp-up time (agents start evenly)")
+	flag.IntVar(&o.batch, "batch", 500, "max events per batch (like the agent)")
+	flag.DurationVar(&o.flush, "flush", 10*time.Second, "max time to collect a small batch (agent since 0.7.1: up to 10 s below 50 events)")
+	flag.IntVar(&o.maxBacklog, "backlog", 50000, "agent buffer capacity (simulates the Windows event log)")
+	flag.DurationVar(&o.timeout, "timeout", 30*time.Second, "request timeout")
+	flag.BoolVar(&o.heartbeat, "heartbeat", true, "send heartbeats (every minute, like the agent) – agents visible in the panel")
+	failures := flag.Float64("failures", 0.2, "share of failed logons 4625 in % (5 = continuous brute force on all accounts)")
 	flag.Parse()
 	loadgen.SetFailureShare(*failures)
 
 	if err := run(o); err != nil {
-		fmt.Fprintln(os.Stderr, "błąd:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -98,7 +98,7 @@ func run(o options) error {
 	// Generacja z czasu startu: każde uruchomienie ma nowe identyfikatory
 	// zdarzeń (inaczej writer pominąłby je jako duplikaty).
 	gen := uint32(time.Now().Unix() % 1_000_000)
-	fmt.Printf("Agenci: %d × %.1f zdarzeń/s = %.0f zdarzeń/s, czas %v (rozruch %v), cel %s, generacja g%d\n",
+	fmt.Printf("Agents: %d × %.1f events/s = %.0f events/s, duration %v (ramp-up %v), target %s, generation g%d\n",
 		o.agents, o.eps, float64(o.agents)*o.eps, o.duration, o.ramp, o.url, gen)
 
 	sims := make([]*agent, o.agents)
@@ -333,7 +333,7 @@ func loadCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 		}
 		blk, _ := pem.Decode(b)
 		if blk == nil {
-			return nil, fmt.Errorf("%s: niepoprawny PEM", name)
+			return nil, fmt.Errorf("%s: invalid PEM", name)
 		}
 		return blk, nil
 	}
@@ -416,7 +416,7 @@ func backlog(sims []*agent) int64 {
 
 func report(elapsed time.Duration, cur, prev snapshot, dt time.Duration, sims []*agent) {
 	s := dt.Seconds()
-	fmt.Printf("[%6s] wygenerowane %7.0f/s  przyjęte %7.0f/s  paczki %5.1f/s  %6.2f MB/s  429 %4.1f/s  503 %4.1f/s  błędy %d  bufor agentów %d  utracone %d  opóźnienie p50 %v p99 %v\n",
+	fmt.Printf("[%6s] generated %7.0f/s  accepted %7.0f/s  batches %5.1f/s  %6.2f MB/s  429 %4.1f/s  503 %4.1f/s  errors %d  agent buffer %d  lost %d  latency p50 %v p99 %v\n",
 		elapsed.Round(time.Second), float64(cur.generated-prev.generated)/s, float64(cur.accepted-prev.accepted)/s,
 		float64(cur.batches-prev.batches)/s, float64(cur.bytes-prev.bytes)/s/1e6,
 		float64(cur.s429-prev.s429)/s, float64(cur.s503-prev.s503)/s, cur.net+cur.other,
@@ -426,18 +426,18 @@ func report(elapsed time.Duration, cur, prev snapshot, dt time.Duration, sims []
 func summary(elapsed time.Duration, sims []*agent) {
 	c := stats.snapshot()
 	fmt.Println("\n=== Podsumowanie ===")
-	fmt.Printf("czas: %v\n", elapsed.Round(time.Second))
-	fmt.Printf("zdarzenia: wygenerowane %d, przyjęte %d, niewysłane (bufor) %d, utracone (przepełnienie bufora) %d\n",
+	fmt.Printf("duration: %v\n", elapsed.Round(time.Second))
+	fmt.Printf("events: generated %d, accepted %d, unsent (buffer) %d, lost (buffer overflow) %d\n",
 		c.generated, c.accepted, backlog(sims), c.lost)
-	fmt.Printf("średnio przyjęte: %.0f zdarzeń/s, %d paczek, %.1f MB skompresowanych\n",
+	fmt.Printf("average accepted: %.0f events/s, %d batches, %.1f MB compressed\n",
 		float64(c.accepted)/elapsed.Seconds(), c.batches, float64(c.bytes)/1e6)
-	fmt.Printf("odmowy: 429 = %d, 503 = %d; błędy sieci %d, inne %d\n", c.s429, c.s503, c.net, c.other)
-	fmt.Printf("heartbeaty przyjęte: %d\n", stats.heartbeats.Load())
-	fmt.Printf("opóźnienie odpowiedzi: p50 %v, p90 %v, p99 %v, max %v\n",
+	fmt.Printf("refusals: 429 = %d, 503 = %d; network errors %d, other %d\n", c.s429, c.s503, c.net, c.other)
+	fmt.Printf("heartbeats accepted: %d\n", stats.heartbeats.Load())
+	fmt.Printf("response latency: p50 %v, p90 %v, p99 %v, max %v\n",
 		stats.latency.quantile(0.5), stats.latency.quantile(0.9), stats.latency.quantile(0.99), stats.latency.max())
 	stats.mu.Lock()
 	if stats.lastError != "" {
-		fmt.Printf("ostatni błąd: %s\n", stats.lastError)
+		fmt.Printf("last error: %s\n", stats.lastError)
 	}
 	stats.mu.Unlock()
 }
@@ -503,7 +503,7 @@ func (a *agent) heartbeats(ctx context.Context, i int, started time.Time) {
 	for {
 		security := map[string]any{"name": "Security", "state": "ok", "last_record_id": a.record}
 		if i%50 == 7 {
-			security = map[string]any{"name": "Security", "state": "access_denied", "error": "brak dostępu do kanału: Security"}
+			security = map[string]any{"name": "Security", "state": "access_denied", "error": "no access to channel: Security"}
 		}
 		status := map[string]any{
 			"version": "loadgen", "agent_id": a.id, "started_at": started,
@@ -514,7 +514,7 @@ func (a *agent) heartbeats(ctx context.Context, i int, started time.Time) {
 			"process": map[string]any{"heap_mb": 18 + mrand.Float64()*6, "sys_mb": 30.0, "goroutines": 14, "max_procs": 2},
 		}
 		if i%20 == 3 {
-			status["warnings"] = []string{time.Now().Format("2006-01-02 15:04:05") + " kanał Security: niewysłane zdarzenia zajmują 55% dziennika Windows"}
+			status["warnings"] = []string{time.Now().Format("2006-01-02 15:04:05") + " channel Security: unsent events take 55% of the Windows event log"}
 		}
 		st, _ := json.Marshal(status)
 		hb := contract.Heartbeat{Schema: contract.SchemaHeartbeatV1, AgentID: a.id, SentAt: time.Now().UTC(),

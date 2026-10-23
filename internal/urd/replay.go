@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"siem/internal/lang"
 )
 
 // Stany zlecenia odtworzenia.
@@ -96,7 +98,7 @@ func (a *Archive) replaySegment(ctx context.Context, s Segment, agents []string,
 			return fmt.Errorf("segment %s: %w", s.Path, err)
 		}
 		if SumHex(payload) != meta.SHA256 {
-			return fmt.Errorf("segment %s: paczka %s niezgodna ze swoją sumą – uruchom weryfikację archiwum", s.Path, meta.Batch)
+			return lang.Errorf("segment %s: paczka %s niezgodna ze swoją sumą – uruchom weryfikację archiwum", "segment %s: batch %s does not match its hash – run archive verification", s.Path, meta.Batch)
 		}
 		if len(agents) > 0 && !slices.Contains(agents, meta.Agent) {
 			st.Skipped++
@@ -113,7 +115,7 @@ func (a *Archive) replaySegment(ctx context.Context, s Segment, agents []string,
 		return err
 	}
 	if hex.EncodeToString(h.Sum(nil)) != s.SHA256 {
-		return fmt.Errorf("segment %s: SHA-256 niezgodny z manifestem – uruchom weryfikację archiwum", s.Path)
+		return lang.Errorf("segment %s: SHA-256 niezgodny z manifestem – uruchom weryfikację archiwum", "segment %s: SHA-256 does not match the manifest – run archive verification", s.Path)
 	}
 	return nil
 }
@@ -121,7 +123,7 @@ func (a *Archive) replaySegment(ctx context.Context, s Segment, agents []string,
 // ---- spis zleceń (PostgreSQL) ----
 
 // ErrReplayNotFound: nie ma takiego zlecenia odtworzenia.
-var ErrReplayNotFound = errors.New("nie ma takiego odtworzenia")
+var ErrReplayNotFound = errors.New("no such replay")
 
 const replayCols = `id, requested_at, requested_by, reason, from_hour, to_hour, agents, status, started_at, finished_at,
 	error, batches, skipped, bytes`

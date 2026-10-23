@@ -17,6 +17,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // maxProblems ogranicza listę problemów w wyniku (reszta jest zliczana).
@@ -25,11 +27,19 @@ const maxProblems = 200
 type problems struct {
 	list  []string
 	extra int
+	lang  string // język opisów (pl, en)
 }
 
-func (p *problems) add(format string, args ...any) {
+func (p *problems) add(pl, en string, args ...any) {
+	if p.lang == "en" {
+		for i, a := range args {
+			if e, ok := a.(error); ok {
+				args[i] = lang.English(e)
+			}
+		}
+	}
 	if len(p.list) < maxProblems {
-		p.list = append(p.list, fmt.Sprintf(format, args...))
+		p.list = append(p.list, fmt.Sprintf(lang.Pick(p.lang, pl, en), args...))
 		return
 	}
 	p.extra++
@@ -40,7 +50,7 @@ func (p *problems) count() int { return len(p.list) + p.extra }
 func (p *problems) result() []string {
 	out := p.list
 	if p.extra > 0 {
-		out = append(out, fmt.Sprintf("… oraz %d kolejnych problemów", p.extra))
+		out = append(out, fmt.Sprintf(lang.Pick(p.lang, "… oraz %d kolejnych problemów", "… and %d more problems"), p.extra))
 	}
 	if out == nil {
 		out = []string{}
@@ -81,17 +91,17 @@ type manifestCheck struct {
 // na brakujące); równoległe Commit i Seal są bezpieczne.
 func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	v := Verification{StartedAt: a.now()}
-	var p problems
+	p := problems{lang: a.lang()}
 
 	// Pliki na dysku zbierane PRZED odczytem spisu: segment zapisany
 	// w trakcie weryfikacji nie zostanie wtedy uznany za obcy.
 	onDisk, err := a.listFiles()
 	if err != nil {
-		p.add("odczyt katalogu archiwum: %v", err)
+		p.add("odczyt katalogu archiwum: %v", "reading the archive directory: %v", err)
 	}
 	ms, err := a.Cat.Manifests(ctx)
 	if err != nil {
-		p.add("odczyt łańcucha manifestów: %v", err)
+		p.add("odczyt łańcucha manifestów: %v", "reading the manifest chain: %v", err)
 	}
 	known := map[string]bool{}
 
@@ -102,13 +112,13 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	for i, m := range ms {
 		label := fmt.Sprintf("manifest %d (%s)", m.Seq, m.Hour.UTC().Format("2006-01-02 15:00"))
 		if m.Seq != prevSeq+1 {
-			p.add("luka w łańcuchu: po manifeście %d następuje %d – manifesty usunięte z bazy", prevSeq, m.Seq)
+			p.add("luka w łańcuchu: po manifeście %d następuje %d – manifesty usunięte z bazy", "gap in the chain: manifest %d is followed by %d – manifests removed from the database", prevSeq, m.Seq)
 		}
 		if i > 0 && !m.Hour.Equal(prevHour.Add(time.Hour)) {
-			p.add("%s: brak manifestów między %s a tą godziną", label, prevHour.UTC().Format("2006-01-02 15:00"))
+			p.add("%s: brak manifestów między %s a tą godziną", "%s: no manifests between %s and this hour", label, prevHour.UTC().Format("2006-01-02 15:00"))
 		}
 		if m.PrevSHA256 != prevSHA {
-			p.add("%s: hash poprzednika nie zgadza się – łańcuch przerwany", label)
+			p.add("%s: hash poprzednika nie zgadza się – łańcuch przerwany", "%s: previous hash does not match – chain broken", label)
 		}
 		prevSHA, prevSeq, prevHour = m.SHA256, m.Seq, m.Hour
 		if m.ExpiredAt != nil {
@@ -116,22 +126,22 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 		}
 		v.Manifests++
 		if SumHex(m.Body) != m.SHA256 {
-			p.add("%s: treść w bazie nie zgadza się z hashem – zmieniona", label)
+			p.add("%s: treść w bazie nie zgadza się z hashem – zmieniona", "%s: content in the database does not match the hash – modified", label)
 		}
 		mpath := ManifestPath(m.Hour)
 		known[mpath] = true
 		if file, err := os.ReadFile(a.abs(mpath)); err != nil {
-			p.add("%s: brak pliku %s: %v", label, mpath, err)
+			p.add("%s: brak pliku %s: %v", "%s: file %s missing: %v", label, mpath, err)
 		} else if !bytes.Equal(file, m.Body) {
-			p.add("%s: plik %s różni się od zapisu w bazie – zmieniony", label, mpath)
+			p.add("%s: plik %s różni się od zapisu w bazie – zmieniony", "%s: file %s differs from the database record – modified", label, mpath)
 		}
 		var body Manifest
 		if err := json.Unmarshal(m.Body, &body); err != nil {
-			p.add("%s: nieczytelna treść: %v", label, err)
+			p.add("%s: nieczytelna treść: %v", "%s: unreadable content: %v", label, err)
 			continue
 		}
 		if body.Seq != m.Seq || !body.Hour.Equal(m.Hour) || body.PrevSHA256 != m.PrevSHA256 {
-			p.add("%s: treść nie zgadza się z wpisem w łańcuchu", label)
+			p.add("%s: treść nie zgadza się z wpisem w łańcuchu", "%s: content does not match the chain entry", label)
 		}
 		for _, s := range body.Segments {
 			known[s.Path] = true
@@ -140,6 +150,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	}
 	if n := len(ms); n > 0 && ms[n-1].Hour.Before(a.now().Truncate(time.Hour).Add(-2*time.Hour)) {
 		p.add("ostatni manifest dotyczy godziny %s – archiwizator nie działa albo koniec łańcucha usunięto",
+			"the last manifest is for hour %s – the archiver is not running or the end of the chain was removed",
 			ms[n-1].Hour.UTC().Format("2006-01-02 15:00"))
 	}
 
@@ -170,7 +181,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	var passed []int64
 	for _, c := range checks {
 		if ctx.Err() != nil {
-			p.add("weryfikacja przerwana: %v", ctx.Err())
+			p.add("weryfikacja przerwana: %v", "verification interrupted: %v", ctx.Err())
 			break
 		}
 		before := p.count()
@@ -191,7 +202,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 
 	open, err := a.Cat.OpenSegments(ctx)
 	if err != nil {
-		p.add("odczyt otwartych segmentów: %v", err)
+		p.add("odczyt otwartych segmentów: %v", "reading open segments: %v", err)
 	}
 	stale := a.now().Truncate(time.Hour).Add(-time.Hour)
 	for _, s := range open {
@@ -203,7 +214,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 			ref = reg
 		}
 		if ref.Before(stale) {
-			p.add("segment %s bez manifestu od ponad godziny", s.Path)
+			p.add("segment %s bez manifestu od ponad godziny", "segment %s without a manifest for over an hour", s.Path)
 		}
 	}
 
@@ -222,7 +233,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 		}
 		for _, f := range unknown {
 			if !known[f] {
-				p.add("plik %s nie występuje w spisie archiwum – dodany poza archiwizatorem", f)
+				p.add("plik %s nie występuje w spisie archiwum – dodany poza archiwizatorem", "file %s is not in the archive catalog – added outside the archiver", f)
 				v.Unknown = append(v.Unknown, f)
 			}
 		}
@@ -231,7 +242,7 @@ func (a *Archive) Verify(ctx context.Context, opt VerifyOptions) Verification {
 	now := a.now()
 	if len(passed) > 0 {
 		if err := a.Cat.MarkVerified(ctx, passed, now); err != nil {
-			p.add("zapis znaczników pełnego sprawdzenia: %v", err)
+			p.add("zapis znaczników pełnego sprawdzenia: %v", "writing full-check markers: %v", err)
 		}
 	}
 	// Pokrycie: najdawniejsze pełne sprawdzenie danych w retencji (brak,
@@ -276,11 +287,11 @@ func (a *Archive) statSegment(s Segment, v *Verification, p *problems) {
 	st, err := os.Stat(a.abs(s.Path))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		p.add("segment %s: brak pliku – usunięty", s.Path)
+		p.add("segment %s: brak pliku – usunięty", "segment %s: file missing – deleted", s.Path)
 	case err != nil:
-		p.add("segment %s: %v", s.Path, err)
+		p.add("segment %s: %v", "segment %s: %v", s.Path, err)
 	case st.Size() != s.Bytes:
-		p.add("segment %s: rozmiar %d B, w spisie %d B", s.Path, st.Size(), s.Bytes)
+		p.add("segment %s: rozmiar %d B, w spisie %d B", "segment %s: size %d B, catalog says %d B", s.Path, st.Size(), s.Bytes)
 	}
 }
 
@@ -290,9 +301,9 @@ func (a *Archive) verifySegment(s Segment, v *Verification, p *problems) {
 	f, err := os.Open(a.abs(s.Path))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			p.add("segment %s: brak pliku – usunięty", s.Path)
+			p.add("segment %s: brak pliku – usunięty", "segment %s: file missing – deleted", s.Path)
 		} else {
-			p.add("segment %s: %v", s.Path, err)
+			p.add("segment %s: %v", "segment %s: %v", s.Path, err)
 		}
 		return
 	}
@@ -302,7 +313,7 @@ func (a *Archive) verifySegment(s Segment, v *Verification, p *problems) {
 	records, damaged := 0, 0
 	r, err := NewReader(cr)
 	if err != nil {
-		p.add("segment %s: %v", s.Path, err)
+		p.add("segment %s: %v", "segment %s: %v", s.Path, err)
 	} else {
 		for {
 			meta, payload, err := r.Next()
@@ -310,7 +321,7 @@ func (a *Archive) verifySegment(s Segment, v *Verification, p *problems) {
 				break
 			}
 			if err != nil {
-				p.add("segment %s: rekord %d: %v", s.Path, records+1, err)
+				p.add("segment %s: rekord %d: %v", "segment %s: record %d: %v", s.Path, records+1, err)
 				break
 			}
 			records++
@@ -323,16 +334,16 @@ func (a *Archive) verifySegment(s Segment, v *Verification, p *problems) {
 	v.Records += int64(records)
 	v.Bytes += cr.n
 	if damaged > 0 {
-		p.add("segment %s: %d paczek niezgodnych z ich sumą SHA-256", s.Path, damaged)
+		p.add("segment %s: %d paczek niezgodnych z ich sumą SHA-256", "segment %s: %d batches do not match their SHA-256", s.Path, damaged)
 	}
 	if cr.n != s.Bytes {
-		p.add("segment %s: rozmiar %d B, w spisie %d B", s.Path, cr.n, s.Bytes)
+		p.add("segment %s: rozmiar %d B, w spisie %d B", "segment %s: size %d B, catalog says %d B", s.Path, cr.n, s.Bytes)
 	}
 	if sum := hex.EncodeToString(h.Sum(nil)); sum != s.SHA256 {
-		p.add("segment %s: SHA-256 pliku nie zgadza się ze spisem – zmieniony", s.Path)
+		p.add("segment %s: SHA-256 pliku nie zgadza się ze spisem – zmieniony", "segment %s: file SHA-256 does not match the catalog – modified", s.Path)
 	}
 	if records != s.Records {
-		p.add("segment %s: %d paczek, w spisie %d", s.Path, records, s.Records)
+		p.add("segment %s: %d paczek, w spisie %d", "segment %s: %d batches, catalog says %d", s.Path, records, s.Records)
 	}
 }
 

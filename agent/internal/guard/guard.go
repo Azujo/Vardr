@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/lang"
 )
 
 const (
@@ -213,11 +214,11 @@ func MarkUsed(dir, id string) error {
 
 // Errors weryfikacji tokenu.
 var (
-	ErrNoTokens   = errors.New("agent nie zna żadnego tokenu deinstalacji – wygeneruj token w panelu (Huginn → agent → Token deinstalacji); agent pobiera go z panelu")
-	ErrBadToken   = errors.New("niepoprawny token deinstalacji")
-	ErrUsedToken  = errors.New("ten token został już użyty – wygeneruj nowy w panelu")
-	ErrExpToken   = errors.New("token deinstalacji wygasł – wygeneruj nowy w panelu")
-	ErrNoTokenArg = errors.New("agent jest chroniony – podaj token deinstalacji z panelu: -token XXXXX-XXXXX-XXXXX-XXXXX")
+	ErrNoTokens   = lang.Errorf("agent nie zna żadnego tokenu deinstalacji – wygeneruj token w panelu (Huginn → agent → Token deinstalacji); agent pobiera go z panelu", "the agent knows no uninstall token – generate a token in the panel (Huginn → agent → Uninstall token); the agent fetches it from the panel")
+	ErrBadToken   = lang.Errorf("niepoprawny token deinstalacji", "invalid uninstall token")
+	ErrUsedToken  = lang.Errorf("ten token został już użyty – wygeneruj nowy w panelu", "this token has already been used – generate a new one in the panel")
+	ErrExpToken   = lang.Errorf("token deinstalacji wygasł – wygeneruj nowy w panelu", "the uninstall token has expired – generate a new one in the panel")
+	ErrNoTokenArg = lang.Errorf("agent jest chroniony – podaj token deinstalacji z panelu: -token XXXXX-XXXXX-XXXXX-XXXXX", "the agent is protected – provide the uninstall token from the panel: -token XXXXX-XXXXX-XXXXX-XXXXX")
 )
 
 // Verify sprawdza token względem skrótów z panelu. used – tokeny już

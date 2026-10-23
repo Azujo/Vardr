@@ -33,6 +33,19 @@ falsepositives:
   - Narzędzia wdrażania oprogramowania działające jak PsExec
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Remote execution via a service (PsExec, Impacket, ADMIN$ share)"
+      description: |
+        Installation of a service typical of remote command execution: PSEXESVC
+        (PsExec), services running %COMSPEC% or cmd.exe /Q /c (Impacket
+        psexec/smbexec), a program from the ADMIN$ share or from \\127.0.0.1.
+        This is a classic way of moving across the network with a compromised account.
+      instructions: |
+        Service {{ServiceName}} running {{ImagePath}} was installed on {{host.name}}.
+        Find out from which computer and to which account the connection came (type 3
+        logons 4624 on {{host.name}} just before the event). If it is not planned
+        work – cut off the source computer and block the account used.
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

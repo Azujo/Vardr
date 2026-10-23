@@ -34,7 +34,7 @@ func (s *Server) readAgentMSI(w http.ResponseWriter) ([]byte, bool) {
 		return nil, false
 	}
 	if err != nil {
-		s.Log.Error("odczyt instalatora MSI nieudany", "err", err)
+		s.Log.Error("reading the MSI installer failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal", "odczyt instalatora nieudany")
 		return nil, false
 	}
@@ -83,7 +83,7 @@ func (s *Server) tokenMSI(w http.ResponseWriter, r *http.Request) {
 		out, _, err = msipatch.Replace(out, contract.MSITokenPlaceholder, req.Secret)
 	}
 	if err != nil {
-		s.Log.Error("wpisanie adresu i tokenu do instalatora nieudane", "err", err)
+		s.Log.Error("writing the address and token into the installer failed", "err", err)
 		writeError(w, http.StatusServiceUnavailable, "msi_patch_failed",
 			"instalatora nie da się przygotować: "+err.Error()+" – zbuduj agenta ponownie (deploy.sh agent)")
 		return

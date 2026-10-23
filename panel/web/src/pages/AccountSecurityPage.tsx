@@ -6,14 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Modal, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconShieldCheck, IconShieldOff } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import { api, formatDate, type MFASetup, type MFAStatus } from "../api";
 import { CodeInput, MFASetupView, RecoveryCodesView } from "../mfa";
-
-const policyText: Record<string, string> = {
-  all: "wymagany od wszystkich kont",
-  admins: "wymagany od administratorów",
-  none: "dobrowolny",
-};
 
 type Dialog =
   | { kind: "enable"; setup?: MFASetup }
@@ -22,6 +17,7 @@ type Dialog =
   | { kind: "codes"; codes: string[] };
 
 export default function AccountSecurityPage() {
+  const { t } = useTranslation("account");
   const [st, setSt] = useState<MFAStatus | null>(null);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<Dialog | null>(null);
@@ -60,14 +56,13 @@ export default function AccountSecurityPage() {
   return (
     <Stack maw={720}>
       <div>
-        <Title order={2}>Bezpieczeństwo konta</Title>
+        <Title order={2}>{t("security.title")}</Title>
         <Text c="dimmed" size="sm">
-          Drugi składnik logowania: po haśle panel prosi o kod z aplikacji uwierzytelniającej na telefonie. Kradzież samego
-          hasła nie wystarczy wtedy do zalogowania.
+          {t("security.intro")}
         </Text>
       </div>
       {!st.available && (
-        <Alert color="gray">Drugi składnik nie jest skonfigurowany na serwerze (brak klucza MFA) – zgłoś to administratorowi.</Alert>
+        <Alert color="gray">{t("security.unavailable")}</Alert>
       )}
       {st.available && (
         <Card withBorder>
@@ -75,28 +70,28 @@ export default function AccountSecurityPage() {
             <Group justify="space-between">
               <Group gap="xs">
                 {st.enabled ? <IconShieldCheck color="var(--mantine-color-green-6)" /> : <IconShieldOff color="var(--mantine-color-gray-6)" />}
-                <Text fw={500}>Aplikacja uwierzytelniająca (TOTP)</Text>
+                <Text fw={500}>{t("security.app")}</Text>
               </Group>
-              {st.enabled ? <Badge color="green">włączona</Badge> : <Badge color="gray">wyłączona</Badge>}
+              {st.enabled ? <Badge color="green">{t("security.on")}</Badge> : <Badge color="gray">{t("security.off")}</Badge>}
             </Group>
             <Text size="sm" c="dimmed">
-              W tym panelu drugi składnik jest {policyText[st.policy]}
-              {st.required ? " – także od Ciebie" : ""}.
-              {st.enabled && ` Włączony ${formatDate(st.enabled_at)}, kody zapasowe: ${st.recovery_left ?? 0} z 10.`}
+              {t(`security.policy.${st.policy}`)}
+              {st.required ? t("security.requiredForYou") : "."}
+              {st.enabled && ` ${t("security.enabledAt", { date: formatDate(st.enabled_at), left: st.recovery_left ?? 0 })}`}
             </Text>
             {st.enabled && (st.recovery_left ?? 0) <= 2 && (
-              <Alert color="orange">Zostało mało kodów zapasowych – wygeneruj nowe.</Alert>
+              <Alert color="orange">{t("security.fewCodes")}</Alert>
             )}
             <Group gap="xs">
-              {!st.enabled && <Button onClick={() => open({ kind: "enable" })}>Włącz</Button>}
+              {!st.enabled && <Button onClick={() => open({ kind: "enable" })}>{t("security.enable")}</Button>}
               {st.enabled && (
                 <Button variant="light" onClick={() => open({ kind: "recovery" })}>
-                  Nowe kody zapasowe
+                  {t("security.newCodes")}
                 </Button>
               )}
               {st.enabled && !st.required && (
                 <Button variant="light" color="red" onClick={() => open({ kind: "disable" })}>
-                  Wyłącz
+                  {t("security.disable")}
                 </Button>
               )}
             </Group>
@@ -112,25 +107,25 @@ export default function AccountSecurityPage() {
         }}
         title={
           dialog?.kind === "enable"
-            ? "Włączenie drugiego składnika"
+            ? t("security.enableTitle")
             : dialog?.kind === "recovery"
-              ? "Nowe kody zapasowe"
+              ? t("security.newCodes")
               : dialog?.kind === "disable"
-                ? "Wyłączenie drugiego składnika"
-                : "Kody zapasowe"
+                ? t("security.disableTitle")
+                : t("security.codesTitle")
         }
         centered
         size="md"
       >
         {dialog?.kind === "enable" && !dialog.setup && (
           <Stack>
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <PasswordInput label={t("security.yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
             <Button
               loading={busy}
               disabled={!password}
               onClick={() => void run(async () => setDialog({ kind: "enable", setup: await api.mfaSetup(password) }))}
             >
-              Dalej
+              {t("security.next")}
             </Button>
           </Stack>
         )}
@@ -148,19 +143,19 @@ export default function AccountSecurityPage() {
                 })
               }
             >
-              Włącz
+              {t("security.enable")}
             </Button>
           </Stack>
         )}
         {(dialog?.kind === "recovery" || dialog?.kind === "disable") && (
           <Stack>
             {dialog.kind === "recovery" && (
-              <Text size="sm">Dotychczasowe kody zapasowe przestaną działać.</Text>
+              <Text size="sm">{t("security.oldCodesInvalid")}</Text>
             )}
             {dialog.kind === "disable" && (
-              <Alert color="orange">Bez drugiego składnika do zalogowania wystarczy samo hasło.</Alert>
+              <Alert color="orange">{t("security.disableWarning")}</Alert>
             )}
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <PasswordInput label={t("security.yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
             <CodeInput value={code} onChange={setCode} allowRecovery autoFocus={false} />
             <Button
               color={dialog.kind === "disable" ? "red" : undefined}
@@ -173,21 +168,21 @@ export default function AccountSecurityPage() {
                     setDialog({ kind: "codes", codes: r.recovery_codes });
                   } else {
                     await api.mfaDisable(password, code);
-                    notifications.show({ color: "green", message: "Drugi składnik wyłączony" });
+                    notifications.show({ color: "green", message: t("security.disabled") });
                     setDialog(null);
                     load();
                   }
                 })
               }
             >
-              {dialog.kind === "recovery" ? "Wygeneruj" : "Wyłącz"}
+              {dialog.kind === "recovery" ? t("security.generate") : t("security.disable")}
             </Button>
           </Stack>
         )}
         {dialog?.kind === "codes" && (
           <RecoveryCodesView
             codes={dialog.codes}
-            doneLabel="Gotowe"
+            doneLabel={t("security.done")}
             onDone={() => {
               setDialog(null);
               load();

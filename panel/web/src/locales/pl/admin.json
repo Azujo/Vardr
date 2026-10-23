@@ -1,0 +1,326 @@
+{
+  "copy": "Kopiuj",
+  "copied": "Skopiowano",
+  "done": "Gotowe",
+  "save": "Zapisz",
+  "yourPassword": "Twoje hasło",
+  "users": {
+    "title": "Użytkownicy",
+    "intro": "Konta panelu i ich profile uprawnień (Administracja → Profile uprawnień). Każda zmiana trafia do dziennika audytu.",
+    "new": "Nowe konto",
+    "temp": {
+      "title": "Hasło startowe",
+      "text": "Konto {{user}}. Przekaż hasło użytkownikowi bezpiecznym kanałem – przy pierwszym logowaniu ustawi własne.",
+      "once": "Hasło nie zostanie pokazane ponownie."
+    },
+    "policySaved": "Zapisano wymaganie drugiego składnika",
+    "mfaRemoved": "Drugi składnik konta {{user}} usunięty",
+    "saved": "Zapisano zmiany konta {{user}}",
+    "resetConfirm": "Nadać nowe hasło startowe dla {{user}}? Bieżące sesje tego konta zostaną zakończone.",
+    "mfaRequiredFrom": "Drugi składnik logowania (TOTP) wymagany od:",
+    "policy": {
+      "all": "wszystkich",
+      "admins": "administratorów",
+      "none": "nikogo (dobrowolnie)"
+    },
+    "mfaUnavailable": [
+      "Drugi składnik logowania niedostępny – brak klucza MFA na serwerze (plik ",
+      "; instalator tworzy go automatycznie)."
+    ],
+    "col": {
+      "login": "Login",
+      "name": "Nazwa",
+      "profile": "Profil",
+      "state": "Stan",
+      "lastLogin": "Ostatnie logowanie"
+    },
+    "adTip": "konto domenowe – hasło i profil z Active Directory",
+    "adProfile": "profil konta domenowego wynika z grup AD",
+    "profileOf": "Profil {{user}}",
+    "state": {
+      "disabled": "wyłączone",
+      "active": "aktywne",
+      "initial": "hasło startowe",
+      "locked": "zablokowane"
+    },
+    "until": "do {{date}}",
+    "mfaOn": "włączone {{date}}",
+    "mfaAtLogin": "skonfiguruje przy logowaniu",
+    "mfaNone": "brak",
+    "actions": "Akcje {{user}}",
+    "newPassword": "Nowe hasło startowe",
+    "resetMfa": "Resetuj drugi składnik",
+    "enable": "Włącz konto",
+    "disable": "Wyłącz konto",
+    "loginHint": "2–64 znaki: litery, cyfry, kropka, myślnik, podkreślenie",
+    "displayName": "Nazwa wyświetlana",
+    "profile": "Profil uprawnień",
+    "create": "Utwórz i pokaż hasło startowe",
+    "policyTitle": "Wymaganie drugiego składnika",
+    "policyNone": "Drugi składnik będzie dobrowolny – do zalogowania wystarczy samo hasło.",
+    "policyAll": "Konta bez drugiego składnika skonfigurują go przy najbliższym logowaniu; ich bieżące sesje bez drugiego składnika zostaną zakończone.",
+    "policyAdmins": "Konta administratorów bez drugiego składnika skonfigurują go przy najbliższym logowaniu; ich bieżące sesje bez drugiego składnika zostaną zakończone.",
+    "resetMfaTitle": "Reset drugiego składnika – {{user}}",
+    "resetMfaText": "Np. przy zgubionym telefonie. Konto straci aplikację i kody zapasowe, jego sesje zostaną zakończone; przy następnym logowaniu skonfiguruje aplikację od nowa (jeśli drugi składnik jest wymagany). Zmiana trafi do audytu.",
+    "reset": "Resetuj"
+  },
+  "audit": {
+    "title": "Dziennik audytu",
+    "intro": "Logowania i zmiany w panelu – kto, kiedy, skąd i co zmienił.",
+    "col": {
+      "time": "Czas",
+      "user": "Użytkownik",
+      "action": "Akcja",
+      "target": "Dotyczy",
+      "ip": "Adres IP",
+      "details": "Szczegóły"
+    },
+    "action": {
+      "login": "logowanie",
+      "login_failed": "nieudane logowanie",
+      "logout": "wylogowanie",
+      "password_changed": "zmiana hasła",
+      "password_change_failed": "nieudana zmiana hasła",
+      "password_reset": "nowe hasło startowe",
+      "user_created": "nowe konto",
+      "user_updated": "zmiana konta"
+    },
+    "older": "Starsze wpisy"
+  },
+  "perm": {
+    "level": {
+      "read": "odczyt",
+      "write": "zmiana",
+      "test": "test",
+      "export": "eksport"
+    },
+    "alerts": {
+      "label": "Alerty",
+      "help": "lista i szczegóły alertów; zmiana: obsługa (status, przypisanie, notatki)",
+      "level": {
+        "write": "obsługa"
+      }
+    },
+    "incidents": {
+      "label": "Incydenty i zgłoszenia NIS2",
+      "help": "obsługa: zakładanie, alerty, notatki, zgłoszenia do CSIRT",
+      "level": {
+        "write": "obsługa"
+      }
+    },
+    "events": {
+      "label": "Zdarzenia (Mímir)",
+      "help": "wyszukiwarka zdarzeń"
+    },
+    "rules": {
+      "label": "Reguły detekcji i MITRE",
+      "help": "test: test reguły na historii i kreator korelacji; zmiana: włączanie, próby, reguły z panelu"
+    },
+    "agents": {
+      "label": "Agenci i grupy (Huginn)",
+      "help": "zmiana: grupy, usuwanie agentów, tokeny deinstalacji"
+    },
+    "deploy": {
+      "label": "Wdrażanie agentów (Bifröst)",
+      "help": "tokeny rejestracji i instalatory MSI"
+    },
+    "archive": {
+      "label": "Archiwum NIS2 (Urd)",
+      "help": "eksport: paczki dla audytora; zmiana: polityka, weryfikacja, odtworzenie"
+    },
+    "decoders": {
+      "label": "Dekodery syslog",
+      "help": "test: próbki i test dekodera; zmiana: edycja"
+    },
+    "quarantine": {
+      "label": "Kwarantanna",
+      "help": "zmiana: ponowne przetwarzanie",
+      "level": {
+        "write": "ponowne przetwarzanie"
+      }
+    },
+    "identities": {
+      "label": "Tożsamości",
+      "help": "domeny organizacji, aliasy kont"
+    },
+    "system": {
+      "label": "Stan systemu",
+      "help": "zdrowie usług (Himinbjörg)"
+    },
+    "notify": {
+      "label": "Powiadomienia",
+      "help": "kanały (Discord, webhook)"
+    },
+    "backup": {
+      "label": "Kopie zapasowe",
+      "help": "ustawienia, zlecenia i przywracanie"
+    },
+    "users": {
+      "label": "Użytkownicy i bezpieczeństwo",
+      "help": "konta, profile uprawnień, wymóg MFA; zmiana = administrator panelu"
+    },
+    "audit": {
+      "label": "Dziennik audytu",
+      "help": ""
+    }
+  },
+  "profiles": {
+    "title": "Profile uprawnień",
+    "intro": "Profil określa, do których modułów panelu konto ma dostęp i na jakim poziomie (wyższy obejmuje niższe). Konto ma jeden profil (wybierany w Użytkownikach). Profil z prawem zmiany w module „Użytkownicy i bezpieczeństwo” to administrator panelu – panel nie pozwoli zostać bez żadnego aktywnego.",
+    "new": "Nowy profil",
+    "noAccess": "brak dostępu",
+    "copyName": "{{name}} (kopia)",
+    "tooShort": "nazwa za krótka",
+    "idTaken": "profil o tym identyfikatorze już istnieje",
+    "saved": "Zapisano profil „{{name}}”",
+    "deleted": "Usunięto profil „{{name}}”",
+    "col": {
+      "profile": "Profil",
+      "permissions": "Uprawnienia",
+      "accounts": "Konta",
+      "module": "Moduł",
+      "access": "Dostęp"
+    },
+    "builtin": "wbudowany",
+    "admin": "administrator",
+    "changedBy": "zmienił {{by}}, {{date}}",
+    "edit": "Edytuj",
+    "copy": "Kopiuj jako nowy",
+    "hasUsers": "profil ma przypisane konta",
+    "delete": "Usuń",
+    "editTitle": "Profil „{{name}}”",
+    "name": "Nazwa",
+    "id": "identyfikator: {{id}}",
+    "description": "Opis",
+    "descriptionPlaceholder": "np. zespół SOC – pierwsza linia",
+    "none": "brak",
+    "adminWarning": "Prawo zmiany w „Użytkownikach i bezpieczeństwie” czyni profil administratorem panelu: zakładanie kont, nadawanie profili (także sobie), wymóg MFA.",
+    "save": "Zapisz profil",
+    "deleteTitle": "Usunięcie profilu „{{name}}”",
+    "deleteText": "Profil bez przypisanych kont. Zmiana trafi do audytu.",
+    "builtinDesc": {
+      "admin": "pełny dostęp, także do kont, profili i ustawień bezpieczeństwa",
+      "analyst": "praca z alertami i danymi: obsługa alertów, testy reguł i dekoderów, bez administracji",
+      "viewer": "tylko odczyt alertów, zdarzeń, reguł i stanu systemu"
+    }
+  },
+  "ldap": {
+    "unavailable": "Logowanie domenowe niedostępne",
+    "unavailableText": [
+      "Wymaga klucza szyfrującego na serwerze (",
+      "; instalator tworzy go automatycznie)."
+    ],
+    "title": "Logowanie domenowe",
+    "intro": "Konta Active Directory logują się do panelu swoim loginem i hasłem (LDAPS – szyfrowane). Dostęp i profil uprawnień wynikają z grup AD: pierwsze pasujące powiązanie na liście decyduje. Członkostwo jest sprawdzane przy logowaniu i co 5 minut – usunięcie z grupy albo wyłączenie konta w AD kończy sesje. Drugi składnik (TOTP) obowiązuje jak dla kont lokalnych; konto lokalne administratora zostaje jako awaryjne.",
+    "step1": "1. Połączenie z kontrolerem domeny",
+    "enabled": "Logowanie domenowe włączone",
+    "disabled": "Logowanie domenowe wyłączone",
+    "unsaved": " (niezapisane)",
+    "urls": "Adresy kontrolerów",
+    "urlsHint": "ldaps://dc01.firma.pl:636 – po jednym w wierszu (kolejne – zapasowe)",
+    "serverName": "Nazwa w certyfikacie (opcjonalnie)",
+    "serverNameHint": "gdy adres to IP albo nazwa spoza certyfikatu kontrolera",
+    "ca": "Certyfikat CA kontrolerów (PEM)",
+    "caHint": "np. eksport certyfikatu urzędu z AD CS; puste – zaufane certyfikaty systemu",
+    "bind": "Konto usługowe",
+    "bindHint": "tylko do odczytu, np. svc-vardr@firma.pl albo jego DN",
+    "bindPassword": "Hasło konta usługowego",
+    "bindPasswordSaved": "zapisane – wpisz, żeby zmienić",
+    "bindPasswordNew": "zapisywane zaszyfrowane",
+    "base": "Baza kont",
+    "baseHint": "gdzie szukać kont, np. DC=firma,DC=pl",
+    "testOk": "połączenie LDAPS i logowanie kontem usługowym działają",
+    "error": "błąd",
+    "works": "działa",
+    "test": "Sprawdź połączenie",
+    "step2": "2. Grupy i profile",
+    "groupsIntro": "Utwórz w AD grupy dla panelu we własnym OU (nazwy dowolne), wpisz OU i wybierz profil dla grup. Grupy są rozpoznawane po SID – zmiana nazwy w AD niczego nie psuje. Członkostwo zagnieżdżone też się liczy.",
+    "groupsOu": "OU z grupami",
+    "showGroups": "Pokaż grupy",
+    "col": {
+      "group": "Grupa",
+      "members": "Członkowie",
+      "profile": "Profil w panelu"
+    },
+    "noGroups": "Brak grup w tym OU.",
+    "noAccess": "— bez dostępu —",
+    "mappings": "Powiązania (kolejność decyduje – pierwsze pasujące):",
+    "noMappings": "Brak – żadne konto domenowe nie zaloguje się do panelu.",
+    "up": "wyżej",
+    "down": "niżej",
+    "removeMapping": "usuń powiązanie",
+    "step3": "3. Sprawdzenie konta",
+    "login": "Login domenowy",
+    "loginPlaceholder": "jan.kowalski",
+    "check": "Sprawdź (bez hasła)",
+    "notFound": "Nie ma takiego konta w bazie kont.",
+    "accountDisabled": " – konto wyłączone w AD",
+    "securityGroups": "grup zabezpieczeń: {{n}}.",
+    "willGet": "Przy logowaniu dostanie profil „{{profile}}” (grupa {{group}}).",
+    "noLogin": "Nie zaloguje się – nie należy do żadnej grupy z powiązania.",
+    "alsoMatches": "Pasuje też: {{list}}.",
+    "save": "Zapisz ustawienia",
+    "saveTitle": "Zapis ustawień logowania domenowego",
+    "saveText": "Zmiana trafi do audytu (bez haseł) i działa od razu.",
+    "saved": "Zapisano ustawienia logowania domenowego"
+  },
+  "notify": {
+    "minLevel": "Alerty od poziomu",
+    "rules": "Reguły",
+    "rulesAll": "wszystkie",
+    "rulesOnly": "tylko wybrane",
+    "rulesExcept": "wszystkie poza wybranymi",
+    "onlyFrom": "Wysyłaj tylko z reguł",
+    "notFrom": "Nie wysyłaj z reguł",
+    "saveFilter": "Zapisz filtr",
+    "added": "Kanał dodany – wyślij test, żeby sprawdzić adres.",
+    "changed": "Zmiana zapisana.",
+    "title": "Powiadomienia",
+    "intro": "Kanały, na które Vardr wysyła wiadomości poza system: alerty detekcji, incydenty, alerty zdrowia (z Grafany) i codzienną kotwicę archiwum Urd{{at}} – hash najnowszego manifestu, którego kopia u odbiorcy jest niezależnym dowodem nienaruszalności archiwum. Adres webhooka jest sekretem: panel pokazuje tylko jego początek i koniec. Język wiadomości – niżej („Język systemu”).",
+    "at": " (o {{h}}:00)",
+    "sendAnchor": "Wyślij kotwicę teraz",
+    "anchorSent": "Kotwica wysłana.",
+    "add": "Dodaj kanał",
+    "noRelay": "Alerty z Grafany nie są przekazywane – siem-api nie ma SIEM_ALERT_RELAY_TOKEN.",
+    "noAlertChannel": "Żaden włączony kanał nie odbiera alertów detekcji (Gjallarhorn) – alerty są tylko w panelu. Zaznacz „{{event}}” przy kanale, który ma je dostawać.",
+    "noChannels": "Nie ma jeszcze kanałów – alerty i kotwica nigdzie nie wychodzą. Dodaj np. webhook kanału Discorda (Ustawienia kanału → Integracje → Webhooki → Kopiuj adres URL).",
+    "optOut": "rezygnacja z: {{event}}",
+    "narrowing": "zawężenie alertów wysyłanych na kanał",
+    "lastOk": "ostatnia udana wysyłka {{date}}",
+    "nothingSent": "jeszcze nic nie wysłano",
+    "lastError": "ostatni błąd {{date}}: {{error}}",
+    "enabled": "włączony",
+    "disabling": "wyłączenie kanału",
+    "test": "Test",
+    "testSent": "Wiadomość testowa wysłana.",
+    "deleting": "usunięcie kanału „{{name}}”",
+    "delete": "Usuń",
+    "log": "Ostatnie wysyłki",
+    "col": {
+      "time": "Czas",
+      "channel": "Kanał",
+      "kind": "Rodzaj",
+      "content": "Treść",
+      "result": "Wynik"
+    },
+    "anchorOk": "zgodna z łańcuchem",
+    "anchorBad": "NIEZGODNA z łańcuchem",
+    "sent": "wysłano",
+    "error": "błąd",
+    "newTitle": "Nowy kanał powiadomień",
+    "name": "Nazwa",
+    "url": "Adres webhooka",
+    "urlDiscord": "https://discord.com/api/webhooks/… – traktuj jak hasło",
+    "urlWebhook": "https://… – Vardr wysyła POST z JSON {event, severity, title, text, fields, at}",
+    "what": "Co wysyłać",
+    "cancel": "Anuluj",
+    "addShort": "Dodaj",
+    "confirmTitle": "Potwierdź hasłem",
+    "confirmText": "{{what}} – ta zmiana ogranicza, co wychodzi poza system (np. kotwice archiwum), dlatego wymaga hasła.",
+    "back": "Wróć",
+    "confirm": "Potwierdź",
+    "systemLanguage": "Język systemu",
+    "systemLanguageHelp": "Język powiadomień (alerty, incydenty, alerty zdrowia z Grafany, kotwica archiwum) i domyślny język szkiców zgłoszeń NIS2. Panel każde konto widzi we własnym języku. Zmiana trafia do dziennika audytu.",
+    "systemLanguageSaved": "Język systemu: {{language}}"
+  }
+}

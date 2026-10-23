@@ -10,7 +10,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,6 +24,7 @@ import (
 
 	"siem/agent/internal/status"
 	"siem/internal/contract"
+	"siem/internal/lang"
 	"siem/internal/throttle"
 )
 
@@ -83,7 +83,7 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 	body, err := encode(b)
 	if err != nil {
 		// Nie da się zserializować – ponawianie nic nie zmieni.
-		s.quarantine(b, "błąd serializacji: "+err.Error())
+		s.quarantine(b, "serialization error: "+err.Error())
 		return nil
 	}
 	for attempt := 0; ; attempt++ {
@@ -107,7 +107,7 @@ func (s *HTTPSender) Send(ctx context.Context, b *contract.Batch) error {
 func (s *HTTPSender) TrySend(ctx context.Context, b *contract.Batch) (bool, error) {
 	body, err := encode(b)
 	if err != nil {
-		s.quarantine(b, "błąd serializacji: "+err.Error())
+		s.quarantine(b, "serialization error: "+err.Error())
 		return true, nil
 	}
 	done, _, err := s.attempt(ctx, b, body, 0)
@@ -131,7 +131,7 @@ func (s *HTTPSender) attempt(ctx context.Context, b *contract.Batch, body []byte
 	}
 	switch {
 	case err != nil:
-		s.Log.Warn("wysyłka nieudana, ponowię", "batch_id", b.BatchID, "attempt", attempt+1, "err", err)
+		s.Log.Warn("sending failed, will retry", "batch_id", b.BatchID, "attempt", attempt+1, "err", err)
 		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
 
 	case status == http.StatusOK:
@@ -143,27 +143,27 @@ func (s *HTTPSender) attempt(ctx context.Context, b *contract.Batch, body []byte
 			s.Stats.EventsAccepted.Add(int64(len(b.Events)))
 			return true, 0, nil
 		}
-		s.Log.Warn("niepoprawne potwierdzenie serwera, ponowię", "batch_id", b.BatchID, "body", truncate(respBody))
+		s.Log.Warn("invalid server acknowledgement, will retry", "batch_id", b.BatchID, "body", truncate(respBody))
 		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
 
 	case status == http.StatusRequestEntityTooLarge:
 		return true, 0, s.split(ctx, b)
 
 	case status == http.StatusBadRequest:
-		s.quarantine(b, "serwer odrzucił paczkę (400): "+truncate(respBody))
+		s.quarantine(b, "the server rejected the batch (400): "+truncate(respBody))
 		return true, 0, nil
 
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		s.Log.Error("serwer odrzucił tożsamość agenta – sprawdź certyfikat", "status", status, "body", truncate(respBody))
+		s.Log.Error("the server rejected the agent identity – check the certificate", "status", status, "body", truncate(respBody))
 		return false, backoff(s.MinBackoff*10, s.AuthBackoff, attempt), nil
 
 	case status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable:
 		wait := afterServerHint(retryAfter, backoff(s.MinBackoff, s.MaxBackoff, attempt))
-		s.Log.Info("serwer przeciążony, czekam", "status", status, "wait", wait)
+		s.Log.Info("server overloaded, waiting", "status", status, "wait", wait)
 		return false, wait, nil
 
 	default:
-		s.Log.Warn("błąd serwera, ponowię", "status", status, "attempt", attempt+1, "body", truncate(respBody))
+		s.Log.Warn("server error, will retry", "status", status, "attempt", attempt+1, "body", truncate(respBody))
 		return false, backoff(s.MinBackoff, s.MaxBackoff, attempt), nil
 	}
 }
@@ -193,11 +193,11 @@ func (s *HTTPSender) post(ctx context.Context, body []byte) (status int, retryAf
 // split dzieli zbyt dużą paczkę na pół i wysyła części jako nowe paczki.
 func (s *HTTPSender) split(ctx context.Context, b *contract.Batch) error {
 	if len(b.Events) <= 1 {
-		s.quarantine(b, "pojedyncze zdarzenie przekracza limit rozmiaru serwera (413)")
+		s.quarantine(b, "a single event exceeds the server size limit (413)")
 		return nil
 	}
 	mid := len(b.Events) / 2
-	s.Log.Info("paczka za duża, dzielę", "batch_id", b.BatchID, "events", len(b.Events))
+	s.Log.Info("batch too large, splitting", "batch_id", b.BatchID, "events", len(b.Events))
 	for _, part := range [][]contract.Event{b.Events[:mid], b.Events[mid:]} {
 		nb := *b
 		nb.BatchID = contract.NewBatchID()
@@ -212,16 +212,16 @@ func (s *HTTPSender) split(ctx context.Context, b *contract.Batch) error {
 // quarantine zapisuje odrzuconą paczkę lokalnie, żeby nie zniknęła bez śladu.
 func (s *HTTPSender) quarantine(b *contract.Batch, reason string) {
 	s.Stats.EventsQuarantined.Add(int64(len(b.Events)))
-	s.Log.Error("paczka przeniesiona do lokalnej kwarantanny", "batch_id", b.BatchID, "events", len(b.Events), "reason", reason)
+	s.Log.Error("batch moved to the local quarantine", "batch_id", b.BatchID, "events", len(b.Events), "reason", reason)
 	if s.QuarantineDir == "" {
 		return
 	}
 	if err := os.MkdirAll(s.QuarantineDir, 0o700); err != nil {
-		s.Log.Error("nie można utworzyć katalogu kwarantanny", "err", err)
+		s.Log.Error("cannot create the quarantine directory", "err", err)
 		return
 	}
 	if used := dirSize(s.QuarantineDir); s.QuarantineMaxBytes > 0 && used >= s.QuarantineMaxBytes {
-		s.Log.Error("lokalna kwarantanna pełna – paczka NIE została zapisana na dysku",
+		s.Log.Error("the local quarantine is full – the batch was NOT saved to disk",
 			"batch_id", b.BatchID, "used_bytes", used, "limit_bytes", s.QuarantineMaxBytes)
 		return
 	}
@@ -231,7 +231,7 @@ func (s *HTTPSender) quarantine(b *contract.Batch, reason string) {
 	}{reason, b})
 	p := filepath.Join(s.QuarantineDir, "batch-"+b.BatchID+".json")
 	if err := os.WriteFile(p, data, 0o600); err != nil {
-		s.Log.Error("nie można zapisać kwarantanny", "path", p, "err", err)
+		s.Log.Error("cannot write the quarantine", "path", p, "err", err)
 	}
 }
 
@@ -337,7 +337,7 @@ func (h *CertHolder) Reload(certFile, keyFile string) error {
 		return err
 	}
 	if agentID != h.agentID {
-		return fmt.Errorf("nowy certyfikat ma inny identyfikator agenta (%s ≠ %s)", agentID, h.agentID)
+		return fmt.Errorf("the new certificate has a different agent identifier (%s ≠ %s)", agentID, h.agentID)
 	}
 	h.cur.Store(cert)
 	if h.tr != nil {
@@ -349,19 +349,19 @@ func (h *CertHolder) Reload(certFile, keyFile string) error {
 func loadAgentCert(certFile, keyFile string) (*tls.Certificate, string, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return nil, "", fmt.Errorf("certyfikat agenta: %w", err)
+		return nil, "", lang.Errorf("certyfikat agenta: %w", "agent certificate: %w", err)
 	}
 	leaf, err := x509.ParseCertificate(cert.Certificate[0])
 	if err != nil {
-		return nil, "", fmt.Errorf("certyfikat agenta: %w", err)
+		return nil, "", lang.Errorf("certyfikat agenta: %w", "agent certificate: %w", err)
 	}
 	cert.Leaf = leaf
 	agentID := leaf.Subject.CommonName
 	if agentID == "" {
-		return nil, "", errors.New("certyfikat agenta nie zawiera CN (identyfikatora agenta)")
+		return nil, "", lang.Errorf("certyfikat agenta nie zawiera CN (identyfikatora agenta)", "the agent certificate has no CN (agent identifier)")
 	}
 	if time.Now().After(leaf.NotAfter) {
-		return nil, "", fmt.Errorf("certyfikat agenta wygasł %s", leaf.NotAfter.Format(time.RFC3339))
+		return nil, "", lang.Errorf("certyfikat agenta wygasł %s", "the agent certificate expired %s", leaf.NotAfter.Format(time.RFC3339))
 	}
 	return &cert, agentID, nil
 }
@@ -375,7 +375,7 @@ func NewReloadableTLSClient(caFile, certFile, keyFile string, timeout time.Durat
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, nil, errors.New("CA: brak poprawnego certyfikatu PEM")
+		return nil, nil, lang.Errorf("CA: brak poprawnego certyfikatu PEM", "CA: no valid PEM certificate")
 	}
 	cert, agentID, err := loadAgentCert(certFile, keyFile)
 	if err != nil {
@@ -414,7 +414,7 @@ func CheckServer(ctx context.Context, client *http.Client, url string) error {
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("serwer odrzucił tożsamość agenta (HTTP %d): %s", resp.StatusCode, truncate(body))
+		return lang.Errorf("serwer odrzucił tożsamość agenta (HTTP %d): %s", "the server rejected the agent identity (HTTP %d): %s", resp.StatusCode, truncate(body))
 	}
 	return nil
 }
@@ -423,17 +423,17 @@ func explainConnError(err error) error {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "certificate signed by unknown authority"):
-		return fmt.Errorf("certyfikat serwera nie jest podpisany przez CA z konfiguracji agenta: %w", err)
+		return lang.Errorf("certyfikat serwera nie jest podpisany przez CA z konfiguracji agenta: %w", "the server certificate is not signed by the CA from the agent configuration: %w", err)
 	case strings.Contains(msg, "certificate is valid for"), strings.Contains(msg, "doesn't contain any IP SANs"):
-		return fmt.Errorf("certyfikat serwera nie obejmuje tego adresu – wygeneruj go z właściwym -hosts: %w", err)
+		return lang.Errorf("certyfikat serwera nie obejmuje tego adresu – wygeneruj go z właściwym -hosts: %w", "the server certificate does not cover this address – generate it with the right -hosts: %w", err)
 	case strings.Contains(msg, "certificate required"), strings.Contains(msg, "bad certificate"), strings.Contains(msg, "unknown certificate authority"):
-		return fmt.Errorf("serwer odrzucił certyfikat agenta (inne CA, wygasły lub unieważniony): %w", err)
+		return lang.Errorf("serwer odrzucił certyfikat agenta (inne CA, wygasły lub unieważniony): %w", "the server rejected the agent certificate (another CA, expired or revoked): %w", err)
 	case strings.Contains(msg, "refused"), strings.Contains(msg, "odmawia"):
-		return fmt.Errorf("serwer nie przyjmuje połączeń na tym porcie (usługa ingest nie działa lub zapora): %w", err)
+		return lang.Errorf("serwer nie przyjmuje połączeń na tym porcie (usługa ingest nie działa lub zapora): %w", "the server does not accept connections on this port (the ingest service is down or a firewall): %w", err)
 	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline"):
-		return fmt.Errorf("brak odpowiedzi serwera (zły adres, zapora lub brak trasy w sieci): %w", err)
+		return lang.Errorf("brak odpowiedzi serwera (zły adres, zapora lub brak trasy w sieci): %w", "no response from the server (wrong address, firewall or no network route): %w", err)
 	case strings.Contains(msg, "no such host"):
-		return fmt.Errorf("nie można rozwiązać nazwy serwera (DNS): %w", err)
+		return lang.Errorf("nie można rozwiązać nazwy serwera (DNS): %w", "cannot resolve the server name (DNS): %w", err)
 	}
 	return err
 }

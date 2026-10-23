@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"siem/internal/lang"
 	"siem/internal/urd"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
@@ -212,7 +213,7 @@ func (s *Server) changeArchivePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := (urd.PolicyBounds{MinRetentionDays: b.MinRetentionDays, MaxRetentionDays: b.MaxRetentionDays}).Check(req.RetentionDays); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_retention", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_retention", err)
 		return
 	}
 	target := urd.Policy{Enabled: req.Enabled, RetentionDays: req.RetentionDays, ExcludedGroups: groups, ExcludedAgents: agents}
@@ -292,7 +293,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, password, op str
 	if a.user.Source == store.SourceLDAP {
 		// Konto domenowe: hasło sprawdza kontroler domeny.
 		if ok, err = s.ldapReauth(r.Context(), a.user, password); err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ldap_unavailable", "nie udało się sprawdzić hasła w domenie: "+err.Error())
+			writeErr(w, http.StatusServiceUnavailable, "ldap_unavailable", lang.Errorf("nie udało się sprawdzić hasła w domenie: %w", "could not verify the password in the domain: %w", err))
 			return false
 		}
 	} else if ok, _, err = auth.VerifyPassword(a.user.PasswordHash, password); err != nil {

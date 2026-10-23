@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { Button, Modal, SegmentedControl, Select, Stack, TextInput, Textarea } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useNavigate } from "react-router-dom";
-import { incidentsApi, incidentSeverityLabels, type Incident, type IncidentSeverity } from "../api";
+import { useTranslation } from "react-i18next";
+import { incidentsApi, incidentSeverityColors, type Incident, type IncidentSeverity } from "../api";
 
 export default function AddToIncident({
   alertIds,
@@ -18,6 +19,7 @@ export default function AddToIncident({
   opened: boolean;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("incidents");
   const navigate = useNavigate();
   const [mode, setMode] = useState("new");
   const [active, setActive] = useState<Incident[]>([]);
@@ -47,7 +49,7 @@ export default function AddToIncident({
         id = Number(target);
         await incidentsApi.addAlerts(id, alertIds);
       }
-      notifications.show({ color: "green", message: `Alerty (${alertIds.length}) w incydencie #${id}` });
+      notifications.show({ color: "green", message: t("add.done", { count: alertIds.length, id }) });
       onClose();
       navigate(`/incidents/${id}`);
     } catch (e) {
@@ -58,31 +60,31 @@ export default function AddToIncident({
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={alertIds.length ? `Alerty do incydentu (${alertIds.length})` : "Nowy incydent"} centered>
+    <Modal opened={opened} onClose={onClose} title={alertIds.length ? t("add.titleAlerts", { count: alertIds.length }) : t("add.titleNew")} centered>
       <Stack>
         <SegmentedControl
           value={mode}
           onChange={setMode}
           data={[
-            { value: "new", label: "Nowy incydent" },
-            { value: "existing", label: `Istniejący (${active.length})`, disabled: active.length === 0 },
+            { value: "new", label: t("add.modeNew") },
+            { value: "existing", label: t("add.modeExisting", { count: active.length }), disabled: active.length === 0 },
           ]}
         />
         {mode === "new" ? (
           <>
-            <TextInput label="Tytuł" required value={title} onChange={(e) => setTitle(e.currentTarget.value)} autoFocus />
+            <TextInput label={t("add.title")} required value={title} onChange={(e) => setTitle(e.currentTarget.value)} autoFocus />
             <Select
-              label="Waga"
+              label={t("add.severity")}
               value={severity}
               allowDeselect={false}
               onChange={(v) => v && setSeverity(v as IncidentSeverity)}
-              data={Object.entries(incidentSeverityLabels).map(([value, l]) => ({ value, label: l.label }))}
+              data={Object.keys(incidentSeverityColors).map((value) => ({ value, label: t(`severity.${value}`) }))}
             />
-            <Textarea label="Opis (opcjonalnie)" autosize minRows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
+            <Textarea label={t("add.description")} autosize minRows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
           </>
         ) : (
           <Select
-            label="Incydent"
+            label={t("add.incident")}
             searchable
             value={target}
             onChange={setTarget}
@@ -94,7 +96,7 @@ export default function AddToIncident({
           disabled={mode === "new" ? title.trim().length < 3 : !target}
           onClick={() => void submit()}
         >
-          {mode === "new" ? "Utwórz incydent" : "Dodaj do incydentu"}
+          {mode === "new" ? t("add.create") : t("add.addTo")}
         </Button>
       </Stack>
     </Modal>

@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
+
+	"siem/internal/lang"
 )
 
 // AgentConfigPath to endpoint panelu, z którego agent pobiera konfigurację
@@ -65,7 +65,7 @@ var ValidProfiles = map[string]bool{"workstation": true, "server": true, "dc": t
 // Validate sprawdza zakresy wartości (te same reguły po obu stronach).
 func (c AgentConfig) Validate() error {
 	if !ValidProfiles[c.Profile] {
-		return fmt.Errorf("nieznany profil %q", c.Profile)
+		return lang.Errorf("nieznany profil %q", "unknown profile %q", c.Profile)
 	}
 	if err := validateTokens(c.UninstallTokens); err != nil {
 		return err
@@ -77,36 +77,39 @@ func (c AgentConfig) Validate() error {
 func (l AgentLimits) Validate() error {
 	var errs []error
 	if l.Priority != nil && *l.Priority != "normal" && *l.Priority != "below_normal" && *l.Priority != "background" {
-		errs = append(errs, errors.New("priorytet: normal, below_normal albo background"))
+		errs = append(errs, lang.Errorf("priorytet: normal, below_normal albo background", "priority: normal, below_normal or background"))
 	}
 	if l.CPUMaxPercent != nil && (*l.CPUMaxPercent < 0 || *l.CPUMaxPercent > 100) {
-		errs = append(errs, errors.New("limit CPU: 0–100%"))
+		errs = append(errs, lang.Errorf("limit CPU: 0–100%%", "CPU limit: 0–100%%"))
 	}
-	for name, v := range map[string]*int{"pamięć miękka": l.MemorySoftMB, "pamięć twarda": l.MemoryHardMB} {
-		if v != nil && (*v < 0 || (*v > 0 && *v < 32) || *v > 8192) {
-			errs = append(errs, fmt.Errorf("%s: 0 (bez limitu) albo 32–8192 MB", name))
+	for _, m := range []struct {
+		pl, en string
+		v      *int
+	}{{"pamięć miękka", "soft memory", l.MemorySoftMB}, {"pamięć twarda", "hard memory", l.MemoryHardMB}} {
+		if v := m.v; v != nil && (*v < 0 || (*v > 0 && *v < 32) || *v > 8192) {
+			errs = append(errs, lang.Errorf(m.pl+": 0 (bez limitu) albo 32–8192 MB", m.en+": 0 (no limit) or 32–8192 MB"))
 		}
 	}
 	if l.MemorySoftMB != nil && l.MemoryHardMB != nil && *l.MemoryHardMB > 0 && *l.MemorySoftMB > *l.MemoryHardMB {
-		errs = append(errs, errors.New("pamięć miękka nie może być większa niż twarda"))
+		errs = append(errs, lang.Errorf("pamięć miękka nie może być większa niż twarda", "the soft memory limit cannot be greater than the hard one"))
 	}
 	if l.MaxEPS != nil && (*l.MaxEPS < 0 || *l.MaxEPS > 1_000_000) {
-		errs = append(errs, errors.New("limit zdarzeń/s: 0–1 000 000"))
+		errs = append(errs, lang.Errorf("limit zdarzeń/s: 0–1 000 000", "events/s limit: 0–1,000,000"))
 	}
 	if l.MaxSendKBps != nil && (*l.MaxSendKBps < 0 || *l.MaxSendKBps > 10_000_000) {
-		errs = append(errs, errors.New("limit łącza: 0–10 000 000 KiB/s"))
+		errs = append(errs, lang.Errorf("limit łącza: 0–10 000 000 KiB/s", "bandwidth limit: 0–10,000,000 KiB/s"))
 	}
 	if l.BufferMaxMB != nil && (*l.BufferMaxMB < 0 || *l.BufferMaxMB > 102400) {
-		errs = append(errs, errors.New("bufor dyskowy: 0 (wyłączony) – 102 400 MB"))
+		errs = append(errs, lang.Errorf("bufor dyskowy: 0 (wyłączony) – 102 400 MB", "disk buffer: 0 (disabled) – 102,400 MB"))
 	}
 	if l.HeartbeatAlertMin != nil && (*l.HeartbeatAlertMin < 0 || (*l.HeartbeatAlertMin > 0 && *l.HeartbeatAlertMin < 5) ||
 		*l.HeartbeatAlertMin > 10080) {
-		errs = append(errs, errors.New("alarm po utracie łączności: 0 (wyłączony) albo 5–10 080 min"))
+		errs = append(errs, lang.Errorf("alarm po utracie łączności: 0 (wyłączony) albo 5–10 080 min", "alert after losing contact: 0 (disabled) or 5–10,080 min"))
 	}
 	if l.BufferOnFull != nil && *l.BufferOnFull != "pause" && *l.BufferOnFull != "drop_oldest" {
-		errs = append(errs, errors.New("pełny bufor: pause albo drop_oldest"))
+		errs = append(errs, lang.Errorf("pełny bufor: pause albo drop_oldest", "full buffer: pause or drop_oldest"))
 	}
-	return errors.Join(errs...)
+	return lang.Join(errs...)
 }
 
 // ComputeVersion wyznacza wersję z treści (profil i limity).

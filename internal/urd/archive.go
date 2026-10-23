@@ -19,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Archive to katalog archiwum na dysku razem z jego spisem.
@@ -26,7 +28,32 @@ type Archive struct {
 	Dir string
 	Cat Catalog
 	Now func() time.Time
+	// Lang: język systemu – w nim powstają opisy widoczne w panelu (wyniki
+	// weryfikacji, obsługi niezgodności, błędy eksportu). nil – polski.
+	Lang func() string
 }
+
+// Language: język systemu (opisy dla panelu).
+func (a *Archive) Language() string { return a.lang() }
+
+func (a *Archive) lang() string {
+	if a.Lang == nil {
+		return lang.Default
+	}
+	return a.Lang()
+}
+
+func (a *Archive) tr(pl, en string) string { return lang.Pick(a.lang(), pl, en) }
+
+// Msg: opis błędu w języku systemu (lang.Error – wersja angielska).
+func (a *Archive) Msg(err error) string {
+	if a.lang() == "en" {
+		return lang.English(err)
+	}
+	return err.Error()
+}
+
+func (a *Archive) msg(err error) string { return a.Msg(err) }
 
 // New tworzy archiwum (katalog musi istnieć i być zapisywalny).
 func New(dir string, cat Catalog) *Archive {
@@ -206,7 +233,7 @@ func (a *Archive) Seal(ctx context.Context) (int, error) {
 			Records: m.Records, Bytes: m.Bytes, CreatedAt: m.CreatedAt, Body: body}
 		if err := a.Cat.AddManifest(ctx, rec, paths); err != nil {
 			removeFile(a.abs(ManifestPath(h)))
-			return n, fmt.Errorf("zapis manifestu %s: %w", h.Format(time.RFC3339), err)
+			return n, fmt.Errorf("writing manifest %s: %w", h.Format(time.RFC3339), err)
 		}
 		prev, seq = sum, seq+1
 		n++
@@ -251,7 +278,7 @@ func writeFileAtomic(full string, data []byte) error {
 		return err
 	}
 	if _, err := os.Stat(full); err == nil {
-		return fmt.Errorf("plik %s już istnieje", full)
+		return fmt.Errorf("file %s already exists", full)
 	}
 	tmp := full + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
@@ -306,7 +333,7 @@ func syncDir(dir string) {
 const MarkerFile = ".urd-archive"
 
 // ErrWrongDir: spis ma manifesty, a katalog nie wygląda na archiwum.
-var ErrWrongDir = errors.New("katalog nie zawiera archiwum, choć spis w bazie ma manifesty – dysk archiwum niezamontowany?")
+var ErrWrongDir = errors.New("the directory contains no archive although the catalog has manifests – archive disk not mounted?")
 
 // CheckDir sprawdza, czy katalog jest archiwum ze spisu, i zakłada znacznik
 // w nowym archiwum (albo w archiwum sprzed wprowadzenia znacznika).
@@ -324,5 +351,5 @@ func (a *Archive) CheckDir(ctx context.Context) error {
 			return ErrWrongDir
 		}
 	}
-	return os.WriteFile(marker, []byte("Vardr – archiwum NIS2 (Urd). Nie usuwać.\n"), 0o440)
+	return os.WriteFile(marker, []byte("Vardr – archiwum NIS2 (Urd). Nie usuwać.\nVardr – NIS2 archive (Urd). Do not delete.\n"), 0o440)
 }

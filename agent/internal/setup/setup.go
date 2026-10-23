@@ -7,7 +7,6 @@ package setup
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -16,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"siem/internal/contract"
+	"siem/internal/lang"
 )
 
 // DefaultPort to port endpointu przyjmującego serwera.
@@ -26,20 +26,20 @@ const DefaultPort = "8443"
 func ServerURL(input string) (string, error) {
 	s := strings.TrimSpace(input)
 	if s == "" {
-		return "", errors.New("nie podano adresu serwera")
+		return "", lang.Errorf("nie podano adresu serwera", "no server address given")
 	}
 	if !strings.Contains(s, "://") {
 		s = "https://" + s
 	}
 	u, err := url.Parse(s)
 	if err != nil {
-		return "", fmt.Errorf("niepoprawny adres serwera %q: %w", input, err)
+		return "", lang.Errorf("niepoprawny adres serwera %q: %w", "invalid server address %q: %w", input, err)
 	}
 	if u.Scheme != "https" {
-		return "", fmt.Errorf("adres serwera musi używać https (jest %q)", u.Scheme)
+		return "", lang.Errorf("adres serwera musi używać https (jest %q)", "the server address must use https (got %q)", u.Scheme)
 	}
 	if u.Hostname() == "" {
-		return "", fmt.Errorf("brak nazwy hosta w adresie %q", input)
+		return "", lang.Errorf("brak nazwy hosta w adresie %q", "no host name in address %q", input)
 	}
 	if u.Port() == "" {
 		u.Host = net.JoinHostPort(u.Hostname(), DefaultPort)
@@ -82,22 +82,33 @@ func GenerateConfig(o Options) (string, error) {
 		o.StartAt = "now"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, `# Konfiguracja agenta SIEM – utworzona przez "vardr-agent install".
+	header := `# Konfiguracja agenta SIEM – utworzona przez "vardr-agent install".
 # Zmiana adresu serwera: vardr-agent set-server <adres>
 # Pozostałe opcje i opis: agent/configs/agent.example.yaml w repozytorium projektu.
-
+`
+	startAt, profile := "# Skąd zacząć przy pierwszym uruchomieniu: now (nowe zdarzenia) | oldest.", "# Profil: %s (%s)."
+	profileDesc := Profiles[o.Profile]
+	if lang.Local() == "en" {
+		header = `# SIEM agent configuration – created by "vardr-agent install".
+# Changing the server address: vardr-agent set-server <address>
+# Other options and descriptions: agent/configs/agent.example.yaml in the project repository.
+`
+		startAt, profile = "# Where to start on the first run: now (new events) | oldest.", "# Profile: %s (%s)."
+		profileDesc = contract.ProfilesEn[o.Profile]
+	}
+	fmt.Fprintf(&b, header+`
 server:
   url: %s
   ca_file: certs/ca.crt
   cert_file: certs/agent.crt
   key_file: certs/agent.key
 
-# Skąd zacząć przy pierwszym uruchomieniu: now (nowe zdarzenia) | oldest.
+`+startAt+`
 start_at: %s
 
-# Profil: %s (%s).
+`+profile+`
 channels:
-`, o.ServerURL, o.StartAt, o.Profile, Profiles[o.Profile])
+`, o.ServerURL, o.StartAt, o.Profile, profileDesc)
 	for _, ch := range chans {
 		fmt.Fprintf(&b, "  - name: %s\n    event_ids: [%s]\n", ch.Name, joinIDs(ch.EventIDs))
 	}
@@ -120,7 +131,7 @@ func SetServerURL(data []byte, serverURL string) ([]byte, error) {
 		return nil, err
 	}
 	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil, errors.New("konfiguracja nie jest mapą YAML")
+		return nil, lang.Errorf("konfiguracja nie jest mapą YAML", "the configuration is not a YAML map")
 	}
 	root := doc.Content[0]
 	server := mapValue(root, "server")
@@ -129,7 +140,7 @@ func SetServerURL(data []byte, serverURL string) ([]byte, error) {
 		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: "server"}, server)
 	}
 	if server.Kind != yaml.MappingNode {
-		return nil, errors.New("sekcja server nie jest mapą")
+		return nil, lang.Errorf("sekcja server nie jest mapą", "the server section is not a map")
 	}
 	if u := mapValue(server, "url"); u != nil {
 		u.Value, u.Tag, u.Style = serverURL, "!!str", 0

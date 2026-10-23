@@ -22,6 +22,18 @@ falsepositives:
   - Czyszczenie dzienników przez administratora albo narzędzia porządkujące
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Windows event log cleared (other than Security)"
+      description: |
+        An event log other than Security was cleared (e.g. System, PowerShell,
+        Sysmon). Windows then writes event 104 to the System log. Attackers clear logs
+        to remove traces – the Security log is covered by a separate rule (1102).
+      instructions: |
+        {{SubjectDomainName}}\{{SubjectUserName}} cleared a log on computer
+        {{Computer}} (log name in the event fields). Find out whether it was planned;
+        if not – review in Mímir the events from this computer from before clearing
+        (Vardr has a copy) and treat the computer as suspicious.
   instructions: |
     {{SubjectDomainName}}\{{SubjectUserName}} wyczyścił dziennik na komputerze
     {{Computer}} (nazwa dziennika w polach zdarzenia). Ustal, czy było to

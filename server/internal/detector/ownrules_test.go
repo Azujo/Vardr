@@ -4,6 +4,8 @@ package detector
 
 import (
 	"os"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,4 +63,38 @@ func TestImportedRules(t *testing.T) {
 		}
 	}
 	t.Logf("zaimportowanych reguł: %d", n)
+}
+
+// Własne reguły mają tłumaczenie na każdy język panelu, a instrukcja
+// w tłumaczeniu używa tych samych pól {{…}} co polska.
+func TestOwnRulesTranslated(t *testing.T) {
+	set, _, err := detect.LoadSet("../../../rules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vars := regexp.MustCompile(`\{\{[^}]+\}\}`)
+	check := func(file, title, desc string, x detect.Extensions) {
+		for _, lang := range detect.Languages {
+			tr, ok := x.I18n[lang]
+			switch {
+			case !ok || tr.Title == "" || tr.Description == "":
+				t.Errorf("%s: brak tłumaczenia %s (vardr.i18n.%s: title, description)", file, title, lang)
+				continue
+			case (x.Instructions == "") != (tr.Instructions == ""):
+				t.Errorf("%s: instrukcja tylko w jednym języku (%s)", file, lang)
+			}
+			want, got := vars.FindAllString(x.Instructions, -1), vars.FindAllString(tr.Instructions, -1)
+			slices.Sort(want)
+			slices.Sort(got)
+			if !slices.Equal(slices.Compact(want), slices.Compact(got)) {
+				t.Errorf("%s (%s): pola instrukcji %v, w tłumaczeniu %v", file, lang, want, got)
+			}
+		}
+	}
+	for _, r := range ownSet(set).Rules {
+		check(r.File, r.Title, r.Description, r.Vardr)
+	}
+	for _, c := range ownSet(set).Correlations {
+		check(c.File, c.Title, c.Description, c.Vardr)
+	}
 }

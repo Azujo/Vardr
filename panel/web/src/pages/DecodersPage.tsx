@@ -35,18 +35,20 @@ import {
   type DecoderVersion,
 } from "../api";
 import { useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import i18n, { serverText } from "../i18n";
 import { useAuth } from "../auth";
 import { lineDiff } from "../diff";
 
-const newDecoderTemplate = `id: moje-urzadzenie
-title: Moje urządzenie – logowania
+const newDecoderTemplate = () => `id: ${i18n.t("decoders:template.id")}
+title: ${i18n.t("decoders:template.title")}
 description: |
-  Co rozpoznaje dekoder i skąd przychodzą wiadomości.
+  ${i18n.t("decoders:template.description")}
 version: 1
 priority: 60
-dataset: producent.produkt
+dataset: ${i18n.t("decoders:template.dataset")}
 match:
-  # wszystkie warunki muszą być spełnione; any – co najmniej jedna alternatywa
+  # ${i18n.t("decoders:template.matchComment")}
   app: [sshd]
   # peer: [192.168.88.0/24]
   # host: [nas01]
@@ -65,16 +67,11 @@ samples:
   - '<38>Oct  9 13:00:00 nas01 sshd[812]: Failed password for root from 203.0.113.9 port 51234 ssh2'
 `;
 
-const actionLabels: Record<DecoderVersion["action"], string> = {
-  saved: "zapisano definicję",
-  enabled: "włączono",
-  disabled: "wyłączono",
-  reverted: "cofnięto zmiany z panelu",
-};
 
 const keyEventFields = ["event.action", "event.outcome", "user.name", "source.ip", "host.name"];
 
 function ResultRow({ r, candidate }: { r: DecodeResult; candidate?: string }) {
+  const { t } = useTranslation("decoders");
   const [open, setOpen] = useState(false);
   const color = r.error ? "red" : r.dataset === "syslog.generic" ? "gray" : r.decoder === candidate ? "green" : "blue";
   return (
@@ -82,19 +79,19 @@ function ResultRow({ r, candidate }: { r: DecodeResult; candidate?: string }) {
       <Table.Tr style={{ cursor: "pointer" }} onClick={() => setOpen((o) => !o)}>
         <Table.Td>
           <Badge color={color} variant={r.decoder === candidate ? "filled" : "light"}>
-            {r.error ? "kwarantanna" : r.decoder || "brak"}
+            {r.error ? t("result.quarantine") : r.decoder || t("result.none")}
           </Badge>
           {r.decoder && !r.pattern && !r.error && (
-            <Tooltip label="Dekoder pasuje, ale żaden wzorzec nie rozebrał treści – zostaje tylko tekst">
+            <Tooltip label={t("result.noPatternTip")}>
               <Badge color="orange" variant="outline" ml={4}>
-                bez wzorca
+                {t("result.noPattern")}
               </Badge>
             </Tooltip>
           )}
           {candidate && r.candidate && r.decoder !== candidate && (
-            <Tooltip label="Testowany dekoder pasuje, ale wcześniej wybrano inny (wyższy priorytet) – zmień priority albo match">
+            <Tooltip label={t("result.shadowedTip")}>
               <Badge color="yellow" variant="outline" ml={4}>
-                przesłonięty
+                {t("result.shadowed")}
               </Badge>
             </Tooltip>
           )}
@@ -122,21 +119,21 @@ function ResultRow({ r, candidate }: { r: DecodeResult; candidate?: string }) {
           <Table.Td colSpan={3}>
             {r.error && (
               <MAlert color="red" mb="xs">
-                {r.error}
+                {serverText(r.error, r.error_en)}
               </MAlert>
             )}
             <SimpleGrid cols={{ base: 1, md: 3 }} spacing="xs">
               <div>
                 <Text size="xs" fw={600}>
-                  Nagłówek ({r.header.format})
+                  {t("result.header", { format: r.header.format })}
                 </Text>
                 <Code block fz="xs">
                   {[
-                    r.header.time && `czas: ${formatDate(r.header.time)}`,
+                    r.header.time && `${t("result.time")}: ${formatDate(r.header.time)}`,
                     r.header.host && `host: ${r.header.host}`,
-                    r.header.app && `program: ${r.header.app}${r.header.pid ? `[${r.header.pid}]` : ""}`,
-                    r.header.severity && `poziom: ${r.header.severity} (facility ${r.header.facility})`,
-                    `treść: ${r.header.message}`,
+                    r.header.app && `${t("result.program")}: ${r.header.app}${r.header.pid ? `[${r.header.pid}]` : ""}`,
+                    r.header.severity && `${t("result.severity")}: ${r.header.severity} (facility ${r.header.facility})`,
+                    `${t("result.message")}: ${r.header.message}`,
                   ]
                     .filter(Boolean)
                     .join("\n")}
@@ -144,7 +141,7 @@ function ResultRow({ r, candidate }: { r: DecodeResult; candidate?: string }) {
               </div>
               <div>
                 <Text size="xs" fw={600}>
-                  Zdarzenie
+                  {t("result.event")}
                 </Text>
                 <Code block fz="xs">
                   {Object.entries(r.event)
@@ -155,7 +152,7 @@ function ResultRow({ r, candidate }: { r: DecodeResult; candidate?: string }) {
               </div>
               <div>
                 <Text size="xs" fw={600}>
-                  Pola ({Object.keys(r.fields).length})
+                  {t("result.fields", { count: Object.keys(r.fields).length })}
                 </Text>
                 <ScrollArea.Autosize mah={240}>
                   <Code block fz="xs">
@@ -189,7 +186,8 @@ function DecoderEditor({
   onSaved: () => void;
   initialSource?: string;
 }) {
-  const [source, setSource] = useState(decoder?.source ?? initialSource ?? newDecoderTemplate);
+  const { t } = useTranslation("decoders");
+  const [source, setSource] = useState(() => decoder?.source ?? initialSource ?? newDecoderTemplate());
   const [samples, setSamples] = useState("");
   const [peer, setPeer] = useState("");
   const [hours, setHours] = useState<number | string>(24);
@@ -215,13 +213,13 @@ function DecoderEditor({
     setLoading(true);
     try {
       const r = await decodersApi.samples({ decoder: own ? decoder?.id : undefined, peer: peer.trim(), hours: Number(hours) || 24 });
-      if (r.samples.length === 0) notifications.show({ color: "gray", message: "Brak wiadomości w wybranym okresie" });
+      if (r.samples.length === 0) notifications.show({ color: "gray", message: t("editor.noMessages") });
       setSamples(r.samples.map((s) => s.raw).join("\n"));
       // Test używa jednego adresu nadawcy: próbki od jednego urządzenia – jego adres (warunek peer).
       const peers = new Set(r.samples.map((s) => s.peer));
       if (!peer.trim() && peers.size === 1) setPeer([...peers][0]);
       else if (!peer.trim() && peers.size > 1)
-        notifications.show({ color: "yellow", message: "Próbki od różnych nadawców – dekodery z warunkiem peer sprawdź z filtrem nadawcy" });
+        notifications.show({ color: "yellow", message: t("editor.manyPeers") });
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -232,17 +230,17 @@ function DecoderEditor({
   const save = async () => {
     const id = /^id:\s*(\S+)/m.exec(source)?.[1] ?? "";
     if (!id) {
-      notifications.show({ color: "red", message: "Brak id w definicji" });
+      notifications.show({ color: "red", message: t("editor.noId") });
       return;
     }
     if (decoder && id !== decoder.id) {
-      notifications.show({ color: "red", message: `Id w definicji (${id}) różni się od edytowanego dekodera (${decoder.id})` });
+      notifications.show({ color: "red", message: t("editor.idMismatch", { id, current: decoder.id }) });
       return;
     }
     setSaving(true);
     try {
       const r = await decodersApi.save(id, source, note.trim());
-      notifications.show({ color: "green", message: `Rewizja ${r.revision}: ${r.message}` });
+      notifications.show({ color: "green", message: t("saved", { revision: r.revision, status: t(`delivery.${r.delivery}`, { defaultValue: r.message }) }) });
       setNote("");
       onSaved();
     } catch (e) {
@@ -256,12 +254,11 @@ function DecoderEditor({
   return (
     <Stack gap="xs">
       <Text size="xs" c="dimmed">
-        Test dekoduje próbki zestawem działających dekoderów, w którym ta definicja zastępuje swój odpowiednik – widać więc też, który
-        dekoder wygrywa (priorytet). Pusta lista próbek – test na próbkach z definicji (<Code>samples</Code>). Nic nie jest zapisywane.
+        {t("editor.intro")}
       </Text>
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="xs">
         <Textarea
-          label="Definicja (YAML)"
+          label={t("editor.definition")}
           autosize
           minRows={16}
           maxRows={30}
@@ -272,7 +269,7 @@ function DecoderEditor({
         />
         <Stack gap="xs">
           <Textarea
-            label="Próbki – jedna wiadomość w wierszu, z nagłówkiem syslog"
+            label={t("editor.samples")}
             autosize
             minRows={8}
             maxRows={16}
@@ -284,8 +281,8 @@ function DecoderEditor({
           />
           <Group gap="xs" align="flex-end">
             <TextInput
-              label="Adres nadawcy"
-              description="dla warunku peer"
+              label={t("editor.peer")}
+              description={t("editor.peerHint")}
               placeholder="192.168.88.1"
               w={160}
               value={peer}
@@ -293,13 +290,13 @@ function DecoderEditor({
             />
             {samplesAvailable && (
               <>
-                <NumberInput label="Z ostatnich godzin" w={130} min={1} max={168} value={hours} onChange={setHours} />
+                <NumberInput label={t("editor.hours")} w={130} min={1} max={168} value={hours} onChange={setHours} />
                 <Button variant="default" leftSection={<IconDownload size={14} />} loading={loading} onClick={() => void load(false)}>
-                  Nierozpoznane
+                  {t("editor.unrecognized")}
                 </Button>
                 {decoder && (
                   <Button variant="default" leftSection={<IconDownload size={14} />} loading={loading} onClick={() => void load(true)}>
-                    Obsłużone przez ten
+                    {t("editor.handled")}
                   </Button>
                 )}
               </>
@@ -307,43 +304,43 @@ function DecoderEditor({
           </Group>
           <Group>
             <Button leftSection={<IconFlask size={16} />} loading={busy} onClick={() => void run()}>
-              Testuj
+              {t("editor.test")}
             </Button>
           </Group>
           {admin && (
             <Group align="flex-end" gap="xs">
               <TextInput
-                label="Opis zmiany"
-                placeholder="np. dodany wzorzec logowania przez VPN"
+                label={t("editor.note")}
+                placeholder={t("editor.notePlaceholder")}
                 style={{ flex: 1 }}
                 value={note}
                 onChange={(e) => setNote(e.currentTarget.value)}
               />
               <Button color="green" loading={saving} onClick={() => void save()}>
-                Zapisz i wdroż
+                {t("saveDeploy")}
               </Button>
             </Group>
           )}
         </Stack>
       </SimpleGrid>
-      {res && !res.ok && <MAlert color="red">{res.error}</MAlert>}
+      {res && !res.ok && <MAlert color="red">{serverText(res.error ?? "", res.error_en)}</MAlert>}
       {res?.ok && s && (
         <Stack gap="xs">
           <Group gap="xs">
-            <Text size="sm">Wiadomości: {s.total}</Text>
-            {res.decoder && <Badge color="green">ten dekoder: {s.candidate}</Badge>}
-            <Badge color="blue">inne dekodery: {s.other}</Badge>
-            <Badge color="gray">nierozpoznane: {s.generic}</Badge>
-            {s.errors > 0 && <Badge color="red">kwarantanna: {s.errors}</Badge>}
-            {s.no_pattern > 0 && <Badge color="orange">bez wzorca: {s.no_pattern}</Badge>}
+            <Text size="sm">{t("sum.total", { n: s.total })}</Text>
+            {res.decoder && <Badge color="green">{t("sum.this", { n: s.candidate })}</Badge>}
+            <Badge color="blue">{t("sum.other", { n: s.other })}</Badge>
+            <Badge color="gray">{t("sum.generic", { n: s.generic })}</Badge>
+            {s.errors > 0 && <Badge color="red">{t("sum.quarantine", { n: s.errors })}</Badge>}
+            {s.no_pattern > 0 && <Badge color="orange">{t("sum.noPattern", { n: s.no_pattern })}</Badge>}
           </Group>
           <Table.ScrollContainer minWidth={760}>
             <Table verticalSpacing={4}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th w={220}>Dekoder</Table.Th>
-                  <Table.Th w={160}>Zbiór danych</Table.Th>
-                  <Table.Th>Wynik (kliknij – szczegóły)</Table.Th>
+                  <Table.Th w={220}>{t("col.decoder")}</Table.Th>
+                  <Table.Th w={160}>{t("col.dataset")}</Table.Th>
+                  <Table.Th>{t("editor.resultCol")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -358,6 +355,7 @@ function DecoderEditor({
 }
 
 function Versions({ id }: { id: string }) {
+  const { t } = useTranslation("decoders");
   const [versions, setVersions] = useState<DecoderVersion[]>([]);
   const [sel, setSel] = useState<number | null>(null);
   useEffect(() => {
@@ -373,7 +371,7 @@ function Versions({ id }: { id: string }) {
   const cur = versions[idx];
   const prev = versions.slice(idx + 1).find((v) => v.source !== "");
   const diff = useMemo(() => (cur && prev && cur.source ? lineDiff(prev.source, cur.source) : null), [cur, prev]);
-  if (versions.length === 0) return <Text size="sm">Brak zmian z panelu – działa wersja wbudowana w program.</Text>;
+  if (versions.length === 0) return <Text size="sm">{t("versions.none")}</Text>;
   return (
     <Stack gap="xs">
       <Group gap="xs">
@@ -385,7 +383,7 @@ function Versions({ id }: { id: string }) {
       </Group>
       {cur && (
         <Text size="xs" c="dimmed">
-          r{cur.revision}: {actionLabels[cur.action]} – {cur.changed_by}, {formatDate(cur.changed_at)}
+          r{cur.revision}: {t(`versions.action.${cur.action}`)} – {cur.changed_by}, {formatDate(cur.changed_at)}
           {cur.note ? ` · „${cur.note}”` : ""}
         </Text>
       )}
@@ -412,6 +410,7 @@ function Versions({ id }: { id: string }) {
 }
 
 export default function DecodersPage() {
+  const { t } = useTranslation("decoders");
   const { can } = useAuth();
   const admin = can("decoders", "write");
   const canTest = can("decoders", "test");
@@ -463,7 +462,7 @@ export default function DecodersPage() {
         action.kind === "revert"
           ? await decodersApi.revert(action.d.id, reason, password)
           : await decodersApi.setEnabled(action.d.id, action.kind === "enable", reason, password);
-      notifications.show({ color: "green", message: r.message });
+      notifications.show({ color: "green", message: t(`delivery.${r.delivery}`, { defaultValue: r.message }) });
       if (action.kind === "revert" && action.d.origin === "custom") setShow(null);
       setAction(null);
       setReason("");
@@ -482,18 +481,15 @@ export default function DecodersPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Dekodery syslog</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm" maw={860}>
-            Dekoder rozpoznaje wiadomości z urządzenia (warunki <Code>match</Code>), rozbiera treść (kv, JSON, CSV, wzorce) i przypisuje
-            pola zdarzenia – na nich działają reguły detekcji (<Code>product: fortigate</Code>, <Code>mikrotik</Code>…). Dekodery
-            sprawdzane są po kolei (wyższy priorytet pierwszy); wiadomość bez dekodera trafia jako <Code>syslog.generic</Code>. Zmiany
-            z panelu działają w normalizatorach w ciągu kilku sekund i nie zmieniają zdarzeń już zapisanych.
+            {t("intro")}
           </Text>
         </div>
         {canTest && (
           <Group gap="xs" wrap="nowrap">
           <Button variant="light" leftSection={<IconWand size={16} />} onClick={() => setWizard(true)}>
-            Kreator z próbek
+            {t("wizardButton")}
           </Button>
           <Button
             leftSection={<IconPlus size={16} />}
@@ -502,7 +498,7 @@ export default function DecodersPage() {
               setCreating(true);
             }}
           >
-            Nowy dekoder
+            {t("new")}
           </Button>
           </Group>
         )}
@@ -510,19 +506,19 @@ export default function DecodersPage() {
       {error && <MAlert color="red">{error}</MAlert>}
       {!delivery && (
         <MAlert color="orange">
-          Panel nie jest połączony z NATS – zapisane zmiany trafią do normalizatorów dopiero po przywróceniu połączenia.
+          {t("noNats")}
         </MAlert>
       )}
       <Table.ScrollContainer minWidth={900}>
         <Table striped highlightOnHover verticalSpacing="xs">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Włączony</Table.Th>
-              <Table.Th>Kolejność</Table.Th>
-              <Table.Th>Dekoder</Table.Th>
-              <Table.Th>Zbiór danych</Table.Th>
-              <Table.Th>Priorytet</Table.Th>
-              <Table.Th>Zmiany</Table.Th>
+              <Table.Th>{t("col.enabled")}</Table.Th>
+              <Table.Th>{t("col.order")}</Table.Th>
+              <Table.Th>{t("col.decoder")}</Table.Th>
+              <Table.Th>{t("col.dataset")}</Table.Th>
+              <Table.Th>{t("col.priority")}</Table.Th>
+              <Table.Th>{t("col.changes")}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -541,7 +537,7 @@ export default function DecodersPage() {
                     checked={d.enabled}
                     disabled={!admin}
                     onChange={(e) => setAction({ d, kind: e.currentTarget.checked ? "enable" : "disable" })}
-                    aria-label="dekoder włączony"
+                    aria-label={t("col.enabled")}
                   />
                 </Table.Td>
                 <Table.Td>{d.order || "—"}</Table.Td>
@@ -552,28 +548,28 @@ export default function DecodersPage() {
                     </Text>
                     {d.origin === "builtin" ? (
                       <Badge size="xs" variant="light" color="gray">
-                        wbudowany
+                        {t("builtin")}
                       </Badge>
                     ) : (
                       <Badge size="xs" variant="light" color="grape">
-                        własny
+                        {t("custom")}
                       </Badge>
                     )}
                     {d.modified && (
                       <Badge size="xs" variant="outline" color="grape">
-                        zmieniony w panelu
+                        {t("modified")}
                       </Badge>
                     )}
                     {d.error && (
-                      <Tooltip label={d.error} multiline w={360}>
+                      <Tooltip label={serverText(d.error, d.error_en)} multiline w={360}>
                         <Badge size="xs" color="red">
-                          błąd
+                          {t("error")}
                         </Badge>
                       </Tooltip>
                     )}
                   </Group>
                   <Text size="xs" c="dimmed" ff="monospace">
-                    {d.id} · v{d.version} · próbek {d.samples}
+                    {d.id} · v{d.version} · {t("samplesCount", { n: d.samples })}
                   </Text>
                 </Table.Td>
                 <Table.Td>
@@ -602,12 +598,12 @@ export default function DecodersPage() {
           <Stack gap="xs">
             <Group justify="space-between">
               <Text size="xs" c="dimmed">
-                {show.id} · {show.dataset} · priorytet {show.priority}
-                {show.revision ? ` · rewizja ${show.revision} (${show.updated_by}, ${formatDate(show.updated_at)})` : ""}
+                {show.id} · {show.dataset} · {t("priorityN", { n: show.priority })}
+                {show.revision ? ` · ${t("revisionInfo", { n: show.revision, by: show.updated_by, date: formatDate(show.updated_at) })}` : ""}
               </Text>
               {admin && (show.modified || show.origin === "custom") && (
                 <Button size="xs" variant="subtle" color="red" onClick={() => setAction({ d: show, kind: "revert" })}>
-                  {show.origin === "custom" ? "Usuń dekoder" : "Przywróć wersję wbudowaną"}
+                  {show.origin === "custom" ? t("action.delete") : t("action.restoreBuiltin")}
                 </Button>
               )}
             </Group>
@@ -619,17 +615,17 @@ export default function DecodersPage() {
             <Tabs value={tab} onChange={setTab}>
               <Tabs.List>
                 <Tabs.Tab value="source" leftSection={<IconFileCode size={14} />}>
-                  Definicja
+                  {t("tab.source")}
                 </Tabs.Tab>
                 {canTest && (
                   <Tabs.Tab value="edit" leftSection={<IconFlask size={14} />}>
-                    {admin ? "Edycja i test" : "Test"}
+                    {admin ? t("tab.edit") : t("tab.test")}
                   </Tabs.Tab>
                 )}
                 <Tabs.Tab value="versions" leftSection={<IconHistory size={14} />}>
-                  Historia
+                  {t("tab.history")}
                 </Tabs.Tab>
-                {show.builtin_source && <Tabs.Tab value="builtin">Wersja wbudowana</Tabs.Tab>}
+                {show.builtin_source && <Tabs.Tab value="builtin">{t("tab.builtin")}</Tabs.Tab>}
               </Tabs.List>
               <Tabs.Panel value="source" pt="xs">
                 <ScrollArea.Autosize mah={560}>
@@ -663,7 +659,7 @@ export default function DecodersPage() {
         )}
       </Modal>
 
-      <Modal opened={creating} onClose={() => setCreating(false)} title="Nowy dekoder" size="90%">
+      <Modal opened={creating} onClose={() => setCreating(false)} title={t("new")} size="90%">
         {creating && (
           <DecoderEditor
             decoder={null}
@@ -678,7 +674,7 @@ export default function DecodersPage() {
         )}
       </Modal>
 
-      <Modal opened={wizard} onClose={() => setWizard(false)} title="Kreator dekodera – zaznacz pola w przykładowych wiadomościach" size="95%">
+      <Modal opened={wizard} onClose={() => setWizard(false)} title={t("wizardTitle")} size="95%">
         {wizard && (
           <DecoderWizard
             initialSamples={[]}
@@ -705,11 +701,16 @@ export default function DecodersPage() {
         }}
         title={
           action
-            ? action.kind === "revert"
-              ? action.d.origin === "custom"
-                ? `Usunięcie dekodera „${action.d.title}”`
-                : `Przywrócenie wbudowanej wersji „${action.d.title}”`
-              : `${action.kind === "disable" ? "Wyłączenie" : "Włączenie"} dekodera „${action.d.title}”`
+            ? t(
+                action.kind === "revert"
+                  ? action.d.origin === "custom"
+                    ? "action.titleDelete"
+                    : "action.titleRestore"
+                  : action.kind === "disable"
+                    ? "action.titleDisable"
+                    : "action.titleEnable",
+                { title: action.d.title },
+              )
             : ""
         }
         centered
@@ -718,23 +719,24 @@ export default function DecodersPage() {
           <Stack>
             {weakening && (
               <MAlert color="orange">
-                Wiadomości tego urządzenia trafią do innego dekodera albo jako syslog.generic – reguły detekcji dla{" "}
-                <Code>{action.d.dataset}</Code> przestaną je widzieć. Podaj powód (trafi do audytu) i potwierdź hasłem.
+                {t("action.warning.0")}
+                <Code>{action.d.dataset}</Code>
+                {t("action.warning.1")}
               </MAlert>
             )}
             {action.kind === "revert" && action.d.origin === "builtin" && (
-              <Text size="sm">Własna definicja zostanie usunięta (zostaje w historii), zacznie działać wersja wbudowana w program.</Text>
+              <Text size="sm">{t("action.restoreInfo")}</Text>
             )}
             <Textarea
-              label="Powód"
-              description={weakening ? "np. błędnie rozpoznaje wiadomości z drukarek" : "opcjonalnie"}
+              label={t("action.reason")}
+              description={weakening ? t("action.reasonHint") : t("action.optional")}
               autosize
               minRows={2}
               value={reason}
               onChange={(e) => setReason(e.currentTarget.value)}
             />
             {(needPassword || weakening) && (
-              <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+              <PasswordInput label={t("action.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
             )}
             <Group justify="flex-end">
               <Button
@@ -745,11 +747,11 @@ export default function DecodersPage() {
               >
                 {action.kind === "revert"
                   ? action.d.origin === "custom"
-                    ? "Usuń dekoder"
-                    : "Przywróć"
+                    ? t("action.delete")
+                    : t("action.restore")
                   : action.kind === "disable"
-                    ? "Wyłącz dekoder"
-                    : "Włącz dekoder"}
+                    ? t("action.disable")
+                    : t("action.enable")}
               </Button>
             </Group>
           </Stack>

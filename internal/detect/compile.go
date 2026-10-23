@@ -3,7 +3,6 @@
 package detect
 
 import (
-	"errors"
 	"fmt"
 	"net/netip"
 	"path"
@@ -12,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"siem/internal/lang"
 )
 
 // Node to węzeł drzewa warunków: ocena zdarzenia w Go (silnik w locie)
@@ -128,20 +129,20 @@ func (d datasetIs) sql() string {
 func compileLogsource(l logsource) (Node, error) {
 	prefix, ok := products[strings.ToLower(l.Product)]
 	if l.Product != "" && !ok {
-		return nil, fmt.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure)", l.Product)
+		return nil, lang.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure)", "product %q is not supported (windows, fortigate, mikrotik, azure)", l.Product)
 	}
 	if prefix == "azure." && l.Service != "" {
 		ds, ok := azureServices[strings.ToLower(l.Service)]
 		if !ok {
-			return nil, fmt.Errorf("product azure: service %q nieobsługiwany (signinlogs, auditlogs)", l.Service)
+			return nil, lang.Errorf("product azure: service %q nieobsługiwany (signinlogs, auditlogs)", "product azure: service %q is not supported (signinlogs, auditlogs)", l.Service)
 		}
 		if l.Category != "" {
-			return nil, fmt.Errorf("product azure: category nieobsługiwana")
+			return nil, lang.Errorf("product azure: category nieobsługiwana", "product azure: category is not supported")
 		}
 		return and{datasetIs(ds)}, nil
 	}
 	if prefix != "windows." && (l.Service != "" || l.Category != "") {
-		return nil, fmt.Errorf("product %s: service i category tylko dla windows i azure", l.Product)
+		return nil, lang.Errorf("product %s: service i category tylko dla windows i azure", "product %s: service and category only for windows and azure", l.Product)
 	}
 	n := and{}
 	if prefix != "" {
@@ -150,7 +151,7 @@ func compileLogsource(l logsource) (Node, error) {
 	if l.Service != "" {
 		ch, ok := services[strings.ToLower(l.Service)]
 		if !ok {
-			return nil, fmt.Errorf("service %q nieobsługiwany", l.Service)
+			return nil, lang.Errorf("service %q nieobsługiwany", "service %q is not supported", l.Service)
 		}
 		n = append(n, channelIs(ch))
 	}
@@ -169,7 +170,7 @@ func compileLogsource(l logsource) (Node, error) {
 	case "registry_set":
 		n = append(n, onChannel(services["sysmon"], 13))
 	default:
-		return nil, fmt.Errorf("category %q nieobsługiwana", l.Category)
+		return nil, lang.Errorf("category %q nieobsługiwana", "category %q is not supported", l.Category)
 	}
 	if len(n) == 0 {
 		return always(true), nil
@@ -182,17 +183,17 @@ func compileLogsource(l logsource) (Node, error) {
 func compileDetection(det map[string]any) (Node, error) {
 	condRaw, ok := det["condition"]
 	if !ok {
-		return nil, errors.New("brak condition")
+		return nil, lang.Errorf("brak condition", "missing condition")
 	}
 	cond, ok := condRaw.(string)
 	if !ok {
-		return nil, errors.New("condition: jeden warunek tekstowy (listy warunków nieobsługiwane)")
+		return nil, lang.Errorf("condition: jeden warunek tekstowy (listy warunków nieobsługiwane)", "condition: a single text condition (condition lists are not supported)")
 	}
 	sel := map[string]Node{}
 	for name, v := range det {
 		if name == "condition" || name == "timeframe" {
 			if name == "timeframe" {
-				return nil, errors.New("timeframe nieobsługiwany – progi przez vardr (etap 4c)")
+				return nil, lang.Errorf("timeframe nieobsługiwany – progi przez vardr (etap 4c)", "timeframe is not supported – use vardr.threshold for thresholds")
 			}
 			continue
 		}
@@ -211,14 +212,14 @@ func compileSelection(v any) (Node, error) {
 		return compileMap(s)
 	case []any:
 		if len(s) == 0 {
-			return nil, errors.New("pusta lista")
+			return nil, lang.Errorf("pusta lista", "empty list")
 		}
 		if _, isMap := s[0].(map[string]any); isMap {
 			o := or{}
 			for _, item := range s {
 				m, ok := item.(map[string]any)
 				if !ok {
-					return nil, errors.New("lista map i wartości jednocześnie")
+					return nil, lang.Errorf("lista map i wartości jednocześnie", "a list of maps and values at the same time")
 				}
 				n, err := compileMap(m)
 				if err != nil {
@@ -235,7 +236,7 @@ func compileSelection(v any) (Node, error) {
 		}
 		return keywords(ms), nil
 	}
-	return nil, fmt.Errorf("nieobsługiwana selekcja (%T)", v)
+	return nil, lang.Errorf("nieobsługiwana selekcja (%T)", "unsupported selection (%T)", v)
 }
 
 func compileMap(m map[string]any) (Node, error) {
@@ -249,14 +250,14 @@ func compileMap(m map[string]any) (Node, error) {
 		parts := strings.Split(k, "|")
 		field, mods := parts[0], parts[1:]
 		if field == "" {
-			return nil, errors.New("pusta nazwa pola")
+			return nil, lang.Errorf("pusta nazwa pola", "empty field name")
 		}
 		kind, all, exists := "eq", false, false
 		for _, mod := range mods {
 			switch mod {
 			case "contains", "startswith", "endswith", "re", "cidr":
 				if kind != "eq" {
-					return nil, fmt.Errorf("%s: dwa modyfikatory dopasowania", k)
+					return nil, lang.Errorf("%s: dwa modyfikatory dopasowania", "%s: two match modifiers", k)
 				}
 				kind = mod
 			case "all":
@@ -264,13 +265,13 @@ func compileMap(m map[string]any) (Node, error) {
 			case "exists":
 				exists = true
 			default:
-				return nil, fmt.Errorf("%s: modyfikator %q nieobsługiwany", k, mod)
+				return nil, lang.Errorf("%s: modyfikator %q nieobsługiwany", "%s: modifier %q is not supported", k, mod)
 			}
 		}
 		if exists {
 			b, ok := m[k].(bool)
 			if !ok {
-				return nil, fmt.Errorf("%s: exists wymaga true/false", k)
+				return nil, lang.Errorf("%s: exists wymaga true/false", "%s: exists requires true/false", k)
 			}
 			n = append(n, fieldExists{field, b})
 			continue
@@ -283,7 +284,7 @@ func compileMap(m map[string]any) (Node, error) {
 			vals = []any{v}
 		}
 		if len(vals) == 0 {
-			return nil, fmt.Errorf("%s: pusta lista wartości", k)
+			return nil, lang.Errorf("%s: pusta lista wartości", "%s: empty value list", k)
 		}
 		ms, err := compileValues(vals, kind, true)
 		if err != nil {
@@ -338,7 +339,7 @@ func compileValues(vals []any, kind string, allowNull bool) ([]matcher, error) {
 		switch v := raw.(type) {
 		case nil:
 			if !allowNull {
-				return nil, errors.New("null niedozwolone")
+				return nil, lang.Errorf("null niedozwolone", "null is not allowed")
 			}
 			out = append(out, matcher{kind: "null"})
 			continue
@@ -351,13 +352,13 @@ func compileValues(vals []any, kind string, allowNull bool) ([]matcher, error) {
 		case bool:
 			s = strconv.FormatBool(v)
 		default:
-			return nil, fmt.Errorf("nieobsługiwana wartość %v (%T)", raw, raw)
+			return nil, lang.Errorf("nieobsługiwana wartość %v (%T)", "unsupported value %v (%T)", raw, raw)
 		}
 		switch kind {
 		case "re":
 			re, err := regexp.Compile(s)
 			if err != nil {
-				return nil, fmt.Errorf("wyrażenie regularne %q: %w", s, err)
+				return nil, lang.Errorf("wyrażenie regularne %q: %w", "regular expression %q: %w", s, err)
 			}
 			out = append(out, matcher{kind: "re", re: re})
 			continue
@@ -446,14 +447,14 @@ var condTokenRe = regexp.MustCompile(`\(|\)|\||[^\s()|]+`)
 func parseCondition(cond string, sel map[string]Node) (Node, error) {
 	p := &condParser{toks: condTokenRe.FindAllString(cond, -1), sel: sel}
 	if slices.Contains(p.toks, "|") {
-		return nil, errors.New("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez vardr.threshold")
+		return nil, lang.Errorf("agregacje Sigmy („| count()…”) nieobsługiwane – progi przez vardr.threshold", "Sigma aggregations (\"| count()…\") are not supported – use vardr.threshold")
 	}
 	n, err := p.or()
 	if err != nil {
 		return nil, err
 	}
 	if p.pos != len(p.toks) {
-		return nil, fmt.Errorf("nieoczekiwane %q w warunku", p.toks[p.pos])
+		return nil, lang.Errorf("nieoczekiwane %q w warunku", "unexpected %q in the condition", p.toks[p.pos])
 	}
 	return n, nil
 }
@@ -509,7 +510,7 @@ func (p *condParser) unary() (Node, error) {
 	t := p.peek()
 	switch {
 	case t == "":
-		return nil, errors.New("niepełny warunek")
+		return nil, lang.Errorf("niepełny warunek", "incomplete condition")
 	case strings.EqualFold(t, "not"):
 		p.pos++
 		n, err := p.unary()
@@ -524,19 +525,19 @@ func (p *condParser) unary() (Node, error) {
 			return nil, err
 		}
 		if p.peek() != ")" {
-			return nil, errors.New("brak „)” w warunku")
+			return nil, lang.Errorf("brak „)” w warunku", "missing \")\" in the condition")
 		}
 		p.pos++
 		return n, nil
 	case t == "1" || strings.EqualFold(t, "all") || strings.EqualFold(t, "any"):
 		p.pos++
 		if !strings.EqualFold(p.peek(), "of") {
-			return nil, fmt.Errorf("po %q oczekiwano „of”", t)
+			return nil, lang.Errorf("po %q oczekiwano „of”", "expected \"of\" after %q", t)
 		}
 		p.pos++
 		pat := p.peek()
 		if pat == "" {
-			return nil, errors.New("brak wzorca po „of”")
+			return nil, lang.Errorf("brak wzorca po „of”", "missing pattern after \"of\"")
 		}
 		p.pos++
 		var names []string
@@ -548,7 +549,7 @@ func (p *condParser) unary() (Node, error) {
 			}
 		}
 		if len(names) == 0 {
-			return nil, fmt.Errorf("wzorzec %q nie pasuje do żadnej selekcji", pat)
+			return nil, lang.Errorf("wzorzec %q nie pasuje do żadnej selekcji", "pattern %q does not match any selection", pat)
 		}
 		sort.Strings(names)
 		var nodes []Node
@@ -562,7 +563,7 @@ func (p *condParser) unary() (Node, error) {
 	}
 	n, ok := p.sel[t]
 	if !ok {
-		return nil, fmt.Errorf("nieznana selekcja %q", t)
+		return nil, lang.Errorf("nieznana selekcja %q", "unknown selection %q", t)
 	}
 	p.pos++
 	return n, nil

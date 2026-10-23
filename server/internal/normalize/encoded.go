@@ -15,7 +15,7 @@ import (
 
 // ErrUnreadable oznacza paczkę, której nie da się odczytać (uszkodzony gzip
 // lub JSON) – ponowne przetwarzanie nic nie zmieni.
-var ErrUnreadable = errors.New("nieczytelna wiadomość")
+var ErrUnreadable = errors.New("unreadable message")
 
 // Encoded to pełna ścieżka normalizatora dla jednej wiadomości: rozpakowanie
 // paczki agenta, normalizacja i spakowanie wyniku (model.Batch, gzip+JSON).

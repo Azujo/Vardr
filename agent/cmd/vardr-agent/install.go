@@ -32,6 +32,7 @@ import (
 	"siem/agent/internal/secure"
 	"siem/agent/internal/setup"
 	"siem/agent/internal/shipper"
+	"siem/internal/lang"
 )
 
 // Docelowe lokalizacje instalacji.
@@ -53,14 +54,18 @@ type installOptions struct {
 }
 
 func install(o installOptions) error {
-	if err := requireAdmin("Instalacja agenta"); err != nil {
+	if err := requireAdmin(lang.L("Instalacja agenta", "Installing the agent")); err != nil {
 		return err
 	}
 	if st, err := queryService(); err == nil {
-		return fmt.Errorf("agent jest już zainstalowany (usługa: %s).\n"+
+		return fmt.Errorf(lang.L("agent jest już zainstalowany (usługa: %s).\n"+
 			"  zmiana serwera:          vardr-agent set-server <adres>\n"+
 			"  nowa wersja programu:    vardr-agent upgrade (uruchomione z folderu nowej wersji)\n"+
-			"  ponowna instalacja:      vardr-agent uninstall, a potem install", stateNames[st.State])
+			"  ponowna instalacja:      vardr-agent uninstall, a potem install",
+			"the agent is already installed (service: %s).\n"+
+				"  change the server:       vardr-agent set-server <address>\n"+
+				"  new program version:     vardr-agent upgrade (run from the folder of the new version)\n"+
+				"  reinstall:               vardr-agent uninstall, then install"), stateName(st.State))
 	}
 
 	srcExe, err := os.Executable()
@@ -95,9 +100,9 @@ func install(o installOptions) error {
 			return err
 		}
 		if _, agentID, err := shipper.NewTLSClient(o.ca, o.cert, o.key, 10*time.Second); err != nil {
-			return fmt.Errorf("certyfikaty z paczki są niepoprawne: %w", err)
+			return fmt.Errorf(lang.L("certyfikaty z paczki są niepoprawne: %w", "the package certificates are invalid: %w"), err)
 		} else {
-			fmt.Println("Paczka instalacyjna agenta:", agentID)
+			fmt.Println(lang.L("Paczka instalacyjna agenta:", "Agent installation package:"), agentID)
 		}
 	}
 
@@ -106,12 +111,12 @@ func install(o installOptions) error {
 		if data, err := os.ReadFile(filepath.Join(srcDir, "server.txt")); err == nil {
 			o.server = strings.TrimSpace(string(data))
 			if o.server != "" {
-				fmt.Println("Adres serwera z pliku server.txt:", o.server)
+				fmt.Println(lang.L("Adres serwera z pliku server.txt:", "Server address from server.txt:"), o.server)
 			}
 		}
 	}
 	if o.server == "" {
-		if o.server, err = prompt("Adres serwera SIEM (np. 192.168.88.98 lub siem.firma.local:8443): "); err != nil {
+		if o.server, err = prompt(lang.L("Adres serwera SIEM (np. 192.168.88.98 lub siem.firma.local:8443): ", "SIEM server address (e.g. 192.168.88.98 or siem.company.local:8443): ")); err != nil {
 			return err
 		}
 	}
@@ -138,18 +143,18 @@ func install(o installOptions) error {
 		}
 		roots := x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(caPEM) {
-			return errors.New("ca.crt z paczki jest niepoprawny")
+			return errors.New(lang.L("ca.crt z paczki jest niepoprawny", "ca.crt in the package is invalid"))
 		}
 		host, _ := os.Hostname()
-		fmt.Printf("Rejestracja agenta w panelu %s tokenem z paczki…\n", panelURL)
+		fmt.Printf(lang.L("Rejestracja agenta w panelu %s tokenem z paczki…\n", "Enrolling the agent in panel %s with the package token…\n"), panelURL)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		res, key, err := enrollment.Register(ctx, panelURL, roots, o.token, enrollment.Info{Hostname: host, OS: heartbeat.OSVersion(), Version: version})
 		cancel()
 		if err != nil {
-			return fmt.Errorf("rejestracja agenta: %w", err)
+			return fmt.Errorf(lang.L("rejestracja agenta: %w", "agent enrollment: %w"), err)
 		}
 		enrolled, enrolledKey = &res, key
-		fmt.Printf("Zarejestrowano: agent %s (certyfikat ważny do %s)\n", res.AgentID, res.NotAfter.Local().Format("2006-01-02"))
+		fmt.Printf(lang.L("Zarejestrowano: agent %s (certyfikat ważny do %s)\n", "Enrolled: agent %s (certificate valid until %s)\n"), res.AgentID, res.NotAfter.Local().Format("2006-01-02"))
 	}
 	if o.profile == "" {
 		o.profile = "workstation"
@@ -162,7 +167,7 @@ func install(o installOptions) error {
 		return err
 	}
 
-	fmt.Println("Instalacja agenta SIEM")
+	fmt.Println(lang.L("Instalacja agenta SIEM", "SIEM agent installation"))
 
 	// 1. Program w folderze dostępnym do zapisu tylko dla administratorów.
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
@@ -170,13 +175,13 @@ func install(o installOptions) error {
 	}
 	if !samePath(srcExe, installExe) {
 		if err := copyFile(srcExe, installExe); err != nil {
-			return fmt.Errorf("kopiowanie programu: %w", err)
+			return fmt.Errorf(lang.L("kopiowanie programu: %w", "copying the program: %w"), err)
 		}
 	}
 	if ok, why := secure.ServiceBinarySafe(installExe); !ok {
-		return fmt.Errorf("folder programu nie jest chroniony: %s", why)
+		return fmt.Errorf(lang.L("folder programu nie jest chroniony: %s", "the program folder is not protected: %s"), why)
 	}
-	fmt.Printf("  [1/7] Program:       %s\n", installExe)
+	fmt.Printf(lang.L("  [1/7] Program:       %s\n", "  [1/7] Program:       %s\n"), installExe)
 
 	// 2. Certyfikaty agenta.
 	certDir := filepath.Join(dataDir, "certs")
@@ -191,7 +196,7 @@ func install(o installOptions) error {
 		files = files[:1] // tylko CA – certyfikat i klucz z rejestracji zapisujemy niżej
 		if err := enrollment.WritePair(filepath.Join(certDir, "agent.crt"), filepath.Join(certDir, "agent.key"),
 			[]byte(enrolled.Certificate), enrolledKey); err != nil {
-			return fmt.Errorf("zapis certyfikatu agenta: %w", err)
+			return fmt.Errorf(lang.L("zapis certyfikatu agenta: %w", "saving the agent certificate: %w"), err)
 		}
 	}
 	for _, f := range files {
@@ -201,7 +206,7 @@ func install(o installOptions) error {
 			continue
 		}
 		if err := copyFile(src, dst); err != nil {
-			return fmt.Errorf("kopiowanie certyfikatu %s: %w", name, err)
+			return fmt.Errorf(lang.L("kopiowanie certyfikatu %s: %w", "copying certificate %s: %w"), name, err)
 		}
 	}
 	client, agentID, err := shipper.NewTLSClient(filepath.Join(certDir, "ca.crt"),
@@ -209,7 +214,7 @@ func install(o installOptions) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("  [2/7] Certyfikaty:   %s (agent %s)\n", certDir, agentID)
+	fmt.Printf(lang.L("  [2/7] Certyfikaty:   %s (agent %s)\n", "  [2/7] Certificates:  %s (agent %s)\n"), certDir, agentID)
 
 	// 3. Konfiguracja (poprzednia zostaje jako kopia).
 	if _, err := os.Stat(installCfg); err == nil {
@@ -219,37 +224,39 @@ func install(o installOptions) error {
 		return err
 	}
 	if _, err := config.Load(installCfg); err != nil {
-		return fmt.Errorf("wygenerowana konfiguracja jest niepoprawna: %w", err)
+		return fmt.Errorf(lang.L("wygenerowana konfiguracja jest niepoprawna: %w", "the generated configuration is invalid: %w"), err)
 	}
-	fmt.Printf("  [3/7] Konfiguracja:  %s (serwer %s, profil %s)\n", installCfg, serverURL, o.profile)
+	fmt.Printf(lang.L("  [3/7] Konfiguracja:  %s (serwer %s, profil %s)\n", "  [3/7] Configuration: %s (server %s, profile %s)\n"), installCfg, serverURL, o.profile)
 
 	// 4. Uprawnienia: dane, konfiguracja i klucz tylko dla SYSTEM i Administratorów.
 	if err := secure.RestrictDir(dataDir); err != nil {
 		return err
 	}
-	fmt.Println("  [4/7] Uprawnienia:   dane i klucz dostępne tylko dla SYSTEM i Administratorów")
+	fmt.Println(lang.L("  [4/7] Uprawnienia:   dane i klucz dostępne tylko dla SYSTEM i Administratorów", "  [4/7] Permissions:   data and key accessible to SYSTEM and Administrators only"))
 
 	// 5. Test połączenia – ostrzeżenie, nie przerwanie (serwer może być chwilowo niedostępny).
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	connErr := shipper.CheckServer(ctx, client, serverURL)
 	cancel()
 	if connErr != nil {
-		fmt.Printf("  [5/7] Połączenie:    UWAGA – %v\n"+
-			"                       Agent będzie ponawiał połączenie; dane czekają w dzienniku Windows.\n", connErr)
+		fmt.Printf(lang.L("  [5/7] Połączenie:    UWAGA – %v\n"+
+			"                       Agent będzie ponawiał połączenie; dane czekają w dzienniku Windows.\n",
+			"  [5/7] Connection:    WARNING – %v\n"+
+				"                       The agent will keep retrying; data waits in the Windows event log.\n"), connErr)
 	} else {
-		fmt.Println("  [5/7] Połączenie:    OK (TLS 1.3, serwer i agent uwierzytelnieni)")
+		fmt.Println(lang.L("  [5/7] Połączenie:    OK (TLS 1.3, serwer i agent uwierzytelnieni)", "  [5/7] Connection:    OK (TLS 1.3, server and agent authenticated)"))
 	}
 
 	// 6. Usługa Windows + źródło w Podglądzie zdarzeń.
 	if err := logging.InstallEventSource(serviceName); err != nil {
-		fmt.Fprintln(os.Stderr, "  uwaga: nie zarejestrowano źródła w dzienniku zdarzeń:", err)
+		fmt.Fprintln(os.Stderr, lang.L("  uwaga: nie zarejestrowano źródła w dzienniku zdarzeń:", "  warning: the event log source was not registered:"), err)
 	}
 	if err := registerService(installExe, installCfg); err != nil {
 		return err
 	}
 	markInstaller(dataDir, "install")
 	if o.noStart {
-		fmt.Println("  [6/7] Usługa:        zarejestrowana (nie uruchomiono: -no-start)")
+		fmt.Println(lang.L("  [6/7] Usługa:        zarejestrowana (nie uruchomiono: -no-start)", "  [6/7] Service:       registered (not started: -no-start)"))
 	} else {
 		if err := withService(func(s *mgr.Service) error {
 			if err := s.Start(); err != nil {
@@ -257,20 +264,20 @@ func install(o installOptions) error {
 			}
 			return waitState(s, svc.Running, 15*time.Second)
 		}); err != nil {
-			return fmt.Errorf("usługa zarejestrowana, ale nie wystartowała: %w", err)
+			return fmt.Errorf(lang.L("usługa zarejestrowana, ale nie wystartowała: %w", "the service is registered but did not start: %w"), err)
 		}
-		fmt.Println("  [6/7] Usługa:        SiemAgent działa (start automatyczny, restart po awarii)")
+		fmt.Println(lang.L("  [6/7] Usługa:        SiemAgent działa (start automatyczny, restart po awarii)", "  [6/7] Service:       SiemAgent running (automatic start, restart on failure)"))
 	}
 
 	// 7. Polecenie vardr-agent dostępne z każdego miejsca.
 	if err := addToSystemPath(installDir); err != nil {
-		fmt.Printf("  [7/7] PATH:          UWAGA – %v\n", err)
+		fmt.Printf(lang.L("  [7/7] PATH:          UWAGA – %v\n", "  [7/7] PATH:          WARNING – %v\n"), err)
 	} else {
-		fmt.Printf("  [7/7] PATH:          dodano %s\n", installDir)
+		fmt.Printf(lang.L("  [7/7] PATH:          dodano %s\n", "  [7/7] PATH:          added %s\n"), installDir)
 	}
 
-	fmt.Println("\nGotowe. Otwórz NOWE okno PowerShell lub cmd (jako administrator) i użyj:")
-	fmt.Println("  vardr-agent status | start | stop | restart | test | set-server <adres>")
+	fmt.Println(lang.L("\nGotowe. Otwórz NOWE okno PowerShell lub cmd (jako administrator) i użyj:", "\nDone. Open a NEW PowerShell or cmd window (as administrator) and use:"))
+	fmt.Println(lang.L("  vardr-agent status | start | stop | restart | test | set-server <adres>", "  vardr-agent status | start | stop | restart | test | set-server <address>"))
 	return nil
 }
 
@@ -287,14 +294,14 @@ func removeAgentKey(cfgPath string) {
 	}
 	switch err := os.Remove(key); {
 	case err == nil:
-		fmt.Println("Usunięto klucz prywatny agenta:", key)
+		fmt.Println(lang.L("Usunięto klucz prywatny agenta:", "Agent private key removed:"), key)
 	case !errors.Is(err, fs.ErrNotExist):
-		fmt.Println("UWAGA: nie usunięto klucza prywatnego", key+":", err)
+		fmt.Println(lang.L("UWAGA: nie usunięto klucza prywatnego", "WARNING: the private key was not removed"), key+":", err)
 	}
 }
 
 func uninstall(cfgPath string, purge bool, token string) error {
-	if err := requireAdmin("Odinstalowanie agenta"); err != nil {
+	if err := requireAdmin(lang.L("Odinstalowanie agenta", "Uninstalling the agent")); err != nil {
 		return err
 	}
 	if err := authorize(cfgPath, "uninstall", token); err != nil {
@@ -303,11 +310,11 @@ func uninstall(cfgPath string, purge bool, token string) error {
 	if err := deleteService(); err != nil && !errors.Is(err, errNotInstalled) {
 		return err
 	}
-	fmt.Println("Usługa SiemAgent usunięta.")
+	fmt.Println(lang.L("Usługa SiemAgent usunięta.", "SiemAgent service removed."))
 	_ = logging.RemoveEventSource(serviceName)
 
 	if err := removeFromSystemPath(installDir); err != nil {
-		fmt.Println("uwaga: PATH:", err)
+		fmt.Println(lang.L("uwaga: PATH:", "warning: PATH:"), err)
 	}
 
 	if !purge {
@@ -315,9 +322,9 @@ func uninstall(cfgPath string, purge bool, token string) error {
 	}
 	if purge {
 		if err := os.RemoveAll(dataDir); err != nil {
-			fmt.Println("uwaga: nie usunięto danych:", err)
+			fmt.Println(lang.L("uwaga: nie usunięto danych:", "warning: data not removed:"), err)
 		} else {
-			fmt.Println("Usunięto dane, konfigurację i certyfikaty:", dataDir)
+			fmt.Println(lang.L("Usunięto dane, konfigurację i certyfikaty:", "Data, configuration and certificates removed:"), dataDir)
 		}
 		// Klucze rejestru usuwa się od najgłębszych (DeleteKey nie usuwa podkluczy).
 		for _, k := range listInstances() {
@@ -326,7 +333,7 @@ func uninstall(cfgPath string, purge bool, token string) error {
 		_ = registry.DeleteKey(registry.LOCAL_MACHINE, `SOFTWARE\SiemAgent\Instances`)
 		_ = registry.DeleteKey(registry.LOCAL_MACHINE, `SOFTWARE\SiemAgent`)
 	} else {
-		fmt.Println("Konfiguracja i bufor pozostały w", dataDir, "(usuń je opcją -purge); klucz prywatny usunięty.")
+		fmt.Println(lang.L("Konfiguracja i bufor pozostały w", "Configuration and buffer remain in"), dataDir, lang.L("(usuń je opcją -purge); klucz prywatny usunięty.", "(remove them with -purge); private key removed."))
 	}
 
 	// Usunięcie folderu programu. Jeśli polecenie działa z tego folderu,
@@ -337,12 +344,12 @@ func uninstall(cfgPath string, purge bool, token string) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true,
 			CreationFlags: windows.CREATE_NO_WINDOW | windows.DETACHED_PROCESS}
 		if err := cmd.Start(); err != nil {
-			fmt.Println("uwaga: usuń ręcznie folder", installDir)
+			fmt.Println(lang.L("uwaga: usuń ręcznie folder", "warning: remove the folder manually"), installDir)
 		}
 	} else if err := os.RemoveAll(installDir); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Println("uwaga: nie usunięto folderu programu:", err)
+		fmt.Println(lang.L("uwaga: nie usunięto folderu programu:", "warning: the program folder was not removed:"), err)
 	}
-	fmt.Println("Agent odinstalowany.")
+	fmt.Println(lang.L("Agent odinstalowany.", "Agent uninstalled."))
 	return nil
 }
 
@@ -359,7 +366,7 @@ func listInstances() []string {
 // setServer zmienia adres serwera w konfiguracji, sprawdza połączenie
 // i restartuje usługę.
 func setServer(cfgPath, input string) error {
-	if err := requireAdmin("Zmiana adresu serwera"); err != nil {
+	if err := requireAdmin(lang.L("Zmiana adresu serwera", "Changing the server address")); err != nil {
 		return err
 	}
 	serverURL, err := setup.ServerURL(input)
@@ -379,14 +386,14 @@ func setServer(cfgPath, input string) error {
 	}
 	if _, err := config.Load(cfgPath + ".tmp"); err != nil {
 		_ = os.Remove(cfgPath + ".tmp")
-		return fmt.Errorf("konfiguracja po zmianie byłaby niepoprawna: %w", err)
+		return fmt.Errorf(lang.L("konfiguracja po zmianie byłaby niepoprawna: %w", "the configuration would be invalid after the change: %w"), err)
 	}
 	if err := os.Rename(cfgPath+".tmp", cfgPath); err != nil {
 		return err
 	}
-	fmt.Println("Nowy adres serwera:", serverURL)
+	fmt.Println(lang.L("Nowy adres serwera:", "New server address:"), serverURL)
 	if err := testConnection(cfgPath); err != nil {
-		fmt.Println("UWAGA:", err)
+		fmt.Println(lang.L("UWAGA:", "WARNING:"), err)
 	}
 	if st, err := queryService(); err == nil && st.State == svc.Running {
 		return restartService()
@@ -399,7 +406,7 @@ func testConnection(cfgPath string) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
-			return errors.New("brak dostępu do konfiguracji – uruchom jako administrator")
+			return errors.New(lang.L("brak dostępu do konfiguracji – uruchom jako administrator", "no access to the configuration – run as administrator"))
 		}
 		return err
 	}
@@ -411,9 +418,9 @@ func testConnection(cfgPath string) error {
 	defer cancel()
 	start := time.Now()
 	if err := shipper.CheckServer(ctx, client, cfg.Server.URL); err != nil {
-		return fmt.Errorf("połączenie z %s nieudane: %w", cfg.Server.URL, err)
+		return fmt.Errorf(lang.L("połączenie z %s nieudane: %w", "connection to %s failed: %w"), cfg.Server.URL, err)
 	}
-	fmt.Printf("Połączenie z %s: OK (agent %s, %s)\n", cfg.Server.URL, agentID, time.Since(start).Round(time.Millisecond))
+	fmt.Printf(lang.L("Połączenie z %s: OK (agent %s, %s)\n", "Connection to %s: OK (agent %s, %s)\n"), cfg.Server.URL, agentID, time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -421,7 +428,7 @@ func prompt(question string) (string, error) {
 	fmt.Print(question)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
-		return "", errors.New("nie podano adresu serwera (użyj: vardr-agent install -server <adres>)")
+		return "", errors.New(lang.L("nie podano adresu serwera (użyj: vardr-agent install -server <adres>)", "no server address given (use: vardr-agent install -server <address>)"))
 	}
 	return strings.TrimSpace(line), nil
 }
@@ -507,6 +514,15 @@ func checkPackage(srcDir string, files ...string) error {
 	}
 	if len(missing) == 0 {
 		return nil
+	}
+	if lang.Local() == "en" {
+		return fmt.Errorf("installation package files are missing:\n  %s\n\n"+
+			"Installation is run from the folder of a package created for this computer, e.g.:\n"+
+			`  bin\siem-pki.exe package -id agt-pc01 -server 192.168.88.98`+"\n"+
+			`  cd dist\agt-pc01`+"\n"+
+			`  .\vardr-agent.exe install`+"\n"+
+			"(or point to the files with -ca, -cert, -key). Folder %s does not contain a package.",
+			strings.Join(missing, "\n  "), srcDir)
 	}
 	return fmt.Errorf("brak plików paczki instalacyjnej:\n  %s\n\n"+
 		"Instalację uruchamia się z folderu paczki utworzonej dla tego komputera, np.:\n"+

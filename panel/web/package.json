@@ -7,7 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/check-locales.mjs && tsc -b && vite build",
+    "check-locales": "node scripts/check-locales.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -15,8 +16,11 @@
     "@mantine/hooks": "^8.3.0",
     "@mantine/notifications": "^8.3.0",
     "@tabler/icons-react": "^3.34.0",
+    "i18next": "^25.5.2",
+    "i18next-resources-to-backend": "^1.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-i18next": "^15.7.3",
     "react-router-dom": "^7.9.0"
   },
   "devDependencies": {

@@ -123,6 +123,9 @@ type coverageRule struct {
 	Techniques      []string              `json:"techniques"`
 	Alerts          alerts.RuleAlertCount `json:"alerts"`
 	Warnings        []string              `json:"warnings,omitempty"`
+	WarningsEn      []string              `json:"warnings_en,omitempty"`
+	// I18n: tytuł reguły w innych językach (panel wybiera według języka konta).
+	I18n map[string]alerts.RuleText `json:"i18n,omitempty"`
 }
 
 // correlationOnlyPrefix: opis reguły bazowej korelacji (detektor, Infos).
@@ -136,7 +139,7 @@ func (s *Server) attackCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 	days, err := attackDays(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_days", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_days", err)
 		return
 	}
 	rules, err := s.coverage(r.Context(), days)
@@ -176,7 +179,7 @@ func (s *Server) coverage(ctx context.Context, days int) ([]coverageRule, error)
 		m := maps[in.ID]
 		cr := coverageRule{ID: in.ID, Title: in.Title, Level: in.Level, Mode: in.Mode, File: in.File, Enabled: in.Enabled,
 			CorrelationOnly: strings.HasPrefix(in.Description, correlationOnlyPrefix), Techniques: []string{},
-			Alerts: counts[in.ID], Warnings: m.Warnings}
+			Alerts: counts[in.ID], Warnings: m.Warnings, WarningsEn: m.WarningsEn, I18n: in.I18n}
 		for _, t := range m.Techniques {
 			cr.Techniques = append(cr.Techniques, t.ID)
 		}
@@ -193,7 +196,7 @@ func (s *Server) attackNavigator(w http.ResponseWriter, r *http.Request) {
 	}
 	days, err := attackDays(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_days", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_days", err)
 		return
 	}
 	rules, err := s.coverage(r.Context(), days)

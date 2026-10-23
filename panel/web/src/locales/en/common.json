@@ -1,0 +1,237 @@
+{
+  "nav": {
+    "home": "Home",
+    "detection": "Detection",
+    "alerts": "Alerts",
+    "incidents": "Incidents",
+    "incidentsHint": "handling and NIS2 reporting",
+    "rules": "Detection rules",
+    "rulesHint": "Sigma and built-in",
+    "attack": "MITRE ATT&CK",
+    "attackHint": "technique coverage",
+    "events": "Events",
+    "search": "Search",
+    "identities": "Identities",
+    "identitiesHint": "people and their accounts",
+    "decoders": "Decoders",
+    "decodersHint": "syslog and API",
+    "quarantine": "Quarantine",
+    "quarantineHint": "unprocessed events",
+    "agents": "Agents",
+    "agentList": "Agent list",
+    "groups": "Agent groups",
+    "groupsHint": "profiles, limits, protection",
+    "deploy": "Deployment",
+    "deployHint": "Bifröst – tokens and packages",
+    "system": "System",
+    "archive": "NIS2 archive",
+    "systemState": "System health",
+    "admin": "Administration",
+    "users": "Users",
+    "profiles": "Permission profiles",
+    "profilesHint": "access matrix",
+    "ldap": "Domain sign-in",
+    "notifications": "Notifications",
+    "backup": "Backups",
+    "backupHint": "schedule and destination",
+    "audit": "Audit log"
+  },
+  "header": {
+    "light": "Light mode",
+    "dark": "Dark mode",
+    "toggleScheme": "Toggle colour scheme",
+    "accountMenu": "Account menu",
+    "changePassword": "Change password",
+    "security": "Account security",
+    "language": "Language",
+    "languageAuto": "Same as browser",
+    "logout": "Sign out"
+  },
+  "footer": {
+    "version": "version {{version}}",
+    "versionTitle": "siem-api version",
+    "source": "source code (AGPL-3.0)"
+  },
+  "ago": {
+    "seconds_one": "{{count}} s ago",
+    "seconds_other": "{{count}} s ago",
+    "minutes_one": "{{count}} min ago",
+    "minutes_other": "{{count}} min ago",
+    "hours_one": "{{count}} h ago",
+    "hours_other": "{{count}} h ago",
+    "days_one": "{{count}} day ago",
+    "days_other": "{{count}} days ago"
+  },
+  "duration": {
+    "days": "{{d}} d {{h}} h",
+    "hours": "{{h}} h {{m}} min",
+    "minutes": "{{m}} min"
+  },
+  "httpError": "HTTP error {{status}}",
+  "languageSaveFailed": "Could not save the language on your account: {{message}}",
+  "enum": {
+    "role": {
+      "admin": "Administrator",
+      "analyst": "Analyst",
+      "viewer": "Viewer"
+    },
+    "tamper": {
+      "stop": {
+        "title": "Service stopped without a token"
+      },
+      "unclean_exit": {
+        "title": "Process ended without stopping the service (killed or crashed)"
+      },
+      "acl_restored": {
+        "title": "Service permissions changed (restored)"
+      },
+      "config_restored": {
+        "title": "Service configuration changed (restored)"
+      },
+      "bad_token": {
+        "title": "Failed stop or uninstall attempt (no valid token)"
+      },
+      "stop_token": {
+        "title": "Stopped with a token"
+      },
+      "uninstall_token": {
+        "title": "Uninstalled with a token"
+      },
+      "upgrade": {
+        "title": "Upgrade (installer)"
+      },
+      "protection_off": {
+        "title": "Protection disabled in the group"
+      }
+    },
+    "configState": {
+      "applied": {
+        "label": "current",
+        "hint": "the agent applies the group's current configuration"
+      },
+      "pending": {
+        "label": "pending",
+        "hint": "the agent will fetch the new configuration within about 5 minutes"
+      },
+      "unknown": {
+        "label": "unknown",
+        "hint": "agent older than 0.5.0 or has not fetched the configuration yet"
+      }
+    },
+    "weakening": {
+      "disable": "archiving disabled",
+      "retention": "shorter retention",
+      "groups": "agent groups excluded",
+      "agents": "agents excluded"
+    },
+    "policyStatus": {
+      "pending": "pending",
+      "scheduled": "scheduled",
+      "applied": "in effect / was in effect",
+      "rejected": "rejected",
+      "cancelled": "cancelled",
+      "superseded": "superseded"
+    },
+    "unarchived": {
+      "disabled": "archive disabled",
+      "agent": "agent excluded",
+      "group": "group excluded",
+      "group_pending": "group excluded – after the grace period (archived until then)",
+      "prefix": "server configuration"
+    },
+    "compliance": {
+      "ok": {
+        "label": "compliant",
+        "hint": "The archiver is running and the last integrity verification found no changes."
+      },
+      "problems": {
+        "label": "NON-COMPLIANT",
+        "hint": "The last verification found modified, missing or foreign data in the archive – check the list of problems."
+      },
+      "archiver_down": {
+        "label": "archiver not running",
+        "hint": "No signal from the archiver for over 3 minutes. Batches wait in the queue; once it fills up, the server stops accepting events."
+      },
+      "disk_full": {
+        "label": "archiving paused – out of space",
+        "hint": "The archive disk is almost full. New batches wait in the queue; once it fills up, the server stops accepting events. Free up or enlarge the archive disk."
+      },
+      "disabled": {
+        "label": "archiving DISABLED",
+        "hint": "The archive policy stopped writing new batches. Data already archived is kept until the end of retention. Change it on the Policy tab."
+      },
+      "policy_scheduled": {
+        "label": "policy weakening scheduled",
+        "hint": "A change weakening archive protection (disabling, shorter retention or excluding sources) was requested. It takes effect after the grace period – until then it can be cancelled on the Policy tab."
+      },
+      "disk_low": {
+        "label": "low disk space",
+        "hint": "Less than 15% of the archive disk is free."
+      },
+      "stale": {
+        "label": "verification overdue",
+        "hint": "Verification did not run at the scheduled time."
+      },
+      "never_verified": {
+        "label": "awaiting verification",
+        "hint": "The archiver is running; the first verification runs about 2 minutes after start."
+      },
+      "not_configured": {
+        "label": "not configured",
+        "hint": "The archiver (siem-archiver) has not run yet."
+      }
+    },
+    "exportStatus": {
+      "pending": "queued",
+      "running": "in preparation",
+      "done": "ready",
+      "failed": "failed",
+      "expired": "removed after expiry"
+    },
+    "replayStatus": {
+      "pending": "queued",
+      "running": "running",
+      "done": "finished",
+      "failed": "failed"
+    },
+    "notifyEvent": {
+      "alert": "detection alerts (Gjallarhorn)",
+      "incident": "incidents: significant (NIS2) and reporting deadlines",
+      "health": "system health alerts",
+      "anchor": "archive anchor (daily)",
+      "test": "test"
+    },
+    "level": {
+      "critical": "critical",
+      "high": "high",
+      "medium": "medium",
+      "low": "low",
+      "informational": "informational"
+    },
+    "alertStatus": {
+      "open": "new",
+      "acknowledged": "investigating",
+      "closed": "closed"
+    }
+  },
+  "pageError": {
+    "title": "This page ran into an error",
+    "text": "Something went wrong while displaying this page. The rest of the panel works – you can go to another module or try again. If the error repeats, report it with the text below.",
+    "retry": "Try again"
+  },
+  "update": {
+    "text": "The panel has been updated – reload the page to use the new version.",
+    "reload": "Reload"
+  },
+  "loading": "loading…",
+  "attack": {
+    "unknown": "{{tag}}: unknown technique",
+    "deprecated": "{{tag}}: deprecated",
+    "replaced": "{{tag}}: deprecated – replaced by {{by}}",
+    "tactic": "tactic {{id}}",
+    "techniqueTip": "{{id}} {{name}} – description in MITRE ATT&CK",
+    "author": "Rule author: {{author}} · source:",
+    "license": "· license",
+    "unknownAuthor": "unknown author (no author field)"
+  }
+}

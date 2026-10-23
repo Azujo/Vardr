@@ -12,7 +12,7 @@ import (
 )
 
 // ErrNotConfigured: schemat urd nie istnieje (archiwizator nigdy nie działał).
-var ErrNotConfigured = errors.New("archiwum nie jest skonfigurowane")
+var ErrNotConfigured = errors.New("the archive is not configured")
 
 // ArchiverState to stan archiwizatora zapisywany co minutę.
 type ArchiverState struct {

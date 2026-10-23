@@ -21,7 +21,9 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCopy, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
-import { api, formatDate, type PermModule, type Permissions, type Profile } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
+import { api, formatDate, permHelp, permLabel, permLevel, profileName, type PermModule, type Permissions, type Profile } from "../api";
 import { useAuth } from "../auth";
 
 interface Draft {
@@ -46,11 +48,17 @@ function slug(name: string): string {
 function summary(p: Permissions, modules: PermModule[]): string {
   const parts = modules
     .filter((m) => p[m.key])
-    .map((m) => `${m.label}: ${m.levels.find((l) => l.key === p[m.key])?.label ?? p[m.key]}`);
-  return parts.length ? parts.join(" · ") : "brak dostępu";
+    .map((m) => `${permLabel(m)}: ${permLevel(m, p[m.key])}`);
+  return parts.length ? parts.join(" · ") : i18n.t("admin:profiles.noAccess");
+}
+
+// Opis profilu wbudowanego w języku użytkownika.
+function profileDescription(p: Profile): string {
+  return p.builtin ? i18n.t(`admin:profiles.builtinDesc.${p.id}`, { defaultValue: p.description }) : p.description;
 }
 
 export default function ProfilesPage() {
+  const { t } = useTranslation("admin");
   const { can } = useAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [modules, setModules] = useState<PermModule[]>([]);
@@ -79,20 +87,20 @@ export default function ProfilesPage() {
     if (!p) {
       setDraft({ id: "", isNew: true, name: "", description: "", permissions: {} });
     } else if (copy) {
-      setDraft({ id: "", isNew: true, name: `${p.name} (kopia)`, description: p.description, permissions: { ...p.permissions } });
+      setDraft({ id: "", isNew: true, name: t("profiles.copyName", { name: profileName(p.id, p.name) }), description: profileDescription(p), permissions: { ...p.permissions } });
     } else {
       setDraft({ id: p.id, isNew: false, name: p.name, description: p.description, permissions: { ...p.permissions } });
     }
   };
   const draftID = draft ? (draft.isNew ? slug(draft.name) : draft.id) : "";
-  const idProblem = draft?.isNew && draftID.length < 2 ? "nazwa za krótka" : draft?.isNew && taken.has(draftID) ? "profil o tym identyfikatorze już istnieje" : "";
+  const idProblem = draft?.isNew && draftID.length < 2 ? t("profiles.tooShort") : draft?.isNew && taken.has(draftID) ? t("profiles.idTaken") : "";
 
   const save = async () => {
     if (!draft) return;
     setBusy(true);
     try {
       await api.saveProfile(draftID, { name: draft.name, description: draft.description, permissions: draft.permissions, password });
-      notifications.show({ color: "green", message: `Zapisano profil „${draft.name}”` });
+      notifications.show({ color: "green", message: t("profiles.saved", { name: draft.name }) });
       setDraft(null);
       load();
     } catch (e) {
@@ -106,7 +114,7 @@ export default function ProfilesPage() {
     setBusy(true);
     try {
       await api.deleteProfile(del.id, password);
-      notifications.show({ color: "green", message: `Usunięto profil „${del.name}”` });
+      notifications.show({ color: "green", message: t("profiles.deleted", { name: del.name }) });
       setDel(null);
       load();
     } catch (e) {
@@ -120,16 +128,14 @@ export default function ProfilesPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Profile uprawnień</Title>
+          <Title order={2}>{t("profiles.title")}</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Profil określa, do których modułów panelu konto ma dostęp i na jakim poziomie (wyższy obejmuje niższe). Konto ma
-            jeden profil (wybierany w Użytkownikach). Profil z prawem zmiany w module „Użytkownicy i bezpieczeństwo” to
-            administrator panelu – panel nie pozwoli zostać bez żadnego aktywnego.
+            {t("profiles.intro")}
           </Text>
         </div>
         {canEdit && (
           <Button leftSection={<IconPlus size={16} />} onClick={() => openDraft(null)}>
-            Nowy profil
+            {t("profiles.new")}
           </Button>
         )}
       </Group>
@@ -138,9 +144,9 @@ export default function ProfilesPage() {
         <Table striped verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Profil</Table.Th>
-              <Table.Th>Uprawnienia</Table.Th>
-              <Table.Th>Konta</Table.Th>
+              <Table.Th>{t("profiles.col.profile")}</Table.Th>
+              <Table.Th>{t("profiles.col.permissions")}</Table.Th>
+              <Table.Th>{t("profiles.col.accounts")}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -149,24 +155,24 @@ export default function ProfilesPage() {
               <Table.Tr key={p.id}>
                 <Table.Td maw={260}>
                   <Group gap={6}>
-                    <Text fw={500}>{p.name}</Text>
+                    <Text fw={500}>{profileName(p.id, p.name)}</Text>
                     {p.builtin && (
                       <Badge size="xs" variant="outline">
-                        wbudowany
+                        {t("profiles.builtin")}
                       </Badge>
                     )}
                     {p.admin && (
                       <Badge size="xs" color="grape">
-                        administrator
+                        {t("profiles.admin")}
                       </Badge>
                     )}
                   </Group>
                   <Text size="xs" c="dimmed">
-                    {p.description}
+                    {profileDescription(p)}
                   </Text>
                   {!p.builtin && p.updated_by && (
                     <Text size="xs" c="dimmed">
-                      zmienił {p.updated_by}, {formatDate(p.updated_at)}
+                      {t("profiles.changedBy", { by: p.updated_by, date: formatDate(p.updated_at) })}
                     </Text>
                   )}
                 </Table.Td>
@@ -178,19 +184,19 @@ export default function ProfilesPage() {
                   {canEdit && (
                     <Group gap={4} wrap="nowrap">
                       {!p.builtin && (
-                        <Tooltip label="Edytuj">
+                        <Tooltip label={t("profiles.edit")}>
                           <Button size="compact-sm" variant="subtle" onClick={() => openDraft(p)}>
                             <IconPencil size={16} />
                           </Button>
                         </Tooltip>
                       )}
-                      <Tooltip label="Kopiuj jako nowy">
+                      <Tooltip label={t("profiles.copy")}>
                         <Button size="compact-sm" variant="subtle" onClick={() => openDraft(p, true)}>
                           <IconCopy size={16} />
                         </Button>
                       </Tooltip>
                       {!p.builtin && (
-                        <Tooltip label={p.users > 0 ? "profil ma przypisane konta" : "Usuń"}>
+                        <Tooltip label={p.users > 0 ? t("profiles.hasUsers") : t("profiles.delete")}>
                           <Button
                             size="compact-sm"
                             variant="subtle"
@@ -214,30 +220,30 @@ export default function ProfilesPage() {
         </Table>
       </Table.ScrollContainer>
 
-      <Modal opened={!!draft} onClose={() => setDraft(null)} title={draft?.isNew ? "Nowy profil" : `Profil „${draft?.name}”`} size="xl">
+      <Modal opened={!!draft} onClose={() => setDraft(null)} title={draft?.isNew ? t("profiles.new") : t("profiles.editTitle", { name: draft?.name })} size="xl">
         {draft && (
           <Stack>
             <Group grow align="flex-start">
               <TextInput
-                label="Nazwa"
+                label={t("profiles.name")}
                 required
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
-                description={draft.isNew ? `identyfikator: ${draftID || "—"}` : `identyfikator: ${draft.id}`}
+                description={t("profiles.id", { id: draft.isNew ? draftID || "—" : draft.id })}
                 error={idProblem || undefined}
               />
               <TextInput
-                label="Opis"
+                label={t("profiles.description")}
                 value={draft.description}
                 onChange={(e) => setDraft({ ...draft, description: e.currentTarget.value })}
-                placeholder="np. zespół SOC – pierwsza linia"
+                placeholder={t("profiles.descriptionPlaceholder")}
               />
             </Group>
             <Table verticalSpacing={6}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Moduł</Table.Th>
-                  <Table.Th>Dostęp</Table.Th>
+                  <Table.Th>{t("profiles.col.module")}</Table.Th>
+                  <Table.Th>{t("profiles.col.access")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -245,11 +251,11 @@ export default function ProfilesPage() {
                   <Table.Tr key={m.key}>
                     <Table.Td maw={300}>
                       <Text size="sm" fw={500}>
-                        {m.label}
+                        {permLabel(m)}
                       </Text>
                       {m.help && (
                         <Text size="xs" c="dimmed">
-                          {m.help}
+                          {permHelp(m)}
                         </Text>
                       )}
                     </Table.Td>
@@ -263,7 +269,7 @@ export default function ProfilesPage() {
                           else delete next[m.key];
                           setDraft({ ...draft, permissions: next });
                         }}
-                        data={[{ value: "", label: "brak" }, ...m.levels.map((l) => ({ value: l.key, label: l.label }))]}
+                        data={[{ value: "", label: t("profiles.none") }, ...m.levels.map((l) => ({ value: l.key, label: permLevel(m, l.key) }))]}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -272,27 +278,26 @@ export default function ProfilesPage() {
             </Table>
             {draft.permissions.users === "write" && (
               <Alert color="grape">
-                Prawo zmiany w „Użytkownikach i bezpieczeństwie” czyni profil administratorem panelu: zakładanie kont, nadawanie
-                profili (także sobie), wymóg MFA.
+                {t("profiles.adminWarning")}
               </Alert>
             )}
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
             <Group justify="flex-end">
               <Button loading={busy} disabled={!password || draft.name.trim().length < 2 || !!idProblem} onClick={() => void save()}>
-                Zapisz profil
+                {t("profiles.save")}
               </Button>
             </Group>
           </Stack>
         )}
       </Modal>
 
-      <Modal opened={!!del} onClose={() => setDel(null)} title={`Usunięcie profilu „${del?.name ?? ""}”`} centered>
+      <Modal opened={!!del} onClose={() => setDel(null)} title={t("profiles.deleteTitle", { name: del?.name ?? "" })} centered>
         {del && (
           <Stack>
-            <Text size="sm">Profil bez przypisanych kont. Zmiana trafi do audytu.</Text>
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <Text size="sm">{t("profiles.deleteText")}</Text>
+            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
             <Button color="red" loading={busy} disabled={!password} onClick={() => void remove()}>
-              Usuń
+              {t("profiles.delete")}
             </Button>
           </Stack>
         )}

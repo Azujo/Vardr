@@ -1,17 +1,21 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Przywrócenie Vardra z kopii zapasowej.
+# Restoring Vardr from a backup.
 #
-#   ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg]
-#       odtworzenie na czystej VM (Docker zainstalowany, stos skopiowany:
-#       deploy/lab/deploy.sh config + usługi albo install.sh z paczki
-#       Vardra) – wszystko, co jest w kopii;
-#       gpg zapyta o hasło kopii (albo plik z hasłem w VARDR_BACKUP_PASS_FILE)
+#   ./restore.sh <vardr-….tar.gpg> [directory with urd-….tar.gpg packages]
+#       restore on a clean VM (Docker installed, stack copied:
+#       deploy/lab/deploy.sh config + services or install.sh from the Vardr
+#       bundle) – everything that is in the backup;
+#       gpg asks for the backup password (or the file in VARDR_BACKUP_PASS_FILE)
 #
 #   ./restore.sh --zlecenie
-#       przywrócenie zlecone w panelu (Administracja → Kopie zapasowe →
-#       Przywracanie); uruchamiane co minutę z crona (deploy.sh config)
-#       albo timera systemd vardr-restore.timer (install.sh).
+#       restore requested in the panel (Administration → Backups → Restore);
+#       run every minute by cron (deploy.sh config) or the systemd timer
+#       vardr-restore.timer (install.sh).
+#
+# Messages are printed in English; texts stored for the panel follow the
+# system language (panel → Notifications → System language).
+#
 #       Usługa kopii przygotowuje zlecenie (kopia obecnego stanu, pobranie
 #       i sprawdzenie kopii) w <kopie>/.przywracanie/zlecenie; skrypt
 #       przywraca wybrane części, bo tylko on może zatrzymać usługi.
@@ -34,7 +38,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 umask 077
 
-[ -f docker-compose.yml ] || { echo "uruchom w katalogu stosu (docker-compose.yml)" >&2; exit 2; }
+[ -f docker-compose.yml ] || { echo "run in the stack directory (docker-compose.yml)" >&2; exit 2; }
 
 pass_args=()
 pass_file="${VARDR_BACKUP_PASS_FILE:-${HEIMDALL_BACKUP_PASS_FILE:-}}"  # HEIMDALL_: dawna nazwa zmiennej
@@ -48,7 +52,7 @@ log() { echo "$(date -u +%FT%TZ) $*"; }
 saga_users=(api detector archiver backup)
 
 # Kto i z jakiej kopii przywraca (wpis w spisie archiwum).
-restore_by="restore.sh (ręcznie)"
+restore_by="restore.sh (manual)"
 restore_name=""
 
 # recovery_request <saga.dump>: spis archiwum NIS2 wraca do chwili zrzutu,
@@ -65,10 +69,10 @@ recovery_request() {
   by=${restore_by//\'/\'\'}
   name=${restore_name//\'/\'\'}
   if psql_saga -c "INSERT INTO urd.recoveries (kind, requested_by, reason, backup, window_from, window_to)
-      VALUES ('restore', '$by', 'przywrócenie kopii $name (zrzut bazy: ${dumped:-nieznany})', '$name', $from, now())" >/dev/null; then
-    log "   archiwum NIS2: zlecono uzgodnienie spisu z plikami zapisanymi po zrzucie (${dumped:-czas zrzutu nieznany})"
+      VALUES ('restore', '$by', '$(t "przywrócenie kopii $name (zrzut bazy: ${dumped:-nieznany})" "restore of backup $name (database dump: ${dumped:-unknown})")', '$name', $from, now())" >/dev/null; then
+    log "   NIS2 archive: catalog reconciliation requested for files written after the dump (${dumped:-dump time unknown})"
   else
-    log "   UWAGA: nie udało się zlecić uzgodnienia spisu archiwum – pliki zapisane po zrzucie rozstrzygniesz w panelu (Urd)" >&2
+    log "   WARNING: could not request archive catalog reconciliation – decide on files written after the dump in the panel (Urd)" >&2
   fi
 }
 
@@ -78,7 +82,7 @@ restore_parts() {
   shift
   local parts=" $* "
   if [[ $parts == *" config "* ]]; then
-    log "== 2. certs/ i .env"
+    log "== 2. certs/ and .env"
     for f in .env certs; do
       if [ -e "$f" ]; then
         rm -rf "$f.przed-odtworzeniem"
@@ -88,10 +92,10 @@ restore_parts() {
     done
     chmod 600 .env
   fi
-  [ -f .env ] || { echo "brak .env – bez niego stos nie wystartuje (kopia bez konfiguracji?)" >&2; return 1; }
+  [ -f .env ] || { echo "no .env – the stack will not start without it (backup without configuration?)" >&2; return 1; }
 
   if [[ $parts == *" saga "* ]]; then
-    log "== 3. baza Saga"
+    log "== 3. Saga database"
     docker compose stop "${saga_users[@]}" >/dev/null 2>&1 || true
     docker compose up -d saga
     for _ in $(seq 1 60); do
@@ -99,11 +103,12 @@ restore_parts() {
       sleep 2
     done
     docker compose exec -T saga pg_restore -U saga_admin -d saga --clean --if-exists < "$work/saga.dump"
+    SYSLANG=$(syslang)
     recovery_request "$work/saga.dump"
   fi
 
   if [[ $parts == *" grafana "* ]]; then
-    log "== 3a. dane Grafany"
+    log "== 3a. Grafana data"
     docker compose stop grafana >/dev/null 2>&1 || true
     docker compose run --rm --no-deps -T --user 0 --entrypoint sh grafana \
       -c 'find /var/lib/grafana -mindepth 1 -maxdepth 1 ! -name dashboards -exec rm -rf {} + && tar -C /var/lib/grafana -xf - && find /var/lib/grafana -mindepth 1 -maxdepth 1 ! -name dashboards -exec chown -R 472:0 {} +' < "$work/grafana.tar"
@@ -121,6 +126,10 @@ parts_in() {
 
 psql_saga() { docker compose exec -T saga psql -U saga_admin -d saga -At -v ON_ERROR_STOP=1 "$@"; }
 
+# Język systemu (ustawienie w panelu) – teksty zapisywane w Sadze dla panelu.
+syslang() { [ "$(psql_saga -c "SELECT language FROM system_language" 2>/dev/null)" = en ] && echo en || echo pl; }
+t() { if [ "${SYSLANG:-pl}" = en ]; then echo "$2"; else echo "$1"; fi; }
+
 # ---- zlecenie z panelu ----
 if [ "${1:-}" = --zlecenie ]; then
   set -E # pułapka ERR także w funkcjach
@@ -137,7 +146,7 @@ if [ "${1:-}" = --zlecenie ]; then
   id=$(field id) file=$(field file) parts=$(field parts) by=$(field by)
   mv "$job" "$job.wykonywane"
   if ! [[ $id =~ ^[0-9]+$ && $file =~ ^(\.przywracanie/)?(vardr|heimdall)-[0-9]{8}-[0-9]{4}-k[0-9a-f]{8}\.tar\.gpg$ && $parts =~ ^(saga|config|grafana)(,(saga|config|grafana))*$ ]]; then
-    log "BŁĄD: niepoprawne zlecenie przywracania" >&2
+    log "ERROR: invalid restore request" >&2
     exit 1
   fi
   src="${SIEM_BACKUP_DIR:-/srv/vardr/backup}/$file"
@@ -145,6 +154,7 @@ if [ "${1:-}" = --zlecenie ]; then
   pass_args=(--batch --pinentry-mode loopback --passphrase-file "${VARDR_BACKUP_PASS_FILE:-$HOME/.vardr-backup.pass}")
   work="$(mktemp -d)"
   started=$(date -u +%FT%TZ)
+  SYSLANG=$(syslang)
 
   # Wynik w Sadze: po przywróceniu bazy zlecenia już w niej nie ma (baza
   # z dnia kopii) – wpis powstaje od nowa; inaczej zlecenie jest zamykane.
@@ -160,24 +170,24 @@ if [ "${1:-}" = --zlecenie ]; then
     fi
   }
   fail() {
-    log "BŁĄD przywracania: $1" >&2
+    log "restore ERROR: $1" >&2
     docker compose up -d >/dev/null 2>&1 || true
     sleep 10
     finish false "$1"
     rm -rf "$work" "$job.wykonywane"
     exit 1
   }
-  trap 'fail "przerwane w kroku: $BASH_COMMAND"' ERR
+  trap 'fail "$(t "przerwane w kroku" "interrupted at step"): $BASH_COMMAND"' ERR
 
   restore_by="$by (panel)" restore_name="$name"
-  log "== przywracanie z panelu: $name ($parts), zlecił $by"
-  [ -f "$src" ] || fail "kopii $name nie ma na serwerze (usunięta przez retencję?)"
-  decrypt "$src" | tar -C "$work" -xf - || fail "odszyfrowanie kopii nieudane (hasło kopii?)"
+  log "== restore requested in the panel: $name ($parts), by $by"
+  [ -f "$src" ] || fail "$(t "kopii $name nie ma na serwerze (usunięta przez retencję?)" "backup $name is not on the server (removed by retention?)")"
+  decrypt "$src" | tar -C "$work" -xf - || fail "$(t "odszyfrowanie kopii nieudane (hasło kopii?)" "decrypting the backup failed (backup password?)")"
   for p in ${parts//,/ }; do
-    [[ " $(parts_in "$work") " == *" $p "* ]] || fail "kopia nie zawiera części $p"
+    [[ " $(parts_in "$work") " == *" $p "* ]] || fail "$(t "kopia nie zawiera części $p" "the backup does not contain part $p")"
   done
   restore_parts "$work" ${parts//,/ }
-  log "== 5. start stosu"
+  log "== 5. starting the stack"
   docker compose up -d
   # Usługi stosujące migracje (panel, detektor, archiwizator) potrzebują chwili.
   for _ in $(seq 1 30); do
@@ -185,8 +195,8 @@ if [ "${1:-}" = --zlecenie ]; then
     sleep 2
   done
   trap - ERR
-  msg="przywrócono z $name: ${parts//,/, } ($(date -u +%FT%TZ))"
-  [[ ",$parts," == *",saga,"* ]] && msg="$msg – baza jest teraz w stanie z dnia kopii; konta i sesje też, zaloguj się ponownie"
+  msg="$(t "przywrócono z" "restored from") $name: ${parts//,/, } ($(date -u +%FT%TZ))"
+  [[ ",$parts," == *",saga,"* ]] && msg="$msg – $(t "baza jest teraz w stanie z dnia kopii; konta i sesje też, zaloguj się ponownie" "the database is now as on the backup date; accounts and sessions too, sign in again")"
   finish true "$msg"
   rm -rf "$work" "$job.wykonywane"
   # Kopia pobrana z miejsca docelowego nie jest już potrzebna.
@@ -199,38 +209,38 @@ fi
 backup="${1:-}"
 urd_dir="${2:-}"
 if [ -z "$backup" ] || [ ! -f "$backup" ]; then
-  echo "użycie: ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-….tar.gpg] | ./restore.sh --zlecenie" >&2
+  echo "usage: ./restore.sh <vardr-….tar.gpg> [directory with urd-….tar.gpg packages] | ./restore.sh --zlecenie" >&2
   exit 2
 fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-echo "== 1. odszyfrowanie $backup"
+echo "== 1. decrypting $backup"
 decrypt "$backup" | tar -C "$work" -xf -
 cat "$work/KOPIA.txt"
 if [ -e "$work/saga.dump" ]; then
   docker run --rm -i postgres:18-alpine pg_restore --list < "$work/saga.dump" > /dev/null || {
-    echo "kopia bazy nieczytelna" >&2
+    echo "the database backup is unreadable" >&2
     exit 1
   }
 fi
 parts=$(parts_in "$work")
 
 echo
-echo "Odtworzenie ZASTĄPI na tym serwerze to, co jest w kopii:"
-[[ " $parts " == *" saga "* ]] && echo "  – bazę Saga"
-[[ " $parts " == *" config "* ]] && echo "  – certs/ i .env"
-[[ " $parts " == *" grafana "* ]] && echo "  – dane Grafany"
-read -r -p "Kontynuować? Wpisz TAK: " ok
-[ "$ok" = TAK ] || { echo "Przerwano."; exit 1; }
+echo "The restore will REPLACE on this server what is in the backup:"
+[[ " $parts " == *" saga "* ]] && echo "  – the Saga database"
+[[ " $parts " == *" config "* ]] && echo "  – certs/ and .env"
+[[ " $parts " == *" grafana "* ]] && echo "  – Grafana data"
+read -r -p "Continue? Type YES: " ok
+[ "$ok" = YES ] || [ "$ok" = TAK ] || { echo "Aborted."; exit 1; }
 
 restore_name=$(basename "$backup")
 # shellcheck disable=SC2086
 restore_parts "$work" $parts
 
 if [ -n "$urd_dir" ]; then
-  echo "== 4. archiwum NIS2"
+  echo "== 4. NIS2 archive"
   set -a
   . ./.env
   set +a
@@ -241,11 +251,11 @@ if [ -n "$urd_dir" ]; then
     decrypt "$b" | tar -C "$arch" -xf -
     n=$((n + 1))
   done
-  echo "   rozpakowano $n paczek do $arch"
+  echo "   extracted $n packages to $arch"
 fi
 
-echo "== 5. start stosu"
+echo "== 5. starting the stack"
 docker compose up -d
 echo
-echo "Gotowe. Sprawdź panel (Urd → Zweryfikuj teraz) i stan agentów (Huginn)."
-echo "Zdarzenia z ostatnich dni możesz odtworzyć z archiwum: Urd → Odtworzenie."
+echo "Done. Check the panel (Urd → Verify now) and the agent state (Huginn)."
+echo "Events from the last days can be replayed from the archive: Urd → Replay."

@@ -79,7 +79,7 @@ func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
 		}
 		if err := b.Append(row...); err != nil {
 			_ = b.Abort()
-			return &dataError{fmt.Errorf("zdarzenie %s: %w", e.ID, err)}
+			return &dataError{fmt.Errorf("event %s: %w", e.ID, err)}
 		}
 	}
 	return b.Send()

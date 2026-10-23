@@ -33,6 +33,7 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconCheck, IconCopy, IconDeviceFloppy, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, eventsApi, formatDate, levelLabels, rulesApi, type EventRow } from "../api";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { maxPicks, setPicks, togglePick, usePicks } from "../corrPicks";
 import {
@@ -47,7 +48,8 @@ import {
   spanMs,
   suggestType,
   suggestWindow,
-  typeLabels,
+  corrTypes,
+  typeLabel,
   uuid,
   validate,
   valueFields,
@@ -58,6 +60,7 @@ import {
   type WizEvent,
   type WizardState,
 } from "../corrWizard";
+import i18n from "../i18n";
 import RuleTester from "./RuleTester";
 
 function msg(e: unknown) {
@@ -74,6 +77,7 @@ const searchRanges: Record<string, number> = { "1h": 3600e3, "24h": 24 * 3600e3,
 
 // Wyszukiwanie zdarzeń do kreatora (bez wychodzenia ze strony).
 function PickSearch() {
+  const { t } = useTranslation("rules");
   const picks = usePicks();
   const [q, setQ] = useState("");
   const [range, setRange] = useState("24h");
@@ -108,7 +112,7 @@ function PickSearch() {
         <Group gap="xs" wrap="nowrap">
           <TextInput
             style={{ flex: 1 }}
-            placeholder='np. code:4720 albo user:jan albo action:login outcome:failure'
+            placeholder={t("wizard.searchPlaceholder")}
             leftSection={<IconSearch size={16} />}
             value={q}
             onChange={(e) => setQ(e.currentTarget.value)}
@@ -121,11 +125,11 @@ function PickSearch() {
             data={[
               { value: "1h", label: "1 h" },
               { value: "24h", label: "24 h" },
-              { value: "7d", label: "7 dni" },
+              { value: "7d", label: t("wizard.days7") },
             ]}
           />
           <Button type="submit" loading={busy}>
-            Szukaj
+            {t("wizard.search")}
           </Button>
         </Group>
       </form>
@@ -143,7 +147,7 @@ function PickSearch() {
                         size="sm"
                         variant={on ? "filled" : "light"}
                         disabled={!on && picks.length >= maxPicks}
-                        aria-label={on ? "usuń z przykładów" : "dodaj do przykładów"}
+                        aria-label={on ? t("wizard.unpick") : t("wizard.pick")}
                         onClick={() =>
                           togglePick({
                             id: r.event_id,
@@ -187,6 +191,7 @@ function EventCard({
   step: number;
   onChange: (c: Choice) => void;
 }) {
+  const { t } = useTranslation("rules");
   const fields = useMemo(() => {
     const std = ["EventID", "event.action", "event.outcome", "event.provider", "Channel"];
     return Object.entries(e.fields).sort(([a], [b]) => {
@@ -202,7 +207,7 @@ function EventCard({
       <Stack gap={6}>
         <Group justify="space-between" wrap="nowrap">
           <Group gap="xs">
-            <Badge>krok {step}</Badge>
+            <Badge>{t("wizard.step", { n: step })}</Badge>
             <Text size="sm" fw={500}>
               {eventLabel(e)}
             </Text>
@@ -218,7 +223,7 @@ function EventCard({
           </Text>
         )}
         <Select
-          label="Reguła bazowa"
+          label={t("wizard.baseRule")}
           allowDeselect={false}
           value={value}
           onChange={(v) => {
@@ -229,23 +234,22 @@ function EventCard({
           data={[
             ...e.rules.map((r) => ({
               value: r.id,
-              label: `${r.title}${r.threshold ? " (progowa – nie może być bazą)" : ""}`,
+              label: `${r.title}${r.threshold ? t("wizard.thresholdRule") : ""}`,
               disabled: r.threshold,
             })),
-            { value: "__new", label: "Nowa reguła z pól tego zdarzenia" },
+            { value: "__new", label: t("wizard.newFromFields") },
           ]}
           description={
             e.rules.length === 0
-              ? "żadna wdrożona reguła nie pasuje do tego zdarzenia – kreator utworzy regułę bazową"
-              : `pasujące wdrożone reguły: ${e.rules.length}`
+              ? t("wizard.noMatching")
+              : t("wizard.matching", { count: e.rules.length })
           }
         />
         {choice.kind === "new" && (
           <Stack gap={4}>
             <Text size="xs" c="dimmed">
-              Zaznacz pola, które muszą się zgadzać, żeby zdarzenie było tym krokiem (zwykle rodzaj zdarzenia, np. EventID, akcja,
-              wynik – nie konto ani adres, bo te łączy klucz korelacji).
-              {!e.product && " Źródło bez odpowiednika w Sigmie – reguła wybierze zdarzenia polem event.dataset."}
+              {t("wizard.fieldsHint")}
+              {!e.product && ` ${t("wizard.noSigmaProduct")}`}
             </Text>
             <ScrollArea.Autosize mah={220}>
               <Table fz="xs" verticalSpacing={1}>
@@ -281,12 +285,17 @@ function EventCard({
 
 function keyLabel(k: KeyCandidate, steps: number): string {
   const same = k.fields.every((f) => f === k.fields[0]);
-  if (same || steps === 1) return `${k.fields[0]} (np. ${k.value})`;
-  return `${k.name}: ${k.fields.map((f, i) => `${f} w kroku ${i + 1}`).join(" = ")} (np. ${k.value})`;
+  if (same || steps === 1) return i18n.t("rules:wizard.keySame", { field: k.fields[0], value: k.value });
+  return i18n.t("rules:wizard.keyAlias", {
+    name: k.name,
+    fields: k.fields.map((f, i) => i18n.t("rules:wizard.keyInStep", { field: f, n: i + 1 })).join(" = "),
+    value: k.value,
+  });
 }
 
 // Edycja zapisanej reguły z panelu: tylko YAML, test i zapis.
 function EditPanelRule({ id }: { id: string }) {
+  const { t } = useTranslation("rules");
   const { can } = useAuth();
   const navigate = useNavigate();
   const [source, setSource] = useState<string | null>(null);
@@ -306,8 +315,8 @@ function EditPanelRule({ id }: { id: string }) {
   const save = async () => {
     setBusy(true);
     try {
-      const r = await rulesApi.savePanelRule(id, edited, note);
-      notifications.show({ color: "green", message: r.message });
+      await rulesApi.savePanelRule(id, edited, note);
+      notifications.show({ color: "green", message: t("wizard.saved") });
       navigate("/rules");
     } catch (e) {
       notifications.show({ color: "red", message: msg(e) });
@@ -319,10 +328,10 @@ function EditPanelRule({ id }: { id: string }) {
     <Stack>
       <Group>
         <Anchor component={Link} to="/rules" size="sm">
-          <IconArrowLeft size={14} /> Reguły detekcji
+          <IconArrowLeft size={14} /> {t("title")}
         </Anchor>
       </Group>
-      <Title order={2}>Edycja reguły z panelu</Title>
+      <Title order={2}>{t("wizard.editTitle")}</Title>
       {err && <Alert color="red">{err}</Alert>}
       {source === null && !err && <Loader />}
       {source !== null && (
@@ -332,15 +341,17 @@ function EditPanelRule({ id }: { id: string }) {
             onChange={setEdited}
             note={
               <Text size="xs" c="dimmed">
-                Reguła korelacyjna z regułami bazowymi (dokumenty rozdzielone <Code>---</Code>). Id korelacji musi zostać {id}.
+                {t("wizard.editNote.0")}
+                <Code>---</Code>
+                {t("wizard.editNote.1", { id })}
               </Text>
             }
           />
           {can("rules", "write") && (
             <Group align="flex-end">
-              <TextInput style={{ flex: 1 }} label="Opis zmiany (audyt)" value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+              <TextInput style={{ flex: 1 }} label={t("wizard.changeNote")} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
               <Button leftSection={<IconDeviceFloppy size={16} />} loading={busy} onClick={() => void save()}>
-                Zapisz
+                {t("wizard.save")}
               </Button>
             </Group>
           )}
@@ -358,6 +369,7 @@ export default function CorrelationWizard() {
 }
 
 function Wizard() {
+  const { t } = useTranslation("rules");
   const { can } = useAuth();
   const admin = can("rules", "write");
   const navigate = useNavigate();
@@ -417,8 +429,9 @@ function Wizard() {
     generate,
     baseIds: baseIds.current,
   };
-  const problem = validate(state, steps);
-  const yaml = problem ? "" : buildYAML(state, steps);
+  const invalid = validate(state, steps);
+  const problem = invalid ? t(`wizard.v.${invalid.code}`, { step: invalid.step }) : undefined;
+  const yaml = invalid ? "" : buildYAML(state, steps);
 
   const loadEvents = async () => {
     setLoading(true);
@@ -447,7 +460,11 @@ function Wizard() {
     setKeyIdx(keys.length ? "0" : "none");
     setGenerate(usesExisting);
     if (!title) {
-      setTitle(steps.length > 1 ? steps.map((s) => s.title.replace(/\s*\(\d+\)$/, "")).join(", potem ") : `Seria: ${steps[0]?.title ?? ""}`);
+      setTitle(
+        steps.length > 1
+          ? steps.map((s) => s.title.replace(/\s*\(\d+\)$/, "")).join(t("wizard.then"))
+          : t("wizard.series", { title: steps[0]?.title ?? "" }),
+      );
     }
     setActive(2);
   };
@@ -455,8 +472,8 @@ function Wizard() {
   const save = async () => {
     setSaving(true);
     try {
-      const r = await rulesApi.savePanelRule(corrId, edited ?? yaml, note);
-      notifications.show({ color: "green", message: r.message });
+      await rulesApi.savePanelRule(corrId, edited ?? yaml, note);
+      notifications.show({ color: "green", message: t("wizard.saved") });
       setPicks([]);
       navigate("/rules");
     } catch (e) {
@@ -473,46 +490,42 @@ function Wizard() {
     <Stack>
       <Group>
         <Anchor component={Link} to="/rules" size="sm">
-          <IconArrowLeft size={14} /> Reguły detekcji
+          <IconArrowLeft size={14} /> {t("title")}
         </Anchor>
       </Group>
       <div>
-        <Title order={2}>Kreator korelacji</Title>
+        <Title order={2}>{t("wizard.title")}</Title>
         <Text c="dimmed" size="sm" maw={860}>
-          Wskaż przykładowe zdarzenia, które razem świadczą o ataku (np. utworzenie konta, a potem dodanie go do grupy
-          administratorów). Kreator zaproponuje kroki, wspólny klucz i okno czasu, złoży regułę Sigma Correlation i pozwoli
-          sprawdzić ją na historii przed zapisem.
+          {t("wizard.intro")}
         </Text>
       </div>
       {err && <Alert color="red">{err}</Alert>}
 
       <Stepper active={active} onStepClick={(i) => i < active && setActive(i)} size="sm">
-        <Stepper.Step label="Zdarzenia" description="przykłady">
+        <Stepper.Step label={t("wizard.s1")} description={t("wizard.s1d")}>
           <Stack gap="sm" mt="sm">
             <Card withBorder padding="sm">
               <Stack gap="xs">
                 <Group justify="space-between">
                   <Text fw={500}>
-                    Wybrane zdarzenia ({picks.length}/{maxPicks})
+                    {t("wizard.picked", { n: picks.length, max: maxPicks })}
                   </Text>
                   {picks.length > 0 && (
                     <Button size="xs" variant="subtle" color="gray" onClick={() => setPicks([])}>
-                      wyczyść
+                      {t("wizard.clear")}
                     </Button>
                   )}
                 </Group>
                 {picks.length === 0 && (
                   <Text size="sm" c="dimmed">
-                    Brak. Dodaj zdarzenia wyszukiwarką niżej albo w Mímirze (szczegóły zdarzenia → „Dodaj do kreatora korelacji”).
-                    Dla serii jednego rodzaju (np. nieudane logowania z wielu adresów) wystarczy kilka przykładów tego samego
-                    zdarzenia.
+                    {t("wizard.noPicks")}
                   </Text>
                 )}
                 {[...picks]
                   .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
                   .map((p) => (
                     <Group key={p.id} gap="xs" wrap="nowrap">
-                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => togglePick(p)} aria-label="usuń">
+                      <ActionIcon size="sm" variant="subtle" color="red" onClick={() => togglePick(p)} aria-label={t("wizard.unpick")}>
                         <IconTrash size={14} />
                       </ActionIcon>
                       <Text size="sm" style={{ whiteSpace: "nowrap" }}>
@@ -528,22 +541,21 @@ function Wizard() {
             <PickSearch />
             <Group>
               <Button disabled={picks.length === 0} loading={loading} onClick={() => void loadEvents()}>
-                Dalej: kroki
+                {t("wizard.toSteps")}
               </Button>
             </Group>
           </Stack>
         </Stepper.Step>
 
-        <Stepper.Step label="Kroki" description="reguły bazowe">
+        <Stepper.Step label={t("wizard.s2")} description={t("wizard.s2d")}>
           <Stack gap="sm" mt="sm">
             {missing > 0 && (
               <Alert color="orange">
-                {missing} z wybranych zdarzeń nie ma już w bazie (retencja) – pominięte.
+                {t("wizard.missing", { count: missing })}
               </Alert>
             )}
             <Text size="sm" c="dimmed">
-              Każde zdarzenie to krok korelacji: istniejąca reguła, która do niego pasuje, albo nowa reguła bazowa z wybranych pól.
-              Zdarzenia z tym samym wyborem tworzą jeden krok. Kolejność kroków – według czasu pierwszego przykładu.
+              {t("wizard.stepsIntro")}
             </Text>
             {[...events]
               .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
@@ -558,18 +570,18 @@ function Wizard() {
               ))}
             <Card withBorder padding="sm" bg="var(--mantine-color-default-hover)">
               <Text size="sm" fw={500}>
-                Kroki ({steps.length})
+                {t("wizard.steps", { count: steps.length })}
               </Text>
               {steps.map((s, i) => (
                 <Text size="sm" key={s.key}>
-                  {i + 1}. {s.title} – {s.choice.kind === "rule" ? "istniejąca reguła" : "nowa reguła bazowa"}, przykładów:{" "}
-                  {s.events.length}
+                  {i + 1}. {s.title} – {s.choice.kind === "rule" ? t("wizard.existing") : t("wizard.newBase")},{" "}
+                  {t("wizard.examples", { count: s.events.length })}
                   {s.choice.kind === "new" && (
                     <Text span size="xs" c="dimmed">
                       {" "}
                       ({selectionOf(s.events[0], s.choice.fields)
                         .map(([k, v]) => `${k}=${v}`)
-                        .join(", ") || "brak pól!"}
+                        .join(", ") || t("wizard.noFieldsShort")}
                       )
                     </Text>
                   )}
@@ -578,24 +590,20 @@ function Wizard() {
             </Card>
             <Group>
               <Button variant="default" onClick={() => setActive(0)}>
-                Wstecz
+                {t("wizard.back")}
               </Button>
               <Button onClick={toCondition} disabled={steps.length === 0}>
-                Dalej: warunek
+                {t("wizard.toCondition")}
               </Button>
             </Group>
           </Stack>
         </Stepper.Step>
 
-        <Stepper.Step label="Warunek" description="klucz, typ, okno">
+        <Stepper.Step label={t("wizard.s3")} description={t("wizard.s3d")}>
           <Stack gap="sm" mt="sm">
             <Radio.Group
-              label="Co łączy zdarzenia (klucz)"
-              description={
-                steps.length > 1
-                  ? "Wartość, która występuje we wszystkich krokach – kreator znalazł ją w przykładach. Różne nazwy pól w krokach to aliasy."
-                  : "Wartość wspólna wszystkim przykładom – liczone są zdarzenia z tą samą wartością."
-              }
+              label={t("wizard.key")}
+              description={steps.length > 1 ? t("wizard.keyHintSteps") : t("wizard.keyHintOne")}
               value={keyIdx}
               onChange={setKeyIdx}
             >
@@ -603,37 +611,37 @@ function Wizard() {
                 {keys.map((k, i) => (
                   <Radio key={i} value={String(i)} label={keyLabel(k, steps.length)} />
                 ))}
-                <Radio value="none" label="bez klucza – wszystkie zdarzenia razem (rzadko ma sens)" />
+                <Radio value="none" label={t("wizard.noKey")} />
                 {keys.length === 0 && (
                   <Text size="xs" c="orange">
-                    Przykłady nie mają wspólnej wartości. Dodaj zdarzenia dotyczące tego samego konta, komputera albo adresu.
+                    {t("wizard.noCommon")}
                   </Text>
                 )}
               </Stack>
             </Radio.Group>
             <SimpleGrid cols={{ base: 1, sm: 3 }}>
               <Select
-                label="Typ"
+                label={t("wizard.type.label")}
                 allowDeselect={false}
                 value={type}
                 onChange={(v) => v && setType(v as CorrType)}
-                data={(Object.keys(typeLabels) as CorrType[]).map((t) => ({
-                  value: t,
-                  label: typeLabels[t],
-                  disabled: (t === "temporal" || t === "temporal_ordered") && steps.length < 2,
+                data={corrTypes.map((ct) => ({
+                  value: ct,
+                  label: typeLabel(ct),
+                  disabled: (ct === "temporal" || ct === "temporal_ordered") && steps.length < 2,
                 }))}
               />
               <Select
-                label="Okno czasu"
+                label={t("wizard.window")}
                 allowDeselect={false}
                 value={windowV}
                 onChange={(v) => v && setWindowV(v)}
-                data={windows.map((w) => ({ value: w, label: w === suggestWindow(events) ? `${w} (podpowiedź)` : w }))}
-                description={span > 0 ? `przykłady rozłożone na ${fmtSpan(span)}` : undefined}
+                data={windows.map((w) => ({ value: w, label: w === suggestWindow(events) ? t("wizard.suggested", { w }) : w }))}
+                description={span > 0 ? t("wizard.span", { span: fmtSpan(span) }) : undefined}
               />
               {!temporal && (
                 <NumberInput
-                  label={type === "value_count" ? "Co najmniej różnych wartości" : "Co najmniej zdarzeń"}
+                  label={type === "value_count" ? t("wizard.minValues") : t("wizard.minEvents")}
                   min={2}
                   max={10000}
                   value={count}
@@ -643,12 +651,12 @@ function Wizard() {
             </SimpleGrid>
             {type === "value_count" && (
               <Select
-                label="Pole, którego różne wartości liczyć"
+                label={t("wizard.valueField")}
                 searchable
                 value={field || null}
                 onChange={(v) => setField(v ?? "")}
                 data={[
-                  ...vfields.map((f) => ({ value: f.field, label: `${f.field} (${f.values} różnych w przykładach)` })),
+                  ...vfields.map((f) => ({ value: f.field, label: t("wizard.valueFieldOpt", { field: f.field, n: f.values }) })),
                   ...allFields.filter((f) => !vfields.some((x) => x.field === f)).map((f) => ({ value: f, label: f })),
                 ]}
               />
@@ -656,20 +664,20 @@ function Wizard() {
             {problem && <Alert color="orange">{problem}</Alert>}
             <Group>
               <Button variant="default" onClick={() => setActive(1)}>
-                Wstecz
+                {t("wizard.back")}
               </Button>
-              <Button onClick={() => setActive(3)} disabled={!!problem && problem !== "podaj tytuł"}>
-                Dalej: opis i test
+              <Button onClick={() => setActive(3)} disabled={!!invalid && invalid.code !== "title"}>
+                {t("wizard.toTest")}
               </Button>
             </Group>
           </Stack>
         </Stepper.Step>
 
-        <Stepper.Step label="Opis i test" description="zapis">
+        <Stepper.Step label={t("wizard.s4")} description={t("wizard.s4d")}>
           <Stack gap="sm" mt="sm">
             <SimpleGrid cols={{ base: 1, sm: 3 }}>
               <TextInput
-                label="Tytuł"
+                label={t("wizard.ruleTitle")}
                 style={{ gridColumn: "span 2" }}
                 value={title}
                 onChange={(e) => {
@@ -678,7 +686,7 @@ function Wizard() {
                 }}
               />
               <Select
-                label="Poziom"
+                label={t("col.level")}
                 allowDeselect={false}
                 value={level}
                 onChange={(v) => {
@@ -689,8 +697,8 @@ function Wizard() {
               />
             </SimpleGrid>
             <Textarea
-              label="Opis"
-              description="co wykrywa i dlaczego to groźne"
+              label={t("wizard.description")}
+              description={t("wizard.descriptionHint")}
               autosize
               minRows={2}
               value={description}
@@ -700,8 +708,8 @@ function Wizard() {
               }}
             />
             <Textarea
-              label="Instrukcja dla analityka"
-              description="pola ostatniego zdarzenia ({{TargetUserName}}) oraz {{count}}, {{window}}, {{rules}}, {{key}}"
+              label={t("wizard.instructions")}
+              description={t("wizard.instructionsHint", { example: "{{TargetUserName}}", vars: "{{count}}, {{window}}, {{rules}}, {{key}}" })}
               autosize
               minRows={2}
               value={instructions}
@@ -716,13 +724,12 @@ function Wizard() {
                 setGenerate(e.currentTarget.checked);
                 setEdited(null);
               }}
-              label="Reguły bazowe nadal tworzą własne alerty (generate: true)"
-              description="wyłączone – reguły bazowe tylko zasilają korelację"
+              label={t("wizard.generate")}
+              description={t("wizard.generateHint")}
             />
             {usesExisting && !generate && (
               <Alert color="orange">
-                Korelacja używa wdrożonych reguł. Bez „generate” te reguły przestaną same tworzyć alerty (o ile żadna inna korelacja
-                ich nie potrzebuje) – zwykle tego nie chcesz.
+                {t("wizard.generateWarning")}
               </Alert>
             )}
             {problem ? (
@@ -731,7 +738,7 @@ function Wizard() {
               <>
                 {edited !== null && (
                   <Alert color="blue">
-                    YAML zmieniony ręcznie – zmiany pól wyżej go nadpiszą.{" "}
+                    {t("wizard.edited")}{" "}
                     <Anchor
                       component="button"
                       size="sm"
@@ -740,7 +747,7 @@ function Wizard() {
                         setRev((r) => r + 1);
                       }}
                     >
-                      Wróć do wygenerowanego
+                      {t("wizard.backToGenerated")}
                     </Anchor>
                   </Alert>
                 )}
@@ -750,8 +757,7 @@ function Wizard() {
                   onChange={setEdited}
                   note={
                     <Text size="xs" c="dimmed">
-                      Wygenerowana reguła (YAML) – możesz ją poprawić ręcznie. „Przetestuj” liczy alerty, które powstałyby na
-                      zdarzeniach z wybranego okresu; nic nie jest zapisywane.
+                      {t("wizard.testNote")}
                     </Text>
                   }
                 />
@@ -759,22 +765,22 @@ function Wizard() {
                   <Group align="flex-end">
                     <TextInput
                       style={{ flex: 1 }}
-                      label="Opis zmiany (audyt)"
+                      label={t("wizard.changeNote")}
                       value={note}
                       onChange={(e) => setNote(e.currentTarget.value)}
                     />
                     <Button leftSection={<IconDeviceFloppy size={16} />} loading={saving} onClick={() => void save()}>
-                      Zapisz regułę
+                      {t("wizard.saveRule")}
                     </Button>
                   </Group>
                 ) : (
                   <Group>
                     <Text size="sm" c="dimmed">
-                      Zapis wymaga roli administratora – skopiuj regułę i przekaż ją administratorowi.
+                      {t("wizard.adminOnly")}
                     </Text>
                     <CopyButton value={edited ?? yaml}>
                       {({ copied, copy }) => (
-                        <Tooltip label={copied ? "skopiowano" : "kopiuj YAML"}>
+                        <Tooltip label={copied ? t("sigma.copied") : t("wizard.copyYaml")}>
                           <ActionIcon variant="light" onClick={copy}>
                             {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
                           </ActionIcon>
@@ -787,7 +793,7 @@ function Wizard() {
             )}
             <Group>
               <Button variant="default" onClick={() => setActive(2)}>
-                Wstecz
+                {t("wizard.back")}
               </Button>
             </Group>
           </Stack>

@@ -19,6 +19,18 @@ falsepositives:
   - Administrator, który pomylił hasło
 level: high
 vardr:
+  i18n:
+    en:
+      title: "FortiGate – series of failed administrator logins"
+      description: |
+        At least 5 failed logins to the FortiGate administrative interface
+        (HTTPS, SSH, console) from one address within 5 minutes.
+      instructions: |
+        {{count}} failed administrator logins to {{host.name}} from address
+        {{source.ip}} in {{window}} (last account {{user.name}}). The administrative
+        interface should not be reachable from the internet – restrict it to trusted
+        addresses (administrator trusthosts, no HTTPS/SSH on the WAN interface). Check
+        whether a successful login from this address followed the series.
   group_by: [host.name, source.ip]
   threshold:
     count: 5

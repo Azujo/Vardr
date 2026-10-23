@@ -15,7 +15,7 @@ import (
 )
 
 // ErrInUse: grupy z agentami albo grupy domyślnej nie można usunąć.
-var ErrInUse = errors.New("grupa jest w użyciu")
+var ErrInUse = errors.New("the group is in use")
 
 // AgentGroup to grupa agentów z profilem zdarzeń i limitami.
 type AgentGroup struct {

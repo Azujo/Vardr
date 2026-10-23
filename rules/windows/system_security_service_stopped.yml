@@ -38,6 +38,20 @@ falsepositives:
   - Planowane prace administracyjne
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Sysmon service stopped or terminated"
+      description: |
+        The Sysmon service was stopped (7036) or terminated unexpectedly
+        (7031, 7034). The state text in 7036 depends on the Windows language –
+        the rule knows English and Polish. Stopping the Vardr agent itself is reported
+        by the built-in rule "Agent tampering attempt" (the agent distinguishes a stop
+        with a panel token from a stop without a token and from killing the process).
+      instructions: |
+        Service {{param1}} on {{Computer}} stopped working. Check whether there was an
+        update or announced work; if not – find out who was signed in at that time
+        (4624 in Mímir) and review the events from the period when the service was not
+        running (without Sysmon there is no data about processes and connections).
   group_by: [Computer, param1]
   suppress: 1h
   instructions: |

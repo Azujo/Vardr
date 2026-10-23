@@ -74,7 +74,7 @@ func (c *Controller) Update(l Limits) error {
 		return fmt.Errorf("limit CPU: %w", err)
 	}
 	if err := c.setMemory(l.MemoryHardMB); err != nil {
-		return fmt.Errorf("limit pamięci: %w", err)
+		return fmt.Errorf("memory limit: %w", err)
 	}
 	return nil
 }

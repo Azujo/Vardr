@@ -69,7 +69,7 @@ func Watch(ctx context.Context, log *slog.Logger, js jetstream.JetStream, stream
 		}
 		cancel()
 		if err != nil {
-			log.Warn("odczyt stanu kolejki nieudany", "stream", stream, "err", err)
+			log.Warn("reading the queue state failed", "stream", stream, "err", err)
 			continue
 		}
 		m.Set(stream, consumer, fill.Ratio, fill.Bytes, pending)
@@ -84,10 +84,10 @@ func Watch(ctx context.Context, log *slog.Logger, js jetstream.JetStream, stream
 		attrs := []any{"stream", stream, "fill", round(fill.Ratio), "bytes", fill.Bytes, "pending", pending}
 		switch {
 		case next > slog.LevelInfo && (next != level || time.Since(lastLog) >= remind):
-			log.Log(ctx, next, "kolejka rośnie – etap nie nadąża (rozważ więcej replik)", attrs...)
+			log.Log(ctx, next, "queue growing – the stage cannot keep up (consider more replicas)", attrs...)
 			lastLog = time.Now()
 		case next == slog.LevelInfo && level > slog.LevelInfo:
-			log.Info("kolejka wróciła do normy", attrs...)
+			log.Info("queue back to normal", attrs...)
 		}
 		level = next
 	}

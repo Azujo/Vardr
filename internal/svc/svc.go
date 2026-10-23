@@ -40,7 +40,7 @@ func Env(key, def string) string {
 func MustEnv(log *slog.Logger, key string) string {
 	v := os.Getenv(key)
 	if v == "" {
-		log.Error("brak wymaganej zmiennej środowiskowej", "name", key)
+		log.Error("missing required environment variable", "name", key)
 		os.Exit(2)
 	}
 	return v
@@ -81,7 +81,7 @@ func Retry(ctx context.Context, log *slog.Logger, what string, fn func() error) 
 		if err == nil {
 			return nil
 		}
-		log.Warn("nieudane – ponowię", "what", what, "err", err, "retry_in", delay)
+		log.Warn("failed – will retry", "what", what, "err", err, "retry_in", delay)
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():

@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ func (s *Server) authed(req need, flags int, h http.HandlerFunc) http.Handler {
 				expires = hard
 			}
 			if err := s.Store.TouchSession(r.Context(), sess.ID, now, expires); err != nil {
-				s.Log.Warn("przedłużenie sesji nieudane", "err", err)
+				s.Log.Warn("extending the session failed", "err", err)
 			}
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, authCtx{session: sess, user: user, perms: perms})
@@ -200,7 +201,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 			reason = "disabled"
 		} else if until, err := s.Store.RecordLoginFailure(r.Context(), user.ID, s.LockAfter, s.LockFor); err == nil && until != nil && until.After(now) {
 			reason = "bad_password_locked"
-			s.Log.Warn("konto zablokowane po nieudanych logowaniach", "username", user.Username, "ip", ip, "until", until)
+			s.Log.Warn("account locked after failed sign-ins", "username", user.Username, "ip", ip, "until", until)
 		}
 		s.audit(r, &user, "login_failed", user.Username, map[string]any{"reason": reason})
 		writeError(w, http.StatusUnauthorized, "bad_credentials", badLogin)
@@ -279,6 +280,31 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.sessionInfo(r.Context(), a.user, a.session.CSRF, a.session.MFA))
 }
 
+// panelLanguages: języki, w których panel ma tłumaczenia ("" – z przeglądarki).
+var panelLanguages = []string{"", "pl", "en"}
+
+// accountLanguage zapisuje język panelu wybrany przez użytkownika. To
+// ustawienie tylko jego konta – nie zmienia języka powiadomień ani zgłoszeń.
+func (s *Server) accountLanguage(w http.ResponseWriter, r *http.Request) {
+	a := current(r)
+	var req struct {
+		Language string `json:"language"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if !slices.Contains(panelLanguages, req.Language) {
+		writeError(w, http.StatusBadRequest, "bad_language", "nieobsługiwany język")
+		return
+	}
+	u, err := s.Store.UpdateUser(r.Context(), a.user.ID, store.UserPatch{Language: &req.Language})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"language": u.Language})
+}
+
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	if err := s.Store.DeleteSession(r.Context(), a.session.ID); err != nil {
@@ -318,7 +344,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := auth.CheckPasswordPolicy(a.user.Username, req.New); err != nil {
-		writeError(w, http.StatusBadRequest, "weak_password", err.Error())
+		writeErr(w, http.StatusBadRequest, "weak_password", err)
 		return
 	}
 	hash, err := auth.HashPassword(req.New)
@@ -332,7 +358,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// Inne sesje tego konta (np. na skradzionym laptopie) przestają działać.
 	if err := s.Store.DeleteUserSessions(r.Context(), a.user.ID, a.session.ID); err != nil {
-		s.Log.Error("usunięcie innych sesji nieudane", "err", err)
+		s.Log.Error("removing other sessions failed", "err", err)
 	}
 	s.audit(r, &a.user, "password_changed", a.user.Username, nil)
 	a.user.MustChangePassword = false

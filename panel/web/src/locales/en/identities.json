@@ -1,0 +1,76 @@
+{
+  "title": "Identities",
+  "intro": "Every event with an account gets a person (user.identity): the account name without the domain, in lower case – the same account in AD (CONTOSO\\jsmith), Entra ID (jsmith@contoso.com) and VPN (jsmith) is one person. This lets rules and search link events from different sources. Technical accounts (computers, system services) have no person. Changes apply to new events within a few seconds; stored events are not changed.",
+  "uncovered": {
+    "title": "Account domains outside the organisation's domain list",
+    "text": "Events from the last 7 days contain accounts from domains outside the list: {{list}}. Their persons get a name with the domain (e.g. contoso\\john) and are not linked with the same person from other sources. If these are your organisation's domains, add them on the “Domains and shared accounts” tab (leave local computer accounts off the list)."
+  },
+  "noNats": "The panel is not connected to NATS – changes reach the normalizers once the connection is back.",
+  "saved": {
+    "ok": "Saved; new events get identities according to the change within a few seconds (stored events unchanged).",
+    "no_nats": "Saved; no NATS connection – the normalizers get the change once it is restored.",
+    "failed": "Saved; delivery to the normalizers failed – the panel retries within 5 minutes."
+  },
+  "tab": {
+    "people": "People",
+    "suggestions": "Suggestions",
+    "aliases": "Account aliases ({{count}})",
+    "domains": "Domains and shared accounts"
+  },
+  "people": {
+    "period": "Period",
+    "h24": "last 24 h",
+    "d7": "last 7 days",
+    "d30": "last 30 days",
+    "search": "Search",
+    "searchPlaceholder": "person or account",
+    "hint": "The most active people (up to 500) – which sources and accounts. Click a person to see their events in Mímir."
+  },
+  "col": {
+    "person": "Person",
+    "sources": "Sources",
+    "accounts": "Accounts",
+    "events": "Events",
+    "failures": "Failures",
+    "hosts": "Computers",
+    "last": "Last seen",
+    "account": "Account",
+    "note": "Note",
+    "added": "Added"
+  },
+  "suggestions": {
+    "hint": "People whose names differ only by dots, underscores or hyphens (e.g. j.smith on VPN and jsmith in AD) – probably the same person. “Merge” adds an alias to the chosen name.",
+    "none": "No suggestions in the selected period.",
+    "note": "merged from suggestions",
+    "merge": "merge as {{id}}"
+  },
+  "aliases": {
+    "hint": "An alias assigns an account to a person when the names differ – e.g. VPN login j.smith → jsmith. An alias can be an account name, a full DOMAIN\\account name or an account@domain address.",
+    "notePlaceholder": "VPN login",
+    "add": "Add alias",
+    "remove": "remove"
+  },
+  "domains": {
+    "hint": "Domains whose accounts belong to people in your organisation – NetBIOS and DNS names (e.g. contoso, contoso.local, contoso.com). Accounts from other domains – local computer accounts (DESKTOP-1\\admin) and guests from other companies – stay separate identities with the domain. Empty list: every domain belongs to the organisation (the local “admin” and the domain “admin” are then the same person).",
+    "seen": "Account domains in events (7 days)",
+    "clickToAdd": "click to add to the list (then Save)",
+    "legend": "Green – on the list; orange – not on the list (click to add). Leave computer names (local accounts) off the list.",
+    "label": "Organisation domains",
+    "enter": "type and press Enter",
+    "save": "Save domains"
+  },
+  "shared": {
+    "title": "Shared device accounts",
+    "hint": "Accounts without a domain that do not belong to one person – e.g. admin on a MikroTik router and a FortiGate, root on a device. Such an account gets an identity with the device name (mikrotik\\admin), so correlations do not link attempts on different devices or with the domain “admin” account. An account with a domain (CONTOSO\\admin) is counted as before. If a device account has an owner, add an alias (e.g. mikrotik\\admin → person).",
+    "label": "Shared accounts",
+    "save": "Save shared accounts"
+  },
+  "check": {
+    "title": "Check an account",
+    "domain": "Domain (optional)",
+    "device": "Device (optional)",
+    "run": "Check",
+    "result": "person:",
+    "technical": "none (technical account)"
+  }
+}

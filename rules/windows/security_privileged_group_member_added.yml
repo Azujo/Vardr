@@ -35,6 +35,19 @@ falsepositives:
   - Zaplanowane zmiany uprawnień przez administratorów
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Account added to a privileged group"
+      description: |
+        An account was added to a group with administrative privileges in the domain
+        or on a computer (Domain Admins, Enterprise Admins, Schema Admins,
+        Administrators, Backup/Account/Server Operators). Groups are recognised by SID,
+        so the rule works regardless of the Windows language.
+      instructions: |
+        {{SubjectDomainName}}\{{SubjectUserName}} added {{MemberName}} to group
+        {{TargetUserName}}. Check whether the change was requested. If not – remove the
+        account from the group, reset its password and review the logons of this account
+        and of the account that made the change.
   instructions: |
     {{SubjectDomainName}}\{{SubjectUserName}} dodał {{MemberName}} do grupy
     {{TargetUserName}}. Sprawdź, czy zmiana była zgłoszona. Jeśli nie – usuń

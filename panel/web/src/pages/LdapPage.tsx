@@ -26,7 +26,9 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconArrowDown, IconArrowUp, IconPlugConnected, IconSearch, IconTrash, IconUsersGroup } from "@tabler/icons-react";
-import { api, type LDAPAccountCheck, type LDAPConfig, type LDAPGroup, type Profile } from "../api";
+import { useTranslation } from "react-i18next";
+import { api, profileName as builtinName, type LDAPAccountCheck, type LDAPConfig, type LDAPGroup, type Profile } from "../api";
+import { serverText } from "../i18n";
 import { useAuth } from "../auth";
 
 const empty: LDAPConfig = {
@@ -41,6 +43,7 @@ const empty: LDAPConfig = {
 };
 
 export default function LdapPage() {
+  const { t } = useTranslation("admin");
   const { can } = useAuth();
   const canEdit = can("users", "write");
   const [available, setAvailable] = useState(true);
@@ -96,7 +99,7 @@ export default function LdapPage() {
       setBusy("");
     }
   };
-  const profileName = (id: string) => profiles.find((p) => p.id === id)?.name ?? id;
+  const profileName = (id: string) => builtinName(id, profiles.find((p) => p.id === id)?.name ?? id);
   const mapped = new Map(cfg.mappings.map((m) => [m.sid, m]));
   const setMapping = (g: LDAPGroup, profile: string | null) => {
     const rest = cfg.mappings.filter((m) => m.sid !== g.sid);
@@ -112,8 +115,10 @@ export default function LdapPage() {
 
   if (!available) {
     return (
-      <Alert color="gray" title="Logowanie domenowe niedostępne">
-        Wymaga klucza szyfrującego na serwerze (<Code>certs/mfa.key</Code>, tworzy go <Code>deploy.sh config</Code>).
+      <Alert color="gray" title={t("ldap.unavailable")}>
+        {t("ldap.unavailableText.0")}
+        <Code>certs/mfa.key</Code>
+        {t("ldap.unavailableText.1")}
       </Alert>
     );
   }
@@ -121,12 +126,9 @@ export default function LdapPage() {
   return (
     <Stack maw={1100}>
       <div>
-        <Title order={2}>Logowanie domenowe</Title>
+        <Title order={2}>{t("ldap.title")}</Title>
         <Text c="dimmed" size="sm" maw={860}>
-          Konta Active Directory logują się do panelu swoim loginem i hasłem (LDAPS – szyfrowane). Dostęp i profil uprawnień
-          wynikają z grup AD: pierwsze pasujące powiązanie na liście decyduje. Członkostwo jest sprawdzane przy logowaniu i co
-          5 minut – usunięcie z grupy albo wyłączenie konta w AD kończy sesje. Drugi składnik (TOTP) obowiązuje jak dla kont
-          lokalnych; konto lokalne administratora zostaje jako awaryjne.
+          {t("ldap.intro")}
         </Text>
       </div>
       {error && <Alert color="red">{error}</Alert>}
@@ -134,11 +136,10 @@ export default function LdapPage() {
       <Card withBorder>
         <Stack gap="sm">
           <Group justify="space-between">
-            <Title order={4}>1. Połączenie z kontrolerem domeny</Title>
+            <Title order={4}>{t("ldap.step1")}</Title>
             <Switch
               label={
-                (cfg.enabled ? "Logowanie domenowe włączone" : "Logowanie domenowe wyłączone") +
-                (cfg.enabled !== savedEnabled ? " (niezapisane)" : "")
+                (cfg.enabled ? t("ldap.enabled") : t("ldap.disabled")) + (cfg.enabled !== savedEnabled ? t("ldap.unsaved") : "")
               }
               checked={cfg.enabled}
               disabled={!canEdit}
@@ -147,8 +148,8 @@ export default function LdapPage() {
           </Group>
           <Group grow align="flex-start">
             <Textarea
-              label="Adresy kontrolerów"
-              description="ldaps://dc01.firma.pl:636 – po jednym w wierszu (kolejne – zapasowe)"
+              label={t("ldap.urls")}
+              description={t("ldap.urlsHint")}
               autosize
               minRows={2}
               value={urlsText}
@@ -156,16 +157,16 @@ export default function LdapPage() {
               onChange={(e) => setUrlsText(e.currentTarget.value)}
             />
             <TextInput
-              label="Nazwa w certyfikacie (opcjonalnie)"
-              description="gdy adres to IP albo nazwa spoza certyfikatu kontrolera"
+              label={t("ldap.serverName")}
+              description={t("ldap.serverNameHint")}
               value={cfg.tls_server_name}
               disabled={!canEdit}
               onChange={(e) => setCfg({ ...cfg, tls_server_name: e.currentTarget.value })}
             />
           </Group>
           <Textarea
-            label="Certyfikat CA kontrolerów (PEM)"
-            description="np. eksport certyfikatu urzędu z AD CS; puste – zaufane certyfikaty systemu"
+            label={t("ldap.ca")}
+            description={t("ldap.caHint")}
             autosize
             minRows={2}
             maxRows={8}
@@ -176,22 +177,22 @@ export default function LdapPage() {
           />
           <Group grow align="flex-start">
             <TextInput
-              label="Konto usługowe"
-              description="tylko do odczytu, np. svc-vardr@firma.pl albo jego DN"
+              label={t("ldap.bind")}
+              description={t("ldap.bindHint")}
               value={cfg.bind_dn}
               disabled={!canEdit}
               onChange={(e) => setCfg({ ...cfg, bind_dn: e.currentTarget.value })}
             />
             <PasswordInput
-              label="Hasło konta usługowego"
-              description={hasPassword ? "zapisane – wpisz, żeby zmienić" : "zapisywane zaszyfrowane"}
+              label={t("ldap.bindPassword")}
+              description={hasPassword ? t("ldap.bindPasswordSaved") : t("ldap.bindPasswordNew")}
               value={bindPassword}
               disabled={!canEdit}
               onChange={(e) => setBindPassword(e.currentTarget.value)}
             />
             <TextInput
-              label="Baza kont"
-              description="gdzie szukać kont, np. DC=firma,DC=pl"
+              label={t("ldap.base")}
+              description={t("ldap.baseHint")}
               value={cfg.base_dn}
               disabled={!canEdit}
               onChange={(e) => setCfg({ ...cfg, base_dn: e.currentTarget.value })}
@@ -206,13 +207,13 @@ export default function LdapPage() {
                 onClick={() =>
                   void run("test", async () => {
                     const r = await api.ldapTest(draft(), bindPassword);
-                    setTestResult({ ok: r.ok, text: r.ok ? (r.message ?? "OK") : (r.error ?? "błąd") });
+                    setTestResult({ ok: r.ok, text: r.ok ? t("ldap.testOk") : (r.error ? serverText(r.error, r.error_en) : t("ldap.error")) });
                   })
                 }
               >
-                Sprawdź połączenie
+                {t("ldap.test")}
               </Button>
-              {testResult && <Badge color={testResult.ok ? "green" : "red"}>{testResult.ok ? "działa" : "błąd"}</Badge>}
+              {testResult && <Badge color={testResult.ok ? "green" : "red"}>{testResult.ok ? t("ldap.works") : t("ldap.error")}</Badge>}
               {testResult && (
                 <Text size="xs" c={testResult.ok ? "dimmed" : "red"} maw={600}>
                   {testResult.text}
@@ -225,14 +226,13 @@ export default function LdapPage() {
 
       <Card withBorder>
         <Stack gap="sm">
-          <Title order={4}>2. Grupy i profile</Title>
+          <Title order={4}>{t("ldap.step2")}</Title>
           <Text size="sm" c="dimmed">
-            Utwórz w AD grupy dla panelu we własnym OU (nazwy dowolne), wpisz OU i wybierz profil dla grup. Grupy są
-            rozpoznawane po SID – zmiana nazwy w AD niczego nie psuje. Członkostwo zagnieżdżone też się liczy.
+            {t("ldap.groupsIntro")}
           </Text>
           <Group align="flex-end">
             <TextInput
-              label="OU z grupami"
+              label={t("ldap.groupsOu")}
               placeholder="OU=Vardr,OU=Grupy,DC=firma,DC=pl"
               w={460}
               value={cfg.groups_base_dn}
@@ -246,7 +246,7 @@ export default function LdapPage() {
                 loading={busy === "groups"}
                 onClick={() => void run("groups", async () => setGroups((await api.ldapGroups(draft(), bindPassword)).groups))}
               >
-                Pokaż grupy
+                {t("ldap.showGroups")}
               </Button>
             )}
           </Group>
@@ -254,9 +254,9 @@ export default function LdapPage() {
             <Table striped verticalSpacing={4}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Grupa</Table.Th>
-                  <Table.Th>Członkowie</Table.Th>
-                  <Table.Th>Profil w panelu</Table.Th>
+                  <Table.Th>{t("ldap.col.group")}</Table.Th>
+                  <Table.Th>{t("ldap.col.members")}</Table.Th>
+                  <Table.Th>{t("ldap.col.profile")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -264,7 +264,7 @@ export default function LdapPage() {
                   <Table.Tr>
                     <Table.Td colSpan={3}>
                       <Text size="sm" c="dimmed">
-                        Brak grup w tym OU.
+                        {t("ldap.noGroups")}
                       </Text>
                     </Table.Td>
                   </Table.Tr>
@@ -284,10 +284,10 @@ export default function LdapPage() {
                       <Select
                         size="xs"
                         w={220}
-                        placeholder="— bez dostępu —"
+                        placeholder={t("ldap.noAccess")}
                         clearable
                         disabled={!canEdit}
-                        data={profiles.map((p) => ({ value: p.id, label: p.name }))}
+                        data={profiles.map((p) => ({ value: p.id, label: builtinName(p.id, p.name) }))}
                         value={mapped.get(g.sid)?.profile ?? null}
                         onChange={(v) => setMapping(g, v)}
                       />
@@ -298,11 +298,11 @@ export default function LdapPage() {
             </Table>
           )}
           <Text size="sm" fw={500}>
-            Powiązania (kolejność decyduje – pierwsze pasujące):
+            {t("ldap.mappings")}
           </Text>
           {cfg.mappings.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Brak – żadne konto domenowe nie zaloguje się do panelu.
+              {t("ldap.noMappings")}
             </Text>
           ) : (
             <Stack gap={4}>
@@ -320,13 +320,13 @@ export default function LdapPage() {
                   </Badge>
                   {canEdit && (
                     <>
-                      <ActionIcon variant="subtle" disabled={i === 0} onClick={() => move(i, -1)} aria-label="wyżej">
+                      <ActionIcon variant="subtle" disabled={i === 0} onClick={() => move(i, -1)} aria-label={t("ldap.up")}>
                         <IconArrowUp size={14} />
                       </ActionIcon>
-                      <ActionIcon variant="subtle" disabled={i === cfg.mappings.length - 1} onClick={() => move(i, 1)} aria-label="niżej">
+                      <ActionIcon variant="subtle" disabled={i === cfg.mappings.length - 1} onClick={() => move(i, 1)} aria-label={t("ldap.down")}>
                         <IconArrowDown size={14} />
                       </ActionIcon>
-                      <Tooltip label="usuń powiązanie">
+                      <Tooltip label={t("ldap.removeMapping")}>
                         <ActionIcon
                           variant="subtle"
                           color="red"
@@ -350,11 +350,11 @@ export default function LdapPage() {
       {canEdit && (
         <Card withBorder>
           <Stack gap="sm">
-            <Title order={4}>3. Sprawdzenie konta</Title>
+            <Title order={4}>{t("ldap.step3")}</Title>
             <Group align="flex-end">
               <TextInput
-                label="Login domenowy"
-                placeholder="jan.kowalski"
+                label={t("ldap.login")}
+                placeholder={t("ldap.loginPlaceholder")}
                 w={260}
                 value={checkLogin}
                 onChange={(e) => setCheckLogin(e.currentTarget.value)}
@@ -366,21 +366,21 @@ export default function LdapPage() {
                 disabled={!checkLogin}
                 onClick={() => void run("check", async () => setCheck(await api.ldapCheck(draft(), bindPassword, checkLogin)))}
               >
-                Sprawdź (bez hasła)
+                {t("ldap.check")}
               </Button>
             </Group>
-            {check && !check.found && <Alert color="orange">Nie ma takiego konta w bazie kont.</Alert>}
+            {check && !check.found && <Alert color="orange">{t("ldap.notFound")}</Alert>}
             {check?.found && check.account && (
               <Alert color={check.profile ? "green" : "orange"}>
                 <Text size="sm">
                   <b>{check.account.display_name || check.account.login}</b> ({check.account.upn || check.account.login})
-                  {check.account.disabled && " – konto wyłączone w AD"}; grup zabezpieczeń: {check.groups}.
+                  {check.account.disabled && t("ldap.accountDisabled")}; {t("ldap.securityGroups", { n: check.groups })}
                 </Text>
                 <Text size="sm">
                   {check.profile
-                    ? `Przy logowaniu dostanie profil „${profileName(check.profile)}” (grupa ${check.matched[0]?.name}).`
-                    : "Nie zaloguje się – nie należy do żadnej grupy z powiązania."}
-                  {check.matched.length > 1 && ` Pasuje też: ${check.matched.slice(1).map((m) => m.name).join(", ")}.`}
+                    ? t("ldap.willGet", { profile: profileName(check.profile), group: check.matched[0]?.name })
+                    : t("ldap.noLogin")}
+                  {check.matched.length > 1 && ` ${t("ldap.alsoMatches", { list: check.matched.slice(1).map((m) => m.name).join(", ") })}`}
                 </Text>
               </Alert>
             )}
@@ -396,29 +396,29 @@ export default function LdapPage() {
               setSaveOpen(true);
             }}
           >
-            Zapisz ustawienia
+            {t("ldap.save")}
           </Button>
         </Group>
       )}
 
-      <Modal opened={saveOpen} onClose={() => setSaveOpen(false)} title="Zapis ustawień logowania domenowego" centered>
+      <Modal opened={saveOpen} onClose={() => setSaveOpen(false)} title={t("ldap.saveTitle")} centered>
         <Stack>
-          <Text size="sm">Zmiana trafi do audytu (bez haseł) i działa od razu.</Text>
-          <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+          <Text size="sm">{t("ldap.saveText")}</Text>
+          <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
           <Button
             loading={busy === "save"}
             disabled={!password}
             onClick={() =>
               void run("save", async () => {
                 await api.saveLdapSettings(draft(), bindPassword, password);
-                notifications.show({ color: "green", message: "Zapisano ustawienia logowania domenowego" });
+                notifications.show({ color: "green", message: t("ldap.saved") });
                 setSaveOpen(false);
                 setBindPassword("");
                 load();
               })
             }
           >
-            Zapisz
+            {t("save")}
           </Button>
         </Stack>
       </Modal>

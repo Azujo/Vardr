@@ -67,16 +67,16 @@ func ToAgent(hb contract.ServerHeartbeat) store.Agent {
 func ApplyTokenUses(ctx context.Context, log *slog.Logger, st Store, retire Retire, uses []store.TokenUse) {
 	applied, err := st.MarkUninstallTokensUsed(ctx, uses)
 	if err != nil {
-		log.Warn("oznaczenie użytych tokenów deinstalacji nieudane", "err", err)
+		log.Warn("marking used uninstall tokens failed", "err", err)
 	}
 	for _, u := range applied {
 		if u.Action != contract.TamperUninstallTok || retire == nil {
 			continue
 		}
 		if err := retire(ctx, u); err != nil {
-			log.Error("wycofanie odinstalowanego agenta nieudane – unieważnij certyfikat ręcznie", "agent", u.AgentID, "err", err)
+			log.Error("retiring the uninstalled agent failed – revoke the certificate manually", "agent", u.AgentID, "err", err)
 		} else {
-			log.Info("agent odinstalowany tokenem – certyfikaty unieważnione", "agent", u.AgentID, "token", u.TokenID)
+			log.Info("agent uninstalled with a token – certificates revoked", "agent", u.AgentID, "token", u.TokenID)
 		}
 	}
 }
@@ -87,7 +87,7 @@ func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Stor
 	for ctx.Err() == nil {
 		batch, err := cons.Fetch(500, jetstream.FetchMaxWait(2*time.Second))
 		if err != nil {
-			log.Warn("pobranie heartbeatów nieudane", "err", err)
+			log.Warn("fetching heartbeats failed", "err", err)
 			sleep(ctx, 5*time.Second)
 			continue
 		}
@@ -97,7 +97,7 @@ func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Stor
 		for msg := range batch.Messages() {
 			var hb contract.ServerHeartbeat
 			if err := json.Unmarshal(msg.Data(), &hb); err != nil || hb.AgentID == "" {
-				log.Warn("nieczytelny heartbeat – pominięty", "subject", msg.Subject(), "err", err)
+				log.Warn("unreadable heartbeat – skipped", "subject", msg.Subject(), "err", err)
 				_ = msg.Term()
 				continue
 			}
@@ -115,7 +115,7 @@ func Run(ctx context.Context, log *slog.Logger, cons jetstream.Consumer, st Stor
 		}
 		cancel()
 		if err != nil {
-			log.Error("zapis stanu agentów nieudany – ponowię", "agents", len(agents), "err", err)
+			log.Error("recording agent state failed – will retry", "agents", len(agents), "err", err)
 			for _, m := range msgs {
 				_ = m.NakWithDelay(10 * time.Second)
 			}

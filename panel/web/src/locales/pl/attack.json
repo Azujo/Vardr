@@ -1,0 +1,55 @@
+{
+  "title": "MITRE ATT&CK – pokrycie",
+  "intro": "Techniki ATT&CK {{version}} według tagów reguł (attack.t…). Kolor komórki: czy technikę wykrywa włączona reguła i czy w wybranym okresie były alerty. Technika obejmuje swoje podtechniki. Kliknij komórkę, żeby zobaczyć reguły i alerty.",
+  "export": "Eksport do ATT&CK Navigator",
+  "exportHint": "Warstwa dla MITRE ATT&CK Navigator: techniki pokryte włączonymi regułami, wynik = liczba alertów",
+  "stats": {
+    "covered": "Techniki pokryte włączonymi regułami",
+    "platform": "platforma: {{platform}}",
+    "tactics": "Taktyki z co najmniej jedną regułą",
+    "noRules": "bez reguł:",
+    "alerts": "Alerty z reguł z technikami ATT&CK ({{days}} dni)",
+    "untagged_one": "{{count}} reguła bez techniki ATT&CK",
+    "untagged_few": "{{count}} reguły bez techniki ATT&CK",
+    "untagged_many": "{{count}} reguł bez techniki ATT&CK",
+    "untagged_other": "{{count}} reguły bez techniki ATT&CK"
+  },
+  "warnings": "Tagi do poprawy ({{count}})",
+  "days": "{{n}} dni",
+  "view": {
+    "all": "wszystkie techniki",
+    "covered": "tylko z regułami"
+  },
+  "platform": {
+    "all": "wszystkie platformy",
+    "windows": "Windows",
+    "idp": "Entra ID / dostawca tożsamości",
+    "network": "urządzenia sieciowe",
+    "saas": "SaaS",
+    "iaas": "chmura (IaaS)",
+    "linux": "Linux"
+  },
+  "search": "szukaj techniki",
+  "state": {
+    "alerts": "pokryta, były alerty",
+    "covered": "pokryta włączoną regułą",
+    "disabled": "tylko wyłączone reguły",
+    "none": "bez reguł"
+  },
+  "tacticTip": "{{id}} – pokryte {{covered}} z {{total}} technik",
+  "cell": {
+    "rules": "{{n}} reg.",
+    "alerts": "{{n}} al.",
+    "subs": "{{n}}/{{total}} pod."
+  },
+  "mitreLink": "opis w MITRE ATT&CK",
+  "platforms": "Platformy: {{list}}",
+  "rules": "Reguły ({{count}})",
+  "noRules": "Żadna reguła nie ma tagu tej techniki ani jej podtechnik. Nowa reguła: Reguły detekcji → Przetestuj nową regułę albo kreator korelacji; tag {{tag}}.",
+  "enabled": "włączona",
+  "disabled": "wyłączona",
+  "ruleAlerts": "{{total}} alertów ({{open}} otw.)",
+  "noAlerts": "bez alertów",
+  "techniqueAlerts": "Alerty tej techniki ({{days}} dni)",
+  "subtechniques": "Podtechniki ({{n}}/{{total}} pokrytych)"
+}

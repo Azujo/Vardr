@@ -1,0 +1,367 @@
+{
+  "title": "Detection rules",
+  "intro": "Sigma rules (YAML) from the rules/ directory – deployed with deploy.sh rules or a SigmaHQ import; the detector reloads them within 30 s. Every content change is a new version (history in the details). An administrator can disable or enable a rule from the panel – with a reason, recorded in the audit log. Correlation rules from the wizard are stored in the panel (file panel/…).",
+  "newCorrelation": "New correlation (wizard)",
+  "testNew": "Test a new rule",
+  "testNewTitle": "Test a new rule",
+  "trials": "Rule trials",
+  "sigmaImport": "Import SigmaHQ rules",
+  "notConfigured": "The detector (siem-detector) has not run yet – no rules loaded.",
+  "fileErrors": "Files with errors ({{count}}) – these rules do not work",
+  "newRuleTitle": "New rule",
+  "newRuleId": "my-rule-1",
+  "mode": {
+    "stream": "streaming",
+    "index_query": "query",
+    "both": "both engines",
+    "system": "built-in",
+    "correlation": "correlation",
+    "builtinCorrelation": "correlation (built-in)"
+  },
+  "filter": {
+    "search": "search: title, id, file, tag (e.g. attack.t1059)",
+    "source": {
+      "all": "All",
+      "own": "Own",
+      "panel": "From panel",
+      "builtin": "Built-in"
+    },
+    "state": {
+      "all": "any state",
+      "on": "enabled",
+      "off": "disabled",
+      "trial": "in trial mode",
+      "panel": "set in the panel"
+    },
+    "anyLevel": "any level",
+    "count": "{{shown}} of {{total}}"
+  },
+  "selected": "Selected: {{count}}",
+  "clearSelection": "clear selection",
+  "selectFiltered": "select all matching the filter",
+  "selectFilteredTitle": "select all rules matching the filter ({{count}})",
+  "selectRule": "select rule",
+  "col": {
+    "enabled": "Enabled",
+    "level": "Level",
+    "rule": "Rule",
+    "engine": "Engine",
+    "threshold": "Threshold / grouping",
+    "openAlerts": "Open alerts",
+    "file": "File"
+  },
+  "trialTip": "Trial mode since {{date}} ({{by}}{{reason}}): hits without alerts, results in “Rule trials”.",
+  "trialBadge": "trial",
+  "overrideTip": "Set in the panel: {{by}}, {{date}}{{reason}}. In the file: {{file}}.",
+  "enabledWord": "enabled",
+  "disabledWord": "disabled",
+  "threshold": "threshold: {{count}} events in {{window}}",
+  "thresholdDistinct": "threshold: {{count}} distinct {{field}} in {{window}}",
+  "eachEvent": "every event separately",
+  "ruleMeta": "id {{id}} · version {{version}} · loaded {{date}}",
+  "panelRule": "panel rule (correlation wizard)",
+  "edit": "Edit",
+  "tab": {
+    "source": "Source",
+    "versions": "Versions",
+    "test": "Test"
+  },
+  "reason": "Reason",
+  "yourPassword": "Your password",
+  "optional": "optional",
+  "versions": {
+    "none": "No history.",
+    "info": "v{{version}}: loaded {{date}} from {{file}} · SHA-256 {{sha}}…",
+    "changesSince": " · changes since v{{version}}:",
+    "first": " · first version"
+  },
+  "delete": {
+    "button": "Delete",
+    "title": "Delete rule “{{title}}”",
+    "warning": "The whole panel rule will be deleted (the correlation and its base rules from the same record). Version history and alerts are kept. Give a reason (recorded in the audit log) and confirm with your password.",
+    "confirm": "Delete rule",
+    "done": "Deleted – the detector will stop evaluating the rule within 30 s."
+  },
+  "toggle": {
+    "titleTrial": "Trial mode for rule “{{title}}”",
+    "titleDisable": "Disable rule “{{title}}”",
+    "titleEnable": "Enable rule “{{title}}”",
+    "trialInfo": "In trial mode the rule counts hits (computers, days, last event) without alerts or notifications – results in “Rule trials”. After a week or two you can see whether it is safe to enable.",
+    "trialWarning": "During the trial the rule will not raise alerts – not even for a real attack. Give a reason (recorded in the audit log) and confirm with your password.",
+    "disableWarning": "A disabled rule will not raise alerts – not even for a real attack. Give a reason (recorded in the audit log) and confirm with your password.",
+    "trialFirst": "Trial mode first (no alerts)",
+    "reasonHint": "e.g. false positives from the backup server until the rule is fixed",
+    "backToFile": "back to the file setting ({{state}})",
+    "restore": "Restore from file",
+    "startTrial": "Start trial",
+    "disable": "Disable rule",
+    "enable": "Enable rule",
+    "done": "The change takes effect within 30 s (the detector reloads its rules).",
+    "doneTrial": "Trial mode takes effect within 30 s – hits without alerts in “Rule trials”."
+  },
+  "bulk": {
+    "trial": "Trial mode",
+    "enable": "Enable",
+    "disable": "Disable",
+    "file": "Setting from file",
+    "title": "{{action}} – selected rules: {{count}}",
+    "info": {
+      "trial": "The rules will count hits without alerts or notifications (the “Rule trials” page). Enabled rules in the selection stop alerting during the trial.",
+      "enable": "The rules will start creating alerts and notifications. Enabling many rules without a trial can flood analysts with false positives.",
+      "disable": "Disabled rules will not raise alerts – not even for a real attack.",
+      "file": "The rules return to the setting from their file (enabled in the rule); panel settings are removed."
+    },
+    "skipInfo": "Rules the change does not apply to (e.g. already in that state or built-in) are skipped. The change is recorded in the audit log; the detector applies it within 30 s.",
+    "reasonHint": "e.g. reviewing SigmaHQ Windows rules before enabling them",
+    "done": "Rules changed: {{changed}} (unchanged: {{skipped}}) – the detector applies the changes within 30 s."
+  },
+  "tester": {
+    "intro": "The rule (YAML) is checked and run against events from ClickHouse – nothing is deployed or saved. Alerts are counted the same way as in the detector (grouping, thresholds). A changed rule is deployed as a file in the repository",
+    "error": "error",
+    "range": {
+      "1": "last hour",
+      "24": "last 24 h",
+      "72": "last 3 days",
+      "168": "last 7 days"
+    },
+    "run": "Test",
+    "failed": "The rule did not pass",
+    "attackTags": "MITRE ATT&CK tags to fix",
+    "matched": "Matching events:",
+    "alerts": "alerts that would be raised:",
+    "truncated": " (from the first 20,000 events)",
+    "colKey": "Key / computer",
+    "colEvents": "Events",
+    "colFrom": "From",
+    "colTo": "To",
+    "lastEvents": "Latest matching events",
+    "sql": "SQL condition (query engine)"
+  },
+  "trialsPage": {
+    "back": "detection rules",
+    "intro": "A rule in trial mode is evaluated on live events (streaming engine) but creates no alerts or notifications – it only counts hits since the trial started. Set trial mode on the rules page (one rule or the selected ones, e.g. all high-level SigmaHQ rules). Threshold rules count condition hits, without the threshold.",
+    "empty": [
+      "No rule is in trial mode. On the ",
+      "rules",
+      " page select rules (e.g. SigmaHQ filter, high and critical level) and choose “Trial mode”."
+    ],
+    "all": "All ({{count}})",
+    "enable": "Enable (with alerts)",
+    "disable": "Disable (end trial)",
+    "col": {
+      "verdict": "Verdict",
+      "trial": "Trial",
+      "hits": "Hits",
+      "hosts": "Computers",
+      "last": "Last hit"
+    },
+    "verdict": {
+      "short": {
+        "label": "too short",
+        "short": "too short",
+        "help": "the trial has run for less than a day – wait for the result"
+      },
+      "quiet": {
+        "label": "quiet – safe to enable",
+        "short": "quiet",
+        "help": "no hits – the rule is not noisy on this data"
+      },
+      "rare": {
+        "label": "rare",
+        "short": "rare",
+        "help": "less than 1 hit per day – review the samples and enable"
+      },
+      "moderate": {
+        "label": "moderate",
+        "short": "moderate",
+        "help": "1–20 hits per day – check whether these are real events, consider exceptions"
+      },
+      "noisy": {
+        "label": "noisy",
+        "short": "noisy",
+        "help": "more than 20 hits per day – without tuning it will flood you with alerts"
+      }
+    },
+    "gone": "(the rule is no longer in the directory)",
+    "since": "since {{date}}",
+    "days": "{{n}} days",
+    "perDay": "{{n}}/day",
+    "noHost": "(none)",
+    "footer": [
+      "Trials run in the streaming engine (",
+      " stream or both). Hits are kept for 35 days; restarting a trial counts from zero."
+    ]
+  },
+  "sigma": {
+    "intro": "is an open database of Sigma rules. Vardr supports a subset of Sigma – the import copies rules for the collected sources to rules/sigmahq/, drops the ones the parser does not support and deploys the rest disabled. On a server installed with the installer a single script is enough; from the Vardr repository – commands in the project directory. Details: docs/en/rules.md, “Importing SigmaHQ rules”.",
+    "server": "Server (installer)",
+    "ps": "Repository – PowerShell",
+    "bash": "Repository – Git Bash",
+    "copy": "copy",
+    "copied": "copied",
+    "copyCmd": "copy command",
+    "serverSteps": [
+      {
+        "title": "Import or update the rules (on the Vardr server)",
+        "note": "Downloads SigmaHQ from GitHub, copies rules for the collected sources, skips the ones incompatible with the parser and leaves all of them disabled. Upgrading Vardr keeps the imported rules."
+      },
+      {
+        "title": "Remove the SigmaHQ rules (optional)"
+      }
+    ],
+    "repoSteps": [
+      {
+        "title": "Clone the SigmaHQ repository next to the project (update: git -C ../sigma pull)"
+      },
+      {
+        "title": "Copy the categories for the sources we collect",
+        "note": "When updating, remove the old rules/sigmahq directory first – rules enabled in the panel stay enabled (they are stored by rule id)."
+      },
+      {
+        "title": "Mature rules only (stable and test)"
+      },
+      {
+        "title": "Check with the Vardr parser"
+      },
+      {
+        "title": "Remove the rules Vardr does not support (then repeat step 4 – 0 errors)"
+      },
+      {
+        "title": "Disable all imported rules in their files",
+        "note": "Otherwise hundreds of rules would be enabled at once after deployment."
+      },
+      {
+        "title": "Deployment"
+      }
+    ],
+    "after": "After deployment",
+    "after1": "SigmaHQ rules are listed as disabled (file sigmahq/…) and do not load the detection.",
+    "after2": "Check a chosen rule on the Test tab against 7 days of events; if there are no false positives, enable it with the switch. Enabling survives a re-import.",
+    "after3": "A rule for events the agent does not collect will load, but the test shows 0 events.",
+    "license": "SigmaHQ rules license:",
+    "licenseText": "– use, modification and distribution are allowed provided the author (author field), source and license are kept. Do not remove the author and references fields from the rules."
+  },
+  "wizard": {
+    "title": "Correlation wizard",
+    "intro": "Pick sample events that together indicate an attack (e.g. an account created and then added to the administrators group). The wizard suggests steps, a common key and a time window, builds a Sigma Correlation rule and lets you test it on history before saving.",
+    "type": {
+      "label": "Type",
+      "event_count": "number of events (event_count)",
+      "value_count": "number of distinct field values (value_count)",
+      "temporal": "all steps within the window, any order (temporal)",
+      "temporal_ordered": "all steps within the window, in order (temporal_ordered)"
+    },
+    "event": {
+      "4624": "Successful logon",
+      "4625": "Failed logon",
+      "4634": "Logoff",
+      "4648": "Logon with explicit credentials",
+      "4672": "Logon with special privileges",
+      "4688": "Process created",
+      "4720": "Account created",
+      "4722": "Account enabled",
+      "4724": "Account password reset",
+      "4725": "Account disabled",
+      "4726": "Account deleted",
+      "4728": "Added to a global group",
+      "4732": "Added to a local group",
+      "4740": "Account locked out",
+      "4756": "Added to a universal group",
+      "4768": "Kerberos TGT requested",
+      "4769": "Kerberos service ticket requested",
+      "4771": "Kerberos pre-authentication failed",
+      "4776": "NTLM credential validation",
+      "1102": "Security log cleared",
+      "7045": "Service installed"
+    },
+    "eventN": "{{dataset}}: event {{code}}",
+    "v": {
+      "noEvents": "add sample events",
+      "title": "enter a title",
+      "noFields": "step “{{step}}”: select at least one field for the new base rule",
+      "threshold": "step “{{step}}”: a threshold rule cannot be a correlation base – choose another or a new one",
+      "twoSteps": "a temporal correlation needs at least two different steps",
+      "field": "choose the field whose distinct values to count",
+      "count": "count: from 2 to 10,000",
+      "key": "the key does not match the steps – choose it again"
+    },
+    "yaml": {
+      "baseTitle": "{{step}} – step {{n}} of correlation “{{title}}”",
+      "baseDescription": "Base rule of correlation “{{title}}” from the panel wizard."
+    },
+    "searchPlaceholder": "e.g. code:4720 or user:john or action:login outcome:failure",
+    "days7": "7 days",
+    "search": "Search",
+    "pick": "add to samples",
+    "unpick": "remove from samples",
+    "step": "step {{n}}",
+    "baseRule": "Base rule",
+    "thresholdRule": " (threshold – cannot be a base)",
+    "newFromFields": "New rule from this event's fields",
+    "noMatching": "no deployed rule matches this event – the wizard will create a base rule",
+    "matching": "matching deployed rules: {{count}}",
+    "fieldsHint": "Select the fields that must match for an event to be this step (usually the event type, e.g. EventID, action, outcome – not the account or address, since the correlation key links those).",
+    "noSigmaProduct": "Source without a Sigma equivalent – the rule selects events by the event.dataset field.",
+    "keySame": "{{field}} (e.g. {{value}})",
+    "keyAlias": "{{name}}: {{fields}} (e.g. {{value}})",
+    "keyInStep": "{{field}} in step {{n}}",
+    "editTitle": "Edit panel rule",
+    "editNote": [
+      "A correlation rule with its base rules (documents separated by ",
+      "). The correlation id must stay {{id}}."
+    ],
+    "changeNote": "Change description (audit)",
+    "save": "Save",
+    "saved": "Saved – the detector loads the rule within 30 s.",
+    "then": ", then ",
+    "series": "Series: {{title}}",
+    "s1": "Events",
+    "s1d": "samples",
+    "s2": "Steps",
+    "s2d": "base rules",
+    "s3": "Condition",
+    "s3d": "key, type, window",
+    "s4": "Description and test",
+    "s4d": "save",
+    "picked": "Selected events ({{n}}/{{max}})",
+    "clear": "clear",
+    "noPicks": "None. Add events with the search below or in Mímir (event details → “Add to correlation wizard”). For a series of one kind (e.g. failed logons from many addresses) a few samples of the same event are enough.",
+    "toSteps": "Next: steps",
+    "missing": "{{count}} of the selected events are no longer in the database (retention) – skipped.",
+    "stepsIntro": "Each event is a correlation step: an existing rule that matches it or a new base rule from the selected fields. Events with the same choice form one step. Steps are ordered by the time of their first sample.",
+    "steps": "Steps ({{count}})",
+    "existing": "existing rule",
+    "newBase": "new base rule",
+    "examples": "samples: {{count}}",
+    "noFieldsShort": "no fields!",
+    "back": "Back",
+    "toCondition": "Next: condition",
+    "key": "What links the events (key)",
+    "keyHintSteps": "A value present in all steps – the wizard found it in the samples. Different field names in the steps are aliases.",
+    "keyHintOne": "A value common to all samples – events with the same value are counted.",
+    "noKey": "no key – all events together (rarely makes sense)",
+    "noCommon": "The samples have no common value. Add events concerning the same account, computer or address.",
+    "window": "Time window",
+    "suggested": "{{w}} (suggested)",
+    "span": "samples span {{span}}",
+    "minValues": "At least distinct values",
+    "minEvents": "At least events",
+    "valueField": "Field whose distinct values to count",
+    "valueFieldOpt": "{{field}} ({{n}} distinct in samples)",
+    "toTest": "Next: description and test",
+    "ruleTitle": "Title",
+    "description": "Description",
+    "descriptionHint": "what it detects and why it is dangerous",
+    "instructions": "Instructions for the analyst",
+    "instructionsHint": "fields of the last event ({{example}}) and {{vars}}",
+    "generate": "Base rules still raise their own alerts (generate: true)",
+    "generateHint": "off – base rules only feed the correlation",
+    "generateWarning": "The correlation uses deployed rules. Without “generate” these rules will stop raising alerts on their own (unless another correlation needs them) – usually not what you want.",
+    "edited": "YAML edited manually – changing the fields above overwrites it.",
+    "backToGenerated": "Back to the generated one",
+    "testNote": "The generated rule (YAML) – you can edit it manually. “Test” counts the alerts that would have been raised on events from the selected period; nothing is saved.",
+    "saveRule": "Save rule",
+    "adminOnly": "Saving requires the administrator role – copy the rule and pass it to an administrator.",
+    "copyYaml": "copy YAML"
+  }
+}

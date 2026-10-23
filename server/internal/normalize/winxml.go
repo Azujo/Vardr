@@ -31,7 +31,7 @@ type winData struct {
 	Name, Value string
 }
 
-var errXMLEOF = errors.New("nieoczekiwany koniec XML")
+var errXMLEOF = errors.New("unexpected end of XML")
 
 // parseWinEvent to lekki parser XML zdarzeń Windows (etap 1.5, W1).
 // Zastępuje encoding/xml, który zajmował ponad połowę czasu normalizacji:
@@ -106,7 +106,7 @@ func parseWinEvent(s string) (winEvent, error) {
 				j = n - i
 			}
 			if strings.Contains(s[i:i+j], "]]>") {
-				return w, errors.New("niedozwolone ]]> poza sekcją CDATA")
+				return w, errors.New("]]> not allowed outside a CDATA section")
 			}
 			acc := &text
 			if len(stack) == 0 {
@@ -122,7 +122,7 @@ func parseWinEvent(s string) (winEvent, error) {
 		switch {
 		case strings.HasPrefix(rest, "<?"):
 			if !strings.HasPrefix(rest, "<?xml ") {
-				return w, errors.New("instrukcje <?…?> w zdarzeniu nie są obsługiwane")
+				return w, errors.New("<?…?> instructions in an event are not supported")
 			}
 			k := strings.Index(rest, "?>")
 			if k < 0 {
@@ -153,7 +153,7 @@ func parseWinEvent(s string) (winEvent, error) {
 		case strings.HasPrefix(rest, "<!"):
 			// <!DOCTYPE>, <!ENTITY> itp. nie występują w zdarzeniach Windows –
 			// odrzucamy je zamiast interpretować (bezpieczniej niż encoding/xml).
-			return w, errors.New("deklaracje <!…> w zdarzeniu nie są obsługiwane")
+			return w, errors.New("<!…> declarations in an event are not supported")
 		case strings.HasPrefix(rest, "</"):
 			k := strings.IndexByte(rest, '>')
 			if k < 0 {
@@ -161,10 +161,10 @@ func parseWinEvent(s string) (winEvent, error) {
 			}
 			name := strings.TrimRight(rest[2:k], " \t\r\n")
 			if len(stack) == 0 {
-				return w, fmt.Errorf("nieoczekiwany znacznik końca </%s>", name)
+				return w, fmt.Errorf("unexpected end tag </%s>", name)
 			}
 			if top := stack[len(stack)-1]; top.name != name {
-				return w, fmt.Errorf("element <%s> zamknięty przez </%s>", top.name, name)
+				return w, fmt.Errorf("element <%s> closed by </%s>", top.name, name)
 			}
 			if err := end(); err != nil {
 				return w, err
@@ -181,7 +181,7 @@ func parseWinEvent(s string) (winEvent, error) {
 			}
 			name := s[i+1 : j]
 			if name == "" || !validName(name) {
-				return w, fmt.Errorf("niepoprawna nazwa elementu na pozycji %d", i)
+				return w, fmt.Errorf("invalid element name at position %d", i)
 			}
 			if len(stack) > 0 {
 				parent := &stack[len(stack)-1]
@@ -212,7 +212,7 @@ func parseWinEvent(s string) (winEvent, error) {
 						return w, errXMLEOF
 					}
 					if s[j+1] != '>' {
-						return w, fmt.Errorf("niepoprawny znacznik <%s>", name)
+						return w, fmt.Errorf("invalid tag <%s>", name)
 					}
 					selfClosing = true
 					j += 2
@@ -225,7 +225,7 @@ func parseWinEvent(s string) (winEvent, error) {
 				}
 				attr := s[a:j]
 				if !validName(attr) {
-					return w, fmt.Errorf("niepoprawny atrybut w <%s>", name)
+					return w, fmt.Errorf("invalid attribute in <%s>", name)
 				}
 				for j < n && isSpace(s[j]) {
 					j++
@@ -234,7 +234,7 @@ func parseWinEvent(s string) (winEvent, error) {
 					return w, errXMLEOF
 				}
 				if s[j] != '=' {
-					return w, fmt.Errorf("atrybut %s w <%s> bez wartości", attr, name)
+					return w, fmt.Errorf("attribute %s in <%s> without a value", attr, name)
 				}
 				j++
 				for j < n && isSpace(s[j]) {
@@ -245,7 +245,7 @@ func parseWinEvent(s string) (winEvent, error) {
 				}
 				q := s[j]
 				if q != '\'' && q != '"' {
-					return w, fmt.Errorf("wartość atrybutu %s w <%s> bez cudzysłowu", attr, name)
+					return w, fmt.Errorf("value of attribute %s in <%s> without quotes", attr, name)
 				}
 				k := strings.IndexByte(s[j+1:], q)
 				if k < 0 {
@@ -254,7 +254,7 @@ func parseWinEvent(s string) (winEvent, error) {
 				raw := s[j+1 : j+1+k]
 				j += k + 2
 				if strings.IndexByte(raw, '<') >= 0 {
-					return w, fmt.Errorf("znak < w wartości atrybutu %s", attr)
+					return w, fmt.Errorf("character < in the value of attribute %s", attr)
 				}
 				var val textAcc
 				if err := val.AddEscaped(raw); err != nil {
@@ -339,7 +339,7 @@ func checkText(s string) error {
 	}
 	for _, r := range s {
 		if r == utf8.RuneError || !isXMLChar(r) {
-			return errors.New("niepoprawny UTF-8 lub niedozwolony znak w XML")
+			return errors.New("invalid UTF-8 or a character not allowed in XML")
 		}
 	}
 	return nil
@@ -416,7 +416,7 @@ func (t *textAcc) AddEscaped(seg string) error {
 		seg = seg[k:]
 		semi := strings.IndexByte(seg, ';')
 		if semi < 0 {
-			return errors.New("niezakończona encja XML")
+			return errors.New("unterminated XML entity")
 		}
 		ent := seg[1:semi]
 		switch ent {

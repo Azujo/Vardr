@@ -24,19 +24,47 @@ import {
   IconListSearch,
   IconTimeline,
 } from "@tabler/icons-react";
-import { formatDate, systemApi, type SystemCheck, type SystemReport } from "../api";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
+import { ago, formatDate, formatNumber, systemApi, type SystemCheck, type SystemReport } from "../api";
 
-export const statusLabels: Record<string, { label: string; color: string }> = {
-  ok: { label: "OK", color: "green" },
-  off: { label: "wyłączone", color: "gray" },
-  unknown: { label: "brak danych", color: "gray" },
-  warn: { label: "uwaga", color: "orange" },
-  crit: { label: "problem", color: "red" },
+// Kolory stanów; nazwy – system: status.*.
+export const statusColors: Record<string, string> = {
+  ok: "green",
+  off: "gray",
+  unknown: "gray",
+  warn: "orange",
+  crit: "red",
 };
+
+type T = TFunction<"system">;
+
+// Kontrola w języku użytkownika: serwer podaje identyfikatory i wartość jako
+// kod z parametrami; nieznany kod (nowsza kontrola) – polski tekst z serwera.
+function checkName(t: T, c: SystemCheck): string {
+  return c.id ? t(`check.${c.id}`, { defaultValue: c.name }) : c.name;
+}
+
+function checkHint(t: T, c: SystemCheck): string {
+  if (!c.hint) return "";
+  return c.id ? t(`hint.${c.id}`, { defaultValue: c.hint, error: c.args?.error ?? "" }) : c.hint;
+}
+
+function groupName(t: T, c: SystemCheck): string {
+  return c.group_id ? t(`group.${c.group_id}`, { defaultValue: c.group }) : c.group;
+}
+
+function checkValue(t: T, c: SystemCheck): string {
+  if (!c.value_key) return c.value;
+  const n = Number(c.args?.n ?? 0);
+  const args = { n: formatNumber(n), count: n, consumer: c.args?.consumer ?? "", defaultValue: c.value };
+  if (c.value_key === "ago") return ago(new Date(Date.now() - n * 1000).toISOString());
+  return t(`value.${c.value_key}`, args);
+}
 
 // Linki do Grafany (pulpity z deploy/lab/grafana/dashboards, alerty
 // z provisioning/alerting) – żeby przy awarii nie szukać adresów.
-const grafanaRanges: Record<string, string> = { "1h": "1 h", "6h": "6 h", "24h": "24 h", "7d": "7 dni" };
+const grafanaRanges = ["1h", "6h", "24h", "7d"];
 
 function grafanaBase(url?: string): string {
   if (url) return url;
@@ -52,25 +80,27 @@ function dash(base: string, uid: string, range: string, panel?: number): string 
 
 // Wykresy dla grupy kontroli (pulpit „zdrowie potoku”, panel albo cały).
 const groupPanels: Record<string, number | undefined> = {
-  Potok: undefined,
-  Usługi: 6,
-  Serwer: 40,
+  pipeline: undefined,
+  services: 6,
+  server: 40,
 };
 
 function groupLink(base: string, group: string, range: string): string {
   if (group in groupPanels) return dash(base, "siem-pipeline", range, groupPanels[group]);
-  // Pozostałe grupy (detekcja, archiwum, kopie) – reguły alertów Grafany z tej dziedziny.
-  const words: Record<string, string> = { Detekcja: "detek", "Archiwum NIS2": "archiw", "Kopie zapasowe": "kopi" };
+  // Pozostałe grupy (detekcja, archiwum, kopie) – reguły alertów Grafany z tej
+  // dziedziny (nazwy reguł w Grafanie są po polsku).
+  const words: Record<string, string> = { detection: "detek", archive: "archiw", backup: "kopi" };
   return `${base}/alerting/list?search=${encodeURIComponent(words[group] ?? group)}`;
 }
 
 function GrafanaLinks({ base, range, setRange }: { base: string; range: string; setRange: (r: string) => void }) {
+  const { t } = useTranslation("system");
   const links = [
-    { label: "Zdrowie potoku", icon: IconTimeline, href: dash(base, "siem-pipeline", range), hint: "przepływ, kolejki, opóźnienia, CPU i pamięć usług" },
-    { label: "Przegląd zdarzeń", icon: IconChartLine, href: dash(base, "siem-overview", range), hint: "zdarzenia, agenci, logowania" },
-    { label: "Alerty – aktywne", icon: IconAlertTriangle, href: `${base}/alerting/list?search=${encodeURIComponent("state:firing")}`, hint: "co teraz alarmuje w Grafanie" },
-    { label: "Reguły alertów", icon: IconBell, href: `${base}/alerting/list`, hint: "wszystkie reguły i ich stan" },
-    { label: "Explore (Prometheus)", icon: IconListSearch, href: `${base}/explore`, hint: "własne zapytania do metryk" },
+    { key: "pipeline", icon: IconTimeline, href: dash(base, "siem-pipeline", range) },
+    { key: "overview", icon: IconChartLine, href: dash(base, "siem-overview", range) },
+    { key: "firing", icon: IconAlertTriangle, href: `${base}/alerting/list?search=${encodeURIComponent("state:firing")}` },
+    { key: "rules", icon: IconBell, href: `${base}/alerting/list` },
+    { key: "explore", icon: IconListSearch, href: `${base}/explore` },
   ];
   return (
     <Card withBorder>
@@ -85,13 +115,13 @@ function GrafanaLinks({ base, range, setRange }: { base: string; range: string; 
           size="xs"
           value={range}
           onChange={setRange}
-          data={Object.entries(grafanaRanges).map(([value, label]) => ({ value, label }))}
+          data={grafanaRanges.map((value) => ({ value, label: t(`range.${value}`) }))}
         />
       </Group>
       <Group gap="xs">
         {links.map((l) => (
           <Button
-            key={l.label}
+            key={l.key}
             component="a"
             href={l.href}
             target="_blank"
@@ -100,9 +130,9 @@ function GrafanaLinks({ base, range, setRange }: { base: string; range: string; 
             size="sm"
             leftSection={<l.icon size={16} />}
             rightSection={<IconExternalLink size={12} />}
-            title={l.hint}
+            title={t(`grafana.${l.key}Hint`)}
           >
-            {l.label}
+            {t(`grafana.${l.key}`)}
           </Button>
         ))}
       </Group>
@@ -112,6 +142,7 @@ function GrafanaLinks({ base, range, setRange }: { base: string; range: string; 
 
 // Himinbjörg – stan systemu: zdrowie usług z metryk Prometheusa.
 export default function SystemPage() {
+  const { t } = useTranslation("system");
   const [report, setReport] = useState<SystemReport | null>(null);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState("");
@@ -135,11 +166,12 @@ export default function SystemPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  const groups: { name: string; checks: SystemCheck[] }[] = [];
+  const groups: { id: string; name: string; checks: SystemCheck[] }[] = [];
   for (const c of report?.checks ?? []) {
-    let g = groups.find((x) => x.name === c.group);
+    const id = c.group_id ?? c.group;
+    let g = groups.find((x) => x.id === id);
     if (!g) {
-      g = { name: c.group, checks: [] };
+      g = { id, name: groupName(t, c), checks: [] };
       groups.push(g);
     }
     g.checks.push(c);
@@ -150,16 +182,16 @@ export default function SystemPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Himinbjörg – stan systemu</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm">
-            Zdrowie usług Vardra z metryk (Prometheus), odświeżane co 30 s. Szczegółowe wykresy i alerty – linki do Grafany niżej.
+            {t("intro")}
           </Text>
         </div>
         {report && (
           <Group gap="xs">
             <IconActivityHeartbeat size={20} />
-            <Badge size="lg" color={statusLabels[report.overall].color}>
-              {report.overall === "ok" ? "wszystko działa" : statusLabels[report.overall].label}
+            <Badge size="lg" color={statusColors[report.overall]}>
+              {report.overall === "ok" ? t("allOk") : t(`status.${report.overall}`)}
             </Badge>
             <Text size="xs" c="dimmed">
               {formatDate(report.generated_at)}
@@ -169,19 +201,19 @@ export default function SystemPage() {
       </Group>
       {error && <MAlert color="red">{error}</MAlert>}
       {grafana && <GrafanaLinks base={grafana} range={range} setRange={setRange} />}
-      {!configured && <MAlert color="gray">siem-api nie ma adresu Prometheusa (SIEM_PROMETHEUS_URL) – stan systemu niedostępny.</MAlert>}
+      {!configured && <MAlert color="gray">{t("notConfigured")}</MAlert>}
       {problems.length > 0 && (
-        <MAlert color={problems.some((c) => c.status === "crit") ? "red" : "orange"} title={`Wymaga uwagi (${problems.length})`}>
+        <MAlert color={problems.some((c) => c.status === "crit") ? "red" : "orange"} title={t("attention", { count: problems.length })}>
           <Stack gap={4}>
             {problems.map((c) => (
-              <Text size="sm" key={c.name}>
-                <b>{c.name}</b>: {c.value}
-                {c.hint ? ` – ${c.hint}` : ""}
+              <Text size="sm" key={c.id ?? c.name}>
+                <b>{checkName(t, c)}</b>: {checkValue(t, c)}
+                {c.hint ? ` – ${checkHint(t, c)}` : ""}
                 {grafana && (
                   <>
                     {" "}
-                    <Anchor href={groupLink(grafana, c.group, range)} target="_blank" rel="noopener noreferrer" size="sm">
-                      wykresy w Grafanie
+                    <Anchor href={groupLink(grafana, c.group_id ?? c.group, range)} target="_blank" rel="noopener noreferrer" size="sm">
+                      {t("charts")}
                     </Anchor>
                   </>
                 )}
@@ -192,11 +224,11 @@ export default function SystemPage() {
       )}
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         {groups.map((g) => (
-          <Card withBorder key={g.name}>
+          <Card withBorder key={g.id}>
             <Group justify="space-between" mb="xs">
               <Title order={4}>{g.name}</Title>
               {grafana && (
-                <Anchor href={groupLink(grafana, g.name, range)} target="_blank" rel="noopener noreferrer" size="xs">
+                <Anchor href={groupLink(grafana, g.id, range)} target="_blank" rel="noopener noreferrer" size="xs">
                   <Group gap={4}>
                     Grafana <IconExternalLink size={12} />
                   </Group>
@@ -206,15 +238,15 @@ export default function SystemPage() {
             <Table verticalSpacing={4} fz="sm">
               <Table.Tbody>
                 {g.checks.map((c) => (
-                  <Table.Tr key={c.name}>
+                  <Table.Tr key={c.id ?? c.name}>
                     <Table.Td w={110}>
-                      <Badge size="sm" variant="light" color={statusLabels[c.status]?.color ?? "gray"}>
-                        {statusLabels[c.status]?.label ?? c.status}
+                      <Badge size="sm" variant="light" color={statusColors[c.status] ?? "gray"}>
+                        {t(`status.${c.status}`, { defaultValue: c.status })}
                       </Badge>
                     </Table.Td>
-                    <Table.Td>{c.name}</Table.Td>
+                    <Table.Td>{checkName(t, c)}</Table.Td>
                     <Table.Td ta="right" c="dimmed" style={{ whiteSpace: "nowrap" }}>
-                      {c.value}
+                      {checkValue(t, c)}
                     </Table.Td>
                   </Table.Tr>
                 ))}

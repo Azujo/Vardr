@@ -1,0 +1,215 @@
+{
+  "title": "Kopie zapasowe",
+  "intro": "Kopie wykonuje usługa siem-backup na serwerze. Każda kopia jest szyfrowana hasłem kopii, które zna tylko administrator serwera – panel go nie przechowuje. Hasła i klucze do miejsca docelowego panel szyfruje kluczem usługi kopii; po zapisie nie da się ich odczytać, tylko zastąpić.",
+  "loading": "Wczytywanie…",
+  "done": "gotowe",
+  "failed": "nieudane",
+  "copy": "kopiuj",
+  "copied": "skopiowano",
+  "yourPassword": "Twoje hasło",
+  "back": "Wróć",
+  "save": "Zapisz",
+  "secret": {
+    "stale": "zapisany starym kluczem usługi – wpisz ponownie",
+    "saved": "zapisany – wpisz, aby zmienić"
+  },
+  "requested": "zlecono – usługa kopii wykona je w ciągu kilkunastu sekund",
+  "saved": "Zapisano – usługa kopii zastosuje ustawienia w ciągu minuty.",
+  "offline": {
+    "title": "Usługa kopii nie odpowiada",
+    "lastSeen": "Ostatni kontakt: {{date}}. Kopie z harmonogramu nie powstają.",
+    "never": "Usługa siem-backup jeszcze się nie zgłosiła (kontener backup na serwerze)."
+  },
+  "noPass": {
+    "title": "Brak hasła kopii",
+    "text": [
+      "Bez hasła kopie nie powstają. Administrator serwera ustawia je raz poleceniem ",
+      " w katalogu stosu i zapisuje poza serwerem (instalator robi to automatycznie)."
+    ],
+    "cmd": "./backup.sh haslo init"
+  },
+  "last": "Ostatnia kopia",
+  "lastOk": "ostatnia udana: {{date}}",
+  "none": "jeszcze żadnej",
+  "scheduleIs": "harmonogram: {{s}}",
+  "service": "Usługa kopii",
+  "running": "działa",
+  "notResponding": "nie odpowiada",
+  "passIdTip": "Skrót hasła szyfrującego kopie – nie samo hasło. Ten sam identyfikator jest w nazwie każdej kopii, więc widać, którym hasłem ją otworzyć. Hasło zna tylko administrator serwera (./backup.sh haslo pokaz).",
+  "passId": "identyfikator hasła kopii:",
+  "noPassShort": "brak hasła",
+  "local": "lokalnie: {{dir}} (wolne {{free}})",
+  "actions": "Działania",
+  "runNow": "Zrób kopię teraz",
+  "saveFirst": "najpierw zapisz zmiany",
+  "testTip": "zapis i odczyt w miejscu docelowym",
+  "test": "Sprawdź połączenie",
+  "tab": {
+    "settings": "Ustawienia",
+    "history": "Historia ({{n}})",
+    "restore": "Przywracanie"
+  },
+  "status": {
+    "running": "w toku",
+    "ok": "udana",
+    "partial": "bez wysyłki",
+    "error": "nieudana"
+  },
+  "method": {
+    "none": "Tylko lokalnie",
+    "sftp": "SFTP (SSH)",
+    "smb": "SMB (udział Windows / NAS)",
+    "s3": "S3 (MinIO, AWS, Backblaze…)"
+  },
+  "schedule": {
+    "off": "wyłączone",
+    "hours": "co {{n}} h (minuta {{m}})",
+    "weekly": "co tydzień: {{day}} {{at}}",
+    "daily": "codziennie o {{at}}",
+    "title": "Harmonogram",
+    "enabled": "Kopie z harmonogramu włączone",
+    "kind": {
+      "hours": "co kilka godzin",
+      "daily": "codziennie",
+      "weekly": "co tydzień"
+    },
+    "everyHours": "Co ile godzin",
+    "day": "Dzień",
+    "hour": "Godzina",
+    "minute": "Minuta",
+    "hint": "Czas serwera. Kopia, której termin minął przy wyłączonym serwerze, wykona się po jego starcie."
+  },
+  "include": {
+    "title": "Zawartość",
+    "saga": "Baza Saga",
+    "sagaHint": "konta i role, agenci i ich certyfikaty, grupy, alerty, reguły z panelu, spis archiwum NIS2, polityki, kanały powiadomień",
+    "config": "Konfiguracja serwera",
+    "configHint": "certyfikaty (z kluczem CA agentów) i plik .env z hasłami usług",
+    "archive": "Archiwum NIS2 (przyrosty)",
+    "archiveHint": "nowe segmenty i manifesty od poprzedniej kopii – wysyłane tylko do miejsca docelowego (archiwum jest już na dysku serwera)",
+    "grafana": "Dane Grafany",
+    "grafanaHint": "pulpity i ustawienia zmienione w interfejsie Grafany (pulpity z repozytorium są odtwarzane bez kopii)",
+    "warning": "Bez bazy Saga i konfiguracji serwera nie da się odtworzyć systemu po utracie serwera: agenci straciliby zaufanie do nowego serwera, a konta i ustawienia trzeba by tworzyć od nowa.",
+    "events": "Zdarzenia z ClickHouse nie są kopiowane – po odtworzeniu serwera ostatnie dni odtwarza się z archiwum NIS2 (Urd → Odtworzenie)."
+  },
+  "retention": {
+    "title": "Retencja",
+    "local": "Na serwerze",
+    "remote": "W miejscu docelowym",
+    "days": "Dni",
+    "count": "Najwyżej kopii",
+    "unlimited": "0 – bez limitu",
+    "hint": "Kopia jest usuwana, gdy jest starsza niż podana liczba dni albo gdy jest więcej kopii niż limit. Najnowsza kopia zostaje zawsze. Paczki archiwum NIS2 w miejscu docelowym wygasają tylko po dniach."
+  },
+  "target": {
+    "title": "Miejsce docelowe",
+    "localOnly": "Kopie zostają tylko na dysku tego serwera – awaria serwera albo jego dysku zabierze je razem z systemem.",
+    "host": "Serwer",
+    "user": "Użytkownik",
+    "share": "Udział",
+    "sharePlaceholder": "kopie",
+    "domain": "Domena (opcjonalnie)",
+    "endpoint": "Adres usługi",
+    "endpointHint": "puste – Amazon S3",
+    "bucket": "Kubełek",
+    "accessKey": "Identyfikator klucza",
+    "path": "Katalog",
+    "pathHint": {
+      "sftp": "zaczynający się od / – ścieżka bezwzględna, inaczej względem katalogu domowego użytkownika",
+      "smb": "katalog w udziale (puste – główny katalog udziału)",
+      "s3": "prefiks w kubełku (puste – główny)",
+      "none": ""
+    },
+    "auth": "Logowanie",
+    "authServerKey": "Klucz SSH wygenerowany przez usługę kopii (zalecane – klucz prywatny nie opuszcza serwera)",
+    "authPrivateKey": "Własny klucz prywatny SSH",
+    "authPassword": "Hasło",
+    "addKey": [
+      "Dopisz ten klucz publiczny do ",
+      " użytkownika na serwerze kopii (w TrueNAS: konto użytkownika → klucz publiczny SSH):"
+    ],
+    "noKey": "Usługa kopii nie ma jeszcze klucza SSH – wygeneruj go.",
+    "newKeyConfirm": "Nowy klucz zastąpi obecny – stary przestanie działać. Kontynuować?",
+    "newKey": "Wygeneruj nowy klucz",
+    "genKey": "Wygeneruj klucz",
+    "privateKey": "Klucz prywatny SSH",
+    "privateKeyHint": "format OpenSSH albo PEM, bez hasła",
+    "secretKey": "Klucz tajny (secret access key)",
+    "hostKey": [
+      "Zapamiętany klucz serwera kopii: ",
+      " – jego zmiana zatrzyma wysyłkę (ochrona przed podszyciem)."
+    ]
+  },
+  "saveSettings": "Zapisz ustawienia",
+  "undo": "Cofnij zmiany",
+  "lastChange": "ostatnia zmiana: {{by}}, {{date}}",
+  "history": {
+    "title": "Historia kopii",
+    "none": "Brak kopii.",
+    "col": {
+      "time": "Czas",
+      "kind": "Rodzaj",
+      "result": "Wynik",
+      "size": "Rozmiar",
+      "upload": "Wysyłka",
+      "details": "Szczegóły"
+    },
+    "manual": "na żądanie",
+    "scheduled": "harmonogram",
+    "yes": "tak",
+    "error": "błąd",
+    "restoreHint": [
+      "Odtworzenie na czystym serwerze: ",
+      " i hasło kopii."
+    ],
+    "restoreCmd": "./restore.sh <kopia> [katalog z paczkami archiwum]"
+  },
+  "confirm": {
+    "title": "Zapis ustawień kopii",
+    "text": "Ustawienia kopii decydują, gdzie trafiają dane całego systemu – potwierdź zmianę swoim hasłem."
+  },
+  "restore": {
+    "word": "PRZYWRÓĆ",
+    "how": "Jak działa przywracanie",
+    "how1": "Wybierasz kopię i części do przywrócenia; najpierw sprawdź jej zawartość (odszyfrowanie hasłem kopii).",
+    "how2": "Usługa kopii robi kopię obecnego stanu (można z niej wrócić), pobiera wybraną kopię z miejsca docelowego.",
+    "how3": "Serwer w ciągu minuty zatrzymuje usługi korzystające z bazy, przywraca wybrane części i uruchamia stos – panel jest wtedy przez chwilę niedostępny, a po przywróceniu bazy trzeba się zalogować ponownie.",
+    "how4": "Archiwum NIS2 przywraca się na czystym serwerze poleceniem restore.sh (docs/operacje.md).",
+    "inProgress": "Przywracanie w toku",
+    "preparing": "Usługa kopii przygotowuje przywrócenie…",
+    "requestedBy": "Zlecił {{by}}, {{date}}.",
+    "last": "Ostatnie przywrócenie",
+    "lastFailed": "Ostatnie przywrócenie nieudane",
+    "refresh": "Odśwież listę kopii",
+    "refreshHint": "Lista odświeża się sama co 15 minut i po każdej kopii.",
+    "empty": "Brak kopii na liście.",
+    "col": {
+      "from": "Kopia z",
+      "where": "Gdzie"
+    },
+    "server": "serwer",
+    "target": "miejsce docelowe",
+    "part": {
+      "saga": "baza Saga",
+      "config": "konfiguracja",
+      "grafana": "Grafana"
+    },
+    "unchecked": "niesprawdzona",
+    "inspect": "sprawdź",
+    "restoreEllipsis": "przywróć…",
+    "title": "Przywrócenie z kopii z {{when}}",
+    "onServer": "na serwerze",
+    "atTarget": "w miejscu docelowym",
+    "both": "Baza Saga i konfiguracja serwera",
+    "bothHint": "przywracane razem – w .env są hasła ról bazy; konta, agenci, certyfikaty, alerty, polityki, ustawienia kopii, certs/ i .env",
+    "safety": "Najpierw kopia obecnego stanu (zalecane)",
+    "safetyHint": "pozwala wrócić do stanu sprzed przywrócenia",
+    "warn1": "Baza wróci do stanu z {{when}}: alerty, zmiany ustawień, konta i agenci zarejestrowani później znikną.",
+    "warn2": "Agenci zarejestrowani po tej dacie muszą zarejestrować się ponownie.",
+    "warn3": "Panel będzie przez chwilę niedostępny; po przywróceniu zaloguj się ponownie (hasłem z dnia kopii).",
+    "warn4": "Zdarzenia w ClickHouse i archiwum NIS2 nie są zmieniane.",
+    "typeWord": "Wpisz {{word}}, aby potwierdzić",
+    "requested": "Zlecono przywrócenie – usługa kopii przygotuje kopię, a serwer przywróci ją w ciągu kilku minut.",
+    "restore": "Przywróć"
+  }
+}

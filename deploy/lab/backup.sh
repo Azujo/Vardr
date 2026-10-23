@@ -1,14 +1,15 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Kopie zapasowe Vardra – polecenia serwera. Kopie wykonuje usługa
-# siem-backup (kontener backup) według ustawień z panelu: Administracja →
-# Kopie zapasowe (harmonogram, zawartość, retencja, miejsce docelowe).
+# Vardr backups – server commands. Backups are made by the siem-backup
+# service (backup container) according to the panel settings: Administration
+# → Backups (schedule, contents, retention, destination).
 #
-#   ./backup.sh                 kopia teraz (zlecenie dla usługi; czeka na wynik)
-#   ./backup.sh haslo init      pierwsze hasło kopii – pokazywane RAZ, zapisz je
-#   ./backup.sh haslo pokaz     pokazuje obecne hasło
-#   ./backup.sh haslo zmien     nowe hasło dla kolejnych kopii (stare kopie
-#                               otwiera tylko stare hasło)
+#   ./backup.sh                     backup now (request for the service; waits for the result)
+#   ./backup.sh password init       first backup password – shown ONCE, write it down
+#   ./backup.sh password show       shows the current password
+#   ./backup.sh password change     new password for further backups (old backups
+#                                   open only with the old password)
+#   (Polish aliases: haslo init|pokaz|zmien)
 #
 # Hasło leży w ~/.vardr-backup.pass (instalacja z paczki: VARDR_BACKUP_PASS_FILE
 # w .env, /etc/vardr/backup.pass; tylko dla właściciela) – poza katalogiem
@@ -17,7 +18,7 @@
 # administratora poza serwerem. Nazwa pliku kopii zawiera identyfikator
 # hasła (k + 8 znaków), żeby było wiadomo, którym hasłem ją otworzyć.
 #
-# Odtworzenie całego systemu na czystej VM: ./restore.sh (docs/operacje.md).
+# Odtworzenie całego systemu na czystej VM: ./restore.sh (docs/en/operations.md).
 set -euo pipefail
 cd "$(dirname "$0")"
 umask 077
@@ -31,14 +32,14 @@ show_pass() {
   cat <<EOF
 
   ======================================================================
-   HASŁO KOPII ZAPASOWYCH VARDRA
+   VARDR BACKUP PASSWORD
 
        $(cat "$pass_file")
 
-   Identyfikator: $(key_id) (jest w nazwie każdego pliku kopii)
+   Identifier: $(key_id) (it is in the name of every backup file)
 
-   Zapisz je TERAZ poza serwerem (menedżer haseł, sejf, kartka).
-   Bez niego kopii nie da się odszyfrować – nikt go nie odtworzy.
+   Write it down NOW outside the server (password manager, safe, paper).
+   Without it the backups cannot be decrypted – nobody can recover it.
   ======================================================================
 
 EOF
@@ -56,33 +57,33 @@ new_pass() {
   mv "$pass_file.tmp" "$pass_file"
 }
 
-if [ "${1:-}" = haslo ]; then
+if [ "${1:-}" = password ] || [ "${1:-}" = haslo ]; then
   case "${2:-}" in
   init)
     if [ -s "$pass_file" ]; then
-      echo "Hasło kopii już istnieje (./backup.sh haslo pokaz / zmien)." >&2
+      echo "The backup password already exists (./backup.sh password show / change)." >&2
       exit 1
     fi
     new_pass
     show_pass
     ;;
-  pokaz)
-    [ -s "$pass_file" ] || { echo "Brak hasła – ./backup.sh haslo init" >&2; exit 1; }
+  show | pokaz)
+    [ -s "$pass_file" ] || { echo "No password – ./backup.sh password init" >&2; exit 1; }
     show_pass
     ;;
-  zmien)
-    [ -s "$pass_file" ] || { echo "Brak hasła – ./backup.sh haslo init" >&2; exit 1; }
-    echo "Dotychczasowe kopie (identyfikator $(key_id)) da się otworzyć tylko obecnym hasłem."
-    read -r -p "Czy obecne hasło jest zapisane poza serwerem? Wpisz TAK: " ok
-    [ "$ok" = TAK ] || { echo "Przerwano – hasło bez zmian."; exit 1; }
+  change | zmien)
+    [ -s "$pass_file" ] || { echo "No password – ./backup.sh password init" >&2; exit 1; }
+    echo "Existing backups (identifier $(key_id)) can be opened only with the current password."
+    read -r -p "Is the current password written down outside the server? Type YES: " ok
+    [ "$ok" = YES ] || [ "$ok" = TAK ] || { echo "Aborted – password unchanged."; exit 1; }
     cp -p "$pass_file" "$pass_file.old"
     new_pass
     show_pass
     rm -f "$pass_file.old"
-    echo "Kolejne kopie będą szyfrowane nowym hasłem."
+    echo "Further backups will be encrypted with the new password."
     ;;
   *)
-    echo "użycie: ./backup.sh haslo init|pokaz|zmien" >&2
+    echo "usage: ./backup.sh password init|show|change" >&2
     exit 2
     ;;
   esac
@@ -90,11 +91,11 @@ if [ "${1:-}" = haslo ]; then
 fi
 
 if [ $# -gt 0 ]; then
-  echo "użycie: ./backup.sh | ./backup.sh haslo init|pokaz|zmien" >&2
+  echo "usage: ./backup.sh | ./backup.sh password init|show|change" >&2
   exit 2
 fi
 if [ ! -s "$pass_file" ]; then
-  echo "BŁĄD: brak hasła kopii – najpierw ./backup.sh haslo init" >&2
+  echo "ERROR: no backup password – first run ./backup.sh password init" >&2
   exit 1
 fi
 exec docker compose exec -T backup siem-backup run

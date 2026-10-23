@@ -101,10 +101,12 @@ func (s *Server) getIdentities(w http.ResponseWriter, r *http.Request) {
 		"delivery": s.Identities.Publish != nil, "people": s.Identities.People != nil})
 }
 
-// publishIdentities wysyła bieżącą konfigurację normalizatorom.
-func (s *Server) publishIdentities(r *http.Request) string {
+// publishIdentities wysyła bieżącą konfigurację normalizatorom i zwraca
+// odpowiedź dla panelu: kod dostarczenia (delivery: ok, no_nats, failed) i opis.
+func (s *Server) publishIdentities(r *http.Request) map[string]any {
+	res := func(code, msg string) map[string]any { return map[string]any{"delivery": code, "message": msg} }
 	if s.Identities.Publish == nil {
-		return "zapisano; brak połączenia z NATS – normalizatory dostaną zmianę po jego przywróceniu"
+		return res("no_nats", "zapisano; brak połączenia z NATS – normalizatory dostaną zmianę po jego przywróceniu")
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 	defer cancel()
@@ -113,10 +115,10 @@ func (s *Server) publishIdentities(r *http.Request) string {
 		err = s.Identities.Publish(ctx, c)
 	}
 	if err != nil {
-		s.Log.Warn("dostarczenie tożsamości do NATS nieudane – ponowi synchronizacja okresowa", "err", err)
-		return "zapisano; dostarczenie do normalizatorów nieudane – panel ponowi je w ciągu 5 minut"
+		s.Log.Warn("delivering identities to NATS failed – the periodic sync will retry", "err", err)
+		return res("failed", "zapisano; dostarczenie do normalizatorów nieudane – panel ponowi je w ciągu 5 minut")
 	}
-	return "zapisano; nowe zdarzenia dostają tożsamość według zmiany w ciągu kilku sekund (zapisane – bez zmian)"
+	return res("ok", "zapisano; nowe zdarzenia dostają tożsamość według zmiany w ciągu kilku sekund (zapisane – bez zmian)")
 }
 
 var domainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`)
@@ -160,7 +162,9 @@ func (s *Server) setIdentityDomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "identity_domains_changed", "", map[string]any{"before": before, "after": domains})
-	writeJSON(w, http.StatusOK, map[string]any{"domains": domains, "message": s.publishIdentities(r)})
+	out := s.publishIdentities(r)
+	out["domains"] = domains
+	writeJSON(w, http.StatusOK, out)
 }
 
 // sharedRe: nazwa konta wspólnego (bez domeny i spacji).
@@ -205,7 +209,9 @@ func (s *Server) setIdentityShared(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "identity_shared_changed", "", map[string]any{"before": before, "after": accounts})
-	writeJSON(w, http.StatusOK, map[string]any{"accounts": accounts, "message": s.publishIdentities(r)})
+	out := s.publishIdentities(r)
+	out["accounts"] = accounts
+	writeJSON(w, http.StatusOK, out)
 }
 
 // accountRe: nazwa konta albo tożsamość (także DOMENA\konto i UPN).
@@ -255,7 +261,7 @@ func (s *Server) setIdentityAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "identity_alias_set", al, map[string]any{"identity": id, "note": note})
-	writeJSON(w, http.StatusOK, map[string]any{"message": s.publishIdentities(r)})
+	writeJSON(w, http.StatusOK, s.publishIdentities(r))
 }
 
 func (s *Server) deleteIdentityAlias(w http.ResponseWriter, r *http.Request) {
@@ -279,7 +285,7 @@ func (s *Server) deleteIdentityAlias(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "identity_alias_deleted", old.Alias, map[string]any{"identity": old.Identity})
-	writeJSON(w, http.StatusOK, map[string]any{"message": s.publishIdentities(r)})
+	writeJSON(w, http.StatusOK, s.publishIdentities(r))
 }
 
 // resolveIdentity pokazuje, jaką tożsamość dostanie konto przy bieżących
@@ -334,7 +340,7 @@ func (s *Server) listPeople(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	people, err := s.Identities.People.People(ctx, s.now().Add(-time.Duration(hours)*time.Hour), q, 500)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		writeErr(w, http.StatusBadGateway, "events_failed", err)
 		return
 	}
 	groups := map[string][]string{}
@@ -382,7 +388,7 @@ func (s *Server) domainsSeen(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	seen, err := s.Identities.People.DomainsSeen(ctx, s.now().Add(-7*24*time.Hour))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		writeErr(w, http.StatusBadGateway, "events_failed", err)
 		return
 	}
 	out := make([]domainSeenView, 0, len(seen))

@@ -18,6 +18,7 @@ import (
 	"siem/agent/internal/managed"
 	"siem/agent/internal/shipper"
 	"siem/internal/contract"
+	"siem/internal/lang"
 )
 
 // authorize: zgoda na zatrzymanie, aktualizację albo usunięcie chronionej
@@ -34,27 +35,27 @@ func authorize(cfgPath, action, token string) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("odczyt uprawnień usługi: %w", err)
+		return fmt.Errorf(lang.L("odczyt uprawnień usługi: %w", "reading service permissions: %w"), err)
 	}
 	if acl == guard.StateOpen && token == "" {
 		return nil // usługa bez ochrony
 	}
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		return fmt.Errorf("konfiguracja agenta (potrzebna do sprawdzenia tokenu): %w", err)
+		return fmt.Errorf(lang.L("konfiguracja agenta (potrzebna do sprawdzenia tokenu): %w", "agent configuration (needed to check the token): %w"), err)
 	}
 	dir := cfg.StateDir
 	user := guard.CurrentUser()
 	_, agentID, err := shipper.NewTLSClient(cfg.Server.CAFile, cfg.Server.CertFile, cfg.Server.KeyFile, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("certyfikat agenta: %w", err)
+		return fmt.Errorf(lang.L("certyfikat agenta: %w", "agent certificate: %w"), err)
 	}
 	tokens := freshTokens(cfg)
 	t, verr := guard.Verify(agentID, token, tokens, guard.Used(dir), time.Now().UTC())
 	if verr != nil {
-		detail := "polecenie " + action + ": "
+		detail := lang.L("polecenie ", "command ") + action + ": "
 		if token == "" {
-			detail += "bez tokenu"
+			detail += lang.L("bez tokenu", "without a token")
 		} else {
 			detail += verr.Error()
 		}
@@ -73,9 +74,9 @@ func authorize(cfgPath, action, token string) error {
 	_ = guard.RecordState(dir, guard.StateOpen)
 	if err := guard.SetServiceACL(serviceName, guard.StateOpen); err != nil {
 		guard.RemoveUnlock(dir)
-		return fmt.Errorf("odblokowanie usługi: %w", err)
+		return fmt.Errorf(lang.L("odblokowanie usługi: %w", "unlocking the service: %w"), err)
 	}
-	fmt.Printf("Token deinstalacji przyjęty (%s) – usługa odblokowana do: %s.\n", t.ID, action)
+	fmt.Printf(lang.L("Token deinstalacji przyjęty (%s) – usługa odblokowana do: %s.\n", "Uninstall token accepted (%s) – service unlocked for: %s.\n"), t.ID, action)
 	return nil
 }
 
@@ -91,7 +92,7 @@ func freshTokens(cfg *config.Config) []contract.UninstallToken {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			p := &managed.Poller{Client: client, PanelURL: panelURL, StateDir: cfg.StateDir}
 			if _, err := p.Fetch(ctx); err != nil {
-				fmt.Println("uwaga: panel niedostępny – sprawdzam token z ostatniej konfiguracji:", err)
+				fmt.Println(lang.L("uwaga: panel niedostępny – sprawdzam token z ostatniej konfiguracji:", "warning: panel unavailable – checking the token from the last configuration:"), err)
 			}
 			cancel()
 		}

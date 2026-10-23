@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"siem/internal/lang"
 	"siem/panel/internal/api/store"
 )
 
@@ -91,6 +92,24 @@ type Service struct {
 	Log    *slog.Logger
 	Client *http.Client
 	Now    func() time.Time
+	// Lang: język systemu – w nim powstają wiadomości (nil – polski).
+	Lang func(ctx context.Context) string
+}
+
+// Language: język wiadomości (pl, en).
+func (s *Service) Language(ctx context.Context) string {
+	if s == nil || s.Lang == nil {
+		return "pl"
+	}
+	return s.Lang(ctx)
+}
+
+// pick: tekst polski albo angielski (dla „en”).
+func pick(lang, pl, en string) string {
+	if lang == "en" {
+		return en
+	}
+	return pl
 }
 
 func (s *Service) now() time.Time {
@@ -174,10 +193,13 @@ func (s *Service) SendTo(ctx context.Context, c store.Channel, m Message) error 
 		AnchorSeq: m.AnchorSeq, AnchorSHA256: m.AnchorSHA256}
 	if err != nil {
 		e.Error = err.Error()
-		s.Log.Warn("wysyłka powiadomienia nieudana", "channel", c.Name, "event", m.Event, "err", err)
+		if s.Language(ctx) == "en" {
+			e.Error = lang.English(err)
+		}
+		s.Log.Warn("sending the notification failed", "channel", c.Name, "event", m.Event, "err", err)
 	}
 	if rerr := s.Store.RecordDelivery(context.WithoutCancel(ctx), e); rerr != nil {
-		s.Log.Warn("zapis w dzienniku wysyłek nieudany", "err", rerr)
+		s.Log.Warn("writing to the notification log failed", "err", rerr)
 	}
 	return err
 }
@@ -191,7 +213,7 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 	case KindWebhook:
 		body, err = json.Marshal(webhookPayload(m))
 	default:
-		return fmt.Errorf("nieznany rodzaj kanału %q", c.Kind)
+		return fmt.Errorf("unknown channel kind %q", c.Kind)
 	}
 	if err != nil {
 		return err
@@ -199,7 +221,7 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 	for attempt := 0; ; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
 		if err != nil {
-			return errors.New("niepoprawny adres kanału")
+			return lang.Errorf("niepoprawny adres kanału", "invalid channel address")
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "Vardr-SIEM")
@@ -222,7 +244,7 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 				return ctx.Err()
 			}
 		}
-		return fmt.Errorf("odbiorca odpowiedział HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+		return lang.Errorf("odbiorca odpowiedział HTTP %d: %s", "the recipient responded with HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
 	}
 }
 
@@ -238,9 +260,9 @@ func safeErr(err error) error {
 	var ue *url.Error
 	if errors.As(err, &ue) {
 		if ue.Timeout() {
-			return errors.New("przekroczony czas połączenia z odbiorcą")
+			return lang.Errorf("przekroczony czas połączenia z odbiorcą", "connection to the recipient timed out")
 		}
-		return fmt.Errorf("połączenie z odbiorcą nieudane: %v", ue.Err)
+		return lang.Errorf("połączenie z odbiorcą nieudane: %v", "connection to the recipient failed: %v", ue.Err)
 	}
 	return err
 }
@@ -338,18 +360,18 @@ func webhookPayload(m Message) map[string]any {
 func ValidateURL(kind, raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
-		return errors.New("adres musi zaczynać się od https:// i nie może zawierać loginu ani hasła")
+		return lang.Errorf("adres musi zaczynać się od https:// i nie może zawierać loginu ani hasła", "the address must start with https:// and must not contain a username or password")
 	}
 	if len(raw) > 2000 {
-		return errors.New("adres jest za długi")
+		return lang.Errorf("adres jest za długi", "the address is too long")
 	}
 	if kind == KindDiscord {
 		host := strings.ToLower(u.Hostname())
 		if host != "discord.com" && host != "discordapp.com" && host != "ptb.discord.com" && host != "canary.discord.com" {
-			return errors.New("adres webhooka Discorda ma postać https://discord.com/api/webhooks/…")
+			return lang.Errorf("adres webhooka Discorda ma postać https://discord.com/api/webhooks/…", "a Discord webhook address looks like https://discord.com/api/webhooks/…")
 		}
 		if !strings.HasPrefix(u.Path, "/api/webhooks/") {
-			return errors.New("adres webhooka Discorda ma postać https://discord.com/api/webhooks/…")
+			return lang.Errorf("adres webhooka Discorda ma postać https://discord.com/api/webhooks/…", "a Discord webhook address looks like https://discord.com/api/webhooks/…")
 		}
 	}
 	return nil

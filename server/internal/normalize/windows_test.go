@@ -120,7 +120,7 @@ func TestBatchQuarantinesBadEventsWithoutStoppingOthers(t *testing.T) {
 		t.Fatalf("zdarzenia %d, kwarantanna %d", len(nb.Events), len(nb.Quarantine))
 	}
 	reasons := nb.Quarantine[0].Reason + nb.Quarantine[1].Reason + nb.Quarantine[2].Reason
-	for _, want := range []string{"niepoprawny XML", "brak dekodera", "przycięte"} {
+	for _, want := range []string{"invalid event XML", "no decoder", "truncated"} {
 		if !strings.Contains(reasons, want) {
 			t.Errorf("brak powodu %q w %q", want, reasons)
 		}

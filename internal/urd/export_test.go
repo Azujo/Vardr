@@ -105,7 +105,7 @@ func TestExportRoundtripAndTamper(t *testing.T) {
 	to := from.Add(2 * time.Hour) // godziny 10:00 i 11:00 (z 4 manifestów)
 	data := buildExport(t, a, from, to)
 
-	c := CheckExport(bytes.NewReader(data))
+	c := CheckExport(bytes.NewReader(data), "pl")
 	if !c.OK || c.Manifests != 2 || c.Segments != 4 || c.Records != 12 || c.ExportID != 7 {
 		t.Fatalf("poprawna paczka: %+v", c)
 	}
@@ -122,26 +122,26 @@ func TestExportRoundtripAndTamper(t *testing.T) {
 	flip := func(b []byte) []byte { b[len(b)-4] ^= 1; return b }
 
 	t.Run("zmiana segmentu bez poprawienia sum", func(t *testing.T) {
-		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: flip}, nil, false))),
+		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: flip}, nil, false)), "pl"),
 			"niezgodny z SHA256SUMS")
 	})
 	t.Run("zmiana segmentu z przeliczonymi sumami", func(t *testing.T) {
-		c := CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: flip}, nil, true)))
+		c := CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: flip}, nil, true)), "pl")
 		expectProblem(t, c, "niezgodny z manifestem")
 		expectProblem(t, c, "niezgodnych z ich sumą")
 	})
 	t.Run("podmiana manifestu w łańcuchu", func(t *testing.T) {
 		c := CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{
 			chainName(1): func(b []byte) []byte { return bytes.Replace(b, []byte(`"records": 6`), []byte(`"records": 5`), 1) },
-		}, nil, true)))
+		}, nil, true)), "pl")
 		expectProblem(t, c, "łańcuch przerwany")
 	})
 	t.Run("usunięty segment", func(t *testing.T) {
-		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: func([]byte) []byte { return nil }}, nil, true))),
+		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, map[string]func([]byte) []byte{firstSeg: func([]byte) []byte { return nil }}, nil, true)), "pl"),
 			"brak segmentu")
 	})
 	t.Run("dodany plik", func(t *testing.T) {
-		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, nil, map[string][]byte{"segments/obcy.urd": []byte(Magic)}, false))),
+		expectProblem(t, CheckExport(bytes.NewReader(rewriteTar(t, data, nil, map[string][]byte{"segments/obcy.urd": []byte(Magic)}, false)), "pl"),
 			"spoza SHA256SUMS")
 	})
 }
@@ -227,7 +227,7 @@ func TestExportReadablePart(t *testing.T) {
 	a, _, _ := fillReal(t)
 	from := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
 	data := buildExport(t, a, from, from.Add(2*time.Hour))
-	c := CheckExport(bytes.NewReader(data))
+	c := CheckExport(bytes.NewReader(data), "pl")
 	if !c.OK || c.Events != 24 {
 		t.Fatalf("paczka z częścią czytelną: %+v", c)
 	}
@@ -272,7 +272,7 @@ func TestExportReadablePart(t *testing.T) {
 			return out.Bytes()
 		},
 	}, nil, true)
-	expectProblem(t, CheckExport(bytes.NewReader(forged)), "czytelne zdarzenia")
+	expectProblem(t, CheckExport(bytes.NewReader(forged), "pl"), "czytelne zdarzenia")
 }
 
 func TestExportAgentFilter(t *testing.T) {
@@ -309,7 +309,7 @@ func TestExportAgentFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := buf.Bytes()
-	c := CheckExport(bytes.NewReader(data))
+	c := CheckExport(bytes.NewReader(data), "pl")
 	// 4 paczki wybranych agentów × 2 zdarzenia; segment (dowód) z wszystkimi 6 paczkami.
 	if !c.OK || c.Events != 8 || c.Records != 6 || len(c.Agents) != 2 {
 		t.Fatalf("eksport z filtrem agentów: %+v", c)
@@ -325,5 +325,5 @@ func TestExportAgentFilter(t *testing.T) {
 			return bytes.Replace(b, []byte(`"agt-2",`), []byte{}, 1)
 		},
 	}, nil, true)
-	expectProblem(t, CheckExport(bytes.NewReader(forged)), "czytelne zdarzenia")
+	expectProblem(t, CheckExport(bytes.NewReader(forged), "pl"), "czytelne zdarzenia")
 }

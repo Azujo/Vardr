@@ -37,6 +37,18 @@ falsepositives:
   - Oprogramowanie zdalnej pomocy używane oficjalnie przez dział IT (wyklucz jego program po ścieżce)
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Remote access or tunnelling tool (AnyDesk, ngrok, chisel)"
+      description: |
+        A remote access program (AnyDesk, ScreenConnect, Atera, RustDesk,
+        TeamViewer) or a tunnelling tool (ngrok, chisel, cloudflared, plink with -R
+        forwarding) was started. Attackers install them as a persistent access channel
+        that looks like ordinary software.
+      instructions: |
+        {{Image}} was started on {{host.name}}. Find out whether the company uses this
+        program and who installed it. If not – uninstall it, block its domains on the
+        firewall and check what happened on the computer since its first start.
   group_by: [host.name, Image]
   suppress: 24h
   instructions: |

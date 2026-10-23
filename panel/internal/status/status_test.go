@@ -48,7 +48,8 @@ func TestReport(t *testing.T) {
 	if c := byName["Przyjmowanie zdarzeń (siem-ingest)"]; c.Status != OK || c.Hint != "" {
 		t.Fatalf("ingest: %+v", c)
 	}
-	if c := byName["Najbardziej zapełniona kolejka"]; c.Status != Warn || c.Value != "62% (archiver)" {
+	if c := byName["Najbardziej zapełniona kolejka"]; c.Status != Warn || c.Value != "62% (archiver)" || c.ValueKey != "queue" ||
+		c.Args["n"] != 62.0 || c.Args["consumer"] != "archiver" || c.ID != "pipeline.queue" || c.GroupID != "pipeline" {
 		t.Fatalf("kolejka: %+v", c)
 	}
 	if c := byName["Silnik zapytań – zaległość"]; c.Status != Disabled {

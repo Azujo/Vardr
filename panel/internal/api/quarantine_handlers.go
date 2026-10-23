@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"siem/internal/lang"
 	"siem/internal/reprocess"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/events"
@@ -80,7 +81,7 @@ func quarantineFilter(r *http.Request, now time.Time) (events.QuarantineFilter, 
 	f := events.QuarantineFilter{From: now.Add(-time.Duration(hours) * time.Hour), Source: strings.TrimSpace(q.Get("source")),
 		Reason: strings.TrimSpace(q.Get("reason")), Agent: strings.TrimSpace(q.Get("agent"))}
 	if len(f.Source) > 200 || len(f.Reason) > 500 || len(f.Agent) > 200 {
-		return f, 0, errors.New("za długi filtr")
+		return f, 0, lang.Errorf("za długi filtr", "filter too long")
 	}
 	return f, hours, nil
 }
@@ -91,14 +92,14 @@ func (s *Server) listQuarantine(w http.ResponseWriter, r *http.Request) {
 	}
 	f, _, err := quarantineFilter(r, s.now())
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_filter", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_filter", err)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), SearchTimeout)
 	defer cancel()
 	groups, entries, total, err := s.Quarantine.Source.QuarantineOverview(ctx, f, 200)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		writeErr(w, http.StatusBadGateway, "events_failed", err)
 		return
 	}
 	ids := make([]string, 0, len(entries))
@@ -169,7 +170,7 @@ func (s *Server) reprocessQuarantine(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	items, err := qm.Source.QuarantineItems(ctx, f, maxReprocessItems+1)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "events_failed", err.Error())
+		writeErr(w, http.StatusBadGateway, "events_failed", err)
 		return
 	}
 	limited := len(items) > maxReprocessItems
@@ -246,7 +247,7 @@ func (q *Quarantine) run(job int64, items []reprocess.Item) {
 			if attempt == 3 {
 				return err
 			}
-			log.Warn("część zlecenia nieudana – ponowię", "chunk", n, "err", err)
+			log.Warn("part of the request failed – will retry", "chunk", n, "err", err)
 			time.Sleep(time.Duration(attempt) * 2 * time.Second)
 		}
 		failed := map[string]string{}
@@ -272,11 +273,11 @@ func (q *Quarantine) run(job int64, items []reprocess.Item) {
 	msg := ""
 	if err != nil {
 		msg = err.Error()
-		log.Error("zlecenie ponownego przetworzenia kwarantanny nieudane", "err", err)
+		log.Error("quarantine reprocessing request failed", "err", err)
 	} else {
-		log.Info("zlecenie ponownego przetworzenia kwarantanny zakończone", "items", len(items))
+		log.Info("quarantine reprocessing request completed", "items", len(items))
 	}
 	if ferr := q.Store.FinishQuarantineJob(ctx, job, msg); ferr != nil {
-		log.Error("zapis końca zlecenia nieudany", "err", ferr)
+		log.Error("recording the end of the request failed", "err", ferr)
 	}
 }

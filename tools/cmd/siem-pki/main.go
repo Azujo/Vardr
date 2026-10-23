@@ -26,16 +26,16 @@ import (
 )
 
 func usage() {
-	fmt.Fprint(os.Stderr, `siem-pki – certyfikaty laboratoryjne dla mTLS
+	fmt.Fprint(os.Stderr, `siem-pki – lab certificates for mTLS
 
-Użycie:
-  siem-pki ca     [-out certs]                                  nowy urząd certyfikacji
-  siem-pki server [-out certs] [-hosts localhost,127.0.0.1]     certyfikat serwera
-  siem-pki agents-ca [-out certs]                               CA agentów (online, tylko certyfikaty klientów;
-                                                               używane przez panel do rejestracji tokenem)
-  siem-pki agent  [-out certs] [-id agt-...] [-name agent]      certyfikat agenta (CN = identyfikator agenta)
+Usage:
+  siem-pki ca     [-out certs]                                  new certificate authority
+  siem-pki server [-out certs] [-hosts localhost,127.0.0.1]     server certificate
+  siem-pki agents-ca [-out certs]                               agent CA (online, client certificates only;
+                                                               used by the panel for token enrollment)
+  siem-pki agent  [-out certs] [-id agt-...] [-name agent]      agent certificate (CN = agent identifier)
   siem-pki package -id agt-pc01 [-server 192.168.88.98] [-agent bin/vardr-agent.exe] [-out dist] [-ca-dir certs]
-                                                               paczka instalacyjna agenta dla jednego komputera
+                                                               agent installation package for one computer
 `)
 }
 
@@ -45,13 +45,13 @@ func main() {
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
-	out := fs.String("out", "certs", "katalog wyjściowy")
-	hosts := fs.String("hosts", "localhost,127.0.0.1", "nazwy DNS i adresy IP serwera (po przecinku)")
-	id := fs.String("id", "", "identyfikator agenta (domyślnie losowy agt-...)")
-	name := fs.String("name", "agent", "prefiks nazw plików certyfikatu agenta")
-	caDir := fs.String("ca-dir", "certs", "package: katalog z CA")
-	agentExe := fs.String("agent", filepath.Join("bin", "vardr-agent.exe"), "package: plik programu agenta")
-	server := fs.String("server", "", "package: domyślny adres serwera zapisany w paczce")
+	out := fs.String("out", "certs", "output directory")
+	hosts := fs.String("hosts", "localhost,127.0.0.1", "server DNS names and IP addresses (comma-separated)")
+	id := fs.String("id", "", "agent identifier (random agt-... by default)")
+	name := fs.String("name", "agent", "agent certificate file name prefix")
+	caDir := fs.String("ca-dir", "certs", "package: directory with the CA")
+	agentExe := fs.String("agent", filepath.Join("bin", "vardr-agent.exe"), "package: agent program file")
+	server := fs.String("server", "", "package: default server address stored in the package")
 	_ = fs.Parse(os.Args[2:])
 
 	var err error
@@ -70,7 +70,7 @@ func main() {
 		err = makeAgent(*out, *name, agentID)
 	case "package":
 		if *id == "" {
-			fmt.Fprintln(os.Stderr, "błąd: podaj -id, np. -id agt-pc01 (identyfikator widoczny w SIEM)")
+			fmt.Fprintln(os.Stderr, "error: specify -id, e.g. -id agt-pc01 (identifier shown in the SIEM)")
 			os.Exit(2)
 		}
 		outDir := *out
@@ -83,7 +83,7 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "błąd:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -101,7 +101,7 @@ func serial() *big.Int {
 
 func makeCA(dir string) error {
 	if _, err := os.Stat(filepath.Join(dir, "ca.key")); err == nil {
-		return errors.New("CA już istnieje w " + dir + " – usuń ją ręcznie, jeśli naprawdę chcesz nową")
+		return errors.New("CA already exists in " + dir + " – remove it manually if you really want a new one")
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -124,14 +124,14 @@ func makeCA(dir string) error {
 	if err := write(dir, "ca", der, key); err != nil {
 		return err
 	}
-	fmt.Println("Utworzono CA:", filepath.Join(dir, "ca.crt"))
+	fmt.Println("CA created:", filepath.Join(dir, "ca.crt"))
 	return nil
 }
 
 func loadCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	certPEM, err := os.ReadFile(filepath.Join(dir, "ca.crt"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("brak CA (uruchom najpierw: siem-pki ca): %w", err)
+		return nil, nil, fmt.Errorf("no CA (run first: siem-pki ca): %w", err)
 	}
 	keyPEM, err := os.ReadFile(filepath.Join(dir, "ca.key"))
 	if err != nil {
@@ -140,7 +140,7 @@ func loadCA(dir string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
 	cb, _ := pem.Decode(certPEM)
 	kb, _ := pem.Decode(keyPEM)
 	if cb == nil || kb == nil {
-		return nil, nil, errors.New("uszkodzone pliki CA")
+		return nil, nil, errors.New("damaged CA files")
 	}
 	cert, err := x509.ParseCertificate(cb.Bytes)
 	if err != nil {
@@ -194,7 +194,7 @@ func makeServer(dir string, hosts []string) error {
 	if err := issue(dir, "server", tmpl); err != nil {
 		return err
 	}
-	fmt.Printf("Utworzono certyfikat serwera dla %v\n", hosts)
+	fmt.Printf("Server certificate created for %v\n", hosts)
 	return nil
 }
 
@@ -210,7 +210,7 @@ func makeAgent(dir, name, agentID string) error {
 	if err := issue(dir, name, agentTemplate(agentID)); err != nil {
 		return err
 	}
-	fmt.Printf("Utworzono certyfikat agenta %s: %s.crt / %s.key\n", agentID, filepath.Join(dir, name), filepath.Join(dir, name))
+	fmt.Printf("Agent certificate created %s: %s.crt / %s.key\n", agentID, filepath.Join(dir, name), filepath.Join(dir, name))
 	return nil
 }
 
@@ -235,7 +235,7 @@ func write(dir, name string, der []byte, key *ecdsa.PrivateKey) error {
 // opcjonalnie domyślny adres serwera i instrukcję.
 func makePackage(caDir, outDir, agentID, agentExe, server string) error {
 	if _, err := os.Stat(outDir); err == nil {
-		return fmt.Errorf("%s już istnieje – usuń go lub wybierz inny -id", outDir)
+		return fmt.Errorf("%s already exists – remove it or choose another -id", outDir)
 	}
 	if err := os.MkdirAll(outDir, 0o700); err != nil {
 		return err
@@ -247,18 +247,18 @@ func makePackage(caDir, outDir, agentID, agentExe, server string) error {
 		return err
 	}
 	if err := copyFile(agentExe, filepath.Join(outDir, "vardr-agent.exe")); err != nil {
-		return fmt.Errorf("program agenta (%s): %w – zbuduj go: go build -o bin/vardr-agent.exe ./cmd/vardr-agent", agentExe, err)
+		return fmt.Errorf("agent program (%s): %w – build it: go build -o bin/vardr-agent.exe ./cmd/vardr-agent", agentExe, err)
 	}
 	if server != "" {
 		if err := os.WriteFile(filepath.Join(outDir, "server.txt"), []byte(server+"\r\n"), 0o644); err != nil {
 			return err
 		}
 	}
-	serverArg := " -server <adres serwera>"
+	serverArg := " -server <server address>"
 	if server != "" {
 		serverArg = ""
 	}
-	instr := strings.ReplaceAll(fmt.Sprintf(`Paczka instalacyjna agenta SIEM: %s
+	instr := strings.ReplaceAll(fmt.Sprintf(`Paczka instalacyjna agenta SIEM: %[1]s
 
 Zawartość:
   vardr-agent.exe   program agenta
@@ -268,7 +268,7 @@ Zawartość:
   server.txt       domyślny adres serwera (jeśli został podany)
 
 Instalacja (PowerShell lub cmd uruchomione JAKO ADMINISTRATOR, w tym folderze):
-  .\vardr-agent.exe install%s
+  .\vardr-agent.exe install%[2]s
 
 Po instalacji (nowe okno, jako administrator):
   vardr-agent status
@@ -277,11 +277,33 @@ Po instalacji (nowe okno, jako administrator):
   vardr-agent set-server <adres>
 
 Po instalacji usuń ten folder - kopia klucza jest już w C:\ProgramData\SiemAgent\certs.
+
+----------------------------------------------------------------------
+
+SIEM agent installation package: %[1]s
+
+Contents:
+  vardr-agent.exe   agent program
+  ca.crt           authority certificate (server verification)
+  agent.crt        this agent's certificate
+  agent.key        agent private key - SECRET, do not share
+  server.txt       default server address (if provided)
+
+Installation (PowerShell or cmd run AS ADMINISTRATOR, in this folder):
+  .\vardr-agent.exe install%[2]s
+
+After installation (new window, as administrator):
+  vardr-agent status
+  vardr-agent stop | start | restart
+  vardr-agent test
+  vardr-agent set-server <address>
+
+After installation delete this folder - a copy of the key is already in C:\ProgramData\SiemAgent\certs.
 `, agentID, serverArg), "\n", "\r\n")
 	if err := os.WriteFile(filepath.Join(outDir, "INSTRUKCJA.txt"), []byte(instr), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("Utworzono paczkę %s (agent %s)\n", outDir, agentID)
+	fmt.Printf("Package created %s (agent %s)\n", outDir, agentID)
 	return nil
 }
 
@@ -301,7 +323,7 @@ func copyFile(src, dst string) error {
 // się pod serwer.
 func makeAgentsCA(dir string) error {
 	if _, err := os.Stat(filepath.Join(dir, "agents-ca.key")); err == nil {
-		return errors.New("CA agentów już istnieje w " + dir + " – usuń ją ręcznie, jeśli naprawdę chcesz nową")
+		return errors.New("agent CA already exists in " + dir + " – remove it manually if you really want a new one")
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -325,7 +347,7 @@ func makeAgentsCA(dir string) error {
 	if err := write(dir, "agents-ca", der, key); err != nil {
 		return err
 	}
-	fmt.Println("Utworzono CA agentów:", filepath.Join(dir, "agents-ca.crt"))
-	fmt.Println("Klucz agents-ca.key skopiuj na serwer (katalog certs stosu) – używa go panel do rejestracji agentów.")
+	fmt.Println("Agent CA created:", filepath.Join(dir, "agents-ca.crt"))
+	fmt.Println("Copy the agents-ca.key key to the server (the stack certs directory) – the panel uses it to enroll agents.")
 	return nil
 }

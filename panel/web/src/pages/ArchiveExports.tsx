@@ -34,6 +34,8 @@ import {
   type AgentView,
   type ArchiveExport,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import { locale } from "../i18n";
 
 // Wartość dla <input type="datetime-local"> (czas lokalny, pełna godzina).
 function localHour(d: Date): string {
@@ -43,11 +45,12 @@ function localHour(d: Date): string {
 
 function hourRange(from: string, to: string) {
   const opt: Intl.DateTimeFormatOptions = { dateStyle: "short", timeStyle: "short" };
-  return `${new Date(from).toLocaleString("pl-PL", opt)} – ${new Date(to).toLocaleString("pl-PL", opt)}`;
+  return `${new Date(from).toLocaleString(locale(), opt)} – ${new Date(to).toLocaleString(locale(), opt)}`;
 }
 
 // Eksport dla audytora (tylko administrator): zlecenie, stan i pobranie paczki.
 export default function ArchiveExports() {
+  const { t } = useTranslation("archive");
   const [from, setFrom] = useState(() => localHour(new Date(Date.now() - 24 * 3600_000)));
   const [to, setTo] = useState(() => localHour(new Date()));
   const [reason, setReason] = useState("");
@@ -97,7 +100,7 @@ export default function ArchiveExports() {
         agents: selAgents,
         groups: selGroups.map(Number),
       });
-      notifications.show({ color: "green", message: "Eksport zlecony – archiwizator przygotuje paczkę w ciągu kilkunastu sekund." });
+      notifications.show({ color: "green", message: t("export.requested") });
       setReason("");
       load();
     } catch (err) {
@@ -114,26 +117,22 @@ export default function ArchiveExports() {
           <Stack gap="sm">
             <Group gap="xs">
               <IconFileExport size={20} />
-              <Title order={4}>Eksport dla audytora</Title>
+              <Title order={4}>{t("tab.exports")}</Title>
             </Group>
             <Text size="sm" c="dimmed">
-              Paczka (.tar) do przekazania np. audytorowi, CSIRT albo organowi nadzoru – czytelna bez Vardra: zdarzenia
-              z wybranych godzin jako NDJSON (pola ECS + oryginalny XML) i CSV, a jako dowód oryginalne segmenty, łańcuch
-              manifestów i sumy SHA-256. Odbiorca uruchamia dołączony <code>odczytaj.exe</code> (sprawdzenie + czytelny
-              RAPORT.txt i pliki dzienne ze zdarzeniami) albo skrypt w Pythonie <code>narzedzia/odczytaj_segmenty.py</code>.
-              Zlecenie i każde pobranie trafiają do dziennika audytu.
+              {t("export.intro")}
             </Text>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 type="datetime-local"
-                label="Od (pełna godzina)"
+                label={t("from")}
                 required
                 value={from}
                 onChange={(e) => setFrom(e.currentTarget.value)}
               />
               <TextInput
                 type="datetime-local"
-                label="Do (pełna godzina, bez niej)"
+                label={t("to")}
                 required
                 value={to}
                 onChange={(e) => setTo(e.currentTarget.value)}
@@ -141,15 +140,15 @@ export default function ArchiveExports() {
             </SimpleGrid>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <MultiSelect
-                label="Tylko grupy agentów (opcjonalnie)"
-                data={groups.map((g) => ({ value: String(g.id), label: `${g.name} (${g.agents} agentów)` }))}
+                label={t("export.groups")}
+                data={groups.map((g) => ({ value: String(g.id), label: t("groupOption", { name: g.name, n: g.agents }) }))}
                 value={selGroups}
                 onChange={setSelGroups}
                 searchable
                 clearable
               />
               <TagsInput
-                label="Tylko agenci (opcjonalnie)"
+                label={t("export.agents")}
                 data={agents.map((a) => ({ value: a.id, label: `${a.id} (${a.hostname})` }))}
                 value={selAgents}
                 onChange={setSelAgents}
@@ -157,12 +156,11 @@ export default function ArchiveExports() {
               />
             </SimpleGrid>
             <Text size="xs" c="dimmed">
-              Bez wyboru – wszystkie źródła. Wybór ogranicza część czytelną (zdarzenia, raport odczytaj.exe); dowód (segmenty)
-              zawiera wszystkie paczki z wybranych godzin, bo tylko cały segment można sprawdzić względem manifestu.
+              {t("export.selectionHint")}
             </Text>
             <Textarea
-              label="Powód eksportu"
-              description="np. numer kontroli lub zgłoszenia – trafi do audytu i do paczki"
+              label={t("export.reason")}
+              description={t("export.reasonHint")}
               required
               minLength={5}
               maxLength={1000}
@@ -173,7 +171,7 @@ export default function ArchiveExports() {
             />
             <Group>
               <Button type="submit" loading={busy} leftSection={<IconFileExport size={18} />}>
-                Zleć eksport
+                {t("export.submit")}
               </Button>
             </Group>
           </Stack>
@@ -183,7 +181,7 @@ export default function ArchiveExports() {
       {error && <Alert color="red">{error}</Alert>}
       {!downloads && (
         <Alert color="orange">
-          Pobieranie paczek jest wyłączone – siem-api nie ma dostępu do katalogu eksportów (SIEM_ARCHIVE_EXPORT_DIR).
+          {t("export.downloadsOff")}
         </Alert>
       )}
       {items.length > 0 && (
@@ -191,12 +189,12 @@ export default function ArchiveExports() {
           <Table striped verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr style={{ whiteSpace: "nowrap" }}>
-                <Table.Th>Nr</Table.Th>
-                <Table.Th>Zakres</Table.Th>
-                <Table.Th>Zlecił / powód</Table.Th>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Zawartość</Table.Th>
-                <Table.Th>SHA-256 paczki</Table.Th>
+                <Table.Th>{t("manifest.no")}</Table.Th>
+                <Table.Th>{t("col.range")}</Table.Th>
+                <Table.Th>{t("col.byReason")}</Table.Th>
+                <Table.Th>{t("col.state")}</Table.Th>
+                <Table.Th>{t("export.content")}</Table.Th>
+                <Table.Th>{t("export.sha")}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -212,7 +210,7 @@ export default function ArchiveExports() {
                     </Text>
                     {x.agents?.length > 0 && (
                       <Text size="xs" c="dimmed" lineClamp={1} title={x.agents.join(", ")}>
-                        agenci: {x.agents.join(", ")}
+                        {t("export.agentsList", { list: x.agents.join(", ") })}
                       </Text>
                     )}
                   </Table.Td>
@@ -226,7 +224,7 @@ export default function ArchiveExports() {
                   <Table.Td style={{ whiteSpace: "nowrap" }}>
                     {x.status === "done" || x.status === "expired" ? (
                       <Text size="sm">
-                        {x.manifests} h, {formatNumber(x.records)} paczek, {formatBytes(x.bytes)}
+                        {t("export.contentValue", { h: x.manifests, n: formatNumber(x.records), size: formatBytes(x.bytes) })}
                       </Text>
                     ) : (
                       <Text size="sm" c="dimmed">
@@ -238,7 +236,7 @@ export default function ArchiveExports() {
                     {x.sha256 ? (
                       <CopyButton value={x.sha256}>
                         {({ copied, copy }) => (
-                          <Tooltip label={copied ? "skopiowano" : x.sha256} multiline maw={600}>
+                          <Tooltip label={copied ? t("copied") : x.sha256} multiline maw={600}>
                             <Text size="xs" ff="monospace" c="dimmed" style={{ cursor: "pointer" }} onClick={copy}>
                               {x.sha256?.slice(0, 16)}…
                             </Text>
@@ -253,7 +251,7 @@ export default function ArchiveExports() {
                     {x.status === "done" && downloads && (
                       <Anchor href={exportsApi.downloadUrl(x.id)} size="sm">
                         <Group gap={4} wrap="nowrap">
-                          <IconDownload size={16} /> pobierz
+                          <IconDownload size={16} /> {t("export.download")}
                         </Group>
                       </Anchor>
                     )}

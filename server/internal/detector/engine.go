@@ -120,6 +120,10 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 		EventID: ev.ID, EventTime: ev.Timestamp, AgentID: ev.AgentID, HostName: ev.HostName,
 		UserName: ev.UserName, SourceIP: ev.SourceIP, Identity: ev.Identity, Summary: summary(r, ev),
 		Instructions: detect.Render(r.Vardr.Instructions, ev),
+		I18n: texts(func(lang string) alerts.AlertText {
+			t := r.Vardr.Text(lang, r.Title, r.Description)
+			return alerts.AlertText{Title: t.Title, Summary: summaryIn(lang, ev), Instructions: detect.Render(t.Instructions, ev)}
+		}),
 	}
 	if h.EventTime.IsZero() {
 		h.EventTime = ev.Ingested
@@ -138,30 +142,33 @@ func hitFor(r *detect.Rule, ev detect.Event) alerts.Hit {
 	return h
 }
 
-var summaryFields = []struct{ name, label string }{
-	{"Threat Name", "zagrożenie"},
-	{"CommandLine", "polecenie"},
-	{"ScriptBlockText", "skrypt"},
-	{"ImagePath", "program usługi"},
-	{"ServiceName", "usługa"},
-	{"MemberName", "członek"},
-	{"TargetUserName", "cel"},
-	{"QueryName", "zapytanie DNS"},
-	{"DestinationIp", "adres docelowy"},
+var summaryFields = []struct{ name, label, en string }{
+	{"Threat Name", "zagrożenie", "threat"},
+	{"CommandLine", "polecenie", "command"},
+	{"ScriptBlockText", "skrypt", "script"},
+	{"ImagePath", "program usługi", "service program"},
+	{"ServiceName", "usługa", "service"},
+	{"MemberName", "członek", "member"},
+	{"TargetUserName", "cel", "target"},
+	{"QueryName", "zapytanie DNS", "DNS query"},
+	{"DestinationIp", "adres docelowy", "destination address"},
 }
 
 // summary: krótki opis trafienia (komputer, konto, a przy grupowaniu – pola klucza).
-func summary(r *detect.Rule, ev detect.Event) string {
+func summary(_ *detect.Rule, ev detect.Event) string { return summaryIn("pl", ev) }
+
+// summaryIn: jak summary, w języku lang.
+func summaryIn(lang string, ev detect.Event) string {
 	var parts []string
 	if ev.HostName != "" {
-		parts = append(parts, "komputer "+ev.HostName)
+		parts = append(parts, pick(lang, "komputer ", "computer ")+ev.HostName)
 	}
 	user := ev.UserName
 	if ev.UserDomain != "" && user != "" {
 		user = ev.UserDomain + `\` + user
 	}
 	if user != "" {
-		parts = append(parts, "konto "+user)
+		parts = append(parts, pick(lang, "konto ", "account ")+user)
 	}
 	// Najważniejsze pola zdarzenia (najwyżej dwa), bez pustych i „-”.
 	n := 0
@@ -173,7 +180,7 @@ func summary(r *detect.Rule, ev detect.Event) string {
 		if len([]rune(v)) > 160 {
 			v = string([]rune(v)[:159]) + "…"
 		}
-		parts = append(parts, f.label+": "+v)
+		parts = append(parts, pick(lang, f.label, f.en)+": "+v)
 		if n++; n == 2 {
 			break
 		}
@@ -227,12 +234,19 @@ func Infos(rules []*detect.Rule, fileEnabled map[string]bool) []alerts.RuleInfo 
 			fe = r.Enabled()
 		}
 		desc := r.Description
+		tr := fromRule(r.Vardr.I18n)
 		if r.CorrelationOnly {
 			desc = "Reguła bazowa korelacji – sama nie tworzy alertów, zasila regułę korelacyjną (generate: false).\n\n" + desc
+			tr = ruleTexts(func(lang string) alerts.RuleText {
+				t := r.Vardr.Text(lang, r.Title, r.Description)
+				t.Description = pick(lang, "", "Base rule of a correlation – it raises no alerts itself, it feeds the correlation rule "+
+					"(generate: false).\n\n") + t.Description
+				return alerts.RuleText{Title: t.Title, Description: t.Description, Instructions: t.Instructions}
+			})
 		}
 		out = append(out, alerts.RuleInfo{Threshold: th, FileEnabled: fe, ID: r.ID, Title: r.Title, Level: r.Level, Description: desc, Tags: r.Tags,
 			File: r.File, Source: r.Source, Mode: r.Vardr.Mode, Enabled: r.Enabled(), GroupBy: r.Vardr.GroupBy,
-			SuppressS: int(time.Duration(r.Vardr.Suppress) / time.Second), Instructions: r.Vardr.Instructions})
+			SuppressS: int(time.Duration(r.Vardr.Suppress) / time.Second), Instructions: r.Vardr.Instructions, I18n: tr})
 	}
 	return out
 }

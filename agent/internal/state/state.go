@@ -134,7 +134,7 @@ func (s *Store) readFile() (State, error) {
 	}
 	st := empty()
 	if err := json.Unmarshal(data, &st); err != nil {
-		return empty(), corruptError{fmt.Errorf("uszkodzony plik stanu %s: %w", s.path, err)}
+		return empty(), corruptError{fmt.Errorf("damaged state file %s: %w", s.path, err)}
 	}
 	if st.Channels == nil {
 		st.Channels = map[string]ChannelState{}

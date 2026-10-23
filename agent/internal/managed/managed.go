@@ -22,6 +22,7 @@ import (
 	"siem/agent/internal/config"
 	"siem/agent/internal/setup"
 	"siem/internal/contract"
+	"siem/internal/lang"
 )
 
 const fileName = "managed.json"
@@ -102,7 +103,7 @@ func Apply(base *config.Config, m *contract.AgentConfig) (*config.Config, error)
 		eff.Buffer.OnFull = *l.BufferOnFull
 	}
 	if err := eff.Validate(); err != nil {
-		return nil, fmt.Errorf("konfiguracja z panelu jest niepoprawna: %w", err)
+		return nil, lang.Errorf("konfiguracja z panelu jest niepoprawna: %w", "the configuration from the panel is invalid: %w", err)
 	}
 	return &eff, nil
 }
@@ -133,11 +134,11 @@ func (p *Poller) Run(ctx context.Context, current *contract.AgentConfig) {
 		changed, err := p.Fetch(ctx)
 		switch {
 		case err != nil && !failing:
-			p.Log.Warn("pobranie konfiguracji z panelu nieudane – agent działa na ostatniej znanej", "err", err)
+			p.Log.Warn("fetching the configuration from the panel failed – the agent runs on the last known one", "err", err)
 			failing = true
 		case err == nil:
 			if failing {
-				p.Log.Info("pobieranie konfiguracji z panelu ponownie działa")
+				p.Log.Info("fetching the configuration from the panel works again")
 			}
 			failing = false
 		}
@@ -176,22 +177,22 @@ func (p *Poller) Fetch(ctx context.Context) (*contract.AgentConfig, error) {
 		return nil, nil
 	case http.StatusOK:
 	case http.StatusNotFound:
-		return nil, errors.New("panel nie obsługuje konfiguracji agentów (starsza wersja siem-api)")
+		return nil, lang.Errorf("panel nie obsługuje konfiguracji agentów (starsza wersja siem-api)", "the panel does not support agent configuration (older siem-api version)")
 	default:
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
 	}
 	var c contract.AgentConfig
 	if err := json.Unmarshal(body, &c); err != nil {
-		return nil, fmt.Errorf("niepoprawna konfiguracja z panelu: %w", err)
+		return nil, lang.Errorf("niepoprawna konfiguracja z panelu: %w", "invalid configuration from the panel: %w", err)
 	}
 	if err := c.Validate(); err != nil {
-		return nil, fmt.Errorf("niepoprawna konfiguracja z panelu: %w", err)
+		return nil, lang.Errorf("niepoprawna konfiguracja z panelu: %w", "invalid configuration from the panel: %w", err)
 	}
 	if c.Version == p.current {
 		return nil, nil
 	}
 	if err := Save(p.StateDir, &c); err != nil {
-		return nil, fmt.Errorf("zapis konfiguracji: %w", err)
+		return nil, lang.Errorf("zapis konfiguracji: %w", "saving the configuration: %w", err)
 	}
 	p.current = c.Version
 	return &c, nil

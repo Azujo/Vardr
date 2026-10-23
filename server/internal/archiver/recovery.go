@@ -25,7 +25,7 @@ func ProcessRecoveries(ctx context.Context, a *urd.Archive, store RecoveryStore,
 	pending, err := store.PendingRecoveries(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
-			log.Warn("odczyt zleceń obsługi niezgodności nieudany", "err", err)
+			log.Warn("reading inconsistency handling requests failed", "err", err)
 		}
 		return 0
 	}
@@ -40,26 +40,26 @@ func ProcessRecoveries(ctx context.Context, a *urd.Archive, store RecoveryStore,
 		now := time.Now().UTC()
 		ok, errText := err == nil, ""
 		if err != nil {
-			errText = err.Error()
+			errText = a.Msg(err)
 		}
 		r.ProcessedAt, r.OK, r.Result, r.Error = &now, &ok, &res, errText
 		if ferr := store.FinishRecovery(context.WithoutCancel(ctx), r.ID, ok, &res, errText, now); ferr != nil {
-			log.Error("zapis wyniku obsługi niezgodności nieudany", "id", r.ID, "err", ferr)
+			log.Error("recording the inconsistency handling result failed", "id", r.ID, "err", ferr)
 		}
 		if lerr := a.LogRecovery(r); lerr != nil {
-			log.Warn("zapis operacji w katalogu archiwum nieudany", "id", r.ID, "err", lerr)
+			log.Warn("writing the operation to the archive directory failed", "id", r.ID, "err", lerr)
 		}
-		args := []any{"id", r.ID, "kind", r.Kind, "by", r.RequestedBy, "reason", r.Reason, "result", res.Summary()}
+		args := []any{"id", r.ID, "kind", r.Kind, "by", r.RequestedBy, "reason", r.Reason, "result", res.Summary("en")}
 		if len(res.Rejected) > 0 {
 			args = append(args, "rejected", res.Rejected)
 		}
 		switch {
 		case err != nil:
-			log.Error("obsługa niezgodności archiwum nieudana", append(args, "err", err)...)
+			log.Error("archive inconsistency handling failed", append(args, "err", err)...)
 		case len(res.Rejected) > 0:
-			log.Warn("obsługa niezgodności archiwum – część plików odrzucona", args...)
+			log.Warn("archive inconsistency handling – some files rejected", args...)
 		default:
-			log.Info("obsługa niezgodności archiwum", args...)
+			log.Info("archive inconsistency handling", args...)
 		}
 	}
 	return len(pending)

@@ -4,7 +4,9 @@
 // zdarzeń (istniejąca reguła albo nowa reguła bazowa z wybranych pól),
 // klucz wspólny dla kroków (także pod różnymi nazwami pól – aliasy),
 // podpowiedź typu i okna oraz złożenie YAML w formacie Sigma Correlation
-// (internal/detect/correlation.go).
+// (internal/detect/correlation.go). Teksty (także tytuły reguł bazowych
+// w YAML) – w języku autora reguły (rules: wizard.*).
+import i18n from "./i18n";
 
 export interface WizRule {
   id: string;
@@ -44,12 +46,11 @@ export interface Step {
 
 export type CorrType = "event_count" | "value_count" | "temporal" | "temporal_ordered";
 
-export const typeLabels: Record<CorrType, string> = {
-  event_count: "liczba zdarzeń (event_count)",
-  value_count: "liczba różnych wartości pola (value_count)",
-  temporal: "wszystkie kroki w oknie, dowolna kolejność (temporal)",
-  temporal_ordered: "wszystkie kroki w oknie, w kolejności (temporal_ordered)",
-};
+export const corrTypes: CorrType[] = ["event_count", "value_count", "temporal", "temporal_ordered"];
+
+export function typeLabel(t: CorrType): string {
+  return i18n.t(`rules:wizard.type.${t}`);
+}
 
 // Pole klucza: nazwa w group-by i pole w każdym kroku (gdy różne – alias).
 export interface KeyCandidate {
@@ -178,35 +179,13 @@ export function buildSteps(events: WizEvent[], choices: Record<string, Choice>):
   return [...byKey.values()].sort((a, b) => a.first - b.first);
 }
 
-// Tytuł nowej reguły bazowej (z rodzaju zdarzenia).
-const knownTitles: Record<string, string> = {
-  "4624": "Udane logowanie",
-  "4625": "Nieudane logowanie",
-  "4634": "Wylogowanie",
-  "4648": "Logowanie z jawnie podanym kontem",
-  "4672": "Logowanie z uprawnieniami specjalnymi",
-  "4688": "Utworzenie procesu",
-  "4720": "Utworzono konto",
-  "4722": "Włączono konto",
-  "4724": "Reset hasła konta",
-  "4725": "Wyłączono konto",
-  "4726": "Usunięto konto",
-  "4728": "Dodano do grupy globalnej",
-  "4732": "Dodano do grupy lokalnej",
-  "4740": "Zablokowano konto",
-  "4756": "Dodano do grupy uniwersalnej",
-  "4768": "Bilet Kerberos TGT",
-  "4769": "Bilet usługi Kerberos",
-  "4771": "Błąd uwierzytelnienia Kerberos",
-  "4776": "Weryfikacja poświadczeń NTLM",
-  "1102": "Wyczyszczono dziennik zabezpieczeń",
-  "7045": "Zainstalowano usługę",
-};
-
+// Tytuł nowej reguły bazowej (z rodzaju zdarzenia; znane identyfikatory
+// zdarzeń Windows – rules: wizard.event.<EventID>).
 export function eventTitle(e: WizEvent): string {
-  if (e.product === "windows" && knownTitles[String(e.code)]) return `${knownTitles[String(e.code)]} (${e.code})`;
+  const known = `rules:wizard.event.${e.code}`;
+  if (e.product === "windows" && i18n.exists(known)) return `${i18n.t(known)} (${e.code})`;
   const parts = [e.fields["event.action"], e.fields["event.outcome"]].filter(Boolean);
-  return parts.length ? `${e.dataset}: ${parts.join(" ")}` : e.code ? `${e.dataset}: zdarzenie ${e.code}` : e.dataset;
+  return parts.length ? `${e.dataset}: ${parts.join(" ")}` : e.code ? i18n.t("rules:wizard.eventN", { dataset: e.dataset, code: e.code }) : e.dataset;
 }
 
 // ---- klucz ----
@@ -356,7 +335,7 @@ export function slug(s: string): string {
       .replace(/ł/g, "l")
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "")
-      .slice(0, 40) || "regula"
+      .slice(0, 40) || "rule"
   );
 }
 
@@ -370,20 +349,19 @@ export function uuid(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-export function validate(st: WizardState, steps: Step[]): string | undefined {
-  if (steps.length === 0) return "dodaj przykładowe zdarzenia";
-  if (!st.title.trim()) return "podaj tytuł";
+// validate: kod problemu (rules: wizard.v.<kod>) z parametrami albo undefined.
+export function validate(st: WizardState, steps: Step[]): { code: string; step?: string } | undefined {
+  if (steps.length === 0) return { code: "noEvents" };
+  if (!st.title.trim()) return { code: "title" };
   for (const s of steps) {
-    if (s.choice.kind === "new" && selectionOf(s.events[0], s.choice.fields).length === 0)
-      return `krok „${s.title}”: wybierz co najmniej jedno pole nowej reguły bazowej`;
-    if (s.rule?.threshold) return `krok „${s.title}”: reguła progowa nie może być bazą korelacji – wybierz inną albo nową`;
+    if (s.choice.kind === "new" && selectionOf(s.events[0], s.choice.fields).length === 0) return { code: "noFields", step: s.title };
+    if (s.rule?.threshold) return { code: "threshold", step: s.title };
   }
   const temporal = st.type === "temporal" || st.type === "temporal_ordered";
-  if (temporal && steps.length < 2) return "korelacja czasowa wymaga co najmniej dwóch różnych kroków";
-  if (st.type === "value_count" && !st.field) return "wybierz pole, którego różne wartości liczyć";
-  if (!temporal && (st.count < 2 || st.count > 10000)) return "liczba: od 2 do 10 000";
-  if (st.key && st.key.fields.length !== steps.length && !(steps.length === 1 && st.key.fields.length === 1))
-    return "klucz nie pasuje do kroków – wybierz go ponownie";
+  if (temporal && steps.length < 2) return { code: "twoSteps" };
+  if (st.type === "value_count" && !st.field) return { code: "field" };
+  if (!temporal && (st.count < 2 || st.count > 10000)) return { code: "count" };
+  if (st.key && st.key.fields.length !== steps.length && !(steps.length === 1 && st.key.fields.length === 1)) return { code: "key" };
   return undefined;
 }
 
@@ -396,14 +374,14 @@ export function buildYAML(st: WizardState, steps: Step[]): string {
       refs.push({ ref: s.choice.id, comment: s.title });
       return;
     }
-    const base = st.baseIds[s.key] ?? { id: uuid(), name: `${slug(st.title)}_krok${i + 1}` };
+    const base = st.baseIds[s.key] ?? { id: uuid(), name: `${slug(st.title)}_step${i + 1}` };
     const e = s.events[0];
     const lines = [
-      `title: ${q(`${s.title} – krok ${i + 1} korelacji „${st.title.trim()}”`)}`,
+      `title: ${q(i18n.t("rules:wizard.yaml.baseTitle", { step: s.title, n: i + 1, title: st.title.trim() }))}`,
       `id: ${base.id}`,
       `name: ${base.name}`,
       "status: experimental",
-      `description: ${q(`Reguła bazowa korelacji „${st.title}” z kreatora w panelu.`)}`,
+      `description: ${q(i18n.t("rules:wizard.yaml.baseDescription", { title: st.title }))}`,
       "level: low",
     ];
     if (e.product) {

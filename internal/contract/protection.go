@@ -79,11 +79,11 @@ func UninstallTokenID(hash string) string {
 
 func validateTokens(ts []UninstallToken) error {
 	if len(ts) > MaxUninstallTokens {
-		return fmt.Errorf("za dużo tokenów deinstalacji (maks. %d)", MaxUninstallTokens)
+		return fmt.Errorf("too many uninstall tokens (max %d)", MaxUninstallTokens)
 	}
 	for _, t := range ts {
 		if _, err := hex.DecodeString(t.Hash); err != nil || len(t.Hash) != 64 || t.ID != UninstallTokenID(t.Hash) {
-			return errors.New("niepoprawny skrót tokenu deinstalacji")
+			return errors.New("invalid uninstall token hash")
 		}
 	}
 	return nil
@@ -105,21 +105,22 @@ const (
 // TamperKind opisuje rodzaj zdarzenia: poziom alertu ("" = bez alertu,
 // tylko wpis w panelu) i opis.
 type TamperKind struct {
-	Level string
-	Title string
+	Level   string
+	Title   string
+	TitleEn string
 }
 
 // TamperKinds: znane rodzaje zdarzeń ochrony.
 var TamperKinds = map[string]TamperKind{
-	TamperStop:          {"high", "Usługa agenta zatrzymana bez tokenu"},
-	TamperUncleanExit:   {"medium", "Proces agenta zakończony bez zatrzymania usługi (zabity albo awaria)"},
-	TamperACL:           {"high", "Zmieniono uprawnienia usługi agenta (przywrócone)"},
-	TamperConfig:        {"high", "Zmieniono konfigurację usługi agenta – typ uruchamiania albo program (przywrócona)"},
-	TamperBadToken:      {"medium", "Nieudana próba zatrzymania albo deinstalacji agenta (bez ważnego tokenu)"},
-	TamperStopToken:     {"", "Zatrzymanie agenta tokenem"},
-	TamperUninstallTok:  {"", "Deinstalacja agenta tokenem"},
-	TamperUpgrade:       {"", "Aktualizacja agenta"},
-	TamperProtectionOff: {"", "Ochrona agenta wyłączona w grupie"},
+	TamperStop:          {"high", "Usługa agenta zatrzymana bez tokenu", "Agent service stopped without a token"},
+	TamperUncleanExit:   {"medium", "Proces agenta zakończony bez zatrzymania usługi (zabity albo awaria)", "Agent process ended without stopping the service (killed or crashed)"},
+	TamperACL:           {"high", "Zmieniono uprawnienia usługi agenta (przywrócone)", "Agent service permissions changed (restored)"},
+	TamperConfig:        {"high", "Zmieniono konfigurację usługi agenta – typ uruchamiania albo program (przywrócona)", "Agent service configuration changed – start type or program (restored)"},
+	TamperBadToken:      {"medium", "Nieudana próba zatrzymania albo deinstalacji agenta (bez ważnego tokenu)", "Failed attempt to stop or uninstall the agent (no valid token)"},
+	TamperStopToken:     {"", "Zatrzymanie agenta tokenem", "Agent stopped with a token"},
+	TamperUninstallTok:  {"", "Deinstalacja agenta tokenem", "Agent uninstalled with a token"},
+	TamperUpgrade:       {"", "Aktualizacja agenta", "Agent upgrade"},
+	TamperProtectionOff: {"", "Ochrona agenta wyłączona w grupie", "Agent protection disabled in the group"},
 }
 
 // TamperRecord to zdarzenie ochrony agenta. Agent trzyma je w dzienniku

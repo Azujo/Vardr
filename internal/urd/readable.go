@@ -102,7 +102,7 @@ func DecodeBatch(payload []byte) (contract.Batch, error) {
 		return b, err
 	}
 	if len(data) > maxBatchBytes {
-		return b, errors.New("paczka po rozpakowaniu przekracza limit")
+		return b, errors.New("batch exceeds the limit after decompression")
 	}
 	return b, json.Unmarshal(data, &b)
 }
@@ -113,7 +113,7 @@ func readableEvents(meta RecordMeta, payload []byte, enrich Enricher) []Readable
 	b, err := DecodeBatch(payload)
 	if err != nil {
 		return []Readable{{AgentID: meta.Agent, Ingested: meta.ReceivedAt.UTC().Format(time.RFC3339Nano),
-			BatchID: meta.Batch, BatchSHA256: sum, Error: "nieczytelna paczka: " + err.Error()}}
+			BatchID: meta.Batch, BatchSHA256: sum, Error: "unreadable batch: " + err.Error()}}
 	}
 	out := make([]Readable, 0, len(b.Events))
 	for _, ev := range b.Events {
@@ -149,9 +149,13 @@ func (d *eventDigest) add(batchSHA, eventID, raw string) {
 	d.b += binary.BigEndian.Uint64(s[8:16])
 }
 
-// csvHeader to kolumny pliku zdarzenia/zdarzenia.csv (dla arkusza kalkulacyjnego).
+// csvHeader to kolumny pliku zdarzenia/zdarzenia.csv (dla arkusza
+// kalkulacyjnego) – w języku systemu w chwili eksportu.
 var csvHeader = []string{"czas_zdarzenia_utc", "komputer", "kod", "kanal", "akcja", "wynik", "uzytkownik", "domena",
 	"ip_zrodlowe", "proces", "agent", "przyjeto_na_serwerze_utc", "id_zdarzenia", "zbior_danych", "nadawca_syslog", "osoba"}
+
+var csvHeaderEn = []string{"event_time_utc", "computer", "code", "channel", "action", "outcome", "user", "domain",
+	"source_ip", "process", "agent", "ingested_utc", "event_id", "dataset", "syslog_sender", "person"}
 
 // csvMaxRows: Excel otwiera najwyżej 1 048 576 wierszy.
 const csvMaxRows = 1_000_000
@@ -162,13 +166,17 @@ type csvSink struct {
 	full bool
 }
 
-func newCSVSink(w io.Writer) (*csvSink, error) {
+func newCSVSink(w io.Writer, lang string) (*csvSink, error) {
 	if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil { // BOM – polskie znaki w Excelu
 		return nil, err
 	}
 	cw := csv.NewWriter(w)
 	cw.Comma = ';'
-	return &csvSink{w: cw}, cw.Write(csvHeader)
+	header := csvHeader
+	if lang == "en" {
+		header = csvHeaderEn
+	}
+	return &csvSink{w: cw}, cw.Write(header)
 }
 
 func (c *csvSink) add(r Readable) error {

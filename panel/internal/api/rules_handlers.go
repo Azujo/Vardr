@@ -13,6 +13,7 @@ import (
 	"siem/internal/alerts"
 	"siem/internal/attack"
 	"siem/internal/detect"
+	"siem/internal/lang"
 	"siem/internal/model"
 	"siem/panel/internal/events"
 )
@@ -60,7 +61,7 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	}
 	rule, err := detect.Parse([]byte(req.Source), "test.yml")
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusOK, failed(err))
 		return
 	}
 	if s.RuleTester == nil {
@@ -82,7 +83,7 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	res, err := s.RuleTester.TestRule(ctx, rule, to.Add(-time.Duration(req.Hours)*time.Hour), to)
 	s.audit(r, &a.user, "rule_tested", rule.ID, map[string]any{"title": rule.Title, "hours": req.Hours, "ok": err == nil})
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "wykonanie w ClickHouse nieudane: " + err.Error()})
+		writeJSON(w, http.StatusOK, failed(lang.Errorf("wykonanie w ClickHouse nieudane: %w", "ClickHouse execution failed: %w", err)))
 		return
 	}
 	var th *alerts.Threshold
@@ -90,7 +91,8 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 		th = &alerts.Threshold{Count: t.Count, WindowS: int(time.Duration(t.Window) / time.Second), Distinct: t.Distinct}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": rule.SQL(),
-		"attack_warnings": nonNilSlice(attack.Enterprise().Map(rule.Tags).Warnings),
+		"attack_warnings":    nonNilSlice(attack.Enterprise().Map(rule.Tags).Warnings),
+		"attack_warnings_en": nonNilSlice(attack.Enterprise().Map(rule.Tags).WarningsEn),
 		"rule": map[string]any{"id": rule.ID, "title": rule.Title, "level": rule.Level, "group_by": rule.Vardr.GroupBy,
 			"suppress_s": int(time.Duration(rule.Vardr.Suppress) / time.Second), "threshold": th, "mode": rule.Vardr.Mode}})
 }
@@ -111,11 +113,11 @@ func (s *Server) testCorrelation(w http.ResponseWriter, r *http.Request, source 
 	}
 	set, err := detect.ParseText([]byte(source), "test.yml", known)
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusOK, failed(err))
 		return
 	}
 	if len(set.Correlations) != 1 {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "test: jedna reguła korelacyjna (reguły bazowe mogą być obok, rozdzielone ---)"})
+		writeJSON(w, http.StatusOK, failed(lang.Errorf("test: jedna reguła korelacyjna (reguły bazowe mogą być obok, rozdzielone ---)", "test: one correlation rule (base rules may be next to it, separated by ---)")))
 		return
 	}
 	c := set.Correlations[0]
@@ -132,20 +134,20 @@ func (s *Server) testCorrelation(w http.ResponseWriter, r *http.Request, source 
 	res, err := s.RuleTester.TestCorrelation(ctx, c, to.Add(-time.Duration(hours)*time.Hour), to)
 	s.audit(r, &a.user, "rule_tested", c.ID, map[string]any{"title": c.Title, "hours": hours, "ok": err == nil, "correlation": true})
 	if err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": "wykonanie w ClickHouse nieudane: " + err.Error()})
+		writeJSON(w, http.StatusOK, failed(lang.Errorf("wykonanie w ClickHouse nieudane: %w", "ClickHouse execution failed: %w", err)))
 		return
 	}
 	var base []string
 	for _, b := range c.Rules {
 		base = append(base, b.Title+" ("+b.ID+")")
 	}
-	var warns []string
-	for _, b := range set.Rules {
-		warns = append(warns, attack.Enterprise().Map(b.Tags).Warnings...)
+	var warns, warnsEn []string
+	for _, tags := range append(tagsOf(set.Rules), c.Tags) {
+		m := attack.Enterprise().Map(tags)
+		warns, warnsEn = append(warns, m.Warnings...), append(warnsEn, m.WarningsEn...)
 	}
-	warns = append(warns, attack.Enterprise().Map(c.Tags).Warnings...)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": c.EventsSQL("siem.events", to.Add(-time.Duration(hours)*time.Hour), to, 20000),
-		"attack_warnings": nonNilSlice(warns),
+		"attack_warnings": nonNilSlice(warns), "attack_warnings_en": nonNilSlice(warnsEn),
 		"rule": map[string]any{"id": c.ID, "title": c.Title, "level": c.Level, "group_by": c.GroupBy, "mode": "correlation",
 			"suppress_s": int(time.Duration(c.Vardr.Suppress) / time.Second), "correlation": map[string]any{"type": c.Type,
 				"timespan_s": int(c.Timespan / time.Second), "count": c.Count, "field": c.Field, "rules": base}}})
@@ -357,4 +359,12 @@ func (s *Server) trialRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"trials": nonNilSlice(stats), "now": s.now().UTC()})
+}
+
+func tagsOf(rules []*detect.Rule) [][]string {
+	out := make([][]string, 0, len(rules)+1)
+	for _, r := range rules {
+		out = append(out, r.Tags)
+	}
+	return out
 }

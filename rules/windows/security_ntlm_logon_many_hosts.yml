@@ -35,6 +35,19 @@ falsepositives:
   - Administrator obsługujący wiele komputerów naraz
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "NTLM network logons of one account on many computers"
+      description: |
+        One account signed in over the network with NTLM authentication (4624,
+        type 3) on at least 5 different computers within 10 minutes. This is what
+        lateral movement with a stolen password hash (pass the hash) or mass connections
+        to administrative shares look like.
+      instructions: |
+        Account {{TargetDomainName}}\{{TargetUserName}} signed in via NTLM
+        on {{count}} computers in {{window}}: {{values}}. Check the source addresses
+        in the alert events. If it is not a service account – block it, change the
+        password (twice for privileged accounts) and review the computers it signed in to.
   group_by: [TargetUserName]
   threshold:
     count: 5

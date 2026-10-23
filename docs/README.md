@@ -2,7 +2,9 @@
 
 Vardr to własny system SIEM: agenci i kolektory zbierają zdarzenia (Windows, syslog, Entra ID), serwer je normalizuje, zapisuje, wykrywa zagrożenia i archiwizuje zgodnie z NIS2, a panel Hliðskjálf służy do analizy i zarządzania.
 
-Ta dokumentacja opisuje system tak, jak działa po etapie 8 (MVP, październik 2026). Plany i decyzje projektowe są w [ROADMAP.md](ROADMAP.md), przebieg prac i znane luki w [PODSUMOWANIE.md](PODSUMOWANIE.md), a instrukcje instalacji krok po kroku w [README.md](../README.md) w katalogu głównym.
+🇬🇧 English: [docs/en](en/README.md).
+
+Ta dokumentacja opisuje system tak, jak działa po etapie 8 (MVP, październik 2026). Plany i decyzje projektowe są w [ROADMAP.md](ROADMAP.md), przebieg prac i znane luki w [PODSUMOWANIE.md](PODSUMOWANIE.md), a stronę projektu w [README.pl.md](../README.pl.md) w katalogu głównym.
 
 ## Spis
 

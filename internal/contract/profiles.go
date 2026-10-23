@@ -3,9 +3,10 @@
 package contract
 
 import (
-	"fmt"
 	"sort"
 	"strings"
+
+	"siem/internal/lang"
 )
 
 // Channel to kanał Event Log z listą Event ID w konfiguracji.
@@ -39,6 +40,13 @@ var Profiles = map[string]string{
 	"dc":          "kontroler domeny (+ Kerberos i NTLM)",
 }
 
+// ProfilesEn: opisy profili po angielsku.
+var ProfilesEn = map[string]string{
+	"workstation": "workstation",
+	"server":      "server (+ account and group management)",
+	"dc":          "domain controller (+ Kerberos and NTLM)",
+}
+
 // ProfileChannels zwraca kanały dla profilu.
 func ProfileChannels(profile string) ([]Channel, error) {
 	ids := append([]uint32{}, securityAll...)
@@ -55,7 +63,7 @@ func ProfileChannels(profile string) ([]Channel, error) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return nil, fmt.Errorf("nieznany profil %q (dostępne: %s)", profile, strings.Join(names, ", "))
+		return nil, lang.Errorf("nieznany profil %q (dostępne: %s)", "unknown profile %q (available: %s)", profile, strings.Join(names, ", "))
 	}
 	return append([]Channel{{"Security", ids}}, commonChannels...), nil
 }

@@ -17,14 +17,16 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconHistory, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { ApiError, backupApi, formatBytes, formatDate, type BackupFile, type BackupPart, type BackupView } from "../api";
 
 // Przywracanie z kopii (Administracja → Kopie zapasowe → Przywracanie).
 // Usługa kopii przygotowuje przywrócenie (kopia obecnego stanu, pobranie
 // i sprawdzenie kopii), a restore.sh na serwerze przywraca wybrane części.
 
-const partLabels: Record<BackupPart, string> = { saga: "baza Saga", config: "konfiguracja", grafana: "Grafana" };
-const confirmWord = "PRZYWRÓĆ";
+// Słowo potwierdzenia: serwer przyjmuje PRZYWRÓĆ albo RESTORE.
+const confirmWord = () => i18n.t("backup:restore.word");
 
 // Czas kopii z nazwy (vardr-RRRRMMDD-GGMM-k….tar.gpg, UTC; heimdall- sprzed zmiany nazwy).
 function backupTime(name: string): string | undefined {
@@ -35,6 +37,7 @@ function backupTime(name: string): string | undefined {
 type Ask = (action: "list" | "inspect", file?: { location: string; name: string }) => Promise<void>;
 
 export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask }) {
+  const { t } = useTranslation("backup");
   const st = view.state;
   const [target, setTarget] = useState<BackupFile | null>(null);
   const restoring = st.requests.find((r) => r.action === "restore" && !r.done_at);
@@ -51,51 +54,47 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
 
   return (
     <Stack>
-      <MAlert color="gray" title="Jak działa przywracanie">
+      <MAlert color="gray" title={t("restore.how")}>
         <List size="sm" spacing={2}>
-          <List.Item>Wybierasz kopię i części do przywrócenia; najpierw sprawdź jej zawartość (odszyfrowanie hasłem kopii).</List.Item>
-          <List.Item>Usługa kopii robi kopię obecnego stanu (można z niej wrócić), pobiera wybraną kopię z miejsca docelowego.</List.Item>
-          <List.Item>
-            Serwer w ciągu minuty zatrzymuje usługi korzystające z bazy, przywraca wybrane części i uruchamia stos – panel jest wtedy
-            przez chwilę niedostępny, a po przywróceniu bazy trzeba się zalogować ponownie.
-          </List.Item>
-          <List.Item>Archiwum NIS2 przywraca się na czystym serwerze poleceniem restore.sh (docs/operacje.md).</List.Item>
+          {[1, 2, 3, 4].map((i) => (
+            <List.Item key={i}>{t(`restore.how${i}`)}</List.Item>
+          ))}
         </List>
       </MAlert>
 
       {restoring && (
-        <MAlert color="red" title="Przywracanie w toku">
-          {restoring.message || "Usługa kopii przygotowuje przywrócenie…"} Zlecił {restoring.requested_by}, {formatDate(restoring.requested_at)}.
+        <MAlert color="red" title={t("restore.inProgress")}>
+          {restoring.message || t("restore.preparing")} {t("restore.requestedBy", { by: restoring.requested_by, date: formatDate(restoring.requested_at) })}
         </MAlert>
       )}
       {!restoring && lastRestore && (
-        <MAlert color={lastRestore.ok ? "green" : "red"} title={lastRestore.ok ? "Ostatnie przywrócenie" : "Ostatnie przywrócenie nieudane"}>
+        <MAlert color={lastRestore.ok ? "green" : "red"} title={lastRestore.ok ? t("restore.last") : t("restore.lastFailed")}>
           {lastRestore.message} ({lastRestore.requested_by}, {formatDate(lastRestore.done_at)})
         </MAlert>
       )}
 
       <Group>
         <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} loading={listing} onClick={() => void ask("list")}>
-          Odśwież listę kopii
+          {t("restore.refresh")}
         </Button>
         <Text size="xs" c="dimmed">
-          Lista odświeża się sama co 15 minut i po każdej kopii.
+          {t("restore.refreshHint")}
         </Text>
       </Group>
 
       {files.length === 0 ? (
         <Text size="sm" c="dimmed">
-          Brak kopii na liście.
+          {t("restore.empty")}
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={760}>
           <Table fz="sm" verticalSpacing={4} striped>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Kopia z</Table.Th>
-                <Table.Th>Gdzie</Table.Th>
-                <Table.Th>Rozmiar</Table.Th>
-                <Table.Th>Zawartość</Table.Th>
+                <Table.Th>{t("restore.col.from")}</Table.Th>
+                <Table.Th>{t("restore.col.where")}</Table.Th>
+                <Table.Th>{t("history.col.size")}</Table.Th>
+                <Table.Th>{t("include.title")}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -107,14 +106,14 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
                     <Table.Td style={{ whiteSpace: "nowrap" }} title={f.name}>
                       {formatDate(backupTime(f.name) ?? f.modified)}
                     </Table.Td>
-                    <Table.Td>{f.location === "local" ? "serwer" : "miejsce docelowe"}</Table.Td>
+                    <Table.Td>{f.location === "local" ? t("restore.server") : t("restore.target")}</Table.Td>
                     <Table.Td>{formatBytes(f.size_bytes)}</Table.Td>
                     <Table.Td>
                       {f.contents ? (
                         <Group gap={4}>
                           {f.contents.map((p) => (
                             <Badge key={p} size="xs" variant="light">
-                              {partLabels[p]}
+                              {t(`restore.part.${p}`)}
                             </Badge>
                           ))}
                         </Group>
@@ -124,7 +123,7 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
                         </Text>
                       ) : (
                         <Text size="xs" c="dimmed">
-                          niesprawdzona
+                          {t("restore.unchecked")}
                         </Text>
                       )}
                     </Table.Td>
@@ -138,7 +137,7 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
                           disabled={!view.online}
                           onClick={() => void ask("inspect", { location: f.location, name: f.name })}
                         >
-                          sprawdź
+                          {t("restore.inspect")}
                         </Button>
                         <Button
                           size="compact-xs"
@@ -148,7 +147,7 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
                           disabled={!f.contents || !!restoring || !view.online}
                           onClick={() => setTarget(f)}
                         >
-                          przywróć…
+                          {t("restore.restoreEllipsis")}
                         </Button>
                       </Group>
                     </Table.Td>
@@ -166,6 +165,7 @@ export default function RestorePanel({ view, ask }: { view: BackupView; ask: Ask
 }
 
 function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void }) {
+  const { t } = useTranslation("backup");
   const have = file.contents ?? [];
   // Baza i konfiguracja razem (hasła ról bazy są w .env).
   const both = have.includes("saga") && have.includes("config");
@@ -185,8 +185,8 @@ function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await backupApi.restore({ location: file.location, name: file.name }, parts, safety, confirm, password);
-      notifications.show({ color: "orange", autoClose: false, message: r.message });
+      await backupApi.restore({ location: file.location, name: file.name }, parts, safety, confirm, password);
+      notifications.show({ color: "orange", autoClose: false, message: t("restore.requested") });
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setPassword("");
@@ -197,7 +197,7 @@ function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void
   };
 
   return (
-    <Modal opened onClose={onClose} title={`Przywrócenie z kopii z ${when}`} size="lg" centered>
+    <Modal opened onClose={onClose} title={t("restore.title", { when })} size="lg" centered>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -206,47 +206,43 @@ function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void
       >
         <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            {file.name} ({file.location === "local" ? "na serwerze" : "w miejscu docelowym"})
+            {file.name} ({file.location === "local" ? t("restore.onServer") : t("restore.atTarget")})
           </Text>
           {(have.includes("saga") || have.includes("config")) && (
             <Checkbox
-              label={both ? "Baza Saga i konfiguracja serwera" : have.includes("saga") ? "Baza Saga" : "Konfiguracja serwera"}
-              description={
-                both
-                  ? "przywracane razem – w .env są hasła ról bazy; konta, agenci, certyfikaty, alerty, polityki, ustawienia kopii, certs/ i .env"
-                  : undefined
-              }
+              label={both ? t("restore.both") : have.includes("saga") ? t("include.saga") : t("include.config")}
+              description={both ? t("restore.bothHint") : undefined}
               checked={core}
               onChange={(e) => setCore(e.currentTarget.checked)}
             />
           )}
           {have.includes("grafana") && (
-            <Checkbox label="Dane Grafany" checked={grafana} onChange={(e) => setGrafana(e.currentTarget.checked)} />
+            <Checkbox label={t("include.grafana")} checked={grafana} onChange={(e) => setGrafana(e.currentTarget.checked)} />
           )}
           <Checkbox
-            label="Najpierw kopia obecnego stanu (zalecane)"
-            description="pozwala wrócić do stanu sprzed przywrócenia"
+            label={t("restore.safety")}
+            description={t("restore.safetyHint")}
             checked={safety}
             onChange={(e) => setSafety(e.currentTarget.checked)}
           />
           {core && (
             <MAlert color="red">
               <List size="sm" spacing={2}>
-                <List.Item>Baza wróci do stanu z {when}: alerty, zmiany ustawień, konta i agenci zarejestrowani później znikną.</List.Item>
-                <List.Item>Agenci zarejestrowani po tej dacie muszą zarejestrować się ponownie.</List.Item>
-                <List.Item>Panel będzie przez chwilę niedostępny; po przywróceniu zaloguj się ponownie (hasłem z dnia kopii).</List.Item>
-                <List.Item>Zdarzenia w ClickHouse i archiwum NIS2 nie są zmieniane.</List.Item>
+                <List.Item>{t("restore.warn1", { when })}</List.Item>
+                <List.Item>{t("restore.warn2")}</List.Item>
+                <List.Item>{t("restore.warn3")}</List.Item>
+                <List.Item>{t("restore.warn4")}</List.Item>
               </List>
             </MAlert>
           )}
           <TextInput
-            label={`Wpisz ${confirmWord}, aby potwierdzić`}
+            label={t("restore.typeWord", { word: confirmWord() })}
             value={confirm}
             onChange={(e) => setConfirm(e.currentTarget.value)}
             autoComplete="off"
           />
           <PasswordInput
-            label="Twoje hasło"
+            label={t("yourPassword")}
             required
             autoComplete="current-password"
             value={password}
@@ -254,10 +250,10 @@ function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>
-              Wróć
+              {t("back")}
             </Button>
-            <Button type="submit" color="red" loading={busy} disabled={parts.length === 0 || confirm.trim() !== confirmWord || !password}>
-              Przywróć
+            <Button type="submit" color="red" loading={busy} disabled={parts.length === 0 || confirm.trim() !== confirmWord() || !password}>
+              {t("restore.restore")}
             </Button>
           </Group>
         </Stack>

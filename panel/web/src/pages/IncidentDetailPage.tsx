@@ -38,15 +38,18 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   alertsApi,
   exportsApi,
   formatDate,
-  incidentSeverityLabels,
-  incidentStatusLabels,
+  incidentSeverityColors,
   incidentsApi,
   levelLabels,
-  reportKindLabels,
+  reportKinds,
+  ruleText,
+  settingsApi,
   type Incident,
   type IncidentActivity,
   type IncidentAlert,
@@ -54,50 +57,39 @@ import {
   type IncidentReport,
   type IncidentStatus,
   type ReportKind,
+  type RuleInfo,
   type TriState,
 } from "../api";
 import { useAuth } from "../auth";
+import { languages, locale } from "../i18n";
 import { DeadlineBadge } from "../incidents";
 
-const triLabels: Record<TriState, string> = { yes: "tak", no: "nie", unknown: "nieustalone" };
-const fieldLabels: Record<string, string> = {
-  title: "tytuł",
-  description: "opis",
-  severity: "waga",
-  status: "status",
-  assignee: "prowadzący",
-  significant: "incydent poważny (NIS2)",
-  aware_at: "chwila stwierdzenia",
-  malicious: "podejrzenie działania złośliwego",
-  cross_border: "wpływ transgraniczny",
-  impact: "skutki",
-  root_cause: "przyczyna",
-  mitigation: "działania ograniczające",
-  iocs: "wskaźniki naruszenia (IoC)",
-};
+const triStates: TriState[] = ["yes", "no", "unknown"];
+// Pola z długim tekstem – w osi czasu tylko informacja o zmianie.
+const longFields = ["description", "impact", "root_cause", "mitigation", "iocs"];
 
 // Ścieżka statusów i dozwolone przejścia (jak na serwerze): praca może
-// wracać, zamknięcie jest ostateczne.
+// wracać, zamknięcie jest ostateczne. label – klucz action.* w tłumaczeniach.
 const statusPath: IncidentStatus[] = ["open", "investigating", "contained", "resolved", "closed"];
 const transitions: Record<IncidentStatus, { to: IncidentStatus; label: string; color?: string; variant?: string }[]> = {
   open: [
-    { to: "investigating", label: "Rozpocznij analizę" },
-    { to: "contained", label: "Zagrożenie opanowane", variant: "light" },
-    { to: "resolved", label: "Rozwiązany", variant: "light" },
+    { to: "investigating", label: "investigate" },
+    { to: "contained", label: "contain", variant: "light" },
+    { to: "resolved", label: "resolve", variant: "light" },
   ],
   investigating: [
-    { to: "contained", label: "Zagrożenie opanowane" },
-    { to: "resolved", label: "Rozwiązany", variant: "light" },
-    { to: "open", label: "Przywróć do otwartych", variant: "subtle" },
+    { to: "contained", label: "contain" },
+    { to: "resolved", label: "resolve", variant: "light" },
+    { to: "open", label: "reopen", variant: "subtle" },
   ],
   contained: [
-    { to: "resolved", label: "Rozwiązany" },
-    { to: "investigating", label: "Wróć do analizy", variant: "subtle" },
+    { to: "resolved", label: "resolve" },
+    { to: "investigating", label: "backToInvestigating", variant: "subtle" },
   ],
   resolved: [
-    { to: "closed", label: "Zamknij incydent", color: "gray" },
-    { to: "contained", label: "Wróć do opanowanych", variant: "subtle" },
-    { to: "investigating", label: "Wróć do analizy", variant: "subtle" },
+    { to: "closed", label: "close", color: "gray" },
+    { to: "contained", label: "backToContained", variant: "subtle" },
+    { to: "investigating", label: "backToInvestigating", variant: "subtle" },
   ],
   closed: [],
 };
@@ -110,24 +102,60 @@ function toLocalInput(iso?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function activityText(a: IncidentActivity): string {
+type T = TFunction<"incidents">;
+
+// Wartość pola z wpisu osi czasu (serwer zapisuje kody) w języku czytającego.
+function fieldValue(t: T, field: string, v: unknown): string {
+  const s = String(v ?? "");
+  if (!s) return "—";
+  switch (field) {
+    case "severity":
+      return t(`severity.${s}`, { defaultValue: s });
+    case "status":
+      return t(`status.${s}`, { defaultValue: s });
+    case "malicious":
+    case "cross_border":
+      return t(`tri.${s}`, { defaultValue: s });
+    case "significant":
+      return s === "true" ? t("tri.yes") : s === "false" ? t("tri.no") : s;
+    case "aware_at":
+      return formatDate(s);
+    default:
+      return s;
+  }
+}
+
+// Wpis osi czasu składany z kodu i szczegółów, żeby każdy czytał go w swoim
+// języku; a.text (po polsku) – gdy wpis nie ma szczegółów (starsze wpisy).
+function activityText(t: T, a: IncidentActivity): string {
   const d = a.details ?? {};
   switch (a.kind) {
     case "created":
-      return `utworzył incydent (alerty: ${d.alerts ?? 0})`;
+      return t("activity.created", { count: Number(d.alerts ?? 0) });
     case "field": {
       const f = String(d.field ?? a.text);
-      const long = ["description", "impact", "root_cause", "mitigation", "iocs"].includes(f);
-      return long ? `zmienił: ${fieldLabels[f] ?? f}` : `${fieldLabels[f] ?? f}: ${String(d.from || "—")} → ${String(d.to || "—")}`;
+      const name = t(`field.${f}`, { defaultValue: f });
+      return longFields.includes(f)
+        ? t("activity.changed", { field: name })
+        : t("activity.fieldChange", { field: name, from: fieldValue(t, f, d.from), to: fieldValue(t, f, d.to) });
     }
     case "alerts_added":
-      return a.text;
+      return Array.isArray(d.alert_ids) ? t("activity.alertsAdded", { count: d.alert_ids.length }) : a.text;
     case "alert_removed":
-      return a.text;
-    case "report_submitted":
-      return `oznaczył jako wysłane do CSIRT: ${reportKindLabels[d.kind as ReportKind] ?? a.text}${d.reference ? ` (sprawa ${String(d.reference)})` : ""}`;
+      return d.alert_id ? t("activity.alertRemoved", { id: d.alert_id }) : a.text;
+    case "report_submitted": {
+      const text = t("activity.reportSubmitted", { kind: t(`report.${String(d.kind ?? a.text)}`, { defaultValue: a.text }) });
+      return d.reference ? t("activity.reportReference", { text, reference: String(d.reference) }) : text;
+    }
     case "evidence":
-      return a.text;
+      return d.export_id
+        ? t("activity.evidence", {
+            id: d.export_id,
+            from: formatDate(String(d.from)),
+            to: formatDate(String(d.to)),
+            agents: Number(d.agents) || t("activity.agentsAll"),
+          })
+        : a.text;
     default:
       return a.text;
   }
@@ -146,8 +174,17 @@ function ReportEditor({
   canEdit: boolean;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation("incidents");
   const [content, setContent] = useState(report?.content ?? "");
   const [busy, setBusy] = useState(false);
+  // Język szkicu: domyślnie język systemu (ustawienie w Powiadomieniach).
+  const [draftLang, setDraftLang] = useState<string | null>(null);
+  useEffect(() => {
+    settingsApi
+      .language()
+      .then((r) => setDraftLang((cur) => cur ?? r.language))
+      .catch(() => undefined);
+  }, []);
   const [submitOpen, setSubmitOpen] = useState(false);
   const [reference, setReference] = useState("");
   const [sentAt, setSentAt] = useState(toLocalInput(new Date().toISOString()));
@@ -167,7 +204,7 @@ function ReportEditor({
   const download = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
-    a.download = `incydent-${id}-${kind}.txt`;
+    a.download = t("report_editor.fileName", { id, kind });
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -176,13 +213,15 @@ function ReportEditor({
     <Stack gap="xs">
       {submitted ? (
         <Alert color="green" icon={<IconCheck size={16} />}>
-          Wysłane do CSIRT {formatDate(report!.submitted_at)} ({report!.submitted_by})
-          {report!.reference ? `, sprawa ${report!.reference}` : ""}. Treść poniżej to wysłana wersja – nie da się jej zmienić.
+          {t("report_editor.submitted", {
+            date: formatDate(report!.submitted_at),
+            by: report!.submitted_by,
+            reference: report!.reference ? t("report_editor.submittedReference", { reference: report!.reference }) : "",
+          })}
         </Alert>
       ) : (
         <Text size="xs" c="dimmed">
-          Vardr przygotowuje szkic z danych incydentu; uzupełnij pola „[uzupełnij]”, wyślij przez kanał właściwego CSIRT
-          (portal, e-mail) i oznacz tutaj jako wysłane – terminy przestaną się liczyć.
+          {t("report_editor.hint")} {t("report_editor.draftLanguage")}
         </Text>
       )}
       <Textarea
@@ -193,7 +232,7 @@ function ReportEditor({
         value={content}
         readOnly={submitted || !canEdit}
         onChange={(e) => setContent(e.currentTarget.value)}
-        placeholder="Brak treści – kliknij „Szkic z danych incydentu”."
+        placeholder={t("report_editor.placeholder")}
       />
       <Group gap="xs">
         {!submitted && canEdit && (
@@ -204,13 +243,23 @@ function ReportEditor({
               loading={busy}
               onClick={() =>
                 void run(async () => {
-                  if (content.trim() && !window.confirm("Zastąpić obecną treść nowym szkicem?")) return;
-                  setContent((await incidentsApi.draft(id, kind)).content);
+                  if (content.trim() && !window.confirm(t("report_editor.replaceConfirm"))) return;
+                  setContent((await incidentsApi.draft(id, kind, draftLang ?? undefined)).content);
                 })
               }
             >
-              Szkic z danych incydentu
+              {t("report_editor.draft")}
             </Button>
+            <Select
+              size="xs"
+              w={130}
+              aria-label={t("report_editor.draftLanguageLabel")}
+              title={t("report_editor.draftLanguageLabel")}
+              data={Object.entries(languages).map(([value, label]) => ({ value, label }))}
+              value={draftLang}
+              onChange={setDraftLang}
+              allowDeselect={false}
+            />
             <Button
               size="xs"
               variant="light"
@@ -219,36 +268,36 @@ function ReportEditor({
               onClick={() =>
                 void run(async () => {
                   await incidentsApi.saveReport(id, kind, content);
-                  notifications.show({ color: "green", message: "Zapisano szkic" });
+                  notifications.show({ color: "green", message: t("report_editor.saved") });
                   onChanged();
                 })
               }
             >
-              Zapisz szkic
+              {t("report_editor.save")}
             </Button>
             <Button size="xs" color="green" leftSection={<IconSend size={14} />} disabled={!content.trim()} onClick={() => setSubmitOpen(true)}>
-              Oznacz jako wysłane
+              {t("report_editor.markSent")}
             </Button>
           </>
         )}
         <CopyButton value={content}>
           {({ copied, copy }) => (
             <Button size="xs" variant="subtle" leftSection={copied ? <IconCheck size={14} /> : <IconCopy size={14} />} onClick={copy} disabled={!content}>
-              {copied ? "Skopiowano" : "Kopiuj"}
+              {copied ? t("report_editor.copied") : t("report_editor.copy")}
             </Button>
           )}
         </CopyButton>
         <Button size="xs" variant="subtle" leftSection={<IconDownload size={14} />} onClick={download} disabled={!content}>
-          Pobierz .txt
+          {t("report_editor.download")}
         </Button>
       </Group>
-      <Modal opened={submitOpen} onClose={() => setSubmitOpen(false)} title={`Wysłane do CSIRT: ${reportKindLabels[kind]}`} centered>
+      <Modal opened={submitOpen} onClose={() => setSubmitOpen(false)} title={t("report_editor.submitTitle", { kind: t(`report.${kind}`) })} centered>
         <Stack>
-          <Text size="sm">Treść z edytora zostanie zapisana jako wysłana i zamrożona. Zmiana trafi do audytu.</Text>
-          <TextInput label="Chwila wysłania" type="datetime-local" value={sentAt} onChange={(e) => setSentAt(e.currentTarget.value)} />
+          <Text size="sm">{t("report_editor.submitInfo")}</Text>
+          <TextInput label={t("report_editor.sentAt")} type="datetime-local" value={sentAt} onChange={(e) => setSentAt(e.currentTarget.value)} />
           <TextInput
-            label="Numer sprawy / zgłoszenia w CSIRT"
-            placeholder="opcjonalnie"
+            label={t("report_editor.reference")}
+            placeholder={t("report_editor.optional")}
             value={reference}
             onChange={(e) => setReference(e.currentTarget.value)}
           />
@@ -263,7 +312,7 @@ function ReportEditor({
               })
             }
           >
-            Oznacz jako wysłane
+            {t("report_editor.markSent")}
           </Button>
         </Stack>
       </Modal>
@@ -274,6 +323,7 @@ function ReportEditor({
 export default function IncidentDetailPage() {
   const { id: idParam } = useParams();
   const id = Number(idParam);
+  const { t } = useTranslation("incidents");
   const { can } = useAuth();
   const [x, setX] = useState<Incident | null>(null);
   // Zamknięty incydent – tylko do odczytu (serwer też odrzuca zmiany).
@@ -320,6 +370,16 @@ export default function IncidentDetailPage() {
         .then((r) => setAssignees(r.assignees))
         .catch(() => setAssignees([]));
   }, [canEdit]);
+  // Alerty incydentu to migawki z polskim tytułem – w innym języku tytuł
+  // z tłumaczenia reguły.
+  const [rules, setRules] = useState<Record<string, RuleInfo>>({});
+  useEffect(() => {
+    if (locale() === "pl") return;
+    alertsApi
+      .rules()
+      .then((r) => setRules(Object.fromEntries(r.rules.map((x) => [x.id, x]))))
+      .catch(() => setRules({}));
+  }, []);
   useEffect(() => {
     const t = setInterval(() => setNow((n) => n + 60000), 60000);
     return () => clearInterval(t);
@@ -357,14 +417,22 @@ export default function IncidentDetailPage() {
       const r = await exportsApi.create({
         from: evidence.from.toISOString(),
         to: evidence.to.toISOString(),
-        reason: `Incydent #${x.id}: ${x.title} – paczka dowodowa`,
+        reason: t("detail.evidenceReason", { id: x.id, title: x.title }),
         agents: evidence.agents,
       });
-      await incidentsApi.evidence(
-        id,
-        `Zlecono paczkę dowodową z archiwum NIS2 (eksport #${r.export.id}, ${formatDate(evidence.from.toISOString())} – ${formatDate(evidence.to.toISOString())}, agenci: ${evidence.agents.length || "wszyscy"}).`,
-      );
-      notifications.show({ color: "green", message: `Zlecono eksport #${r.export.id} – gotowy w Archiwum NIS2 → Eksport dla audytora` });
+      await incidentsApi.evidence(id, {
+        text: t("activity.evidence", {
+          id: r.export.id,
+          from: formatDate(evidence.from.toISOString()),
+          to: formatDate(evidence.to.toISOString()),
+          agents: evidence.agents.length || t("activity.agentsAll"),
+        }),
+        export_id: r.export.id,
+        from: evidence.from.toISOString(),
+        to: evidence.to.toISOString(),
+        agents: evidence.agents.length,
+      });
+      notifications.show({ color: "green", message: t("detail.evidenceDone", { id: r.export.id }) });
       load();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -382,12 +450,13 @@ export default function IncidentDetailPage() {
     findings.mitigation !== x.mitigation ||
     findings.iocs !== x.iocs;
   const repByKind = Object.fromEntries(reports.map((r) => [r.kind, r]));
+  const triData = triStates.map((value) => ({ value, label: t(`tri.${value}`) }));
 
   return (
     <Stack>
       <Anchor component={Link} to="/incidents" size="sm">
         <Group gap={4}>
-          <IconArrowLeft size={14} /> incydenty
+          <IconArrowLeft size={14} /> {t("detail.back")}
         </Group>
       </Anchor>
       <Group justify="space-between" align="flex-start">
@@ -396,14 +465,14 @@ export default function IncidentDetailPage() {
             #{x.id} {x.title}
           </Title>
           <Text size="xs" c="dimmed">
-            założył {x.created_by} {formatDate(x.created_at)} · ostatnia zmiana {formatDate(x.updated_at)}
-            {x.closed_at && ` · zamknięty ${formatDate(x.closed_at)}`}
+            {t("detail.meta", { by: x.created_by, created: formatDate(x.created_at), updated: formatDate(x.updated_at) })}
+            {x.closed_at && t("detail.metaClosed", { closed: formatDate(x.closed_at) })}
           </Text>
         </div>
         <Group gap="xs">
           {x.significant && (
             <Badge color="red" size="lg">
-              NIS2 – incydent poważny
+              {t("detail.significantBadge")}
             </Badge>
           )}
         </Group>
@@ -411,35 +480,34 @@ export default function IncidentDetailPage() {
 
       {x.status === "closed" && (
         <Alert color="gray" icon={<IconLock size={16} />}>
-          Incydent zamknięty {formatDate(x.closed_at)} – tylko do odczytu. Zamknięcia nie da się cofnąć; przy nawrocie zagrożenia
-          załóż nowy incydent.
+          {t("detail.closedInfo", { date: formatDate(x.closed_at) })}
         </Alert>
       )}
       <Card withBorder>
         <Stack gap="sm">
           <Stepper active={statusPath.indexOf(x.status)} size="sm" allowNextStepsSelect={false}>
             {statusPath.map((st) => (
-              <Stepper.Step key={st} label={incidentStatusLabels[st].label} />
+              <Stepper.Step key={st} label={t(`status.${st}`)} />
             ))}
           </Stepper>
           {canEdit && (
             <Group gap="xs">
-              {transitions[x.status].map((t) => (
+              {transitions[x.status].map((tr) => (
                 <Button
-                  key={t.to}
+                  key={tr.to}
                   size="xs"
-                  color={t.color}
-                  variant={t.variant ?? "filled"}
+                  color={tr.color}
+                  variant={tr.variant ?? "filled"}
                   loading={busy}
-                  leftSection={t.to === "closed" ? <IconLock size={14} /> : undefined}
+                  leftSection={tr.to === "closed" ? <IconLock size={14} /> : undefined}
                   onClick={() => {
-                    if (t.to === "closed") {
+                    if (tr.to === "closed") {
                       setSummary("");
                       setCloseOpen(true);
-                    } else void patch({ status: t.to });
+                    } else void patch({ status: tr.to });
                   }}
                 >
-                  {t.label}
+                  {t(`action.${tr.label}`)}
                 </Button>
               ))}
             </Group>
@@ -453,15 +521,15 @@ export default function IncidentDetailPage() {
             <Stack gap="xs">
               <Group grow>
                 <Select
-                  label="Waga"
+                  label={t("detail.severity")}
                   disabled={!canEdit || busy}
                   value={x.severity}
                   allowDeselect={false}
                   onChange={(v) => v && v !== x.severity && void patch({ severity: v as Incident["severity"] })}
-                  data={Object.entries(incidentSeverityLabels).map(([value, l]) => ({ value, label: l.label }))}
+                  data={Object.keys(incidentSeverityColors).map((value) => ({ value, label: t(`severity.${value}`) }))}
                 />
                 <Select
-                  label="Prowadzi"
+                  label={t("detail.assignee")}
                   disabled={!canEdit || busy}
                   value={x.assignee || null}
                   clearable
@@ -473,7 +541,7 @@ export default function IncidentDetailPage() {
                 />
               </Group>
               <Textarea
-                label="Opis"
+                label={t("detail.description")}
                 autosize
                 minRows={2}
                 readOnly={!canEdit}
@@ -481,7 +549,7 @@ export default function IncidentDetailPage() {
                 onChange={(e) => setFindings({ ...findings, description: e.currentTarget.value })}
               />
               <Textarea
-                label="Skutki (systemy, dane, usługi, osoby)"
+                label={t("detail.impact")}
                 autosize
                 minRows={2}
                 readOnly={!canEdit}
@@ -489,7 +557,7 @@ export default function IncidentDetailPage() {
                 onChange={(e) => setFindings({ ...findings, impact: e.currentTarget.value })}
               />
               <Textarea
-                label="Rodzaj zagrożenia / przyczyna"
+                label={t("detail.rootCause")}
                 autosize
                 minRows={2}
                 readOnly={!canEdit}
@@ -497,7 +565,7 @@ export default function IncidentDetailPage() {
                 onChange={(e) => setFindings({ ...findings, root_cause: e.currentTarget.value })}
               />
               <Textarea
-                label="Działania ograniczające (zastosowane i prowadzone)"
+                label={t("detail.mitigation")}
                 autosize
                 minRows={2}
                 readOnly={!canEdit}
@@ -505,7 +573,7 @@ export default function IncidentDetailPage() {
                 onChange={(e) => setFindings({ ...findings, mitigation: e.currentTarget.value })}
               />
               <Textarea
-                label="Wskaźniki naruszenia (IoC) – adresy, skróty plików, domeny"
+                label={t("detail.iocs")}
                 autosize
                 minRows={2}
                 readOnly={!canEdit}
@@ -516,7 +584,7 @@ export default function IncidentDetailPage() {
               {canEdit && (
                 <Group>
                   <Button size="xs" disabled={!findingsChanged} loading={busy} onClick={() => void patch(findings)}>
-                    Zapisz ustalenia
+                    {t("detail.saveFindings")}
                   </Button>
                 </Group>
               )}
@@ -526,15 +594,15 @@ export default function IncidentDetailPage() {
         <Grid.Col span={{ base: 12, md: 5 }}>
           <Card withBorder>
             <Stack gap="xs">
-              <Title order={4}>NIS2</Title>
+              <Title order={4}>{t("detail.nis2")}</Title>
               <Switch
-                label="Incydent poważny (obowiązek zgłoszenia do CSIRT)"
+                label={t("detail.significant")}
                 checked={x.significant}
                 disabled={!canEdit || busy}
                 onChange={(e) => void patch({ significant: e.currentTarget.checked })}
               />
               <TextInput
-                label="Stwierdzony (początek terminów)"
+                label={t("detail.awareAt")}
                 type="datetime-local"
                 disabled={!canEdit || busy || !x.significant}
                 value={toLocalInput(x.aware_at)}
@@ -542,20 +610,20 @@ export default function IncidentDetailPage() {
               />
               <Group grow>
                 <Select
-                  label="Podejrzenie działania złośliwego"
+                  label={t("detail.malicious")}
                   disabled={!canEdit || busy}
                   value={x.malicious}
                   allowDeselect={false}
                   onChange={(v) => v && v !== x.malicious && void patch({ malicious: v as TriState })}
-                  data={Object.entries(triLabels).map(([value, label]) => ({ value, label }))}
+                  data={triData}
                 />
                 <Select
-                  label="Wpływ transgraniczny"
+                  label={t("detail.crossBorder")}
                   disabled={!canEdit || busy}
                   value={x.cross_border}
                   allowDeselect={false}
                   onChange={(v) => v && v !== x.cross_border && void patch({ cross_border: v as TriState })}
-                  data={Object.entries(triLabels).map(([value, label]) => ({ value, label }))}
+                  data={triData}
                 />
               </Group>
               {x.significant ? (
@@ -566,8 +634,7 @@ export default function IncidentDetailPage() {
                 </Stack>
               ) : (
                 <Text size="xs" c="dimmed">
-                  Po oznaczeniu jako poważny panel liczy terminy zgłoszeń i przypomina o nich na kanałach powiadomień
-                  (zdarzenie „incydenty”).
+                  {t("detail.deadlinesHint")}
                 </Text>
               )}
               {can("archive", "export") && evidence && (
@@ -577,10 +644,10 @@ export default function IncidentDetailPage() {
                   leftSection={<IconFileCertificate size={14} />}
                   loading={busy}
                   disabled={evidence.tooLong}
-                  title={evidence.tooLong ? "zakres alertów dłuższy niż 31 dni – zleć eksport ręcznie w Archiwum" : undefined}
+                  title={evidence.tooLong ? t("detail.evidenceTooLong") : undefined}
                   onClick={() => void requestEvidence()}
                 >
-                  Paczka dowodowa z archiwum NIS2
+                  {t("detail.evidence")}
                 </Button>
               )}
             </Stack>
@@ -591,17 +658,17 @@ export default function IncidentDetailPage() {
       {x.significant && (
         <Card withBorder>
           <Title order={4} mb="xs">
-            Zgłoszenia do CSIRT
+            {t("detail.reports")}
           </Title>
           <Tabs value={tab} onChange={setTab}>
             <Tabs.List>
-              {(Object.keys(reportKindLabels) as ReportKind[]).map((k) => (
+              {reportKinds.map((k) => (
                 <Tabs.Tab key={k} value={k} rightSection={repByKind[k]?.submitted_at ? <IconCheck size={12} color="green" /> : null}>
-                  {reportKindLabels[k]}
+                  {t(`report.${k}`)}
                 </Tabs.Tab>
               ))}
             </Tabs.List>
-            {(Object.keys(reportKindLabels) as ReportKind[]).map((k) => (
+            {reportKinds.map((k) => (
               <Tabs.Panel key={k} value={k} pt="xs">
                 {tab === k && <ReportEditor id={id} kind={k} report={repByKind[k]} canEdit={canEdit} onChanged={load} />}
               </Tabs.Panel>
@@ -612,21 +679,21 @@ export default function IncidentDetailPage() {
 
       <Card withBorder>
         <Title order={4} mb="xs">
-          Alerty ({alerts.length})
+          {t("detail.alerts", { count: alerts.length })}
         </Title>
         {alerts.length === 0 ? (
           <Text size="sm" c="dimmed">
-            Brak alertów. Dodasz je z listy alertów (zaznacz → „Do incydentu”) albo ze szczegółów alertu.
+            {t("detail.noAlerts")}
           </Text>
         ) : (
           <Table.ScrollContainer minWidth={800}>
             <Table verticalSpacing={4}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Pierwsze</Table.Th>
-                  <Table.Th>Poziom</Table.Th>
-                  <Table.Th>Reguła</Table.Th>
-                  <Table.Th>Komputer / konto</Table.Th>
+                  <Table.Th>{t("detail.colFirst")}</Table.Th>
+                  <Table.Th>{t("detail.colLevel")}</Table.Th>
+                  <Table.Th>{t("detail.colRule")}</Table.Th>
+                  <Table.Th>{t("detail.colHost")}</Table.Th>
                   <Table.Th />
                 </Table.Tr>
               </Table.Thead>
@@ -643,7 +710,7 @@ export default function IncidentDetailPage() {
                     </Table.Td>
                     <Table.Td maw={380}>
                       <Anchor component={Link} to={`/alerts/${a.alert_id}`} size="sm">
-                        {a.rule_title}
+                        {rules[a.rule_id] ? ruleText(rules[a.rule_id]).title : a.rule_title}
                       </Anchor>
                       <Text size="xs" c="dimmed" lineClamp={1}>
                         {a.summary}
@@ -662,7 +729,7 @@ export default function IncidentDetailPage() {
                           variant="subtle"
                           color="red"
                           onClick={() =>
-                            window.confirm(`Usunąć alert #${a.alert_id} z incydentu?`) &&
+                            window.confirm(t("detail.removeAlert", { id: a.alert_id })) &&
                             void incidentsApi.removeAlert(id, a.alert_id).then(load)
                           }
                         >
@@ -678,15 +745,15 @@ export default function IncidentDetailPage() {
         )}
       </Card>
 
-      <Modal opened={closeOpen} onClose={() => setCloseOpen(false)} title={`Zamknięcie incydentu #${x.id}`} centered>
+      <Modal opened={closeOpen} onClose={() => setCloseOpen(false)} title={t("detail.closeTitle", { id: x.id })} centered>
         <Stack>
           <Alert color="orange">
-            Zamknięcie jest ostateczne: incydent stanie się tylko do odczytu (bez zmian, notatek, alertów i zgłoszeń).
-            {x.significant && " Incydent poważny można zamknąć po oznaczeniu sprawozdania końcowego jako wysłanego."}
+            {t("detail.closeWarning")}
+            {x.significant && t("detail.closeWarningNis2")}
           </Alert>
           <Textarea
-            label="Podsumowanie"
-            description="przebieg, skutki, wnioski – trafi do osi czasu"
+            label={t("detail.summary")}
+            description={t("detail.summaryHint")}
             autosize
             minRows={3}
             value={summary}
@@ -704,14 +771,14 @@ export default function IncidentDetailPage() {
               })
             }
           >
-            Zamknij incydent
+            {t("action.close")}
           </Button>
         </Stack>
       </Modal>
 
       <Card withBorder>
         <Title order={4} mb="xs">
-          Oś czasu
+          {t("detail.timeline")}
         </Title>
         {canEdit && (
           <Group align="flex-end" mb="sm">
@@ -719,7 +786,7 @@ export default function IncidentDetailPage() {
               style={{ flex: 1 }}
               autosize
               minRows={1}
-              placeholder="Notatka: ustalenia, decyzje, kontakt z CSIRT…"
+              placeholder={t("detail.notePlaceholder")}
               value={note}
               onChange={(e) => setNote(e.currentTarget.value)}
             />
@@ -732,7 +799,7 @@ export default function IncidentDetailPage() {
                 })
               }
             >
-              Dodaj notatkę
+              {t("detail.addNote")}
             </Button>
           </Group>
         )}
@@ -750,7 +817,7 @@ export default function IncidentDetailPage() {
               {a.kind === "note" ? (
                 <Code block>{a.text}</Code>
               ) : (
-                <Text size="sm">{activityText(a)}</Text>
+                <Text size="sm">{activityText(t, a)}</Text>
               )}
             </Timeline.Item>
           ))}

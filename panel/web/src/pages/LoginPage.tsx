@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Alert, Anchor, Button, Center, Paper, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle, IconShieldHalf } from "@tabler/icons-react";
-import { api, isMFAStep, type LoginFinal, type MFASetup } from "../api";
+import { useTranslation } from "react-i18next";
+import { ApiError, api, isMFAStep, type LoginFinal, type MFASetup } from "../api";
 import { useAuth } from "../auth";
 import { CodeInput, MFASetupView, RecoveryCodesView } from "../mfa";
 
@@ -17,6 +18,7 @@ type Step =
   | { kind: "codes"; result: LoginFinal };
 
 export default function LoginPage() {
+  const { t } = useTranslation("account");
   const { applySession, notice } = useAuth();
   const [step, setStep] = useState<Step>({ kind: "password" });
   const [username, setUsername] = useState("");
@@ -34,7 +36,7 @@ export default function LoginPage() {
       notifications.show({
         color: r.recovery_left ? "yellow" : "red",
         autoClose: false,
-        message: `Użyto kodu zapasowego – zostało ${r.recovery_left ?? 0}. Wygeneruj nowe w „Bezpieczeństwie konta”.`,
+        message: t("login.recoveryUsed", { count: r.recovery_left ?? 0 }),
       });
     }
     applySession(r);
@@ -44,7 +46,7 @@ export default function LoginPage() {
     const msg = err instanceof Error ? err.message : String(err);
     setError(msg);
     setCode("");
-    if (msg.includes("wygasło")) setStep({ kind: "password" });
+    if (err instanceof ApiError && err.code === "mfa_expired") setStep({ kind: "password" });
   };
 
   const submitPassword = async (e: React.FormEvent) => {
@@ -95,7 +97,7 @@ export default function LoginPage() {
         setCode("");
       }}
     >
-      ← inne konto / od nowa
+      {t("login.back")}
     </Anchor>
   );
 
@@ -107,7 +109,7 @@ export default function LoginPage() {
             <IconShieldHalf size={48} color="var(--mantine-color-yellow-5)" />
             <Title order={2}>Vardr</Title>
             <Text c="dimmed" size="sm">
-              Hliðskjálf – panel SIEM
+              {t("login.subtitle")}
             </Text>
           </Stack>
           {notice && step.kind === "password" && (
@@ -125,8 +127,8 @@ export default function LoginPage() {
             <form onSubmit={submitPassword}>
               <Stack>
                 <TextInput
-                  label="Login"
-                  description="konto panelu albo domenowe (jan.kowalski)"
+                  label={t("login.username")}
+                  description={t("login.usernameHint")}
                   autoComplete="username"
                   autoFocus
                   required
@@ -134,14 +136,14 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.currentTarget.value)}
                 />
                 <PasswordInput
-                  label="Hasło"
+                  label={t("login.password")}
                   autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.currentTarget.value)}
                 />
                 <Button type="submit" loading={busy} fullWidth>
-                  Zaloguj
+                  {t("login.submit")}
                 </Button>
               </Stack>
             </form>
@@ -151,11 +153,13 @@ export default function LoginPage() {
             <form onSubmit={submitCode}>
               <Stack>
                 <Text size="sm">
-                  Konto <b>{step.username}</b>: podaj kod z aplikacji uwierzytelniającej.
+                  {t("login.codePrompt.0")}
+                  <b>{step.username}</b>
+                  {t("login.codePrompt.1")}
                 </Text>
                 <CodeInput value={code} onChange={setCode} allowRecovery />
                 <Button type="submit" loading={busy} fullWidth>
-                  Potwierdź
+                  {t("login.confirm")}
                 </Button>
                 {back}
               </Stack>
@@ -166,13 +170,14 @@ export default function LoginPage() {
             <form onSubmit={submitCode}>
               <Stack>
                 <Alert color="blue">
-                  Panel wymaga drugiego składnika logowania. Skonfiguruj aplikację uwierzytelniającą dla konta{" "}
-                  <b>{step.username}</b> – to jednorazowe.
+                  {t("login.enrollPrompt.0")}
+                  <b>{step.username}</b>
+                  {t("login.enrollPrompt.1")}
                 </Alert>
                 <MFASetupView setup={step.setup} />
                 <CodeInput value={code} onChange={setCode} autoFocus={false} />
                 <Button type="submit" loading={busy} fullWidth>
-                  Włącz i zaloguj
+                  {t("login.enrollSubmit")}
                 </Button>
                 {back}
               </Stack>
@@ -180,7 +185,7 @@ export default function LoginPage() {
           )}
 
           {step.kind === "codes" && (
-            <RecoveryCodesView codes={step.result.recovery_codes ?? []} doneLabel="Przejdź do panelu" onDone={() => applySession(step.result)} />
+            <RecoveryCodesView codes={step.result.recovery_codes ?? []} doneLabel={t("login.toPanel")} onDone={() => applySession(step.result)} />
           )}
         </Stack>
       </Paper>

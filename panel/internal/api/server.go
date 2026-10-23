@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/lang"
 	"siem/internal/throttle"
 	"siem/panel/internal/api/store"
+	"siem/panel/internal/syslang"
 )
 
 // Store to operacje na bazie Saga używane przez API (implementuje store.PG).
@@ -115,6 +117,10 @@ type Server struct {
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore
 	ldap      ldapState
+	// Settings (opcjonalne): ustawienia panelu; SysLang – język systemu
+	// (powiadomienia, szkice zgłoszeń) odczytywany z nich.
+	Settings SettingStore
+	SysLang  *syslang.Cache
 
 	// Sesje: wygasają po IdleTimeout bez aktywności, najpóźniej po MaxAge.
 	IdleTimeout, MaxAge time.Duration
@@ -164,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/mfa/enroll", s.loginEnroll)
 	mux.HandleFunc("POST /api/v1/auth/mfa/enroll/confirm", s.loginEnrollConfirm)
 	mux.Handle("GET /api/v1/account/mfa", s.authed(loggedIn, 0, s.accountMFA))
+	mux.Handle("PUT /api/v1/account/language", s.authed(loggedIn, allowPasswordChange, s.accountLanguage))
 	mux.Handle("POST /api/v1/account/mfa/setup", s.authed(loggedIn, 0, s.accountMFASetup))
 	mux.Handle("POST /api/v1/account/mfa/confirm", s.authed(loggedIn, 0, s.accountMFAConfirm))
 	mux.Handle("POST /api/v1/account/mfa/disable", s.authed(loggedIn, 0, s.accountMFADisable))
@@ -179,7 +186,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/v1/incidents/{id}", s.authed(can("incidents", "write"), 0, s.updateIncident))
 	mux.Handle("POST /api/v1/incidents/{id}/notes", s.authed(can("incidents", "write"), 0, s.addIncidentNote))
 	mux.Handle("POST /api/v1/incidents/{id}/evidence", s.authed(can("archive", "export"), 0, s.addIncidentEvidence))
-	mux.Handle("POST /api/v1/incidents/{id}/alerts",s.authed(can("incidents", "write"), 0, s.addIncidentAlerts))
+	mux.Handle("POST /api/v1/incidents/{id}/alerts", s.authed(can("incidents", "write"), 0, s.addIncidentAlerts))
 	mux.Handle("POST /api/v1/incidents/{id}/alerts/{aid}/remove", s.authed(can("incidents", "write"), 0, s.removeIncidentAlert))
 	mux.Handle("GET /api/v1/incidents/{id}/reports/{kind}/draft", s.authed(can("incidents", "read"), 0, s.draftReport))
 	mux.Handle("PUT /api/v1/incidents/{id}/reports/{kind}", s.authed(can("incidents", "write"), 0, s.saveReport))
@@ -190,6 +197,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/v1/settings/ldap/groups", s.authed(can("users", "write"), 0, s.ldapGroups))
 	mux.Handle("POST /api/v1/settings/ldap/check", s.authed(can("users", "write"), 0, s.checkLDAPAccount))
 	mux.Handle("GET /api/v1/settings/security", s.authed(can("users", "read"), 0, s.securitySettings))
+	mux.Handle("GET /api/v1/settings/language", s.authed(loggedIn, 0, s.languageSettings))
+	mux.Handle("PUT /api/v1/settings/language", s.authed(can("users", "write"), 0, s.setLanguageSettings))
 	mux.Handle("PUT /api/v1/settings/security", s.authed(can("users", "write"), 0, s.setSecuritySettings))
 	mux.Handle("GET /api/v1/auth/session", s.authed(loggedIn, allowPasswordChange, s.session))
 	mux.Handle("POST /api/v1/auth/logout", s.authed(loggedIn, allowPasswordChange, s.logout))
@@ -314,6 +323,10 @@ func (s *Server) Handler() http.Handler {
 type apiError struct {
 	Error   string `json:"error"`   // kod dla aplikacji
 	Message string `json:"message"` // opis dla człowieka
+	// MessageEn: opis po angielsku, gdy błąd go ma (lang.Error – walidacja
+	// ustawień, reguł, dekoderów); panel w innym języku niż polski bierze go
+	// zamiast ogólnego tłumaczenia kodu.
+	MessageEn string `json:"message_en,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -327,19 +340,38 @@ func writeError(w http.ResponseWriter, code int, errCode, msg string) {
 	writeJSON(w, code, apiError{Error: errCode, Message: msg})
 }
 
+// failed: wynik „ok: false” (test reguły, dekodera, połączenia) z opisem
+// błędu – także po angielsku, gdy błąd go ma (error_en).
+func failed(err error) map[string]any {
+	m := map[string]any{"ok": false, "error": err.Error()}
+	if en := lang.English(err); en != err.Error() {
+		m["error_en"] = en
+	}
+	return m
+}
+
+// writeErr: błąd z opisem z err (z wersją angielską, gdy err ją ma).
+func writeErr(w http.ResponseWriter, code int, errCode string, err error) {
+	msg, en := err.Error(), lang.English(err)
+	if en == msg {
+		en = ""
+	}
+	writeJSON(w, code, apiError{Error: errCode, Message: msg, MessageEn: en})
+}
+
 // readJSON dekoduje treść żądania (maks. 64 KB, bez nieznanych pól).
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "niepoprawne dane żądania: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_request", lang.Errorf("niepoprawne dane żądania: %w", "invalid request data: %w", err))
 		return false
 	}
 	return true
 }
 
 func (s *Server) internalError(w http.ResponseWriter, r *http.Request, err error) {
-	s.Log.Error("błąd obsługi żądania", "method", r.Method, "path", r.URL.Path, "err", err)
+	s.Log.Error("request handling error", "method", r.Method, "path", r.URL.Path, "err", err)
 	writeError(w, http.StatusInternalServerError, "internal", "błąd serwera – szczegóły w logu siem-api")
 }
 
@@ -368,7 +400,7 @@ func (s *Server) recover(next http.Handler) http.Handler {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
-				s.Log.Error("panika w obsłudze żądania", "path", r.URL.Path, "panic", v)
+				s.Log.Error("panic while handling a request", "path", r.URL.Path, "panic", v)
 				writeError(w, http.StatusInternalServerError, "internal", "błąd serwera")
 			}
 		}()
@@ -465,7 +497,7 @@ func (s *Server) audit(r *http.Request, actor *store.User, action, target string
 		e.UserID, e.Username = &id, actor.Username
 	}
 	if err := s.Store.Audit(context.WithoutCancel(r.Context()), e); err != nil {
-		s.Log.Error("zapis audytu nieudany", "action", action, "err", err)
+		s.Log.Error("writing the audit entry failed", "action", action, "err", err)
 	}
 }
 

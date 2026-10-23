@@ -12,6 +12,8 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"siem/internal/lang"
 )
 
 const (
@@ -133,8 +135,8 @@ func ReadConfig(name string) (ServiceConfig, error) {
 	return ServiceConfig{StartType: cfg.StartType, BinaryPath: windows.UTF16PtrToString(cfg.BinaryPathName)}, nil
 }
 
-var startNames = map[uint32]string{windows.SERVICE_AUTO_START: "automatyczny", windows.SERVICE_DEMAND_START: "ręczny",
-	windows.SERVICE_DISABLED: "wyłączony", windows.SERVICE_BOOT_START: "boot", windows.SERVICE_SYSTEM_START: "system"}
+var startNames = map[uint32]string{windows.SERVICE_AUTO_START: lang.L("automatyczny", "automatic"), windows.SERVICE_DEMAND_START: lang.L("ręczny", "manual"),
+	windows.SERVICE_DISABLED: lang.L("wyłączony", "disabled"), windows.SERVICE_BOOT_START: "boot", windows.SERVICE_SYSTEM_START: "system"}
 
 func startName(t uint32) string {
 	if n, ok := startNames[t]; ok {
@@ -159,7 +161,7 @@ func CheckConfig(name string, want ServiceConfig, fix bool) ([]string, error) {
 		scmWrong = true
 	}
 	if !strings.EqualFold(cur.BinaryPath, want.BinaryPath) {
-		diffs = append(diffs, "program usługi: "+cur.BinaryPath)
+		diffs = append(diffs, lang.L("program usługi: ", "service program: ")+cur.BinaryPath)
 		scmWrong = true
 	}
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Services\`+name, registry.QUERY_VALUE|registry.SET_VALUE)
@@ -172,7 +174,7 @@ func CheckConfig(name string, want ServiceConfig, fix bool) ([]string, error) {
 			}
 		}
 		if v, _, err := k.GetStringValue("ImagePath"); err == nil && !strings.EqualFold(v, want.BinaryPath) && !scmWrong {
-			diffs = append(diffs, "program usługi w rejestrze: "+v)
+			diffs = append(diffs, lang.L("program usługi w rejestrze: ", "service program in the registry: ")+v)
 			if fix {
 				_ = k.SetExpandStringValue("ImagePath", want.BinaryPath)
 			}

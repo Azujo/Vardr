@@ -1,0 +1,53 @@
+{
+  "title": "MITRE ATT&CK – coverage",
+  "intro": "ATT&CK {{version}} techniques by rule tags (attack.t…). Cell colour: whether an enabled rule detects the technique and whether there were alerts in the selected period. A technique includes its sub-techniques. Click a cell to see its rules and alerts.",
+  "export": "Export to ATT&CK Navigator",
+  "exportHint": "Layer for MITRE ATT&CK Navigator: techniques covered by enabled rules, score = number of alerts",
+  "stats": {
+    "covered": "Techniques covered by enabled rules",
+    "platform": "platform: {{platform}}",
+    "tactics": "Tactics with at least one rule",
+    "noRules": "no rules:",
+    "alerts": "Alerts from rules with ATT&CK techniques ({{days}} days)",
+    "untagged_one": "{{count}} rule without an ATT&CK technique",
+    "untagged_other": "{{count}} rules without an ATT&CK technique"
+  },
+  "warnings": "Tags to fix ({{count}})",
+  "days": "{{n}} days",
+  "view": {
+    "all": "all techniques",
+    "covered": "only with rules"
+  },
+  "platform": {
+    "all": "all platforms",
+    "windows": "Windows",
+    "idp": "Entra ID / identity provider",
+    "network": "network devices",
+    "saas": "SaaS",
+    "iaas": "cloud (IaaS)",
+    "linux": "Linux"
+  },
+  "search": "search technique",
+  "state": {
+    "alerts": "covered, alerts raised",
+    "covered": "covered by an enabled rule",
+    "disabled": "disabled rules only",
+    "none": "no rules"
+  },
+  "tacticTip": "{{id}} – {{covered}} of {{total}} techniques covered",
+  "cell": {
+    "rules": "{{n}} rules",
+    "alerts": "{{n}} alerts",
+    "subs": "{{n}}/{{total}} sub."
+  },
+  "mitreLink": "description in MITRE ATT&CK",
+  "platforms": "Platforms: {{list}}",
+  "rules": "Rules ({{count}})",
+  "noRules": "No rule is tagged with this technique or its sub-techniques. New rule: Detection rules → Test a new rule, or the correlation wizard; tag {{tag}}.",
+  "enabled": "enabled",
+  "disabled": "disabled",
+  "ruleAlerts": "{{total}} alerts ({{open}} open)",
+  "noAlerts": "no alerts",
+  "techniqueAlerts": "Alerts for this technique ({{days}} days)",
+  "subtechniques": "Sub-techniques ({{n}}/{{total}} covered)"
+}

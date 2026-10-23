@@ -52,29 +52,56 @@ const (
 	historyWindow  = 30 * 24 * time.Hour
 )
 
+// successAfterFailuresText, newCountryText: teksty korelacji wbudowanych w języku.
+func successAfterFailuresText(lang string) alerts.RuleText {
+	return alerts.RuleText{
+		Title: pick(lang, "Udane logowanie po serii nieudanych (wiele źródeł)", "Successful sign-in after a series of failures (multiple sources)"),
+		Description: fmt.Sprintf(pick(lang, "Udane logowanie osoby (AD, Entra ID, VPN, router) poprzedzone co najmniej %d nieudanymi "+
+			"logowaniami tej osoby w ciągu %s – w dowolnych źródłach. Typowe dla odgadniętego hasła: seria prób na VPN "+
+			"albo w chmurze, a potem udane wejście.", "A successful sign-in of a person (AD, Entra ID, VPN, router) preceded by at "+
+			"least %d failed sign-ins of that person within %s – in any sources. Typical of a guessed password: a series of "+
+			"attempts on the VPN or in the cloud, then a successful sign-in."), failuresNeeded, fmtWindow(failureWindow)),
+		Instructions: pick(lang, "Ustal z osobą, czy to ona się logowała (telefon, nie e-mail). Porównaj adresy prób i udanego "+
+			"logowania – inny adres albo kraj to prawie na pewno przejęte konto: zablokuj logowanie, unieważnij sesje "+
+			"(Entra: revoke sessions), zmień hasło i sprawdź MFA oraz reguły skrzynki pocztowej.",
+			"Confirm with the person whether it was them (by phone, not e-mail). Compare the addresses of the attempts and the "+
+				"successful sign-in – a different address or country almost certainly means a compromised account: block sign-in, "+
+				"revoke sessions (Entra: revoke sessions), change the password and check MFA and mailbox rules."),
+	}
+}
+
+func newCountryText(lang string) alerts.RuleText {
+	return alerts.RuleText{
+		Title: pick(lang, "Logowanie z nowego kraju", "Sign-in from a new country"),
+		Description: fmt.Sprintf(pick(lang, "Udane logowanie osoby z kraju, z którego w ostatnich %d dniach się nie logowała "+
+			"(osoby bez historii – pomijane). Kraj z lokalizacji Microsoftu (Entra ID).", "A successful sign-in of a person from a "+
+			"country they have not signed in from in the last %d days (people without history are skipped). Country from "+
+			"Microsoft's location data (Entra ID)."), int(historyWindow.Hours()/24)),
+		Instructions: pick(lang, "Sprawdź z osobą, czy była w tym kraju (podróż, VPN prywatny). Jeśli nie – traktuj jak przejęte "+
+			"konto: unieważnij sesje, zmień hasło, sprawdź metody MFA dodane ostatnio i aktywność po logowaniu.",
+			"Check with the person whether they were in that country (travel, private VPN). If not – treat it as a compromised "+
+				"account: revoke sessions, change the password, check recently added MFA methods and the activity after the sign-in."),
+	}
+}
+
 // CorrelationRules opisuje korelacje dla panelu.
 func CorrelationRules() []alerts.RuleInfo {
 	src := "# Reguła wbudowana w siem-detector (server/internal/detector/correlate.go),\n" +
 		"# oceniana co minutę w ClickHouse po osobie (user.identity) we wszystkich źródłach.\n"
+	saf, nc := successAfterFailuresText("pl"), newCountryText("pl")
 	return []alerts.RuleInfo{
-		{ID: SuccessAfterFailuresID, Title: "Udane logowanie po serii nieudanych (wiele źródeł)", Level: "high", Mode: "correlation",
+		{ID: SuccessAfterFailuresID, Title: saf.Title, Level: "high", Mode: "correlation",
 			Enabled: true, FileEnabled: true, File: "(wbudowana)", GroupBy: []string{"user.identity"}, SuppressS: 3600,
-			Tags: []string{"attack.credential_access", "attack.t1110", "attack.initial_access", "attack.t1078"},
-			Description: fmt.Sprintf("Udane logowanie osoby (AD, Entra ID, VPN, router) poprzedzone co najmniej %d nieudanymi "+
-				"logowaniami tej osoby w ciągu %s – w dowolnych źródłach. Typowe dla odgadniętego hasła: seria prób na VPN "+
-				"albo w chmurze, a potem udane wejście.", failuresNeeded, fmtWindow(failureWindow)),
-			Source: src + fmt.Sprintf("# Nieudane: %s\n# Udane: %s\n", oneLine(authFailureSQL), oneLine(authSuccessSQL)),
-			Instructions: "Ustal z osobą, czy to ona się logowała (telefon, nie e-mail). Porównaj adresy prób i udanego " +
-				"logowania – inny adres albo kraj to prawie na pewno przejęte konto: zablokuj logowanie, unieważnij sesje " +
-				"(Entra: revoke sessions), zmień hasło i sprawdź MFA oraz reguły skrzynki pocztowej."},
-		{ID: NewCountryID, Title: "Logowanie z nowego kraju", Level: "medium", Mode: "correlation",
+			Tags:         []string{"attack.credential_access", "attack.t1110", "attack.initial_access", "attack.t1078"},
+			Description:  saf.Description,
+			Source:       src + fmt.Sprintf("# Nieudane: %s\n# Udane: %s\n", oneLine(authFailureSQL), oneLine(authSuccessSQL)),
+			Instructions: saf.Instructions, I18n: ruleTexts(successAfterFailuresText)},
+		{ID: NewCountryID, Title: nc.Title, Level: "medium", Mode: "correlation",
 			Enabled: true, FileEnabled: true, File: "(wbudowana)", GroupBy: []string{"user.identity", "source.geo.country_iso_code"},
 			SuppressS: 86400, Tags: []string{"attack.initial_access", "attack.t1078.004"},
-			Description: fmt.Sprintf("Udane logowanie osoby z kraju, z którego w ostatnich %d dniach się nie logowała "+
-				"(osoby bez historii – pomijane). Kraj z lokalizacji Microsoftu (Entra ID).", int(historyWindow.Hours()/24)),
-			Source: src + "# Zbiory z krajem: " + strings.Join(geoDatasets, ", ") + "\n",
-			Instructions: "Sprawdź z osobą, czy była w tym kraju (podróż, VPN prywatny). Jeśli nie – traktuj jak przejęte " +
-				"konto: unieważnij sesje, zmień hasło, sprawdź metody MFA dodane ostatnio i aktywność po logowaniu."},
+			Description:  nc.Description,
+			Source:       src + "# Zbiory z krajem: " + strings.Join(geoDatasets, ", ") + "\n",
+			Instructions: nc.Instructions, I18n: ruleTexts(newCountryText)},
 	}
 }
 
@@ -123,14 +150,14 @@ func (c *Correlator) Run(ctx context.Context, from, to time.Time) ([]alerts.Hit,
 	if !c.off(SuccessAfterFailuresID) {
 		a, err := c.successAfterFailures(ctx, from, to)
 		if err != nil {
-			return nil, fmt.Errorf("udane po nieudanych: %w", err)
+			return nil, fmt.Errorf("success after failures: %w", err)
 		}
 		hits = a
 	}
 	if !c.off(NewCountryID) {
 		b, err := c.newCountry(ctx, from, to)
 		if err != nil {
-			return nil, fmt.Errorf("nowy kraj: %w", err)
+			return nil, fmt.Errorf("new country: %w", err)
 		}
 		hits = append(hits, b...)
 	}
@@ -192,14 +219,21 @@ func (c *Correlator) successAfterFailures(ctx context.Context, from, to time.Tim
 		if err := rows.Scan(&id, &ts, &identity, &ds, &host, &user, &agent, &ip, &n, &fds, &fips); err != nil {
 			return nil, err
 		}
-		summary := fmt.Sprintf("osoba %s: %d nieudanych logowań w %s (%s; adresy %s), potem udane w %s jako %s z %s",
-			identity, n, fmtWindow(failureWindow), strings.Join(fds, ", "), short(fips, 5), ds, user, orDash(ip))
-		instr := fmt.Sprintf("Osoba %s: %d nieudanych logowań (%s) z adresów %s, a o %s UTC udane logowanie w %s z adresu %s. ",
-			identity, n, strings.Join(fds, ", "), short(fips, 5), ts.UTC().Format("2006-01-02 15:04:05"), ds, orDash(ip)) + rule.Instructions
+		text := func(lang string) alerts.AlertText {
+			return alerts.AlertText{Title: successAfterFailuresText(lang).Title,
+				Summary: fmt.Sprintf(pick(lang, "osoba %s: %d nieudanych logowań w %s (%s; adresy %s), potem udane w %s jako %s z %s",
+					"person %s: %d failed sign-ins in %s (%s; addresses %s), then successful in %s as %s from %s"),
+					identity, n, fmtWindow(failureWindow), strings.Join(fds, ", "), shortIn(lang, fips, 5), ds, user, orDash(ip)),
+				Instructions: fmt.Sprintf(pick(lang, "Osoba %s: %d nieudanych logowań (%s) z adresów %s, a o %s UTC udane logowanie w %s z adresu %s. ",
+					"Person %s: %d failed sign-ins (%s) from addresses %s, and at %s UTC a successful sign-in in %s from address %s. "),
+					identity, n, strings.Join(fds, ", "), shortIn(lang, fips, 5), ts.UTC().Format("2006-01-02 15:04:05"), ds, orDash(ip)) +
+					successAfterFailuresText(lang).Instructions}
+		}
+		pl := text("pl")
 		hits = append(hits, alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
 			GroupFields: map[string]string{"user.identity": identity}, GroupKey: identity, Suppress: time.Hour, Identity: identity,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
-			Summary: summary, Instructions: instr})
+			Summary: pl.Summary, Instructions: pl.Instructions, I18n: texts(text)})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -382,24 +416,34 @@ func (c *Correlator) newCountry(ctx context.Context, from, to time.Time) ([]aler
 		if city != "" {
 			where = country + " (" + city + ")"
 		}
+		text := func(lang string) alerts.AlertText {
+			return alerts.AlertText{Title: newCountryText(lang).Title,
+				Summary: fmt.Sprintf(pick(lang, "osoba %s: udane logowanie z %s, adres %s; wcześniej tylko z: %s",
+					"person %s: successful sign-in from %s, address %s; previously only from: %s"), identity, where, orDash(ip),
+					strings.Join(known, ", ")),
+				Instructions: fmt.Sprintf(pick(lang, "Osoba %s zalogowała się (%s, konto %s) z %s, adres %s – w ostatnich %d dniach logowała się tylko z: %s. ",
+					"Person %s signed in (%s, account %s) from %s, address %s – in the last %d days they signed in only from: %s. "),
+					identity, ds, user, where, orDash(ip), int(historyWindow.Hours()/24), strings.Join(known, ", ")) + newCountryText(lang).Instructions}
+		}
+		pl := text("pl")
 		hits = append(hits, alerts.Hit{RuleID: rule.ID, RuleTitle: rule.Title, Level: rule.Level, Engine: "correlation",
 			GroupFields: map[string]string{"user.identity": identity, "source.geo.country_iso_code": country},
 			GroupKey:    identity + "\x1f" + country, Suppress: 24 * time.Hour, Identity: identity,
 			EventID: id, EventTime: ts, AgentID: agent, HostName: host, UserName: user, SourceIP: ip,
-			Summary: fmt.Sprintf("osoba %s: udane logowanie z %s, adres %s; wcześniej tylko z: %s", identity, where, orDash(ip),
-				strings.Join(known, ", ")),
-			Instructions: fmt.Sprintf("Osoba %s zalogowała się (%s, konto %s) z %s, adres %s – w ostatnich %d dniach logowała się tylko z: %s. ",
-				identity, ds, user, where, orDash(ip), int(historyWindow.Hours()/24), strings.Join(known, ", ")) + rule.Instructions})
+			Summary: pl.Summary, Instructions: pl.Instructions, I18n: texts(text)})
 	}
 	return hits, rows.Err()
 }
 
-func short(l []string, n int) string {
+func short(l []string, n int) string { return shortIn("pl", l, n) }
+
+// shortIn: pierwsze n wartości listy i liczba pozostałych w języku lang.
+func shortIn(lang string, l []string, n int) string {
 	sort.Strings(l)
 	if len(l) <= n {
 		return strings.Join(l, ", ")
 	}
-	return strings.Join(l[:n], ", ") + fmt.Sprintf(" i %d innych", len(l)-n)
+	return strings.Join(l[:n], ", ") + fmt.Sprintf(pick(lang, " i %d innych", " and %d more"), len(l)-n)
 }
 
 func orDash(s string) string {

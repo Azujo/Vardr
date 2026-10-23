@@ -22,6 +22,10 @@ func TestHeartbeatCheck(t *testing.T) {
 		hits[0].Engine != "system" || !strings.Contains(hits[0].Summary, "próg 15 min") {
 		t.Fatalf("alerty: %+v", hits)
 	}
+	if en := hits[0].I18n["en"]; en.Title != "Lost connection to agent" || !strings.Contains(en.Summary, "threshold 15 min") ||
+		!strings.HasPrefix(en.Instructions, "Agent agt-dc on dc01") {
+		t.Fatalf("tłumaczenie: %+v", en)
+	}
 	if len(back) != 1 || back[0].ID != "agt-srv" {
 		t.Fatalf("agenci z łącznością: %+v", back)
 	}

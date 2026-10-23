@@ -31,7 +31,7 @@ func (req *groupRequest) validate(w http.ResponseWriter) bool {
 		return false
 	}
 	if err := cfg.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_config", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_config", err)
 		return false
 	}
 	return true

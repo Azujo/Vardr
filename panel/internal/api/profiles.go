@@ -61,7 +61,7 @@ func (s *Server) profiles(ctx context.Context) map[string]store.Profile {
 	}
 	list, err := s.Profiles.Profiles(ctx)
 	if err != nil {
-		s.Log.Warn("odczyt profili uprawnień nieudany", "err", err)
+		s.Log.Warn("reading permission profiles failed", "err", err)
 		if c.byID == nil {
 			return builtinProfiles()
 		}
@@ -211,7 +211,7 @@ func (s *Server) saveProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := set.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_permissions", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_permissions", err)
 		return
 	}
 	if !s.reauth(w, r, req.Password, "profile_save") {

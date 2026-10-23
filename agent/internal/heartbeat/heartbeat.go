@@ -78,10 +78,10 @@ func (s *Sender) Run(ctx context.Context) {
 		err := s.Send(ctx)
 		switch {
 		case err != nil && !failing:
-			s.Log.Warn("heartbeat nieudany – panel może pokazywać agenta jako offline", "err", err)
+			s.Log.Warn("heartbeat failed – the panel may show the agent as offline", "err", err)
 			failing = true
 		case err == nil && failing:
-			s.Log.Info("heartbeat ponownie działa")
+			s.Log.Info("heartbeat works again")
 			failing = false
 		}
 		// Rozrzut ±10%, żeby tysiące agentów nie wysyłały w tej samej sekundzie.
@@ -144,7 +144,7 @@ func (s *Sender) Send(ctx context.Context) error {
 	case resp.StatusCode == http.StatusOK:
 		return nil
 	case resp.StatusCode == http.StatusNotFound:
-		return fmt.Errorf("serwer nie obsługuje heartbeatu (starsza wersja siem-ingest)")
+		return fmt.Errorf("the server does not support heartbeats (older siem-ingest version)")
 	default:
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(body))
 	}

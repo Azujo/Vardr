@@ -163,3 +163,34 @@ func TestReaderSplitsLargeDays(t *testing.T) {
 		}
 	}
 }
+
+// Odczyt po angielsku (Windows w innym języku niż polski).
+func TestReaderEnglish(t *testing.T) {
+	L = "en"
+	defer func() { L = "pl" }()
+	dir, err := extract(buildPackage(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, ok, err := Run(dir, time.Now())
+	if err != nil || !ok {
+		t.Fatalf("odczyt: %v ok=%v", err, ok)
+	}
+	rep, _ := os.ReadFile(report)
+	for _, want := range []string{"CONSISTENT", "Failed logon", `3 × LAB\jkowalski`, "– 4 events", "(local time)"} {
+		if !strings.Contains(string(rep), want) {
+			t.Errorf("report without %q:\n%s", want, rep)
+		}
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "ODCZYT", "zdarzenia", "*.txt"))
+	var day []byte
+	for _, m := range matches {
+		b, _ := os.ReadFile(m)
+		day = append(day, b...)
+	}
+	for _, want := range []string{"4625  Failed logon  [failure]", "= 3 (network – e.g. a share, a resource)", "Sender:"} {
+		if !strings.Contains(string(day), want) {
+			t.Errorf("daily file without %q", want)
+		}
+	}
+}

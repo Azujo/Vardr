@@ -59,7 +59,7 @@ func (s *Server) searchParams(w http.ResponseWriter, r *http.Request) (events.Pa
 	}
 	p, err := events.Parse(q.Get("q"))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_query", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_query", err)
 		return events.Parsed{}, from, to, false
 	}
 	// source=replay: zdarzenia odtworzone z archiwum (osobna tabela).

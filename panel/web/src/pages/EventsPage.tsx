@@ -25,15 +25,17 @@ import {
 } from "@mantine/core";
 import { IconCheck, IconCopy, IconFilter, IconHelp, IconLink, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { eventsApi, formatNumber, type EventDetail, type EventRow } from "../api";
+import { useTranslation } from "react-i18next";
+import { eventsApi, formatDate, formatNumber, type EventDetail, type EventRow } from "../api";
 import { useAuth } from "../auth";
 import { maxPicks, togglePick, usePicks } from "../corrPicks";
 
-const ranges: Record<string, { label: string; ms: number }> = {
-  "15m": { label: "15 min", ms: 15 * 60e3 },
-  "1h": { label: "1 h", ms: 3600e3 },
-  "24h": { label: "24 h", ms: 24 * 3600e3 },
-  "7d": { label: "7 dni", ms: 7 * 24 * 3600e3 },
+// Zakresy czasu (nazwy: events: range.<klucz>).
+const ranges: Record<string, number> = {
+  "15m": 15 * 60e3,
+  "1h": 3600e3,
+  "24h": 24 * 3600e3,
+  "7d": 7 * 24 * 3600e3,
 };
 
 const outcomeColor: Record<string, string> = { success: "green", failure: "red" };
@@ -42,10 +44,7 @@ function msg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-function fmtTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "medium" });
-}
+const fmtTime = formatDate;
 
 // Wartość z odstępami wymaga cudzysłowu w zapytaniu.
 function filterFor(field: string, value: string): string {
@@ -75,12 +74,13 @@ function Histogram({
   intervalS: number;
   onPick: (from: Date, to: Date) => void;
 }) {
+  const { t } = useTranslation("events");
   const max = Math.max(1, ...buckets.map((b) => b.count));
   const w = 1000;
   const h = 90;
   const bw = buckets.length ? w / buckets.length : w;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" role="img" aria-label="Histogram zdarzeń">
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" role="img" aria-label={t("histogram")}>
       {buckets.map((b, i) => {
         const bh = Math.max(1, (b.count / max) * (h - 4));
         const from = new Date(b.t);
@@ -95,7 +95,7 @@ function Histogram({
             style={{ cursor: "pointer" }}
             onClick={() => onPick(from, new Date(from.getTime() + intervalS * 1000))}
           >
-            <title>{`${fmtTime(b.t)}: ${b.count.toLocaleString("pl-PL")} zdarzeń (kliknij, aby zawęzić)`}</title>
+            <title>{t("bucket", { time: fmtTime(b.t), count: b.count, n: formatNumber(b.count) })}</title>
           </rect>
         );
       })}
@@ -104,26 +104,27 @@ function Histogram({
 }
 
 function SyntaxHelp({ fields }: { fields: { name: string; help: string }[] }) {
+  const { t } = useTranslation("events");
   return (
     <Popover width={460} position="bottom-end" withArrow shadow="md">
       <Popover.Target>
-        <ActionIcon variant="default" size="lg" aria-label="Składnia zapytań">
+        <ActionIcon variant="default" size="lg" aria-label={t("syntax.title")}>
           <IconHelp size={18} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>
         <Stack gap={6}>
           <Text fw={600} size="sm">
-            Składnia zapytań
+            {t("syntax.title")}
           </Text>
           <Text size="xs">
-            <Code>user:jkowalski code:4625</Code> – pole:wartość (wiele warunków = wszystkie naraz)
+            <Code>user:jkowalski code:4625</Code> – {t("syntax.fieldValue")}
             <br />
-            <Code>host:pc0*</Code> – prefiks · <Code>-action:logged-out</Code> – negacja
+            <Code>host:pc0*</Code> – {t("syntax.prefix")} · <Code>-action:logged-out</Code> – {t("syntax.negation")}
             <br />
-            <Code>"invoke-expression" powershell</Code> – tekst w treści zdarzenia
+            <Code>"invoke-expression" powershell</Code> – {t("syntax.text")}
             <br />
-            <Code>fields.TargetUserName:admin</Code> – dowolne pole źródłowe zdarzenia
+            <Code>fields.TargetUserName:admin</Code> – {t("syntax.anyField")}
           </Text>
           <Table fz="xs" verticalSpacing={2}>
             <Table.Tbody>
@@ -132,7 +133,7 @@ function SyntaxHelp({ fields }: { fields: { name: string; help: string }[] }) {
                   <Table.Td>
                     <Code>{f.name}</Code>
                   </Table.Td>
-                  <Table.Td>{f.help}</Table.Td>
+                  <Table.Td>{t(`field.${f.name}`, { defaultValue: f.help })}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -154,6 +155,7 @@ function EventDrawer({
   onClose: () => void;
   onFilter: (f: string) => void;
 }) {
+  const { t } = useTranslation("events");
   const [ev, setEv] = useState<EventDetail | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -173,7 +175,7 @@ function EventDrawer({
   const fieldEntries = Object.entries(ev?.fields ?? {}).sort(([a], [b]) => a.localeCompare(b));
 
   return (
-    <Drawer opened={row !== null} onClose={onClose} position="right" size="xl" title={row ? `Zdarzenie ${row.code} – ${row.host}` : ""}>
+    <Drawer opened={row !== null} onClose={onClose} position="right" size="xl" title={row ? t("drawer.title", { code: row.code, host: row.host }) : ""}>
       {error && <Alert color="red">{error}</Alert>}
       {!ev && !error && <Loader />}
       {ev && (
@@ -193,30 +195,30 @@ function EventDrawer({
                   })
                 }
               >
-                {picked ? "Usuń z kreatora korelacji" : "Dodaj do kreatora korelacji"}
+                {picked ? t("drawer.unpick") : t("drawer.pick")}
               </Button>
               {picks.length > 0 && (
                 <Button size="xs" variant="subtle" component={Link} to="/rules/correlation">
-                  Otwórz kreator ({picks.length})
+                  {t("drawer.openWizard", { count: picks.length })}
                 </Button>
               )}
             </Group>
           )}
           <SimpleGrid cols={2} spacing="xs">
             {[
-              ["Czas zdarzenia", fmtTime(ev.timestamp)],
-              ["Przyjęte", fmtTime(ev.ingested)],
-              ["Host", ev.host],
-              ["Agent", ev.agent_id],
-              ["Źródło", ev.dataset],
-              ["Dostawca", ev.provider],
-              ["Akcja", ev.action || "—"],
-              ["Wynik", ev.outcome || "—"],
-              ["Użytkownik", ev.user ? (ev.domain ? `${ev.domain}\\${ev.user}` : ev.user) : "—"],
-              ["Osoba", ev.identity || "—"],
-              ["Adres IP", ev.ip || "—"],
-              ["Proces", ev.process || "—"],
-              ["Identyfikator", ev.event_id],
+              [t("drawer.time"), fmtTime(ev.timestamp)],
+              [t("drawer.ingested"), fmtTime(ev.ingested)],
+              [t("col.host"), ev.host],
+              [t("drawer.agent"), ev.agent_id],
+              [t("drawer.dataset"), ev.dataset],
+              [t("drawer.provider"), ev.provider],
+              [t("col.action"), ev.action || "—"],
+              [t("drawer.outcome"), ev.outcome || "—"],
+              [t("col.user"), ev.user ? (ev.domain ? `${ev.domain}\\${ev.user}` : ev.user) : "—"],
+              [t("drawer.identity"), ev.identity || "—"],
+              [t("col.ip"), ev.ip || "—"],
+              [t("drawer.process"), ev.process || "—"],
+              [t("drawer.id"), ev.event_id],
             ].map(([k, v]) => (
               <div key={k}>
                 <Text size="xs" c="dimmed">
@@ -231,7 +233,7 @@ function EventDrawer({
           {ev.command_line && (
             <div>
               <Text size="xs" c="dimmed">
-                Linia poleceń
+                {t("drawer.commandLine")}
               </Text>
               <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
                 {ev.command_line}
@@ -241,19 +243,19 @@ function EventDrawer({
           {ev.message && (
             <div>
               <Text size="xs" c="dimmed">
-                Opis
+                {t("drawer.message")}
               </Text>
               <Text size="sm">{ev.message}</Text>
             </div>
           )}
           {(ev.time_quality || ev.truncated) && (
             <Group gap="xs">
-              {ev.time_quality && <Badge color="orange">czas: {ev.time_quality}</Badge>}
-              {ev.truncated && <Badge color="orange">zdarzenie przycięte przez agenta</Badge>}
+              {ev.time_quality && <Badge color="orange">{t("drawer.timeQuality", { q: ev.time_quality })}</Badge>}
+              {ev.truncated && <Badge color="orange">{t("drawer.truncated")}</Badge>}
             </Group>
           )}
 
-          <Title order={5}>Pola zdarzenia</Title>
+          <Title order={5}>{t("drawer.fields")}</Title>
           <Table fz="sm" verticalSpacing={4} striped>
             <Table.Tbody>
               {fieldEntries.map(([k, v]) => (
@@ -264,7 +266,7 @@ function EventDrawer({
                   <Table.Td style={{ wordBreak: "break-all" }}>{v}</Table.Td>
                   <Table.Td w={36}>
                     {v && v.length < 200 && (
-                      <Tooltip label="Filtruj po tej wartości">
+                      <Tooltip label={t("drawer.filter")}>
                         <ActionIcon variant="subtle" size="sm" onClick={() => onFilter(filterFor(`fields.${k}`, v))}>
                           <IconFilter size={14} />
                         </ActionIcon>
@@ -277,12 +279,12 @@ function EventDrawer({
           </Table>
 
           <Group justify="space-between">
-            <Title order={5}>Surowe zdarzenie (XML)</Title>
+            <Title order={5}>{t("drawer.raw")}</Title>
             {ev.raw && (
               <CopyButton value={ev.raw}>
                 {({ copied, copy }) => (
                   <Button size="xs" variant="default" leftSection={copied ? <IconCheck size={14} /> : <IconCopy size={14} />} onClick={copy}>
-                    {copied ? "Skopiowano" : "Kopiuj"}
+                    {copied ? t("drawer.copied") : t("drawer.copy")}
                   </Button>
                 )}
               </CopyButton>
@@ -294,7 +296,7 @@ function EventDrawer({
             </ScrollArea.Autosize>
           ) : (
             <Text size="sm" c="dimmed">
-              Oryginał usunięty przez retencję surowego XML (zostały pola znormalizowane).
+              {t("drawer.rawGone")}
             </Text>
           )}
         </Stack>
@@ -304,6 +306,7 @@ function EventDrawer({
 }
 
 export default function EventsPage() {
+  const { t } = useTranslation("events");
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const range = params.get("range") ?? (params.get("from") ? "custom" : "1h");
@@ -334,7 +337,7 @@ export default function EventsPage() {
       return { from: params.get("from")!, to: params.get("to")! };
     }
     const now = Date.now();
-    return { from: new Date(now - (ranges[range] ?? ranges["1h"]).ms).toISOString(), to: new Date(now).toISOString() };
+    return { from: new Date(now - (ranges[range] ?? ranges["1h"])).toISOString(), to: new Date(now).toISOString() };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range, params, reload]);
 
@@ -401,7 +404,7 @@ export default function EventsPage() {
       <Text
         size="sm"
         style={{ cursor: "pointer" }}
-        title="Kliknij, aby filtrować"
+        title={t("clickToFilter")}
         onClick={(e) => {
           e.stopPropagation();
           addFilter(filterFor(field, String(value)));
@@ -415,14 +418,14 @@ export default function EventsPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Mímir – zdarzenia</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm">
-            Wyszukiwanie zdarzeń zebranych przez agentów. Kliknięcie wartości w tabeli dodaje filtr.
+            {t("intro")}
           </Text>
         </div>
         {picks.length > 0 && (
           <Button variant="light" leftSection={<IconLink size={16} />} component={Link} to="/rules/correlation">
-            Kreator korelacji ({picks.length})
+            {t("wizard", { count: picks.length })}
           </Button>
         )}
       </Group>
@@ -436,13 +439,13 @@ export default function EventsPage() {
         <Group wrap="nowrap" gap="xs">
           <TextInput
             style={{ flex: 1 }}
-            placeholder='np. code:4625 user:jkowalski albo "invoke-expression"'
+            placeholder={t("placeholder")}
             leftSection={<IconSearch size={16} />}
             value={input}
             onChange={(e) => setInput(e.currentTarget.value)}
             styles={{ input: { fontFamily: "var(--mantine-font-family-monospace)" } }}
           />
-          <Button type="submit">Szukaj</Button>
+          <Button type="submit">{t("search")}</Button>
           <SyntaxHelp fields={fields} />
         </Group>
       </form>
@@ -453,14 +456,14 @@ export default function EventsPage() {
             size="xs"
             value={range === "custom" ? "" : range}
             onChange={setRange}
-            data={Object.entries(ranges).map(([value, r]) => ({ value, label: r.label }))}
+            data={Object.keys(ranges).map((value) => ({ value, label: t(`range.${value}`) }))}
           />
           {range === "custom" && (
             <Badge variant="light" size="lg">
               {fmtTime(span.from)} – {fmtTime(span.to)}
             </Badge>
           )}
-          <Tooltip label="Zdarzenia odtworzone z archiwum NIS2 są w osobnej tabeli – nie mieszają się z bieżącymi">
+          <Tooltip label={t("replayTip")}>
             <SegmentedControl
               size="xs"
               color={source ? "orange" : undefined}
@@ -472,19 +475,19 @@ export default function EventsPage() {
                 setParams(p);
               }}
               data={[
-                { value: "live", label: "Bieżące" },
-                { value: "replay", label: "Odtworzone z archiwum" },
+                { value: "live", label: t("live") },
+                { value: "replay", label: t("replay") },
               ]}
             />
           </Tooltip>
-          <Tooltip label="Odśwież">
-            <ActionIcon variant="default" onClick={() => setReload((r) => r + 1)} aria-label="Odśwież">
+          <Tooltip label={t("refresh")}>
+            <ActionIcon variant="default" onClick={() => setReload((r) => r + 1)} aria-label={t("refresh")}>
               <IconRefresh size={16} />
             </ActionIcon>
           </Tooltip>
         </Group>
         <Text size="sm" c="dimmed">
-          {loading ? "szukam…" : hist ? `${formatNumber(hist.total)} zdarzeń · ${took} ms` : ""}
+          {loading ? t("searching") : hist ? t("total", { count: hist.total, n: formatNumber(hist.total), ms: took }) : ""}
         </Text>
       </Group>
 
@@ -500,13 +503,13 @@ export default function EventsPage() {
         <Table highlightOnHover verticalSpacing={6} fz="sm">
           <Table.Thead>
             <Table.Tr style={{ whiteSpace: "nowrap" }}>
-              <Table.Th>Czas</Table.Th>
-              <Table.Th>Host</Table.Th>
-              <Table.Th>Zdarzenie</Table.Th>
-              <Table.Th>Akcja</Table.Th>
-              <Table.Th>Użytkownik</Table.Th>
-              <Table.Th>Adres IP</Table.Th>
-              <Table.Th>Szczegóły</Table.Th>
+              <Table.Th>{t("col.time")}</Table.Th>
+              <Table.Th>{t("col.host")}</Table.Th>
+              <Table.Th>{t("col.event")}</Table.Th>
+              <Table.Th>{t("col.action")}</Table.Th>
+              <Table.Th>{t("col.user")}</Table.Th>
+              <Table.Th>{t("col.ip")}</Table.Th>
+              <Table.Th>{t("col.details")}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -545,7 +548,7 @@ export default function EventsPage() {
                   {cell("user", r.user)}
                   {r.identity && r.identity !== r.user.toLowerCase() && (
                     <Text size="xs" c="dimmed">
-                      osoba: {cell("identity", r.identity)}
+                      {t("person")} {cell("identity", r.identity)}
                     </Text>
                   )}
                 </Table.Td>
@@ -562,13 +565,13 @@ export default function EventsPage() {
       </Table.ScrollContainer>
       {!loading && rows.length === 0 && !error && (
         <Text c="dimmed" size="sm">
-          Brak zdarzeń w tym zakresie. Spróbuj dłuższego zakresu czasu albo innego zapytania.
+          {t("empty")}
         </Text>
       )}
       {next && (
         <Group>
           <Button variant="default" onClick={more}>
-            Załaduj starsze
+            {t("older")}
           </Button>
         </Group>
       )}

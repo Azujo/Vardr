@@ -29,6 +29,8 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCopy, IconDeviceFloppy, IconKey, IconPlayerPlay, IconPlugConnected } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import RestorePanel from "./BackupRestore";
 import {
   ApiError,
@@ -43,24 +45,16 @@ import {
 
 // Kopie zapasowe: ustawienia dla usługi siem-backup, zlecenia i historia.
 
-const weekdays = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"].map((l, i) => ({
-  value: String(i + 1),
-  label: l,
-}));
+// Dni tygodnia 1–7 (poniedziałek–niedziela) w języku użytkownika.
+const weekdays = () =>
+  [1, 2, 3, 4, 5, 6, 7].map((d) => ({
+    value: String(d),
+    label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(i18n.resolvedLanguage ?? "pl", { weekday: "long", timeZone: "UTC" }),
+  }));
 
-const runStatus: Record<BackupRun["status"], { label: string; color: string }> = {
-  running: { label: "w toku", color: "blue" },
-  ok: { label: "udana", color: "green" },
-  partial: { label: "bez wysyłki", color: "orange" },
-  error: { label: "nieudana", color: "red" },
-};
-
-const methodLabels: Record<BackupMethod, string> = {
-  none: "Tylko lokalnie",
-  sftp: "SFTP (SSH)",
-  smb: "SMB (udział Windows / NAS)",
-  s3: "S3 (MinIO, AWS, Backblaze…)",
-};
+// Kolory stanów kopii; nazwy – backup: status.<stan>, metody – backup: method.<metoda>.
+const runColors: Record<BackupRun["status"], string> = { running: "blue", ok: "green", partial: "orange", error: "red" };
+const methods: BackupMethod[] = ["none", "sftp", "smb", "s3"];
 
 function err(e: unknown) {
   notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -73,13 +67,14 @@ function pad(n: number) {
 function scheduleText(c: BackupConfig): string {
   const s = c.schedule;
   const at = `${pad(s.hour)}:${pad(s.minute)}`;
-  if (!c.enabled) return "wyłączone";
-  if (s.kind === "hours") return `co ${s.every_hours} h (minuta ${pad(s.minute)})`;
-  if (s.kind === "weekly") return `co tydzień: ${weekdays[(s.weekday ?? 1) - 1]?.label} ${at}`;
-  return `codziennie o ${at}`;
+  if (!c.enabled) return i18n.t("backup:schedule.off");
+  if (s.kind === "hours") return i18n.t("backup:schedule.hours", { n: s.every_hours, m: pad(s.minute) });
+  if (s.kind === "weekly") return i18n.t("backup:schedule.weekly", { day: weekdays()[(s.weekday ?? 1) - 1]?.label, at });
+  return i18n.t("backup:schedule.daily", { at });
 }
 
 export default function BackupPage() {
+  const { t: tr } = useTranslation("backup");
   const [view, setView] = useState<BackupView | null>(null);
   const [cfg, setCfg] = useState<BackupConfig | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -115,7 +110,7 @@ export default function BackupPage() {
     for (const id of watching) {
       const r = view.state.requests.find((x) => x.id === id);
       if (r?.done_at) {
-        notifications.show({ color: r.ok ? "green" : "red", autoClose: r.ok ? 8000 : false, message: r.message || (r.ok ? "gotowe" : "nieudane") });
+        notifications.show({ color: r.ok ? "green" : "red", autoClose: r.ok ? 8000 : false, message: r.message || (r.ok ? tr("done") : tr("failed")) });
         setWatching((w) => w.filter((x) => x !== id));
       }
     }
@@ -126,7 +121,7 @@ export default function BackupPage() {
     [view, cfg, secrets],
   );
 
-  if (!view || !cfg) return <Text c="dimmed">Wczytywanie…</Text>;
+  if (!view || !cfg) return <Text c="dimmed">{tr("loading")}</Text>;
   const st = view.state;
   const runner = st.runner;
   const t = cfg.target;
@@ -139,16 +134,16 @@ export default function BackupPage() {
   const secretSet = (name: string) => st.secrets.some((s) => s.name === name) && !view.stale_secrets.includes(name);
   const secretHint = (name: string) =>
     view.stale_secrets.includes(name)
-      ? "zapisany starym kluczem usługi – wpisz ponownie"
+      ? tr("secret.stale")
       : secretSet(name)
-        ? "zapisany – wpisz, aby zmienić"
+        ? tr("secret.saved")
         : "";
 
   const ask = async (action: "run" | "test" | "genkey" | "list" | "inspect", file?: { location: string; name: string }) => {
     try {
       const r = await backupApi.request(action, file);
       setWatching((w) => [...w, r.request.id]);
-      notifications.show({ message: "zlecono – usługa kopii wykona je w ciągu kilkunastu sekund" });
+      notifications.show({ message: tr("requested") });
       void load(false);
     } catch (e) {
       err(e);
@@ -158,8 +153,8 @@ export default function BackupPage() {
   const save = async () => {
     setBusy(true);
     try {
-      const r = await backupApi.save(cfg, secrets, password);
-      notifications.show({ color: "green", message: r.message });
+      await backupApi.save(cfg, secrets, password);
+      notifications.show({ color: "green", message: tr("saved") });
       setConfirm(false);
       setPassword("");
       await load(true);
@@ -178,86 +173,83 @@ export default function BackupPage() {
   return (
     <Stack>
       <div>
-        <Title order={2}>Kopie zapasowe</Title>
+        <Title order={2}>{tr("title")}</Title>
         <Text c="dimmed" size="sm">
-          Kopie wykonuje usługa siem-backup na serwerze. Każda kopia jest szyfrowana hasłem kopii, które zna tylko administrator
-          serwera – panel go nie przechowuje. Hasła i klucze do miejsca docelowego panel szyfruje kluczem usługi kopii; po zapisie
-          nie da się ich odczytać, tylko zastąpić.
+          {tr("intro")}
         </Text>
       </div>
 
       {!view.online && (
-        <MAlert color="red" title="Usługa kopii nie odpowiada">
-          {runner?.seen_at
-            ? `Ostatni kontakt: ${formatDate(runner.seen_at)}. Kopie z harmonogramu nie powstają.`
-            : "Usługa siem-backup jeszcze się nie zgłosiła (kontener backup na serwerze)."}
+        <MAlert color="red" title={tr("offline.title")}>
+          {runner?.seen_at ? tr("offline.lastSeen", { date: formatDate(runner.seen_at) }) : tr("offline.never")}
         </MAlert>
       )}
       {runner && !runner.pass_id && (
-        <MAlert color="red" title="Brak hasła kopii">
-          Bez hasła kopie nie powstają. Administrator serwera ustawia je raz poleceniem <Code>./backup.sh haslo init</Code> w katalogu
-          stosu i zapisuje poza serwerem.
+        <MAlert color="red" title={tr("noPass.title")}>
+          {tr("noPass.text.0")}
+          <Code>{tr("noPass.cmd")}</Code>
+          {tr("noPass.text.1")}
         </MAlert>
       )}
 
       <SimpleGrid cols={{ base: 1, md: 3 }}>
         <Card withBorder>
           <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-            Ostatnia kopia
+            {tr("last")}
           </Text>
           {last ? (
             <>
               <Group gap="xs" mt={4}>
-                <Badge color={runStatus[last.status].color}>{runStatus[last.status].label}</Badge>
+                <Badge color={runColors[last.status]}>{tr(`status.${last.status}`)}</Badge>
                 <Text size="sm">{formatDate(last.started_at)}</Text>
               </Group>
               {lastOK && lastOK.id !== last.id && (
                 <Text size="xs" c="dimmed" mt={4}>
-                  ostatnia udana: {formatDate(lastOK.started_at)}
+                  {tr("lastOk", { date: formatDate(lastOK.started_at) })}
                 </Text>
               )}
             </>
           ) : (
             <Text size="sm" mt={4}>
-              jeszcze żadnej
+              {tr("none")}
             </Text>
           )}
           <Text size="xs" c="dimmed" mt={4}>
-            harmonogram: {scheduleText(st.config)}
+            {tr("scheduleIs", { s: scheduleText(st.config) })}
           </Text>
         </Card>
         <Card withBorder>
           <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-            Usługa kopii
+            {tr("service")}
           </Text>
           <Group gap="xs" mt={4}>
-            <Badge color={view.online ? "green" : "red"}>{view.online ? "działa" : "nie odpowiada"}</Badge>
+            <Badge color={view.online ? "green" : "red"}>{view.online ? tr("running") : tr("notResponding")}</Badge>
             {runner?.version && <Text size="xs" c="dimmed">{runner.version}</Text>}
           </Group>
           <Tooltip
             multiline
             w={320}
-            label="Skrót hasła szyfrującego kopie – nie samo hasło. Ten sam identyfikator jest w nazwie każdej kopii, więc widać, którym hasłem ją otworzyć. Hasło zna tylko administrator serwera (./backup.sh haslo pokaz)."
+            label={tr("passIdTip")}
           >
             <Text size="xs" c="dimmed" mt={4} style={{ cursor: "help" }}>
-              identyfikator hasła kopii: {runner?.pass_id ? <Code>{runner.pass_id}</Code> : "brak hasła"}
+              {tr("passId")} {runner?.pass_id ? <Code>{runner.pass_id}</Code> : tr("noPassShort")}
             </Text>
           </Tooltip>
           {runner?.local_dir && (
             <Text size="xs" c="dimmed">
-              lokalnie: {runner.local_dir} (wolne {formatBytes(runner.local_free)})
+              {tr("local", { dir: runner.local_dir, free: formatBytes(runner.local_free) })}
             </Text>
           )}
         </Card>
         <Card withBorder>
           <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-            Działania
+            {tr("actions")}
           </Text>
           <Stack gap={6} mt={6}>
             <Button size="xs" leftSection={<IconPlayerPlay size={14} />} disabled={!view.online} onClick={() => void ask("run")}>
-              Zrób kopię teraz
+              {tr("runNow")}
             </Button>
-            <Tooltip label={dirty ? "najpierw zapisz zmiany" : "zapis i odczyt w miejscu docelowym"}>
+            <Tooltip label={dirty ? tr("saveFirst") : tr("testTip")}>
               <Button
                 size="xs"
                 variant="light"
@@ -265,7 +257,7 @@ export default function BackupPage() {
                 disabled={!view.online || dirty || st.config.target.method === "none"}
                 onClick={() => void ask("test")}
               >
-                Sprawdź połączenie
+                {tr("test")}
               </Button>
             </Tooltip>
           </Stack>
@@ -274,10 +266,10 @@ export default function BackupPage() {
 
       <Tabs value={tab} onChange={(v) => setTab(v ?? "settings")}>
         <Tabs.List>
-          <Tabs.Tab value="settings">Ustawienia</Tabs.Tab>
-          <Tabs.Tab value="history">Historia ({st.runs.length})</Tabs.Tab>
+          <Tabs.Tab value="settings">{tr("tab.settings")}</Tabs.Tab>
+          <Tabs.Tab value="history">{tr("tab.history", { n: st.runs.length })}</Tabs.Tab>
           <Tabs.Tab value="restore" color="red">
-            Przywracanie {restoring && <Badge size="xs" color="red">w toku</Badge>}
+            {tr("tab.restore")} {restoring && <Badge size="xs" color="red">{tr("status.running")}</Badge>}
           </Tabs.Tab>
         </Tabs.List>
 
@@ -285,8 +277,8 @@ export default function BackupPage() {
           <Stack>
           <Card withBorder>
             <Group justify="space-between" mb="xs">
-              <Title order={4}>Harmonogram</Title>
-              <Switch label="Kopie z harmonogramu włączone" checked={cfg.enabled} onChange={(e) => set((c) => (c.enabled = e.currentTarget.checked))} />
+              <Title order={4}>{tr("schedule.title")}</Title>
+              <Switch label={tr("schedule.enabled")} checked={cfg.enabled} onChange={(e) => set((c) => (c.enabled = e.currentTarget.checked))} />
             </Group>
             <Group align="flex-end">
               <SegmentedControl
@@ -299,14 +291,14 @@ export default function BackupPage() {
                   })
                 }
                 data={[
-                  { value: "hours", label: "co kilka godzin" },
-                  { value: "daily", label: "codziennie" },
-                  { value: "weekly", label: "co tydzień" },
+                  { value: "hours", label: tr("schedule.kind.hours") },
+                  { value: "daily", label: tr("schedule.kind.daily") },
+                  { value: "weekly", label: tr("schedule.kind.weekly") },
                 ]}
               />
               {cfg.schedule.kind === "hours" && (
                 <Select
-                  label="Co ile godzin"
+                  label={tr("schedule.everyHours")}
                   w={140}
                   allowDeselect={false}
                   value={String(cfg.schedule.every_hours ?? 6)}
@@ -316,80 +308,78 @@ export default function BackupPage() {
               )}
               {cfg.schedule.kind === "weekly" && (
                 <Select
-                  label="Dzień"
+                  label={tr("schedule.day")}
                   w={160}
                   allowDeselect={false}
                   value={String(cfg.schedule.weekday ?? 7)}
                   onChange={(v) => set((c) => (c.schedule.weekday = Number(v)))}
-                  data={weekdays}
+                  data={weekdays()}
                 />
               )}
               {cfg.schedule.kind !== "hours" && (
-                <NumberInput label="Godzina" w={100} min={0} max={23} value={cfg.schedule.hour} onChange={(v) => set((c) => (c.schedule.hour = Number(v) || 0))} />
+                <NumberInput label={tr("schedule.hour")} w={100} min={0} max={23} value={cfg.schedule.hour} onChange={(v) => set((c) => (c.schedule.hour = Number(v) || 0))} />
               )}
-              <NumberInput label="Minuta" w={100} min={0} max={59} value={cfg.schedule.minute} onChange={(v) => set((c) => (c.schedule.minute = Number(v) || 0))} />
+              <NumberInput label={tr("schedule.minute")} w={100} min={0} max={59} value={cfg.schedule.minute} onChange={(v) => set((c) => (c.schedule.minute = Number(v) || 0))} />
             </Group>
             <Text size="xs" c="dimmed" mt="xs">
-              Czas serwera (Europe/Warsaw). Kopia, której termin minął przy wyłączonym serwerze, wykona się po jego starcie.
+              {tr("schedule.hint")}
             </Text>
           </Card>
 
           <Card withBorder>
             <Title order={4} mb="xs">
-              Zawartość
+              {tr("include.title")}
             </Title>
             <Stack gap="xs">
               <Checkbox
-                label="Baza Saga"
-                description="konta i role, agenci i ich certyfikaty, grupy, alerty, reguły z panelu, spis archiwum NIS2, polityki, kanały powiadomień"
+                label={tr("include.saga")}
+                description={tr("include.sagaHint")}
                 checked={cfg.include.saga}
                 onChange={(e) => set((c) => (c.include.saga = e.currentTarget.checked))}
               />
               <Checkbox
-                label="Konfiguracja serwera"
-                description="certyfikaty (z kluczem CA agentów) i plik .env z hasłami usług"
+                label={tr("include.config")}
+                description={tr("include.configHint")}
                 checked={cfg.include.config}
                 onChange={(e) => set((c) => (c.include.config = e.currentTarget.checked))}
               />
               <Checkbox
-                label="Archiwum NIS2 (przyrosty)"
-                description="nowe segmenty i manifesty od poprzedniej kopii – wysyłane tylko do miejsca docelowego (archiwum jest już na dysku serwera)"
+                label={tr("include.archive")}
+                description={tr("include.archiveHint")}
                 checked={cfg.include.archive}
                 onChange={(e) => set((c) => (c.include.archive = e.currentTarget.checked))}
               />
               <Checkbox
-                label="Dane Grafany"
-                description="pulpity i ustawienia zmienione w interfejsie Grafany (pulpity z repozytorium są odtwarzane bez kopii)"
+                label={tr("include.grafana")}
+                description={tr("include.grafanaHint")}
                 checked={cfg.include.grafana}
                 onChange={(e) => set((c) => (c.include.grafana = e.currentTarget.checked))}
               />
               {(!cfg.include.saga || !cfg.include.config) && (
                 <MAlert color="orange">
-                  Bez bazy Saga i konfiguracji serwera nie da się odtworzyć systemu po utracie serwera: agenci straciliby zaufanie do
-                  nowego serwera, a konta i ustawienia trzeba by tworzyć od nowa.
+                  {tr("include.warning")}
                 </MAlert>
               )}
               <Text size="xs" c="dimmed">
-                Zdarzenia z ClickHouse nie są kopiowane – po odtworzeniu serwera ostatnie dni odtwarza się z archiwum NIS2 (Urd →
-                Odtworzenie).
+                {tr("include.events")}
               </Text>
             </Stack>
           </Card>
 
           <Card withBorder>
             <Title order={4} mb="xs">
-              Retencja
+              {tr("retention.title")}
             </Title>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <Stack gap={4}>
                 <Text size="sm" fw={500}>
-                  Na serwerze
+                  {tr("retention.local")}
                 </Text>
                 <Group>
-                  <NumberInput label="Dni" w={120} min={1} max={3650} value={cfg.local.keep_days} onChange={(v) => set((c) => (c.local.keep_days = Number(v) || 1))} />
+                  <NumberInput label={tr("retention.days")} w={120} min={1} max={3650} value={cfg.local.keep_days} onChange={(v) => set((c) => (c.local.keep_days = Number(v) || 1))} />
                   <NumberInput
-                    label="Najwyżej kopii"
-                    description="0 – bez limitu"
+                    label={tr("retention.count")}
+                    description={tr("retention.unlimited")}
                     w={140}
                     min={0}
                     max={1000}
@@ -400,11 +390,11 @@ export default function BackupPage() {
               </Stack>
               <Stack gap={4}>
                 <Text size="sm" fw={500} c={t.method === "none" ? "dimmed" : undefined}>
-                  W miejscu docelowym
+                  {tr("retention.remote")}
                 </Text>
                 <Group>
                   <NumberInput
-                    label="Dni"
+                    label={tr("retention.days")}
                     w={120}
                     min={1}
                     max={3650}
@@ -413,8 +403,8 @@ export default function BackupPage() {
                     onChange={(v) => set((c) => (c.remote.keep_days = Number(v) || 1))}
                   />
                   <NumberInput
-                    label="Najwyżej kopii"
-                    description="0 – bez limitu"
+                    label={tr("retention.count")}
+                    description={tr("retention.unlimited")}
                     w={140}
                     min={0}
                     max={1000}
@@ -426,14 +416,13 @@ export default function BackupPage() {
               </Stack>
             </SimpleGrid>
             <Text size="xs" c="dimmed" mt="xs">
-              Kopia jest usuwana, gdy jest starsza niż podana liczba dni albo gdy jest więcej kopii niż limit. Najnowsza kopia zostaje
-              zawsze. Paczki archiwum NIS2 w miejscu docelowym wygasają tylko po dniach.
+              {tr("retention.hint")}
             </Text>
           </Card>
 
           <Card withBorder>
             <Title order={4} mb="xs">
-              Miejsce docelowe
+              {tr("target.title")}
             </Title>
             <Stack gap="sm">
               <Select
@@ -445,16 +434,16 @@ export default function BackupPage() {
                     c.target = { method: v as BackupMethod, auth: v === "sftp" ? "server_key" : undefined };
                   })
                 }
-                data={(Object.keys(methodLabels) as BackupMethod[]).map((m) => ({ value: m, label: methodLabels[m] }))}
+                data={methods.map((m) => ({ value: m, label: tr(`method.${m}`) }))}
               />
               {t.method === "none" && (
                 <MAlert color="orange">
-                  Kopie zostają tylko na dysku tego serwera – awaria serwera albo jego dysku zabierze je razem z systemem.
+                  {tr("target.localOnly")}
                 </MAlert>
               )}
               {(t.method === "sftp" || t.method === "smb") && (
                 <Group align="flex-end">
-                  <TextInput label="Serwer" placeholder="192.168.88.180" w={220} value={t.host ?? ""} onChange={(e) => set((c) => (c.target.host = e.currentTarget.value))} />
+                  <TextInput label={tr("target.host")} placeholder="192.168.88.180" w={220} value={t.host ?? ""} onChange={(e) => set((c) => (c.target.host = e.currentTarget.value))} />
                   <NumberInput
                     label="Port"
                     placeholder={t.method === "sftp" ? "22" : "445"}
@@ -464,11 +453,11 @@ export default function BackupPage() {
                     value={t.port || ""}
                     onChange={(v) => set((c) => (c.target.port = Number(v) || undefined))}
                   />
-                  <TextInput label="Użytkownik" w={180} value={t.user ?? ""} onChange={(e) => set((c) => (c.target.user = e.currentTarget.value))} />
+                  <TextInput label={tr("target.user")} w={180} value={t.user ?? ""} onChange={(e) => set((c) => (c.target.user = e.currentTarget.value))} />
                   {t.method === "smb" && (
                     <>
-                      <TextInput label="Udział" placeholder="kopie" w={160} value={t.share ?? ""} onChange={(e) => set((c) => (c.target.share = e.currentTarget.value))} />
-                      <TextInput label="Domena (opcjonalnie)" w={160} value={t.domain ?? ""} onChange={(e) => set((c) => (c.target.domain = e.currentTarget.value))} />
+                      <TextInput label={tr("target.share")} placeholder={tr("target.sharePlaceholder")} w={160} value={t.share ?? ""} onChange={(e) => set((c) => (c.target.share = e.currentTarget.value))} />
+                      <TextInput label={tr("target.domain")} w={160} value={t.domain ?? ""} onChange={(e) => set((c) => (c.target.domain = e.currentTarget.value))} />
                     </>
                   )}
                 </Group>
@@ -476,28 +465,22 @@ export default function BackupPage() {
               {t.method === "s3" && (
                 <Group align="flex-end">
                   <TextInput
-                    label="Adres usługi"
-                    description="puste – Amazon S3"
+                    label={tr("target.endpoint")}
+                    description={tr("target.endpointHint")}
                     placeholder="https://minio.firma.local:9000"
                     w={300}
                     value={t.endpoint ?? ""}
                     onChange={(e) => set((c) => (c.target.endpoint = e.currentTarget.value))}
                   />
                   <TextInput label="Region" placeholder="eu-central-1" w={150} value={t.region ?? ""} onChange={(e) => set((c) => (c.target.region = e.currentTarget.value))} />
-                  <TextInput label="Kubełek" w={200} value={t.bucket ?? ""} onChange={(e) => set((c) => (c.target.bucket = e.currentTarget.value))} />
-                  <TextInput label="Identyfikator klucza" w={220} value={t.access_key ?? ""} onChange={(e) => set((c) => (c.target.access_key = e.currentTarget.value))} />
+                  <TextInput label={tr("target.bucket")} w={200} value={t.bucket ?? ""} onChange={(e) => set((c) => (c.target.bucket = e.currentTarget.value))} />
+                  <TextInput label={tr("target.accessKey")} w={220} value={t.access_key ?? ""} onChange={(e) => set((c) => (c.target.access_key = e.currentTarget.value))} />
                 </Group>
               )}
               {t.method !== "none" && (
                 <TextInput
-                  label="Katalog"
-                  description={
-                    t.method === "sftp"
-                      ? "zaczynający się od / – ścieżka bezwzględna, inaczej względem katalogu domowego użytkownika"
-                      : t.method === "smb"
-                        ? "katalog w udziale (puste – główny katalog udziału)"
-                        : "prefiks w kubełku (puste – główny)"
-                  }
+                  label={tr("target.path")}
+                  description={tr(`target.pathHint.${t.method}`)}
                   placeholder={t.method === "sftp" ? "/mnt/tank/vardr_backup" : "vardr"}
                   maw={520}
                   value={t.path ?? ""}
@@ -506,11 +489,11 @@ export default function BackupPage() {
               )}
 
               {t.method === "sftp" && (
-                <Radio.Group label="Logowanie" value={t.auth ?? "server_key"} onChange={(v) => set((c) => (c.target.auth = v as typeof t.auth))}>
+                <Radio.Group label={tr("target.auth")} value={t.auth ?? "server_key"} onChange={(v) => set((c) => (c.target.auth = v as typeof t.auth))}>
                   <Stack gap={6} mt={4}>
-                    <Radio value="server_key" label="Klucz SSH wygenerowany przez usługę kopii (zalecane – klucz prywatny nie opuszcza serwera)" />
-                    <Radio value="private_key" label="Własny klucz prywatny SSH" />
-                    <Radio value="password" label="Hasło" />
+                    <Radio value="server_key" label={tr("target.authServerKey")} />
+                    <Radio value="private_key" label={tr("target.authPrivateKey")} />
+                    <Radio value="password" label={tr("target.authPassword")} />
                   </Stack>
                 </Radio.Group>
               )}
@@ -519,8 +502,9 @@ export default function BackupPage() {
                   {runner?.ssh_public_key ? (
                     <>
                       <Text size="sm">
-                        Dopisz ten klucz publiczny do <Code>~/.ssh/authorized_keys</Code> użytkownika na serwerze kopii (w TrueNAS: konto
-                        użytkownika → klucz publiczny SSH):
+                        {tr("target.addKey.0")}
+                        <Code>~/.ssh/authorized_keys</Code>
+                        {tr("target.addKey.1")}
                       </Text>
                       <Group gap="xs" wrap="nowrap" align="flex-start">
                         <Code block style={{ wordBreak: "break-all", flex: 1 }}>
@@ -529,7 +513,7 @@ export default function BackupPage() {
                         <CopyButton value={runner.ssh_public_key}>
                           {({ copied, copy }) => (
                             <Button size="xs" variant="light" leftSection={<IconCopy size={14} />} onClick={copy}>
-                              {copied ? "skopiowano" : "kopiuj"}
+                              {copied ? tr("copied") : tr("copy")}
                             </Button>
                           )}
                         </CopyButton>
@@ -537,7 +521,7 @@ export default function BackupPage() {
                     </>
                   ) : (
                     <Text size="sm" c="orange">
-                      Usługa kopii nie ma jeszcze klucza SSH – wygeneruj go.
+                      {tr("target.noKey")}
                     </Text>
                   )}
                   <Group>
@@ -547,18 +531,18 @@ export default function BackupPage() {
                       leftSection={<IconKey size={14} />}
                       disabled={!view.online}
                       onClick={() => {
-                        if (!runner?.ssh_public_key || window.confirm("Nowy klucz zastąpi obecny – stary przestanie działać. Kontynuować?")) void ask("genkey");
+                        if (!runner?.ssh_public_key || window.confirm(tr("target.newKeyConfirm"))) void ask("genkey");
                       }}
                     >
-                      {runner?.ssh_public_key ? "Wygeneruj nowy klucz" : "Wygeneruj klucz"}
+                      {runner?.ssh_public_key ? tr("target.newKey") : tr("target.genKey")}
                     </Button>
                   </Group>
                 </Stack>
               )}
               {t.method === "sftp" && t.auth === "private_key" && (
                 <Textarea
-                  label="Klucz prywatny SSH"
-                  description={secretHint("private_key") || "format OpenSSH albo PEM, bez hasła"}
+                  label={tr("target.privateKey")}
+                  description={secretHint("private_key") || tr("target.privateKeyHint")}
                   placeholder={secretSet("private_key") ? "••••••••" : "-----BEGIN OPENSSH PRIVATE KEY-----"}
                   autosize
                   minRows={3}
@@ -571,7 +555,7 @@ export default function BackupPage() {
               )}
               {((t.method === "sftp" && t.auth === "password") || t.method === "smb") && (
                 <PasswordInput
-                  label="Hasło"
+                  label={tr("target.authPassword")}
                   description={secretHint("password")}
                   placeholder={secretSet("password") ? "••••••••" : ""}
                   w={320}
@@ -582,7 +566,7 @@ export default function BackupPage() {
               )}
               {t.method === "s3" && (
                 <PasswordInput
-                  label="Klucz tajny (secret access key)"
+                  label={tr("target.secretKey")}
                   description={secretHint("s3_secret")}
                   placeholder={secretSet("s3_secret") ? "••••••••" : ""}
                   w={360}
@@ -593,7 +577,9 @@ export default function BackupPage() {
               )}
               {t.method === "sftp" && runner?.host_key && (
                 <Text size="xs" c="dimmed">
-                  Zapamiętany klucz serwera kopii: <Code>{runner.host_key}</Code> – jego zmiana zatrzyma wysyłkę (ochrona przed podszyciem).
+                  {tr("target.hostKey.0")}
+                  <Code>{runner.host_key}</Code>
+                  {tr("target.hostKey.1")}
                 </Text>
               )}
             </Stack>
@@ -601,16 +587,16 @@ export default function BackupPage() {
 
           <Group>
             <Button leftSection={<IconDeviceFloppy size={16} />} disabled={!dirty} onClick={() => setConfirm(true)}>
-              Zapisz ustawienia
+              {tr("saveSettings")}
             </Button>
             {dirty && (
               <Button variant="subtle" onClick={() => void load(true)}>
-                Cofnij zmiany
+                {tr("undo")}
               </Button>
             )}
             {st.updated_at && (
               <Text size="xs" c="dimmed">
-                ostatnia zmiana: {st.updated_by}, {formatDate(st.updated_at)}
+                {tr("lastChange", { by: st.updated_by, date: formatDate(st.updated_at) })}
               </Text>
             )}
           </Group>
@@ -621,37 +607,37 @@ export default function BackupPage() {
         <Tabs.Panel value="history" pt="md">
           <Card withBorder>
             <Title order={4} mb="xs">
-              Historia kopii
+              {tr("history.title")}
             </Title>
             {st.runs.length === 0 ? (
               <Text size="sm" c="dimmed">
-                Brak kopii.
+                {tr("history.none")}
               </Text>
             ) : (
               <Table.ScrollContainer minWidth={800}>
                 <Table fz="sm" verticalSpacing={4}>
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Czas</Table.Th>
-                      <Table.Th>Rodzaj</Table.Th>
-                      <Table.Th>Wynik</Table.Th>
-                      <Table.Th>Rozmiar</Table.Th>
-                      <Table.Th>Wysyłka</Table.Th>
-                      <Table.Th>Szczegóły</Table.Th>
+                      <Table.Th>{tr("history.col.time")}</Table.Th>
+                      <Table.Th>{tr("history.col.kind")}</Table.Th>
+                      <Table.Th>{tr("history.col.result")}</Table.Th>
+                      <Table.Th>{tr("history.col.size")}</Table.Th>
+                      <Table.Th>{tr("history.col.upload")}</Table.Th>
+                      <Table.Th>{tr("history.col.details")}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {st.runs.map((r) => (
                       <Table.Tr key={r.id}>
                         <Table.Td style={{ whiteSpace: "nowrap" }}>{formatDate(r.started_at)}</Table.Td>
-                        <Table.Td>{r.kind === "manual" ? "na żądanie" : "harmonogram"}</Table.Td>
+                        <Table.Td>{r.kind === "manual" ? tr("history.manual") : tr("history.scheduled")}</Table.Td>
                         <Table.Td>
-                          <Badge size="sm" color={runStatus[r.status].color}>
-                            {runStatus[r.status].label}
+                          <Badge size="sm" color={runColors[r.status]}>
+                            {tr(`status.${r.status}`)}
                           </Badge>
                         </Table.Td>
                         <Table.Td>{r.size_bytes ? formatBytes(r.size_bytes) : "—"}</Table.Td>
-                        <Table.Td>{r.remote === "ok" ? "tak" : r.remote === "error" ? <Text c="red" size="sm">błąd</Text> : "—"}</Table.Td>
+                        <Table.Td>{r.remote === "ok" ? tr("history.yes") : r.remote === "error" ? <Text c="red" size="sm">{tr("history.error")}</Text> : "—"}</Table.Td>
                         <Table.Td>
                           <Text size="xs" style={{ wordBreak: "break-word" }}>
                             {r.message}
@@ -664,7 +650,9 @@ export default function BackupPage() {
               </Table.ScrollContainer>
             )}
             <Text size="xs" c="dimmed" mt="xs">
-              Odtworzenie na czystym serwerze: <Code>./restore.sh &lt;kopia&gt; [katalog z paczkami archiwum]</Code> i hasło kopii.
+              {tr("history.restoreHint.0")}
+              <Code>{tr("history.restoreCmd")}</Code>
+              {tr("history.restoreHint.1")}
             </Text>
           </Card>
         </Tabs.Panel>
@@ -674,7 +662,7 @@ export default function BackupPage() {
         </Tabs.Panel>
       </Tabs>
 
-      <Modal opened={confirm} onClose={() => setConfirm(false)} title="Zapis ustawień kopii" centered>
+      <Modal opened={confirm} onClose={() => setConfirm(false)} title={tr("confirm.title")} centered>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -682,9 +670,9 @@ export default function BackupPage() {
           }}
         >
           <Stack gap="sm">
-            <Text size="sm">Ustawienia kopii decydują, gdzie trafiają dane całego systemu – potwierdź zmianę swoim hasłem.</Text>
+            <Text size="sm">{tr("confirm.text")}</Text>
             <PasswordInput
-              label="Twoje hasło"
+              label={tr("yourPassword")}
               required
               autoFocus
               autoComplete="current-password"
@@ -693,10 +681,10 @@ export default function BackupPage() {
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setConfirm(false)}>
-                Wróć
+                {tr("back")}
               </Button>
               <Button type="submit" loading={busy}>
-                Zapisz
+                {tr("save")}
               </Button>
             </Group>
           </Stack>

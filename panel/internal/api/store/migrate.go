@@ -63,7 +63,7 @@ func (s *PG) Migrate(ctx context.Context) (applied []string, err error) {
 		num, _, ok := strings.Cut(name, "_")
 		version, err := strconv.Atoi(num)
 		if !ok || err != nil {
-			return applied, fmt.Errorf("niepoprawna nazwa migracji %s", name)
+			return applied, fmt.Errorf("invalid migration name %s", name)
 		}
 		if done[version] {
 			continue
@@ -79,7 +79,7 @@ func (s *PG) Migrate(ctx context.Context) (applied []string, err error) {
 			_, err := tx.Exec(ctx, "INSERT INTO schema_migrations (version, name) VALUES ($1, $2)", version, name)
 			return err
 		}); err != nil {
-			return applied, fmt.Errorf("migracja %s: %w", name, err)
+			return applied, fmt.Errorf("migration %s: %w", name, err)
 		}
 		applied = append(applied, name)
 	}

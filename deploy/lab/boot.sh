@@ -11,4 +11,4 @@ for i in 1 2 3; do
   docker compose up -d >>boot.log 2>&1 && break
   sleep 30
 done
-echo "$(date -Is) start stosu: $(docker compose ps --format '{{.Service}}' --status running | wc -l) usług działa" >>boot.log
+echo "$(date -Is) stack start: $(docker compose ps --format '{{.Service}}' --status running | wc -l) services running" >>boot.log

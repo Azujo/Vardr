@@ -27,6 +27,7 @@ import {
   IconArchive,
   IconBell,
   IconBolt,
+  IconCheck,
   IconChevronDown,
   IconCode,
   IconDatabaseExport,
@@ -36,6 +37,7 @@ import {
   IconBuildingCommunity,
   IconFlame,
   IconKey,
+  IconLanguage,
   IconLockAccess,
   IconShieldLock,
   IconListCheck,
@@ -48,11 +50,16 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { notifications } from "@mantine/notifications";
 import { useAuth } from "./auth";
 import ErrorBoundary from "./ErrorBoundary";
 import UpdateBanner from "./UpdateBanner";
-import { api, roleLabels } from "./api";
+import { api, profileName } from "./api";
+import { languages, setLanguage } from "./i18n";
 
+// label, title i hint z kropką to klucze tłumaczeń (common: nav.*); hint bez
+// kropki to nazwa własna modułu (Gjallarhorn, Mímir…) – się jej nie tłumaczy.
 interface Item {
   to: string;
   label: string;
@@ -70,56 +77,57 @@ interface Section {
 }
 
 const sections: Section[] = [
-  { items: [{ to: "/", label: "Start", icon: <IconHome size={18} /> }] },
+  { items: [{ to: "/", label: "nav.home", icon: <IconHome size={18} /> }] },
   {
-    title: "Wykrywanie",
+    title: "nav.detection",
     items: [
-      { to: "/alerts", label: "Alerty", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} />, perm: ["alerts", "read"] },
-      { to: "/incidents", label: "Incydenty", hint: "obsługa i zgłoszenia NIS2", icon: <IconFlame size={18} />, perm: ["incidents", "read"] },
-      { to: "/rules", label: "Reguły detekcji", hint: "Sigma i wbudowane", icon: <IconListCheck size={18} />, perm: ["rules", "read"] },
-      { to: "/attack", label: "MITRE ATT&CK", hint: "pokrycie technik", icon: <IconGridDots size={18} />, perm: ["rules", "read"] },
+      { to: "/alerts", label: "nav.alerts", hint: "Gjallarhorn", icon: <IconAlertTriangle size={18} />, perm: ["alerts", "read"] },
+      { to: "/incidents", label: "nav.incidents", hint: "nav.incidentsHint", icon: <IconFlame size={18} />, perm: ["incidents", "read"] },
+      { to: "/rules", label: "nav.rules", hint: "nav.rulesHint", icon: <IconListCheck size={18} />, perm: ["rules", "read"] },
+      { to: "/attack", label: "nav.attack", hint: "nav.attackHint", icon: <IconGridDots size={18} />, perm: ["rules", "read"] },
     ],
   },
   {
-    title: "Zdarzenia",
+    title: "nav.events",
     items: [
-      { to: "/events", label: "Wyszukiwarka", hint: "Mímir", icon: <IconDatabaseSearch size={18} />, perm: ["events", "read"] },
-      { to: "/identities", label: "Tożsamości", hint: "osoby i ich konta", icon: <IconUserCircle size={18} />, perm: ["identities", "read"] },
-      { to: "/decoders", label: "Dekodery", hint: "syslog i API", icon: <IconCode size={18} />, perm: ["decoders", "read"] },
-      { to: "/quarantine", label: "Kwarantanna", hint: "nieprzetworzone zdarzenia", icon: <IconAlertOctagon size={18} />, perm: ["quarantine", "read"] },
+      { to: "/events", label: "nav.search", hint: "Mímir", icon: <IconDatabaseSearch size={18} />, perm: ["events", "read"] },
+      { to: "/identities", label: "nav.identities", hint: "nav.identitiesHint", icon: <IconUserCircle size={18} />, perm: ["identities", "read"] },
+      { to: "/decoders", label: "nav.decoders", hint: "nav.decodersHint", icon: <IconCode size={18} />, perm: ["decoders", "read"] },
+      { to: "/quarantine", label: "nav.quarantine", hint: "nav.quarantineHint", icon: <IconAlertOctagon size={18} />, perm: ["quarantine", "read"] },
     ],
   },
   {
-    title: "Agenci",
+    title: "nav.agents",
     items: [
-      { to: "/agents", label: "Lista agentów", hint: "Huginn", icon: <IconDeviceDesktop size={18} />, perm: ["agents", "read"] },
-      { to: "/groups", label: "Grupy agentów", hint: "profile, limity, ochrona", icon: <IconAdjustments size={18} />, perm: ["agents", "read"] },
-      { to: "/deploy", label: "Wdrażanie", hint: "Bifröst – tokeny i paczki", icon: <IconBolt size={18} />, perm: ["deploy", "write"] },
+      { to: "/agents", label: "nav.agentList", hint: "Huginn", icon: <IconDeviceDesktop size={18} />, perm: ["agents", "read"] },
+      { to: "/groups", label: "nav.groups", hint: "nav.groupsHint", icon: <IconAdjustments size={18} />, perm: ["agents", "read"] },
+      { to: "/deploy", label: "nav.deploy", hint: "nav.deployHint", icon: <IconBolt size={18} />, perm: ["deploy", "write"] },
     ],
   },
   {
-    title: "System",
+    title: "nav.system",
     items: [
-      { to: "/archive", label: "Archiwum NIS2", hint: "Urd", icon: <IconArchive size={18} />, perm: ["archive", "read"] },
-      { to: "/system", label: "Stan systemu", hint: "Himinbjörg", icon: <IconActivityHeartbeat size={18} />, perm: ["system", "read"] },
+      { to: "/archive", label: "nav.archive", hint: "Urd", icon: <IconArchive size={18} />, perm: ["archive", "read"] },
+      { to: "/system", label: "nav.systemState", hint: "Himinbjörg", icon: <IconActivityHeartbeat size={18} />, perm: ["system", "read"] },
     ],
   },
   {
-    title: "Administracja",
+    title: "nav.admin",
     items: [
-      { to: "/admin/users", label: "Użytkownicy", icon: <IconUsers size={18} />, perm: ["users", "read"] },
-      { to: "/admin/profiles", label: "Profile uprawnień", hint: "macierz dostępu", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
-      { to: "/admin/ldap", label: "Logowanie domenowe", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
-      { to: "/admin/notifications", label: "Powiadomienia", hint: "Discord, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
-      { to: "/admin/backup", label: "Kopie zapasowe", hint: "harmonogram i miejsce", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
-      { to: "/admin/audit", label: "Dziennik audytu", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },
+      { to: "/admin/users", label: "nav.users", icon: <IconUsers size={18} />, perm: ["users", "read"] },
+      { to: "/admin/profiles", label: "nav.profiles", hint: "nav.profilesHint", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
+      { to: "/admin/ldap", label: "nav.ldap", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
+      { to: "/admin/notifications", label: "nav.notifications", hint: "Discord, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
+      { to: "/admin/backup", label: "nav.backup", hint: "nav.backupHint", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
+      { to: "/admin/audit", label: "nav.audit", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },
     ],
   },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [opened, { toggle, close }] = useDisclosure();
-  const { user, logout, can, profile } = useAuth();
+  const { t } = useTranslation();
+  const { user, logout, can, profile, setUserLanguage } = useAuth();
   const { pathname } = useLocation();
   const { setColorScheme } = useMantineColorScheme();
   const scheme = useComputedColorScheme("light");
@@ -131,13 +139,23 @@ export default function Layout({ children }: { children: ReactNode }) {
       .catch(() => {});
   }, []);
 
+  const changeLanguage = async (code: string) => {
+    try {
+      await api.setLanguage(code);
+      setUserLanguage(code);
+      setLanguage(code);
+    } catch (e) {
+      notifications.show({ color: "red", message: t("languageSaveFailed", { message: e instanceof Error ? e.message : String(e) }) });
+    }
+  };
+
   const link = (it: Item) => (
     <NavLink
       key={it.to}
       component={Link}
       to={it.to}
-      label={it.label}
-      description={it.hint}
+      label={t(it.label)}
+      description={it.hint?.includes(".") ? t(it.hint) : it.hint}
       leftSection={it.icon}
       active={it.to === "/" ? pathname === "/" : pathname.startsWith(it.to)}
       disabled={it.disabled}
@@ -160,11 +178,11 @@ export default function Layout({ children }: { children: ReactNode }) {
             </Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
-            <Tooltip label={scheme === "dark" ? "Tryb jasny" : "Tryb ciemny"}>
+            <Tooltip label={scheme === "dark" ? t("header.light") : t("header.dark")}>
               <ActionIcon
                 variant="default"
                 size="lg"
-                aria-label="Przełącz tryb kolorów"
+                aria-label={t("header.toggleScheme")}
                 onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
               >
                 {scheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
@@ -172,14 +190,14 @@ export default function Layout({ children }: { children: ReactNode }) {
             </Tooltip>
             <Menu position="bottom-end" width={220}>
               <Menu.Target>
-                <UnstyledButton aria-label="Menu konta">
+                <UnstyledButton aria-label={t("header.accountMenu")}>
                   <Group gap={6} wrap="nowrap">
                     <div style={{ textAlign: "right" }}>
                       <Text size="sm" fw={500}>
                         {user?.display_name || user?.username}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {user && (profile?.name ?? roleLabels[user.role] ?? user.role)}
+                        {user && (profile ? profileName(profile.id, profile.name) : t(`enum.role.${user.role}`, { defaultValue: user.role }))}
                       </Text>
                     </div>
                     <IconChevronDown size={14} />
@@ -189,14 +207,31 @@ export default function Layout({ children }: { children: ReactNode }) {
               <Menu.Dropdown>
                 {user?.source !== "ldap" && (
                   <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
-                    Zmień hasło
+                    {t("header.changePassword")}
                   </Menu.Item>
                 )}
                 <Menu.Item component={Link} to="/account/security" leftSection={<IconShieldLock size={16} />}>
-                  Bezpieczeństwo konta
+                  {t("header.security")}
                 </Menu.Item>
+                <Menu.Divider />
+                <Menu.Label>
+                  <Group gap={6}>
+                    <IconLanguage size={14} /> {t("header.language")}
+                  </Group>
+                </Menu.Label>
+                {[["", t("header.languageAuto")], ...Object.entries(languages)].map(([code, name]) => (
+                  <Menu.Item
+                    key={code}
+                    lang={code || undefined}
+                    rightSection={(user?.language ?? "") === code ? <IconCheck size={14} /> : null}
+                    onClick={() => void changeLanguage(code)}
+                  >
+                    {name}
+                  </Menu.Item>
+                ))}
+                <Menu.Divider />
                 <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={() => void logout()}>
-                  Wyloguj
+                  {t("header.logout")}
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -213,7 +248,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               <div key={sec.title ?? i}>
                 {sec.title && (
                   <Text size="xs" c="dimmed" fw={600} tt="uppercase" mt="md" mb={2} px="sm">
-                    {sec.title}
+                    {t(sec.title)}
                   </Text>
                 )}
                 {sec.items.map(link)}
@@ -221,11 +256,11 @@ export default function Layout({ children }: { children: ReactNode }) {
             ))}
         </AppShell.Section>
         <AppShell.Section>
-          <Text size="xs" c="dimmed" ta="center" my="xs" title="wersja siem-api">
-            {version && `wersja ${version} · `}
+          <Text size="xs" c="dimmed" ta="center" my="xs" title={t("footer.versionTitle")}>
+            {version && `${t("footer.version", { version })} · `}
             {/* AGPL-3.0 §13: użytkownicy panelu przez sieć mają dostęp do kodu źródłowego. */}
             <Anchor href="https://github.com/Azujo/Vardr" target="_blank" rel="noopener noreferrer" size="xs" c="dimmed" underline="always">
-              kod źródłowy (AGPL-3.0)
+              {t("footer.source")}
             </Anchor>
           </Text>
         </AppShell.Section>

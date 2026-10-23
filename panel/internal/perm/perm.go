@@ -8,8 +8,9 @@
 package perm
 
 import (
-	"fmt"
 	"slices"
+
+	"siem/internal/lang"
 )
 
 // Level to poziom uprawnienia w module.
@@ -91,10 +92,10 @@ func (s Set) Validate() error {
 	for mod, level := range s {
 		m := module(mod)
 		if m == nil {
-			return fmt.Errorf("nieznany moduł %q", mod)
+			return lang.Errorf("nieznany moduł %q", "unknown module %q", mod)
 		}
 		if levelIndex(m, level) < 0 {
-			return fmt.Errorf("moduł %s: nieznany poziom %q", mod, level)
+			return lang.Errorf("moduł %s: nieznany poziom %q", "module %s: unknown level %q", mod, level)
 		}
 	}
 	return nil

@@ -1,0 +1,18 @@
+{
+  "welcome": "Welcome, {{name}}",
+  "intro": "Vardr keeps watch – this is what is happening in your network.",
+  "alertsTitle": "Gjallarhorn – open alerts",
+  "open": "open: {{count}}",
+  "agentsTitle": "Huginn – agents",
+  "withProblems": "with problems: {{count}}",
+  "archiveTitle": "Urd – NIS2 archive",
+  "systemTitle": "Himinbjörg – system health",
+  "allOk": "all systems running",
+  "needsAttention": "needs attention: {{count}}",
+  "db": "Saga database: {{status}}",
+  "dbOk": "ok",
+  "dbDown": "unavailable",
+  "noData": "no data",
+  "eventsWhat": "events – search, histogram and details with the raw XML",
+  "deployWhat": "agent deployment with tokens and installer packages"
+}

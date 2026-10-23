@@ -181,7 +181,7 @@ func (s *PG) SaveBackup(ctx context.Context, cfg backupcfg.Config, secrets map[s
 }
 
 // ErrBackupPending: takie samo zlecenie czeka już na wykonanie.
-var ErrBackupPending = errors.New("takie zlecenie już czeka na wykonanie")
+var ErrBackupPending = errors.New("such a request is already waiting")
 
 // AddBackupRequest dodaje zlecenie dla usługi kopii.
 func (s *PG) AddBackupRequest(ctx context.Context, action, by string, params map[string]any) (BackupRequest, error) {

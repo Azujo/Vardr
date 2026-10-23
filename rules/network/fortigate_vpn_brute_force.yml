@@ -23,6 +23,22 @@ falsepositives:
   - Kilku użytkowników za jednym adresem NAT (np. biuro partnera) z błędnymi hasłami
 level: high
 vardr:
+  i18n:
+    en:
+      title: "FortiGate – series of failed VPN logins"
+      description: |
+        At least 10 failed FortiGate SSL VPN logins from one address within
+        5 minutes, to any accounts. Password guessing (brute force) or testing stolen
+        login–password pairs (credential stuffing) – the VPN portal is one of the most
+        frequently attacked targets on the internet.
+      instructions: |
+        {{count}} failed SSL VPN logins from address {{source.ip}} in {{window}}
+        (last account {{user.name}} on {{host.name}}). Check in the alert events how many
+        different accounts were tried – many accounts means credential stuffing, one
+        account means password guessing. Block the address (address list in a local-in
+        policy or a blocked group), check whether there was a successful login from this
+        address (action=tunnel-up or ssl-login) and whether the VPN portal requires MFA.
+        After a successful login – disable the account and change the password.
   group_by: [source.ip]
   threshold:
     count: 10

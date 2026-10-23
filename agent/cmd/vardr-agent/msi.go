@@ -19,6 +19,7 @@ import (
 	"siem/agent/internal/config"
 	"siem/agent/internal/logging"
 	"siem/agent/internal/shipper"
+	"siem/internal/lang"
 )
 
 // Instalator MSI (vardr-agent.msi) kopiuje vardr-agent.exe i ca.crt do
@@ -46,7 +47,7 @@ func msiLog() (io.Writer, func()) {
 // logResult zapisuje wynik w msi.log – okno MSI pokazuje tylko kod błędu.
 func logResult(w io.Writer, err error) {
 	if err != nil {
-		fmt.Fprintf(w, "BŁĄD: %v\n", err)
+		fmt.Fprintf(w, lang.L("BŁĄD: %v\n", "ERROR: %v\n"), err)
 	} else {
 		fmt.Fprintln(w, "OK")
 	}
@@ -82,10 +83,10 @@ func msiInstall(server, token string) (err error) {
 	defer func() { logResult(logw, err) }()
 
 	if enrolledAlready() {
-		fmt.Println("Agent już zarejestrowany – aktualizacja/naprawa: rejestracja usługi z istniejącą konfiguracją.")
+		fmt.Println(lang.L("Agent już zarejestrowany – aktualizacja/naprawa: rejestracja usługi z istniejącą konfiguracją.", "Agent already enrolled – upgrade/repair: registering the service with the existing configuration."))
 		if _, err := queryService(); err != nil {
 			if err := logging.InstallEventSource(serviceName); err != nil {
-				fmt.Println("uwaga: źródło w dzienniku zdarzeń:", err)
+				fmt.Println(lang.L("uwaga: źródło w dzienniku zdarzeń:", "warning: event log source:"), err)
 			}
 			if err := registerService(installExe, installCfg); err != nil {
 				return err
@@ -99,16 +100,16 @@ func msiInstall(server, token string) (err error) {
 			fmt.Println("uwaga: PATH:", err)
 		}
 		if err := restartOrStart(); err != nil {
-			return fmt.Errorf("usługa nie wystartowała: %w", err)
+			return fmt.Errorf(lang.L("usługa nie wystartowała: %w", "the service did not start: %w"), err)
 		}
-		fmt.Println("Usługa SiemAgent działa.")
+		fmt.Println(lang.L("Usługa SiemAgent działa.", "SiemAgent service running."))
 		return nil
 	}
 	if token == "" && !fileExists(filepath.Join(installDir, "token.txt")) {
-		return errors.New("brak tokenu rejestracyjnego – podaj TOKEN=… (panel → Bifröst) w poleceniu msiexec")
+		return errors.New(lang.L("brak tokenu rejestracyjnego – podaj TOKEN=… (panel → Bifröst) w poleceniu msiexec", "no enrollment token – pass TOKEN=… (panel → Bifröst) in the msiexec command"))
 	}
 	if server == "" {
-		return errors.New("brak adresu serwera – podaj SERVER=… w poleceniu msiexec")
+		return errors.New(lang.L("brak adresu serwera – podaj SERVER=… w poleceniu msiexec", "no server address – pass SERVER=… in the msiexec command"))
 	}
 	// Pozostałość po instalacji bez MSI (vardr-agent install): usługa istnieje,
 	// ale konfiguracji brak – usuwamy usługę, żeby instalacja przeszła.
@@ -172,7 +173,7 @@ func msiUninstall(token, upgradeCode string) (err error) {
 	defer redirect(logw)()
 	defer func() { logResult(logw, err) }()
 	if upgradeCode != "" {
-		fmt.Println("Aktualizacja (produkt " + upgradeCode + ") – usługę zarejestruje ponownie nowa wersja.")
+		fmt.Println(lang.L("Aktualizacja (produkt ", "Upgrade (product ") + upgradeCode + lang.L(") – usługę zarejestruje ponownie nowa wersja.", ") – the new version will register the service again."))
 		markInstaller(dataDir, "upgrade")
 	} else if err := authorize(installCfg, "uninstall", token); err != nil {
 		return err
@@ -185,12 +186,12 @@ func msiUninstall(token, upgradeCode string) (err error) {
 		fmt.Println("uwaga: PATH:", err)
 	}
 	if upgradeCode != "" {
-		fmt.Println("Usługa usunięta; dane i certyfikaty zostały w", dataDir)
+		fmt.Println(lang.L("Usługa usunięta; dane i certyfikaty zostały w", "Service removed; data and certificates remain in"), dataDir)
 		return nil
 	}
 	// Deinstalacja: klucz prywatny usunięty (panel unieważnia certyfikat
 	// po zgłoszeniu deinstalacji tokenem), konfiguracja i bufor zostają.
 	removeAgentKey(installCfg)
-	fmt.Println("Usługa usunięta; konfiguracja i bufor zostały w", dataDir)
+	fmt.Println(lang.L("Usługa usunięta; konfiguracja i bufor zostały w", "Service removed; configuration and buffer remain in"), dataDir)
 	return nil
 }

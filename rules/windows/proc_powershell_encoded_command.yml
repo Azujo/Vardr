@@ -26,6 +26,17 @@ falsepositives:
   - Narzędzia administracyjne i instalatory, które przekazują skrypty w postaci zakodowanej
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "PowerShell started with an encoded command"
+      description: |
+        PowerShell started with the -EncodedCommand parameter (or its abbreviation).
+        Encoded commands hide the script content from view and are often used by
+        malware and attack tools.
+      instructions: |
+        Decode the parameter (Base64, UTF-16LE) and assess the script. Parent process:
+        {{ParentImage}} – a start from an Office document or a browser is
+        highly suspicious.
   group_by: [Computer, CommandLine]
   suppress: 1h
   instructions: |

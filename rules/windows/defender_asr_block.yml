@@ -21,6 +21,21 @@ falsepositives:
   - Nietypowe, ale legalne oprogramowanie (np. makra działu finansów) – wykluczenie ASR po weryfikacji
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Defender ASR rule blocked an action"
+      description: |
+        A Microsoft Defender attack surface reduction (ASR) rule blocked an action
+        (1121) – e.g. an Office macro starting a process, reading LSASS memory, a script
+        downloading an executable. The block worked, but the attempt is a sign that
+        something on the computer behaves like an attack tool. The technique depends on
+        the ASR rule (identifier in ID).
+      instructions: |
+        ASR blocked {{Process Name}} on {{host.name}} (rule {{ID}}, target {{Path}}).
+        Check what this process is and what it tried to do; the ASR rule identifier is
+        described in the Microsoft documentation ("Attack surface reduction rules
+        reference"). Repeated blocks of the same legitimate program – consider an
+        exclusion after verification.
   group_by: [host.name, Process Name]
   suppress: 24h
   instructions: |

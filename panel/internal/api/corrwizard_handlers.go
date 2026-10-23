@@ -193,7 +193,7 @@ func (s *Server) savePanelRule(w http.ResponseWriter, r *http.Request) {
 	}
 	set, err := detect.ParseText([]byte(req.Source), file, known)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_rule", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_rule", err)
 		return
 	}
 	if len(set.Correlations) != 1 || set.Correlations[0].ID != id {

@@ -2,124 +2,127 @@
 
 # Vardr
 
-**Otwarty SIEM dla małych i średnich organizacji – zbieranie logów, detekcja zagrożeń, incydenty i archiwum pod NIS2.**
+**An open-source SIEM for small and mid-sized organisations – log collection, threat detection, incidents and an archive built for NIS2.**
 
-[![Licencja: AGPL-3.0](https://img.shields.io/badge/licencja-AGPL--3.0-blue)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-serwer%20i%20agent-00ADD8?logo=go&logoColor=white)](go.mod)
-[![Sigma](https://img.shields.io/badge/reguły-Sigma-6f42c1)](docs/reguly.md)
-[![Stan](https://img.shields.io/badge/stan-MVP-orange)](docs/PODSUMOWANIE.md)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-server%20and%20agent-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Sigma](https://img.shields.io/badge/rules-Sigma-6f42c1)](docs/en/rules.md)
+[![Status](https://img.shields.io/badge/status-MVP-orange)](CHANGELOG.md)
 
-[Funkcje](#co-potrafi) · [Architektura](#jak-to-działa) · [Instalacja](#szybki-start) · [Dokumentacja](#dokumentacja) · [Licencja](#licencja)
+[Features](#what-it-does) · [Architecture](#how-it-works) · [Installation](#quick-start) · [Documentation](#documentation) · [License](#license)
+
+<p>🇬🇧 <b>English</b> · 🇵🇱 <a href="README.pl.md">Polski</a></p>
 
 </div>
 
-> 🇬🇧 *Vardr is an open-source SIEM for small and mid-sized organisations: Windows agent, syslog and Entra ID collection, Sigma-based detection with correlations, incident handling with NIS2 reporting deadlines and a tamper-evident log archive. The interface and documentation are in Polish.*
+**Vardr** – in Norse mythology a guardian spirit that keeps constant watch and warns – is a complete SIEM that runs on a single server and installs with a single command. It collects events from Windows computers, network devices and the Microsoft cloud, detects attacks with Sigma rules, takes the analyst from an alert to a closed incident and keeps the original logs in an archive that cannot be silently altered – as required by the NIS2 directive.
 
-**Vardr** – w mitologii nordyckiej duch-strażnik, który stale czuwa i ostrzega – to kompletny system SIEM, który da się postawić na jednym serwerze jednym poleceniem. Zbiera zdarzenia z komputerów Windows, urządzeń sieciowych i chmury Microsoft, wykrywa ataki regułami Sigma, prowadzi analityka od alertu do zamkniętego incydentu i przechowuje oryginalne logi w archiwum, którego nie da się po cichu zmienić – tak, jak wymaga tego dyrektywa NIS2 i ustawa o krajowym systemie cyberbezpieczeństwa.
+It is built for organisations for which a commercial SIEM is too expensive and assembling one from open-source parts too much work: companies, local governments, schools and hospitals that must detect incidents and report them on time, but have no team to run Elasticsearch.
 
-Powstał z myślą o organizacjach, dla których komercyjny SIEM jest za drogi, a złożenie go z klocków open source za pracochłonne: firmach, samorządach, szkołach i szpitalach, które muszą wykrywać incydenty i zgłaszać je w terminie, a nie mają zespołu do utrzymania Elasticsearcha.
+The panel, notifications and the user documentation are available in English and Polish – every account picks its own panel language, and the administrator picks the language of notifications (*Notifications → System language*).
 
-## Co potrafi
+## What it does
 
-**📥 Zbieranie zdarzeń**
-- **Agent Windows (Huginn)** – dzienniki Security, System, PowerShell, Sysmon, Microsoft Defender i inne; profile dla stacji, serwerów i kontrolerów domeny; instalator MSI i wdrożenie przez GPO.
-- Agent odporny na wyłączenie: chroniona usługa, bufor dyskowy na czas przerwy w łączności, gwarancja dostarczenia (deduplikacja paczek), limity CPU, pamięci i pasma.
-- **Kolektor syslog** z dekoderami urządzeń (FortiGate, MikroTik i własne – opisywane w YAML, testowane na próbkach w panelu).
-- **Konektor Entra ID** – logowania i zmiany w katalogu z Microsoft Graph.
-- Rejestracja agentów jednorazowym tokenem, certyfikaty mTLS wystawiane automatycznie, unieważnianie z panelu.
+**📥 Event collection**
+- **Windows agent (Huginn)** – Security, System, PowerShell, Sysmon, Microsoft Defender logs and more; profiles for workstations, servers and domain controllers; MSI installer and deployment via GPO.
+- An agent that is hard to switch off: protected service, disk buffer for connection outages, guaranteed delivery (batch deduplication), CPU, memory and bandwidth limits.
+- **Syslog collector** with device decoders (FortiGate, MikroTik and your own – described in YAML, tested on samples in the panel).
+- **Entra ID connector** – sign-ins and directory changes from Microsoft Graph.
+- Agent enrollment with a one-time token, mTLS certificates issued automatically, revocation from the panel.
 
-**🔎 Detekcja**
-- Reguły w otwartym formacie **[Sigma](https://sigmahq.io)**, w dwóch silnikach: **w locie** (alert w sekundy) i **zapytań** na bazie zdarzeń (nadrabia przerwy i spóźnione zdarzenia).
-- Progi, grupowanie, **korelacje** między regułami i źródłami (np. password spraying z wielu systemów, konto utworzone i od razu dodane do grupy administratorów).
-- Mapowanie na **MITRE ATT&CK**, tożsamości osób łączone między kontami i źródłami.
-- **Tryb próbny** – reguła liczy trafienia bez alarmowania, zanim ją włączysz; zmiany zbiorcze z powodem w audycie.
-- Import otwartej biblioteki **SigmaHQ** jednym poleceniem (ok. 1500 reguł dla zbieranych źródeł, domyślnie wyłączonych).
+**🔎 Detection**
+- Rules in the open **[Sigma](https://sigmahq.io)** format, in two engines: **streaming** (an alert within seconds) and **query** on the event database (catches up after outages and late events).
+- Thresholds, grouping, **correlations** across rules and sources (e.g. password spraying across several systems, an account created and immediately added to the administrators group).
+- Mapping to **MITRE ATT&CK**, person identities linked across accounts and sources.
+- **Trial mode** – a rule counts hits without alerting before you enable it; bulk changes with a reason recorded in the audit log.
+- Import of the open **SigmaHQ** library with one command (about 1,500 rules for the collected sources, disabled by default).
 
-**🚨 Alerty i incydenty**
-- Alerty z kontekstem zdarzeń, triage, powiadomienia (Discord, webhook) z ochroną przed burzą alertów.
-- **Incydenty** łączące alerty, ustalenia, IoC i oś czasu; ścieżka statusów z ostatecznym zamknięciem.
-- **Terminy NIS2** – wczesne ostrzeżenie (24 h), zgłoszenie (72 h) i sprawozdanie końcowe z przypomnieniami i szkicami zgłoszeń do CSIRT.
+**🚨 Alerts and incidents**
+- Alerts with event context, triage, notifications (Discord, webhook) with protection against alert storms.
+- **Incidents** grouping alerts, findings, IoCs and a timeline; a status workflow with a final closure.
+- **NIS2 deadlines** – early warning (24 h), notification (72 h) and final report with reminders and drafts of reports to the CSIRT.
 
-**🗄️ Archiwum NIS2 (Urd)**
-- Oryginalne paczki zdarzeń w segmentach z **łańcuchem hashy SHA-256** i codzienną kotwicą wysyłaną poza system – każda zmiana archiwum jest wykrywalna.
-- Regularna weryfikacja integralności, retencja z polityką, której przejęty panel nie skróci.
-- **Eksport dla audytora** z niezależnym czytnikiem i **odtworzenie** zdarzeń z archiwum do analizy.
+**🗄️ NIS2 archive (Urd)**
+- Original event batches in segments with a **SHA-256 hash chain** and a daily anchor sent outside the system – every change to the archive is detectable.
+- Regular integrity verification, retention with a policy that a compromised panel cannot shorten.
+- **Auditor export** with an independent reader and **replay** of events from the archive for analysis.
 
 **🖥️ Panel (Hliðskjálf)**
-- Wyszukiwarka zdarzeń z własnym językiem zapytań, stan agentów i potoku, zarządzanie regułami, dekoderami i kopiami zapasowymi.
-- Logowanie kontami **Active Directory** (LDAPS) z mapowaniem grup, **drugi składnik (TOTP)**, profile uprawnień moduł po module, pełny dziennik audytu.
+- Event search with its own query language, agent and pipeline status, management of rules, decoders and backups.
+- Sign-in with **Active Directory** accounts (LDAPS) with group mapping, **second factor (TOTP)**, permission profiles module by module, a complete audit log.
 
-**⚙️ Utrzymanie**
-- **Instalator** – jeden skrypt stawia cały stos na Dockerze: sekrety, certyfikaty, usługi systemd, pierwsze konto; ten sam skrypt aktualizuje.
-- Szyfrowane **kopie zapasowe** z harmonogramem z panelu (lokalnie, SFTP, SMB, S3) i przywracanie z panelu.
-- Monitorowanie potoku w Grafanie, alerty o awariach, kolejki, które przy przeciążeniu opóźniają dane, ale ich nie gubią – potok sprawdzony przy **7000 zdarzeń/s przez 8 godzin**.
+**⚙️ Operations**
+- **Installer** – one script sets up the whole stack on Docker: secrets, certificates, systemd services, the first account; the same script upgrades.
+- Encrypted **backups** scheduled from the panel (local, SFTP, SMB, S3) and restore from the panel.
+- Pipeline monitoring in Grafana, failure alerts, queues that delay data under overload instead of losing it – the pipeline was tested at **7,000 events/s for 8 hours**.
 
-## Jak to działa
+## How it works
 
 ```mermaid
 flowchart LR
-  subgraph Źródła
-    A["Huginn<br/>agent Windows"]
-    C["Kolektor syslog<br/>FortiGate, MikroTik…"]
-    E["Konektor<br/>Entra ID"]
+  subgraph Sources
+    A["Huginn<br/>Windows agent"]
+    C["Syslog collector<br/>FortiGate, MikroTik…"]
+    E["Connector<br/>Entra ID"]
   end
-  A & C & E -->|mTLS| I["Bifröst<br/>przyjmowanie"]
-  I --> Q[("Ratatoskr<br/>kolejka NATS")]
-  Q --> N["Bragi<br/>normalizacja i dekodery"]
-  N --> W["Verðandi<br/>zapis"] --> M[("Mímir<br/>ClickHouse")]
-  N --> G["Gjallarhorn<br/>detekcja Sigma"]
-  M -. silnik zapytań .-> G
-  Q --> U[("Urd<br/>archiwum NIS2")]
+  A & C & E -->|mTLS| I["Bifröst<br/>ingest"]
+  I --> Q[("Ratatoskr<br/>NATS queue")]
+  Q --> N["Bragi<br/>normalization and decoders"]
+  N --> W["Verðandi<br/>writer"] --> M[("Mímir<br/>ClickHouse")]
+  N --> G["Gjallarhorn<br/>Sigma detection"]
+  M -. query engine .-> G
+  Q --> U[("Urd<br/>NIS2 archive")]
   G --> S[("Saga<br/>PostgreSQL")]
   S --> P["Hliðskjálf<br/>panel"]
   M --> P
 ```
 
-Zdarzenie trafia od agenta do kolejki i jest potwierdzane dopiero po zapisie – awaria dowolnej usługi kończy się opóźnieniem, nie utratą danych. Usługi bez stanu (przyjmowanie, normalizacja, zapis) skaluje się, dokładając kopie. Komponenty noszą imiona z mitologii nordyckiej (w kodzie – nazwy opisowe); więcej: [architektura](docs/architektura.md).
+An event goes from the agent to the queue and is acknowledged only after it is written – a failure of any service ends in a delay, not in data loss. Stateless services (ingest, normalization, writing) scale by adding replicas. Components are named after Norse mythology (descriptive names in the code); more: [architecture](docs/en/architecture.md).
 
-## Szybki start
+## Quick start
 
-Wymagania: Linux x86_64 z systemd (Debian 12/13, Ubuntu 24.04+), Docker Engine z wtyczką compose, 8 GB RAM, 60 GB dysku.
+Requirements: Linux x86_64 with systemd (Debian 12/13, Ubuntu 24.04+), Docker Engine with the compose plugin, 8 GB RAM, 60 GB of disk.
 
 ```bash
-tar xzf vardr-<wersja>-linux-amd64.tar.gz
-cd vardr-<wersja>-linux-amd64
+tar xzf vardr-<version>-linux-amd64.tar.gz
+cd vardr-<version>-linux-amd64
 sudo ./install.sh
 ```
 
-Instalator zapyta o adres serwera, przygotuje wszystko i na końcu pokaże adres panelu (`https://<serwer>:8444`), hasło startowe administratora i hasło kopii zapasowych. Potem w panelu: *Agenci* → paczka instalacyjna albo token rejestracji dla komputerów Windows.
+The installer asks for the server address, prepares everything and finally shows the panel address (`https://<server>:8444`), the administrator's initial password and the backup password. Then in the panel: *Agents* → an installation package or an enrollment token for Windows computers.
 
-Paczkę buduje się z repozytorium poleceniem `deploy/vardr/build-bundle.sh`. Szczegóły, aktualizacja i usuwanie: [docs/instalacja.md](docs/instalacja.md).
+The bundle is built from the repository with `deploy/vardr/build-bundle.sh`. Details, upgrades and removal: [docs/en/installation.md](docs/en/installation.md).
 
-## Dokumentacja
+## Documentation
 
 | | |
 |---|---|
-| [Instalacja](docs/instalacja.md) | serwer z paczki, aktualizacja, kolektor syslog i konektor Entra ID |
-| [Agent Windows](docs/agent.md) | instalacja (MSI, GPO), ochrona, bufor, limity, polityka audytu |
-| [Panel](docs/panel.md) | moduły, uprawnienia, wyszukiwanie, praca z alertem i incydentem, NIS2 |
-| [Reguły detekcji](docs/reguly.md) | pisanie i testowanie reguł Sigma, korelacje, tryb próbny, import SigmaHQ |
-| [Dekodery](docs/dekodery.md) | nowe urządzenie syslog lub źródło API krok po kroku |
-| [Architektura](docs/architektura.md) | składniki, przepływ zdarzenia, bazy, bezpieczeństwo |
-| [Operacje](docs/operacje.md) | kopie zapasowe, retencja, migracje, diagnostyka |
-| [Rozwój](docs/rozwoj.md) | budowanie, testy, konwencje |
+| [Installation](docs/en/installation.md) | server from the bundle, upgrade, syslog collector and Entra ID connector |
+| [Windows agent](docs/en/agent.md) | installation (MSI, GPO), protection, buffer, limits, audit policy |
+| [Panel](docs/en/panel.md) | modules, permissions, search, working with alerts and incidents, NIS2, languages |
+| [Detection rules](docs/en/rules.md) | writing and testing Sigma rules, correlations, trial mode, translations, SigmaHQ import |
+| [Decoders](docs/en/decoders.md) | a new syslog device or API source step by step |
+| [Architecture](docs/en/architecture.md) | components, event flow, databases, security |
+| [Operations](docs/en/operations.md) | backups, retention, migrations, diagnostics |
+| [Programs](docs/en/programs.md) | the services and command-line tools and their settings |
+| [Development](docs/en/development.md) | building, tests, conventions, translations |
 
-Pełny spis: [docs/](docs/README.md). Plan i decyzje projektowe: [ROADMAP](docs/ROADMAP.md), stan prac i znane luki: [PODSUMOWANIE](docs/PODSUMOWANIE.md).
+Full index: [docs/en/](docs/en/README.md). Changes between versions: [CHANGELOG](CHANGELOG.md). The roadmap, project history and lab notes are in Polish: [ROADMAP](docs/ROADMAP.md), [PODSUMOWANIE](docs/PODSUMOWANIE.md), [laboratorium](docs/laboratorium.md).
 
-## Stan projektu
+## Project status
 
-Vardr ma za sobą etap MVP (październik 2026): wszystkie opisane funkcje działają w środowisku testowym z domeną Active Directory, urządzeniami sieciowymi i symulatorem Entra ID, a potok przeszedł testy obciążeniowe. To projekt rozwijany przez jedną osobę – zgłoszenia błędów i pomysły są bardzo mile widziane ([CONTRIBUTING](CONTRIBUTING.md)).
+Vardr has completed its MVP stage (October 2026): all the features described work in a test environment with an Active Directory domain, network devices and an Entra ID simulator, and the pipeline has passed load tests. It is developed by one person – bug reports and ideas are very welcome ([CONTRIBUTING](CONTRIBUTING.md)).
 
-## Licencja
+## License
 
-Copyright © 2026 Marcin Krzemianowski „Azujo” i współtwórcy Vardra.
+Copyright © 2026 Marcin Krzemianowski "Azujo" and Vardr contributors.
 
-Vardr jest wolnym oprogramowaniem na licencji [GNU Affero General Public License 3.0 lub późniejszej](LICENSE) (`AGPL-3.0-or-later`): wolno go używać (także komercyjnie), zmieniać i rozpowszechniać. Kto udostępnia zmienioną wersję – także jako usługę przez sieć (np. SIEM dla klientów) – musi udostępnić jej użytkownikom kod źródłowy na tej samej licencji. Panel pokazuje odnośnik do kodu źródłowego (stopka menu); zmieniona wersja powinna wskazywać własne repozytorium.
+Vardr is free software under the [GNU Affero General Public License 3.0 or later](LICENSE) (`AGPL-3.0-or-later`): you may use it (also commercially), modify and distribute it. Anyone who makes a modified version available – also as a network service (e.g. a SIEM for customers) – must make its source code available to its users under the same license. The panel shows a link to the source code (menu footer); a modified version should point to its own repository.
 
-Licencja nie obejmuje reguł SigmaHQ (osobna licencja DRL 1.1, patrz niżej) ani programów firm trzecich uruchamianych w stosie (NATS, ClickHouse, PostgreSQL, Grafana, Prometheus – każdy na własnej licencji). Zasady przesyłania zmian: [CONTRIBUTING.md](CONTRIBUTING.md).
+The license does not cover the SigmaHQ rules (a separate DRL 1.1 license, see below) or the third-party programs run in the stack (NATS, ClickHouse, PostgreSQL, Grafana, Prometheus – each under its own license). How to contribute changes: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Podziękowania
+## Acknowledgements
 
-Detekcja Vardra opiera się na formacie [Sigma](https://sigmahq.io), a panel pozwala zaimportować otwartą bibliotekę reguł [SigmaHQ](https://github.com/SigmaHQ/sigma) – kilka tysięcy reguł pisanych i utrzymywanych przez społeczność analityków bezpieczeństwa. Dziękujemy autorom i opiekunom projektu za świetną robotę. Reguły SigmaHQ są na licencji [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License); Vardr ich nie dołącza – importuje je administrator (`sigmahq-import.sh` albo instrukcja w panelu), a panel pokazuje autora, źródło i licencję przy każdej regule i alercie.
+Vardr's detection is based on the [Sigma](https://sigmahq.io) format, and the panel can import the open [SigmaHQ](https://github.com/SigmaHQ/sigma) rule library – several thousand rules written and maintained by the community of security analysts. Thank you to the authors and maintainers for great work. SigmaHQ rules are licensed under the [Detection Rule License (DRL) 1.1](https://github.com/SigmaHQ/Detection-Rule-License); Vardr does not bundle them – the administrator imports them (`sigmahq-import.sh` or the instructions in the panel), and the panel shows the author, source and license with every rule and alert.
 
-Vardr korzysta też z doskonałych projektów open source: [NATS](https://nats.io), [ClickHouse](https://clickhouse.com), [PostgreSQL](https://www.postgresql.org), [Grafana](https://grafana.com), [Prometheus](https://prometheus.io), [Mantine](https://mantine.dev) i [React](https://react.dev).
+Vardr also uses excellent open-source projects: [NATS](https://nats.io), [ClickHouse](https://clickhouse.com), [PostgreSQL](https://www.postgresql.org), [Grafana](https://grafana.com), [Prometheus](https://prometheus.io), [Mantine](https://mantine.dev) and [React](https://react.dev).

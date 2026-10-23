@@ -4,6 +4,7 @@
 // token CSRF w pamięci – dołączany do każdego żądania zmieniającego stan.
 
 import type { WizEvent } from "./corrWizard";
+import i18n, { errorMessage, locale } from "./i18n";
 
 // Rola konta = identyfikator profilu uprawnień (wbudowane: admin, analyst, viewer).
 export type Role = string;
@@ -20,6 +21,7 @@ export interface User {
   created_at: string;
   updated_at: string;
   source?: "local" | "ldap"; // ldap – konto domenowe (hasło i profil z AD)
+  language?: string; // język panelu wybrany na koncie; pusty – z przeglądarki
 }
 
 export interface SessionInfo {
@@ -170,7 +172,8 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
+    const code = data.error ?? "error";
+    const err = new ApiError(res.status, code, errorMessage(code, data.message ?? i18n.t("httpError", { status: res.status }), data.message_en));
     if (res.status === 401 && !path.startsWith("/api/v1/auth/login") && !path.startsWith("/api/v1/auth/mfa") && path !== "/api/v1/auth/session")
       onUnauthenticated(err);
     throw err;
@@ -196,6 +199,7 @@ export const api = {
   setSecuritySettings: (mfa_policy: MFAPolicy, password: string) =>
     request<{ mfa_policy: MFAPolicy }>("PUT", "/api/v1/settings/security", { mfa_policy, password }),
   logout: () => request<void>("POST", "/api/v1/auth/logout"),
+  setLanguage: (language: string) => request<{ language: string }>("PUT", "/api/v1/account/language", { language }),
   changePassword: (current_password: string, new_password: string) =>
     request<SessionInfo>("POST", "/api/v1/auth/password", { current_password, new_password }),
   health: () => request<{ status: string; database: string }>("GET", "/api/v1/health"),
@@ -214,7 +218,7 @@ export const api = {
   saveLdapSettings: (config: LDAPConfig, bind_password: string, password: string) =>
     request<{ ok: boolean }>("PUT", "/api/v1/settings/ldap", { config, bind_password, password }),
   ldapTest: (config: LDAPConfig, bind_password: string) =>
-    request<{ ok: boolean; message?: string; error?: string }>("POST", "/api/v1/settings/ldap/test", { config, bind_password }),
+    request<{ ok: boolean; message?: string; error?: string; error_en?: string }>("POST", "/api/v1/settings/ldap/test", { config, bind_password }),
   ldapGroups: (config: LDAPConfig, bind_password: string) =>
     request<{ groups: LDAPGroup[] }>("POST", "/api/v1/settings/ldap/groups", { config, bind_password }),
   ldapCheck: (config: LDAPConfig, bind_password: string, login: string) =>
@@ -230,15 +234,59 @@ export const api = {
 };
 
 // Nazwy profili wbudowanych (gdy lista profili jeszcze się nie wczytała).
-export const roleLabels: Record<string, string> = {
-  admin: "Administrator",
-  analyst: "Analityk",
-  viewer: "Obserwator",
-};
+export const roleLabels: Record<string, string> = translatedStrings("role", ["admin", "analyst", "viewer"]);
+
+// Etykiety wyliczeń (poziomy, statusy…) tłumaczone przy odczycie – zawsze
+// w bieżącym języku. Teksty: common.json, enum.<nazwa>.<wartość> (sama
+// etykieta) albo enum.<nazwa>.<wartość>.<pole> (etykieta i opis).
+function translated<K extends string, X extends object, F extends string>(
+  name: string,
+  base: Record<K, X>,
+  fields: F[],
+): Record<K, X & Record<F, string>> {
+  const out = {} as Record<K, X & Record<F, string>>;
+  for (const k of Object.keys(base) as K[]) {
+    const o = { ...base[k] };
+    for (const f of fields)
+      Object.defineProperty(o, f, {
+        enumerable: true,
+        get: () => i18n.t(fields.length === 1 && f === "label" ? `enum.${name}.${k}` : `enum.${name}.${k}.${f}`),
+      });
+    out[k] = o as X & Record<F, string>;
+  }
+  return out;
+}
+
+// Słownik wartość → tekst tłumaczony przy odczycie (enum.<nazwa>.<wartość>).
+function translatedStrings<K extends string>(name: string, keys: readonly K[]): Record<K, string> {
+  const out = {} as Record<K, string>;
+  for (const k of keys) Object.defineProperty(out, k, { enumerable: true, get: () => i18n.t(`enum.${name}.${k}`) });
+  return out;
+}
+
+// Nazwa profilu uprawnień: wbudowane (admin, analyst, viewer) w języku
+// użytkownika, własne – tak, jak je nazwano.
+export function profileName(id: string, name: string): string {
+  return ["admin", "analyst", "viewer"].includes(id) ? i18n.t(`enum.role.${id}`) : name;
+}
+
+// Moduły i poziomy uprawnień (serwer: perm.Modules) w języku użytkownika
+// (admin: perm.<moduł>.label/help/level.<poziom>, perm.level.<poziom>).
+export function permLabel(m: PermModule): string {
+  return i18n.t(`admin:perm.${m.key}.label`, { defaultValue: m.label });
+}
+export function permHelp(m: PermModule): string {
+  return m.help ? i18n.t(`admin:perm.${m.key}.help`, { defaultValue: m.help }) : "";
+}
+export function permLevel(m: PermModule, level: string): string {
+  const own = `admin:perm.${m.key}.level.${level}`;
+  if (i18n.exists(own)) return i18n.t(own);
+  return i18n.t(`admin:perm.level.${level}`, { defaultValue: m.levels.find((l) => l.key === level)?.label ?? level });
+}
 
 export function formatDate(iso?: string): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("pl-PL", { dateStyle: "short", timeStyle: "medium" });
+  return new Date(iso).toLocaleString(locale(), { dateStyle: "short", timeStyle: "medium" });
 }
 
 // ---- Huginn: agenci ----
@@ -273,6 +321,8 @@ export interface AgentView {
   tamper_24h?: number;
   stopping?: string;
   problems: string[];
+  // Problemy jako kod z parametrami (agents: issue.<kod>); problems – po polsku.
+  issues?: { code: string; args?: Record<string, string | number | boolean> }[];
   group_id: number;
   group: string;
   config_expected: string;
@@ -336,17 +386,21 @@ export interface TamperRecord {
 }
 
 // Rodzaje zdarzeń ochrony: opis i poziom alertu ("" – bez alertu).
-export const tamperKinds: Record<string, { title: string; level: string }> = {
-  stop: { title: "Usługa zatrzymana bez tokenu", level: "high" },
-  unclean_exit: { title: "Proces zakończony bez zatrzymania usługi (zabity albo awaria)", level: "medium" },
-  acl_restored: { title: "Zmieniono uprawnienia usługi (przywrócone)", level: "high" },
-  config_restored: { title: "Zmieniono konfigurację usługi (przywrócona)", level: "high" },
-  bad_token: { title: "Nieudana próba zatrzymania albo deinstalacji (bez ważnego tokenu)", level: "medium" },
-  stop_token: { title: "Zatrzymanie tokenem", level: "" },
-  uninstall_token: { title: "Deinstalacja tokenem", level: "" },
-  upgrade: { title: "Aktualizacja (instalator)", level: "" },
-  protection_off: { title: "Ochrona wyłączona w grupie", level: "" },
-};
+export const tamperKinds: Record<string, { title: string; level: string }> = translated(
+  "tamper",
+  {
+    stop: { level: "high" },
+    unclean_exit: { level: "medium" },
+    acl_restored: { level: "high" },
+    config_restored: { level: "high" },
+    bad_token: { level: "medium" },
+    stop_token: { level: "" },
+    uninstall_token: { level: "" },
+    upgrade: { level: "" },
+    protection_off: { level: "" },
+  },
+  ["title"],
+);
 
 export interface UninstallToken {
   id: number;
@@ -364,10 +418,33 @@ export interface UninstallToken {
   state: "active" | "used" | "revoked" | "expired";
 }
 
+// Grupa domyślna z migracji ma polską nazwę i opis (dane, które
+// administrator może zmienić) – w innym języku pokazujemy je przetłumaczone,
+// dopóki nie zostały zmienione.
+export function groupLabel(name: string): string {
+  return locale() !== "pl" && name === "Domyślna" ? i18n.t("agents:defaultGroup.name") : name;
+}
+
+function localGroup<T extends { name: string; description: string }>(g: T): T {
+  if (locale() === "pl") return g;
+  return {
+    ...g,
+    name: groupLabel(g.name),
+    description: g.description === "Agenci bez przypisanej grupy" ? i18n.t("agents:defaultGroup.description") : g.description,
+  };
+}
+
 export const agentsApi = {
-  list: () => request<{ agents: AgentView[]; summary: AgentsSummary; offline_after_s: number }>("GET", "/api/v1/agents"),
+  list: () =>
+    request<{ agents: AgentView[]; summary: AgentsSummary; offline_after_s: number }>("GET", "/api/v1/agents").then((r) => ({
+      ...r,
+      agents: r.agents.map((a) => ({ ...a, group: groupLabel(a.group) })),
+    })),
   get: (id: string) =>
-    request<{ agent: AgentView; status: AgentStatusDoc }>("GET", `/api/v1/agents/${encodeURIComponent(id)}`),
+    request<{ agent: AgentView; status: AgentStatusDoc }>("GET", `/api/v1/agents/${encodeURIComponent(id)}`).then((r) => ({
+      ...r,
+      agent: { ...r.agent, group: groupLabel(r.agent.group) },
+    })),
   remove: (id: string) => request<void>("DELETE", `/api/v1/agents/${encodeURIComponent(id)}`),
   // Ważne certyfikaty agentów spoza listy (administrator).
   orphanCerts: () =>
@@ -380,18 +457,18 @@ export const agentsApi = {
     request<void>("POST", `/api/v1/agents/${encodeURIComponent(id)}/uninstall-tokens/${tid}/revoke`),
 };
 
-// Czas względny po polsku: „30 s temu”, „5 min temu”, „2 h temu”.
+// Czas względny: „30 s temu”, „5 min temu”, „2 h temu”, „3 dni temu”.
 export function ago(iso?: string, now = Date.now()): string {
   if (!iso) return "—";
   const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s} s temu`;
-  if (s < 3600) return `${Math.floor(s / 60)} min temu`;
-  if (s < 172800) return `${Math.floor(s / 3600)} h temu`;
-  return `${Math.floor(s / 86400)} dni temu`;
+  if (s < 60) return i18n.t("ago.seconds", { count: s });
+  if (s < 3600) return i18n.t("ago.minutes", { count: Math.floor(s / 60) });
+  if (s < 172800) return i18n.t("ago.hours", { count: Math.floor(s / 3600) });
+  return i18n.t("ago.days", { count: Math.floor(s / 86400) });
 }
 
 export function formatNumber(n?: number): string {
-  return n === undefined ? "—" : n.toLocaleString("pl-PL");
+  return n === undefined ? "—" : n.toLocaleString(locale());
 }
 
 // ---- Bifröst: rejestracja agentów tokenem ----
@@ -438,7 +515,8 @@ async function downloadFile(method: string, path: string, body: unknown, fallbac
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, data.error ?? "error", data.message ?? `błąd HTTP ${res.status}`);
+    const code = data.error ?? "error";
+    throw new ApiError(res.status, code, errorMessage(code, data.message ?? i18n.t("httpError", { status: res.status }), data.message_en));
   }
   const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallback;
   const url = URL.createObjectURL(await res.blob());
@@ -541,7 +619,7 @@ export interface AgentGroup {
 }
 
 export const groupsApi = {
-  list: () => request<{ groups: AgentGroup[] }>("GET", "/api/v1/groups"),
+  list: () => request<{ groups: AgentGroup[] }>("GET", "/api/v1/groups").then((r) => ({ groups: r.groups.map(localGroup) })),
   create: (g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
     request<{ group: AgentGroup }>("POST", "/api/v1/groups", g),
   update: (id: number, g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
@@ -551,11 +629,11 @@ export const groupsApi = {
     request<{ group: AgentGroup }>("PUT", `/api/v1/agents/${encodeURIComponent(agentId)}/group`, { group_id: groupId }),
 };
 
-export const configStateLabels: Record<string, { label: string; color: string; hint: string }> = {
-  applied: { label: "aktualna", color: "green", hint: "agent stosuje bieżącą konfigurację grupy" },
-  pending: { label: "oczekuje", color: "yellow", hint: "agent pobierze nową konfigurację w ciągu ok. 5 minut" },
-  unknown: { label: "nieznana", color: "gray", hint: "agent starszy niż 0.5.0 albo jeszcze nie pobrał konfiguracji" },
-};
+export const configStateLabels: Record<string, { label: string; color: string; hint: string }> = translated(
+  "configState",
+  { applied: { color: "green" }, pending: { color: "yellow" }, unknown: { color: "gray" } },
+  ["label", "hint"],
+);
 
 // ---- Urd: archiwum NIS2 ----
 
@@ -739,29 +817,28 @@ export const archiveApi = {
   cancelChange: (id: number) => request<{ message: string }>("POST", `/api/v1/archive/policy/changes/${id}/cancel`),
 };
 
-export const weakeningLabels: Record<Weakening, string> = {
-  disable: "wyłączenie archiwizacji",
-  retention: "krótsza retencja",
-  groups: "wyłączenie grup agentów",
-  agents: "wyłączenie agentów",
-};
+export const weakeningLabels: Record<Weakening, string> = translatedStrings("weakening", ["disable", "retention", "groups", "agents"]);
 
-export const policyStatusLabels: Record<PolicyChangeStatus, { label: string; color: string }> = {
-  pending: { label: "oczekuje", color: "yellow" },
-  scheduled: { label: "zaplanowana", color: "orange" },
-  applied: { label: "obowiązuje / obowiązywała", color: "green" },
-  rejected: { label: "odrzucona", color: "red" },
-  cancelled: { label: "anulowana", color: "gray" },
-  superseded: { label: "zastąpiona", color: "gray" },
-};
+export const policyStatusLabels: Record<PolicyChangeStatus, { label: string; color: string }> = translated(
+  "policyStatus",
+  {
+    pending: { color: "yellow" },
+    scheduled: { color: "orange" },
+    applied: { color: "green" },
+    rejected: { color: "red" },
+    cancelled: { color: "gray" },
+    superseded: { color: "gray" },
+  },
+  ["label"],
+);
 
-export const unarchivedReasonLabels: Record<UnarchivedSource["reason"], string> = {
-  disabled: "archiwum wyłączone",
-  agent: "agent wyłączony",
-  group: "grupa wyłączona",
-  group_pending: "grupa wyłączona – po karencji (do tego czasu archiwizowany)",
-  prefix: "konfiguracja serwera",
-};
+export const unarchivedReasonLabels: Record<UnarchivedSource["reason"], string> = translatedStrings("unarchived", [
+  "disabled",
+  "agent",
+  "group",
+  "group_pending",
+  "prefix",
+]);
 
 export function formatDuration(s: number): string {
   if (s >= 86400 && s % 86400 === 0) return `${s / 86400} d`;
@@ -769,38 +846,22 @@ export function formatDuration(s: number): string {
   return `${Math.round(s / 60)} min`;
 }
 
-export const complianceLabels: Record<Compliance, { label: string; color: string; hint: string }> = {
-  ok: { label: "zgodne", color: "green", hint: "Archiwizator działa, ostatnia weryfikacja integralności nie wykryła zmian." },
-  problems: {
-    label: "NIEZGODNOŚCI",
-    color: "red",
-    hint: "Ostatnia weryfikacja wykryła zmienione, brakujące lub obce dane w archiwum – sprawdź listę problemów.",
+export const complianceLabels: Record<Compliance, { label: string; color: string; hint: string }> = translated(
+  "compliance",
+  {
+    ok: { color: "green" },
+    problems: { color: "red" },
+    archiver_down: { color: "red" },
+    disk_full: { color: "red" },
+    disabled: { color: "red" },
+    policy_scheduled: { color: "orange" },
+    disk_low: { color: "orange" },
+    stale: { color: "orange" },
+    never_verified: { color: "blue" },
+    not_configured: { color: "gray" },
   },
-  archiver_down: {
-    label: "archiwizator nie działa",
-    color: "red",
-    hint: "Brak sygnału od archiwizatora od ponad 3 minut. Paczki czekają w kolejce, a po jej zapełnieniu serwer wstrzyma przyjmowanie.",
-  },
-  disk_full: {
-    label: "archiwizacja wstrzymana – brak miejsca",
-    color: "red",
-    hint: "Na dysku archiwum zostało za mało miejsca. Nowe paczki czekają w kolejce; po jej zapełnieniu serwer wstrzyma przyjmowanie zdarzeń. Zwolnij lub powiększ dysk archiwum.",
-  },
-  disabled: {
-    label: "archiwizacja WYŁĄCZONA",
-    color: "red",
-    hint: "Polityka archiwum wyłączyła zapis nowych paczek. Dane już zarchiwizowane zostają do końca retencji. Zmiana – zakładka Polityka.",
-  },
-  policy_scheduled: {
-    label: "zaplanowane osłabienie polityki",
-    color: "orange",
-    hint: "Zlecono zmianę osłabiającą ochronę archiwum (wyłączenie, krótszą retencję albo wyłączenie źródeł). Wejdzie w życie po karencji – do tego czasu można ją anulować w zakładce Polityka.",
-  },
-  disk_low: { label: "mało miejsca na dysku", color: "orange", hint: "Na dysku archiwum zostało mniej niż 15% miejsca." },
-  stale: { label: "weryfikacja nieaktualna", color: "orange", hint: "Weryfikacja nie przeszła w zaplanowanym czasie." },
-  never_verified: { label: "czeka na weryfikację", color: "blue", hint: "Archiwizator działa; pierwsza weryfikacja ok. 2 min po starcie." },
-  not_configured: { label: "nie skonfigurowane", color: "gray", hint: "Archiwizator (siem-archiver) jeszcze nie działał." },
-};
+  ["label", "hint"],
+);
 
 export function formatBytes(n?: number): string {
   if (n === undefined) return "—";
@@ -811,7 +872,7 @@ export function formatBytes(n?: number): string {
     v /= 1024;
     i++;
   }
-  return `${v.toLocaleString("pl-PL", { maximumFractionDigits: i ? 1 : 0 })} ${units[i]}`;
+  return `${v.toLocaleString(locale(), { maximumFractionDigits: i ? 1 : 0 })} ${units[i]}`;
 }
 
 export type ExportStatus = "pending" | "running" | "done" | "failed" | "expired";
@@ -912,27 +973,24 @@ export interface IncidentRef {
   status: IncidentStatus;
 }
 
-export const incidentSeverityLabels: Record<IncidentSeverity, { label: string; color: string }> = {
-  low: { label: "niska", color: "gray" },
-  medium: { label: "średnia", color: "yellow" },
-  high: { label: "wysoka", color: "orange" },
-  critical: { label: "krytyczna", color: "red" },
+// Kolory wag i statusów; nazwy – w tłumaczeniach (incidents: severity.*, status.*).
+export const incidentSeverityColors: Record<IncidentSeverity, string> = {
+  low: "gray",
+  medium: "yellow",
+  high: "orange",
+  critical: "red",
 };
 
-export const incidentStatusLabels: Record<IncidentStatus, { label: string; color: string }> = {
-  open: { label: "otwarty", color: "red" },
-  investigating: { label: "analiza", color: "orange" },
-  contained: { label: "opanowany", color: "yellow" },
-  resolved: { label: "rozwiązany", color: "teal" },
-  closed: { label: "zamknięty", color: "gray" },
+export const incidentStatusColors: Record<IncidentStatus, string> = {
+  open: "red",
+  investigating: "orange",
+  contained: "yellow",
+  resolved: "teal",
+  closed: "gray",
 };
 
-export const reportKindLabels: Record<ReportKind, string> = {
-  early_warning: "Wczesne ostrzeżenie (24 h)",
-  notification: "Zgłoszenie incydentu (72 h)",
-  intermediate: "Sprawozdanie pośrednie (na wezwanie)",
-  final: "Sprawozdanie końcowe (miesiąc)",
-};
+// Rodzaje zgłoszeń do CSIRT w kolejności (nazwy: incidents: report.*).
+export const reportKinds: ReportKind[] = ["early_warning", "notification", "intermediate", "final"];
 
 export const incidentsApi = {
   list: (scope: string) =>
@@ -955,11 +1013,17 @@ export const incidentsApi = {
     request<{ incident: Incident }>("PATCH", `/api/v1/incidents/${id}`, patch),
   note: (id: number, text: string) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/notes`, { text }),
   // Wpis o paczce dowodowej – działa też w zamkniętym incydencie.
-  evidence: (id: number, text: string) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/evidence`, { text }),
+  evidence: (id: number, e: { text: string; export_id: number; from: string; to: string; agents: number }) =>
+    request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/evidence`, e),
   addAlerts: (id: number, alert_ids: number[]) => request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/alerts`, { alert_ids }),
   removeAlert: (id: number, alertId: number) =>
     request<{ ok: boolean }>("POST", `/api/v1/incidents/${id}/alerts/${alertId}/remove`, {}),
-  draft: (id: number, kind: ReportKind) => request<{ content: string }>("GET", `/api/v1/incidents/${id}/reports/${kind}/draft`),
+  // lang: język szkicu (domyślnie język systemu – krajowy CSIRT zwykle oczekuje polskiego).
+  draft: (id: number, kind: ReportKind, lang?: string) =>
+    request<{ content: string; language: string }>(
+      "GET",
+      `/api/v1/incidents/${id}/reports/${kind}/draft${lang ? `?lang=${encodeURIComponent(lang)}` : ""}`,
+    ),
   saveReport: (id: number, kind: ReportKind, content: string) =>
     request<{ ok: boolean }>("PUT", `/api/v1/incidents/${id}/reports/${kind}`, { content }),
   submitReport: (id: number, kind: ReportKind, content: string, reference: string, submitted_at?: string) =>
@@ -973,13 +1037,11 @@ export const exportsApi = {
   downloadUrl: (id: number) => `/api/v1/archive/exports/${id}/download`,
 };
 
-export const exportStatusLabels: Record<ExportStatus, { label: string; color: string }> = {
-  pending: { label: "w kolejce", color: "blue" },
-  running: { label: "w przygotowaniu", color: "blue" },
-  done: { label: "gotowy", color: "green" },
-  failed: { label: "nieudany", color: "red" },
-  expired: { label: "usunięty po terminie", color: "gray" },
-};
+export const exportStatusLabels: Record<ExportStatus, { label: string; color: string }> = translated(
+  "exportStatus",
+  { pending: { color: "blue" }, running: { color: "blue" }, done: { color: "green" }, failed: { color: "red" }, expired: { color: "gray" } },
+  ["label"],
+);
 
 export type ReplayStatus = "pending" | "running" | "done" | "failed";
 
@@ -1006,12 +1068,11 @@ export const replaysApi = {
     request<{ replay: ArchiveReplay }>("POST", "/api/v1/archive/replays", r),
 };
 
-export const replayStatusLabels: Record<ReplayStatus, { label: string; color: string }> = {
-  pending: { label: "w kolejce", color: "blue" },
-  running: { label: "w toku", color: "blue" },
-  done: { label: "zakończone", color: "green" },
-  failed: { label: "nieudane", color: "red" },
-};
+export const replayStatusLabels: Record<ReplayStatus, { label: string; color: string }> = translated(
+  "replayStatus",
+  { pending: { color: "blue" }, running: { color: "blue" }, done: { color: "green" }, failed: { color: "red" } },
+  ["label"],
+);
 
 // ---- Powiadomienia (kanały: Discord, webhook) ----
 
@@ -1075,12 +1136,13 @@ export const notifyApi = {
   sendAnchor: () => request<{ message: string }>("POST", "/api/v1/notify/anchor"),
 };
 
-export const notifyEventLabels: Record<string, string> = {
-  alert: "alerty detekcji (Gjallarhorn)",
-  incident: "incydenty: poważne (NIS2) i terminy zgłoszeń",
-  health: "alerty zdrowia systemu",
-  anchor: "kotwica archiwum (codziennie)",
-  test: "test",
+export const notifyEventLabels: Record<string, string> = translatedStrings("notifyEvent", ["alert", "incident", "health", "anchor", "test"]);
+
+// Język systemu: powiadomienia, kotwica archiwum i domyślny język szkiców
+// zgłoszeń NIS2 (panel każde konto ma we własnym języku).
+export const settingsApi = {
+  language: () => request<{ language: string; supported: string[]; editable: boolean }>("GET", "/api/v1/settings/language"),
+  setLanguage: (language: string) => request<{ language: string }>("PUT", "/api/v1/settings/language", { language }),
 };
 
 // ---- Gjallarhorn: alerty i reguły ----
@@ -1110,6 +1172,9 @@ export interface Alert {
   first_event_id: string;
   summary: string;
   instructions: string;
+  // Tytuł, podsumowanie i instrukcja w innych językach (alerty sprzed
+  // wersji z tłumaczeniami ich nie mają).
+  i18n?: Record<string, { title?: string; summary?: string; instructions?: string }>;
   closed_at?: string;
   closed_by?: string;
   close_reason?: string;
@@ -1175,12 +1240,50 @@ export interface RuleInfo {
   group_by: string[];
   suppress_s: number;
   instructions: string;
+  i18n?: Record<string, RuleTextI18n>;
   threshold?: { count: number; window_s: number; distinct?: string };
   loaded_at: string;
   open_alerts: number;
   file_enabled: boolean;
   version: number;
   override?: { enabled: boolean; trial?: boolean; reason: string; changed_by: string; changed_at: string };
+}
+
+// Tłumaczenie reguły (vardr.i18n w pliku reguły).
+export interface RuleTextI18n {
+  title?: string;
+  description?: string;
+  instructions?: string;
+}
+
+// Teksty w języku konta. Bazowe (polskie) pola zostają, gdy reguła albo
+// alert nie ma tłumaczenia (np. reguły SigmaHQ – są po angielsku).
+function translationOf<T>(i18n?: Record<string, T>): T | undefined {
+  const lang = locale();
+  return lang === "pl" ? undefined : i18n?.[lang];
+}
+
+export function ruleText(r: { title: string; description?: string; instructions?: string; i18n?: Record<string, RuleTextI18n> }) {
+  const x = translationOf(r.i18n);
+  return {
+    title: x?.title || r.title,
+    description: x?.description || r.description || "",
+    // Tłumaczenie bez instrukcji – reguła jej nie ma (nie pokazuj polskiej).
+    instructions: x ? (x.instructions ?? "") : (r.instructions ?? ""),
+    translated: !!x,
+  };
+}
+
+// Alert bez tłumaczenia (sprzed aktualizacji): tytuł z reguły, a instrukcję
+// panel składa z szablonu reguły (pusta instrukcja = renderuj szablon).
+export function alertText(a: Alert, rule?: RuleInfo | { title: string; i18n?: Record<string, RuleTextI18n> }) {
+  const x = translationOf(a.i18n);
+  if (x) return { title: x.title || a.rule_title, summary: x.summary || a.summary, instructions: x.instructions ?? "" };
+  if (locale() !== "pl" && rule) {
+    const rt = ruleText(rule);
+    if (rt.translated) return { title: rt.title, summary: a.summary, instructions: "" };
+  }
+  return { title: a.rule_title, summary: a.summary, instructions: a.instructions };
 }
 
 // Wynik reguły w trybie próbnym (trafienia bez alertów, od początku próby).
@@ -1223,15 +1326,17 @@ export const rulesApi = {
     request<{
       ok: boolean;
       error?: string;
+      error_en?: string;
       result?: RuleTestResult;
       sql?: string;
       attack_warnings?: string[];
+      attack_warnings_en?: string[];
       rule?: { id: string; title: string; level: AlertLevel; group_by: string[]; suppress_s: number; mode: string;
         threshold?: { count: number; window_s: number; distinct?: string } };
     }>("POST", "/api/v1/rules/test", { source, hours }),
   versions: (id: string) => request<{ versions: RuleVersion[] }>("GET", `/api/v1/rules/${encodeURIComponent(id)}/versions`),
   setEnabled: (id: string, enabled: boolean | null, reason: string, password?: string, trial = false) =>
-    request<{ enabled: boolean; message: string }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/enabled`, {
+    request<{ enabled: boolean; trial: boolean; message: string }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/enabled`, {
       enabled,
       trial,
       reason,
@@ -1315,25 +1420,29 @@ export const alertsApi = {
   rules: () =>
     request<{
       rules: RuleInfo[];
-      errors: { file: string; error: string; seen_at: string }[];
+      errors: { file: string; error: string; error_en?: string; seen_at: string }[];
       configured: boolean;
       attributions?: Record<string, RuleAttribution>;
     }>("GET", "/api/v1/rules"),
 };
 
-export const levelLabels: Record<AlertLevel, { label: string; color: string }> = {
-  critical: { label: "krytyczny", color: "red" },
-  high: { label: "wysoki", color: "orange" },
-  medium: { label: "średni", color: "yellow" },
-  low: { label: "niski", color: "blue" },
-  informational: { label: "informacja", color: "gray" },
-};
+export const levelLabels: Record<AlertLevel, { label: string; color: string }> = translated(
+  "level",
+  {
+    critical: { color: "red" },
+    high: { color: "orange" },
+    medium: { color: "yellow" },
+    low: { color: "blue" },
+    informational: { color: "gray" },
+  },
+  ["label"],
+);
 
-export const alertStatusLabels: Record<AlertStatus, { label: string; color: string }> = {
-  open: { label: "nowy", color: "red" },
-  acknowledged: { label: "w analizie", color: "yellow" },
-  closed: { label: "zamknięty", color: "gray" },
-};
+export const alertStatusLabels: Record<AlertStatus, { label: string; color: string }> = translated(
+  "alertStatus",
+  { open: { color: "red" }, acknowledged: { color: "yellow" }, closed: { color: "gray" } },
+  ["label"],
+);
 
 // ---- Himinbjörg: stan systemu ----
 
@@ -1343,6 +1452,12 @@ export interface SystemCheck {
   status: "ok" | "warn" | "crit" | "unknown" | "off";
   value: string;
   hint?: string;
+  // Do tłumaczenia: kontrola, grupa i wartość jako kod z parametrami
+  // (polskie group/name/value/hint – gdy panel nie zna kodu).
+  id?: string;
+  group_id?: string;
+  value_key?: string;
+  args?: Record<string, string | number>;
 }
 
 export interface SystemReport {
@@ -1375,6 +1490,7 @@ export interface DecoderInfo {
   updated_at?: string;
   updated_by?: string;
   error?: string;
+  error_en?: string;
 }
 
 export interface DecoderVersion {
@@ -1399,11 +1515,13 @@ export interface DecodeResult {
   event: Record<string, string>;
   fields: Record<string, string>;
   error?: string;
+  error_en?: string;
 }
 
 export interface DecoderTestResponse {
   ok: boolean;
   error?: string;
+  error_en?: string;
   decoder?: { id: string; title: string; dataset: string; priority: number };
   results?: DecodeResult[];
   summary?: Record<"total" | "candidate" | "other" | "generic" | "errors" | "no_pattern", number>;
@@ -1433,15 +1551,15 @@ export const decodersApi = {
   },
   versions: (id: string) => request<{ versions: DecoderVersion[] }>("GET", `/api/v1/decoders/${encodeURIComponent(id)}/versions`),
   save: (id: string, source: string, note: string) =>
-    request<{ ok: boolean; revision: number; message: string }>("PUT", `/api/v1/decoders/${encodeURIComponent(id)}`, { source, note }),
+    request<{ ok: boolean; revision: number; message: string; delivery: string }>("PUT", `/api/v1/decoders/${encodeURIComponent(id)}`, { source, note }),
   setEnabled: (id: string, enabled: boolean, reason: string, password?: string) =>
-    request<{ ok: boolean; message: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/enabled`, {
+    request<{ ok: boolean; message: string; delivery: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/enabled`, {
       enabled,
       reason,
       password: password ?? "",
     }),
   revert: (id: string, reason: string, password?: string) =>
-    request<{ ok: boolean; message: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/revert`, {
+    request<{ ok: boolean; message: string; delivery: string }>("POST", `/api/v1/decoders/${encodeURIComponent(id)}/revert`, {
       reason,
       password: password ?? "",
     }),
@@ -1546,12 +1664,12 @@ export const identitiesApi = {
       `/api/v1/identities/resolve?user=${encodeURIComponent(user)}&domain=${encodeURIComponent(domain)}&host=${encodeURIComponent(host)}`,
     ),
   setDomains: (domains: string[]) =>
-    request<{ domains: string[]; message: string }>("PUT", "/api/v1/identities/domains", { domains }),
+    request<{ domains: string[]; message: string; delivery: string }>("PUT", "/api/v1/identities/domains", { domains }),
   setShared: (accounts: string[]) =>
-    request<{ accounts: string[]; message: string }>("PUT", "/api/v1/identities/shared", { accounts }),
+    request<{ accounts: string[]; message: string; delivery: string }>("PUT", "/api/v1/identities/shared", { accounts }),
   setAlias: (alias: string, identity: string, note: string) =>
-    request<{ message: string }>("POST", "/api/v1/identities/aliases", { alias, identity, note }),
-  deleteAlias: (alias: string) => request<{ message: string }>("POST", "/api/v1/identities/aliases/delete", { alias }),
+    request<{ message: string; delivery: string }>("POST", "/api/v1/identities/aliases", { alias, identity, note }),
+  deleteAlias: (alias: string) => request<{ message: string; delivery: string }>("POST", "/api/v1/identities/aliases/delete", { alias }),
   domainsSeen: () =>
     request<{ domains: { domain: string; events: number; covered: boolean }[] }>("GET", "/api/v1/identities/domains-seen"),
 };

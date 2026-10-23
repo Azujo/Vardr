@@ -30,12 +30,12 @@ type grafanaPayload struct {
 func (s *Service) GrafanaHandler(token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "tylko POST", http.StatusMethodNotAllowed)
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
 		}
 		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-			http.Error(w, "brak uprawnień", http.StatusUnauthorized)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		var p grafanaPayload
@@ -43,10 +43,10 @@ func (s *Service) GrafanaHandler(token string) http.Handler {
 			http.Error(w, "niepoprawne dane", http.StatusBadRequest)
 			return
 		}
-		for _, m := range grafanaMessages(p, s.now()) {
+		for _, m := range grafanaMessages(p, s.now(), s.Language(r.Context())) {
 			if _, err := s.Send(r.Context(), m); err != nil {
 				// Grafana ponowi wysyłkę przy kolejnej ocenie reguły.
-				http.Error(w, "wysyłka nieudana", http.StatusBadGateway)
+				http.Error(w, "sending failed", http.StatusBadGateway)
 				return
 			}
 		}
@@ -55,23 +55,31 @@ func (s *Service) GrafanaHandler(token string) http.Handler {
 }
 
 // grafanaMessages: jedna wiadomość na alert (najwyżej 10 w powiadomieniu).
-func grafanaMessages(p grafanaPayload, now time.Time) []Message {
+// Opisy reguł Grafany: adnotacje summary/description, po angielsku –
+// summary_en/description_en (gdy są).
+func grafanaMessages(p grafanaPayload, now time.Time, lang string) []Message {
 	var out []Message
 	for i, a := range p.Alerts {
 		if i == 10 {
 			out = append(out, Message{Event: EventHealth, Severity: SevWarning, At: now,
-				Title: fmt.Sprintf("… i %d kolejnych alertów – szczegóły w Grafanie", len(p.Alerts)-10)})
+				Title: fmt.Sprintf(pick(lang, "… i %d kolejnych alertów – szczegóły w Grafanie", "… and %d more alerts – details in Grafana"), len(p.Alerts)-10)})
 			break
 		}
-		summary := a.Annotations["summary"]
+		annotation := func(k string) string {
+			if v := a.Annotations[k+"_"+lang]; lang != "pl" && v != "" {
+				return v
+			}
+			return a.Annotations[k]
+		}
+		summary := annotation("summary")
 		if summary == "" {
 			summary = a.Labels["alertname"]
 		}
-		m := Message{Event: EventHealth, At: now, Text: a.Annotations["description"]}
+		m := Message{Event: EventHealth, At: now, Text: annotation("description")}
 		if a.Status == "resolved" {
-			m.Severity, m.Title = SevOK, "Rozwiązane: "+summary
+			m.Severity, m.Title = SevOK, pick(lang, "Rozwiązane: ", "Resolved: ")+summary
 			if !a.EndsAt.IsZero() {
-				m.Fields = append(m.Fields, Field{Name: "Koniec", Value: a.EndsAt.Local().Format("2006-01-02 15:04"), Inline: true})
+				m.Fields = append(m.Fields, Field{Name: pick(lang, "Koniec", "End"), Value: a.EndsAt.Local().Format("2006-01-02 15:04"), Inline: true})
 			}
 		} else {
 			m.Severity = SevWarning
@@ -81,10 +89,10 @@ func grafanaMessages(p grafanaPayload, now time.Time) []Message {
 			m.Title = summary
 		}
 		if !a.StartsAt.IsZero() {
-			m.Fields = append(m.Fields, Field{Name: "Początek", Value: a.StartsAt.Local().Format("2006-01-02 15:04"), Inline: true})
+			m.Fields = append(m.Fields, Field{Name: pick(lang, "Początek", "Start"), Value: a.StartsAt.Local().Format("2006-01-02 15:04"), Inline: true})
 		}
 		if sev := a.Labels["severity"]; sev != "" {
-			m.Fields = append(m.Fields, Field{Name: "Waga", Value: sev, Inline: true})
+			m.Fields = append(m.Fields, Field{Name: pick(lang, "Waga", "Severity"), Value: sev, Inline: true})
 		}
 		out = append(out, m)
 	}

@@ -81,7 +81,7 @@ type Dict struct {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "użycie: attackgen <enterprise-attack.json>")
+		fmt.Fprintln(os.Stderr, "usage: attackgen <enterprise-attack.json>")
 		os.Exit(2)
 	}
 	data, err := os.ReadFile(os.Args[1])
@@ -111,7 +111,7 @@ func main() {
 		}
 	}
 	if matrix == nil {
-		fmt.Fprintln(os.Stderr, "brak macierzy w pakiecie")
+		fmt.Fprintln(os.Stderr, "no matrix in the bundle")
 		os.Exit(1)
 	}
 	for _, tr := range matrix.TacticRefs {

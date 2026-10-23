@@ -3,7 +3,9 @@
 // Logika kreatora dekoderów (bez interfejsu): rozpoznanie rodzaju treści,
 // rozbiór par klucz=wartość i JSON, budowa wyrażenia regularnego z
 // zaznaczonych fragmentów, rozpoznanie formatu czasu i złożenie definicji
-// YAML w formacie internal/decode (parser regex, kv albo json).
+// YAML w formacie internal/decode (parser regex, kv albo json). Teksty –
+// decoders: wizard.* (etykiety, formaty czasu, błędy).
+import i18n from "./i18n";
 
 export type LabelKey =
   | "time"
@@ -48,6 +50,12 @@ export const LABELS: LabelDef[] = [
   { key: "any", label: "dowolne", color: "gray", hint: "fragment zmienny między wiadomościami, bez zapisu (np. protokół, numer sesji)" },
   { key: "match", label: "rozpoznawanie", color: "dark", hint: "stały fragment, po którym dekoder rozpozna te wiadomości" },
 ];
+
+// Nazwy i opisy etykiet w bieżącym języku (decoders: label.<klucz>, labelHint.<klucz>).
+for (const l of LABELS) {
+  Object.defineProperty(l, "label", { enumerable: true, get: () => i18n.t(`decoders:label.${l.key}`) });
+  if (l.hint !== undefined) Object.defineProperty(l, "hint", { enumerable: true, get: () => i18n.t(`decoders:labelHint.${l.key}`) });
+}
 
 export const labelDef = (k: LabelKey) => LABELS.find((l) => l.key === k)!;
 
@@ -134,12 +142,12 @@ export const LAYOUTS: Layout[] = [
     re: String.raw`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}`,
     test: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4}$/,
   },
-  { value: "2006-01-02T15:04:05", label: "2006-01-02T15:04:05 (bez strefy)", re: String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, test: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/ },
+  { value: "2006-01-02T15:04:05", label: "2006-01-02T15:04:05", re: String.raw`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`, test: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/ },
   { value: "2006-01-02 15:04:05", label: "2006-01-02 15:04:05", re: String.raw`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`, test: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/ },
   { value: "2006/01/02 15:04:05", label: "2006/01/02 15:04:05", re: String.raw`\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}`, test: /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/ },
   { value: "02.01.2006 15:04:05", label: "02.01.2006 15:04:05", re: String.raw`\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}`, test: /^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/ },
-  { value: "02/01/2006 15:04:05", label: "02/01/2006 15:04:05 (dzień/miesiąc)", re: String.raw`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`, test: /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/ },
-  { value: "01/02/2006 15:04:05", label: "01/02/2006 15:04:05 (miesiąc/dzień)", re: String.raw`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`, test: /^$/ },
+  { value: "02/01/2006 15:04:05", label: "02/01/2006 15:04:05", re: String.raw`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`, test: /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/ },
+  { value: "01/02/2006 15:04:05", label: "01/02/2006 15:04:05", re: String.raw`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`, test: /^$/ },
   { value: "Jan _2 2006 15:04:05", label: "Oct  9 2026 13:24:55", re: String.raw`[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}`, test: /^[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}$/ },
   {
     value: "Jan/02/2006 15:04:05",
@@ -149,7 +157,7 @@ export const LAYOUTS: Layout[] = [
   },
   {
     value: "Jan _2 15:04:05",
-    label: "Oct  9 13:24:55 (bez roku)",
+    label: "Oct  9 13:24:55",
     re: String.raw`[A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}:\d{2}`,
     test: /^[A-Z][a-z]{2} +\d{1,2} \d{2}:\d{2}:\d{2}$/,
     noYear: true,
@@ -157,6 +165,25 @@ export const LAYOUTS: Layout[] = [
   { value: "unix", label: "sekundy od 1970", re: String.raw`\d{10}`, test: /^\d{10}$/ },
   { value: "unix_ms", label: "milisekundy od 1970", re: String.raw`\d{13}`, test: /^\d{13}$/ },
 ];
+
+// Dopiski do nazw formatów w bieżącym języku (decoders: layout.<klucz>).
+const layoutNotes: Record<string, string> = {
+  "2006-01-02T15:04:05": "noZone",
+  "02/01/2006 15:04:05": "dayMonth",
+  "01/02/2006 15:04:05": "monthDay",
+  "Jan _2 15:04:05": "noYear",
+  unix: "unix",
+  unix_ms: "unixMs",
+};
+for (const l of LAYOUTS) {
+  const key = layoutNotes[l.value];
+  if (!key) continue;
+  const base = l.label;
+  Object.defineProperty(l, "label", {
+    enumerable: true,
+    get: () => (key.startsWith("unix") ? i18n.t(`decoders:layout.${key}`) : `${base} (${i18n.t(`decoders:layout.${key}`)})`),
+  });
+}
 
 export function guessLayout(v: string): Layout | undefined {
   return LAYOUTS.find((l) => l.test.test(v.trim()));
@@ -222,7 +249,7 @@ export interface BuiltPattern {
 // z ostatnich słów przed polem.
 export function buildRegex(msg: string, spans: Span[], layouts: Record<string, Layout | undefined>): BuiltPattern {
   const fields = spans.filter((s) => s.key !== "match").sort((a, b) => a.start - b.start);
-  if (fields.length === 0) return { regex: "", groups: [], error: "zaznacz w wiadomości co najmniej jedno pole" };
+  if (fields.length === 0) return { regex: "", groups: [], error: i18n.t("decoders:wizard.err.noField") };
   let re = "^";
   let pos = 0;
   const groups: string[] = [];
@@ -320,7 +347,7 @@ export function buildYAML(st: WizardState): { yaml: string; error?: string } {
   L.push(`id: ${st.id}`);
   L.push(`title: ${q(st.title)}`);
   L.push("description: |");
-  L.push("  Utworzony kreatorem dekoderów w panelu (zaznaczenie pól w przykładowych wiadomościach).");
+  L.push(`  ${i18n.t("decoders:wizard.yamlDescription")}`);
   L.push("version: 1");
   L.push(`priority: ${st.priority}`);
   L.push(`dataset: ${st.dataset}`);
@@ -328,7 +355,7 @@ export function buildYAML(st: WizardState): { yaml: string; error?: string } {
   const built = st.mode === "regex" ? patternRegexes(st) : [];
   const bad = built.find((b) => b.error);
   if (bad) return { yaml: "", error: bad.error };
-  if (st.mode === "regex" && built.length === 0) return { yaml: "", error: "zaznacz pola w co najmniej jednej wiadomości" };
+  if (st.mode === "regex" && built.length === 0) return { yaml: "", error: i18n.t("decoders:wizard.err.noPattern") };
 
   // match: program/host/nadawca – wszystkie naraz; fragmenty „rozpoznawanie”
   // i wzorce – osobno dla każdego rodzaju wiadomości (any: którykolwiek),
@@ -349,7 +376,7 @@ export function buildYAML(st: WizardState): { yaml: string; error?: string } {
     if (withFrags > 0 && withFrags < alts.length)
       return {
         yaml: "",
-        error: "rozpoznawanie: oznacz stały fragment („rozpoznawanie”) w każdym wzorcu albo włącz rozpoznawanie po wzorcach",
+        error: i18n.t("decoders:wizard.err.matchEach"),
       };
     if (withFrags === 1 && !st.matchByPatterns) m.push(`  contains: ${alts[0][0].slice("contains: ".length)}`);
     else if (withFrags > 0) {
@@ -357,7 +384,7 @@ export function buildYAML(st: WizardState): { yaml: string; error?: string } {
       for (const a of alts) m.push(`    - {${a.join(", ")}}`);
     }
   } else if (st.matchContains.length) m.push(`  contains: [${st.matchContains.map(q).join(", ")}]`);
-  if (m.length === 0) return { yaml: "", error: "ustaw, po czym rozpoznać te wiadomości (program, host, nadawca albo stały fragment)" };
+  if (m.length === 0) return { yaml: "", error: i18n.t("decoders:wizard.err.noMatch") };
   L.push("match:", ...m);
 
   const fields = new Map<string, string[]>(); // pole zdarzenia → źródła
@@ -403,18 +430,18 @@ export function buildYAML(st: WizardState): { yaml: string; error?: string } {
   }
   if (outcomeSource) {
     if (st.outcomeSuccess.length === 0 && st.outcomeFailure.length === 0)
-      return { yaml: "", error: "wynik: podaj, które wartości oznaczają udane, a które nieudane" };
+      return { yaml: "", error: i18n.t("decoders:wizard.err.outcome") };
     L.push("outcome:", `  field: ${outcomeSource}`);
     if (st.outcomeFailure.length) L.push(`  failure: [${st.outcomeFailure.map(q).join(", ")}]`);
     if (st.outcomeSuccess.length) L.push(`  success: [${st.outcomeSuccess.map(q).join(", ")}]`);
   }
   if (timeSources.length) {
     const lay = LAYOUTS.find((l) => l.value === st.timeLayout);
-    if (!st.timeLayout) return { yaml: "", error: "czas: wybierz format" };
-    if (lay?.noYear) return { yaml: "", error: "czas bez roku – usuń etykietę czasu (wystarczy czas z nagłówka) albo zaznacz też rok" };
+    if (!st.timeLayout) return { yaml: "", error: i18n.t("decoders:wizard.err.timeFormat") };
+    if (lay?.noYear) return { yaml: "", error: i18n.t("decoders:wizard.err.noYear") };
     L.push("time:", `  fields: [${timeSources.join(", ")}]`, `  layout: ${q(st.timeLayout)}`);
     if (st.timeZone) {
-      if (!/^[A-Za-z]+(\/[A-Za-z0-9_+-]+)*$|^UTC$/.test(st.timeZone)) return { yaml: "", error: "strefa czasu: np. Europe/Warsaw albo UTC" };
+      if (!/^[A-Za-z]+(\/[A-Za-z0-9_+-]+)*$|^UTC$/.test(st.timeZone)) return { yaml: "", error: i18n.t("decoders:wizard.err.zone") };
       L.push(`  timezone: ${q(st.timeZone)}`);
     }
   }

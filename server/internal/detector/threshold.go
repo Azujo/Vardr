@@ -84,7 +84,7 @@ type keyState struct {
 	fields  map[string]string
 	seen    time.Time // zegar ścienny – do usuwania nieaktywnych kluczy
 	// Opis i instrukcja ostatniego alertu klucza (szybka ścieżka).
-	summary, instr string
+	texts *thTexts
 }
 
 type ruleState struct {
@@ -286,24 +286,31 @@ func (t *Thresholds) observe(r *detect.Rule, ev detect.Event, base alerts.Hit) (
 	i := ks.insert(e)
 	t.total++
 	var hits []alerts.Hit
-	if ks.summary != "" && extendsAlert(ks.entries, i, time.Duration(r.Vardr.Suppress)) {
+	if ks.texts != nil && extendsAlert(ks.entries, i, time.Duration(r.Vardr.Suppress)) {
 		e.emitted = true
-		hits = []alerts.Hit{hitOf(base, e, ks.summary, ks.instr)}
+		hits = []alerts.Hit{hitOf(base, e, *ks.texts)}
 	} else {
 		hits = emit(r, ev, base, ks.entries, nil)
 		if len(hits) > 0 {
-			ks.summary, ks.instr = hits[len(hits)-1].Summary, hits[len(hits)-1].Instructions
+			last := hits[len(hits)-1]
+			ks.texts = &thTexts{summary: last.Summary, instr: last.Instructions, i18n: last.I18n}
 		}
 	}
 	t.total -= ks.prune(keep(r))
 	return &o, hits
 }
 
-func hitOf(base alerts.Hit, e *entry, summary, instr string) alerts.Hit {
+// thTexts: opis i instrukcja alertu progowego (i ich tłumaczenia).
+type thTexts struct {
+	summary, instr string
+	i18n           map[string]alerts.AlertText
+}
+
+func hitOf(base alerts.Hit, e *entry, tx thTexts) alerts.Hit {
 	h := base
 	h.EventID, h.EventTime, h.AgentID, h.HostName, h.UserName, h.SourceIP =
 		e.EventID, e.EventTime, e.AgentID, e.HostName, e.UserName, e.SourceIP
-	h.Summary, h.Instructions = summary, instr
+	h.Summary, h.Instructions, h.I18n = tx.summary, tx.instr, tx.i18n
 	if e.Value != "" {
 		// Próg „różnych wartości” (np. password spraying): alert dotyczy wielu
 		// kont – konto pierwszego zdarzenia byłoby mylące (lista jest w opisie).
@@ -360,18 +367,23 @@ func emit(r *detect.Rule, ev detect.Event, base alerts.Hit, es []*entry, only ma
 				break
 			}
 		}
-		summary, instr := thresholdTexts(r, ev, win)
+		summary, instr := thresholdTexts("pl", r, ev, win)
+		tx := thTexts{summary: summary, instr: instr, i18n: texts(func(lang string) alerts.AlertText {
+			s, in := thresholdTexts(lang, r, ev, win)
+			return alerts.AlertText{Title: base.I18n[lang].Title, Summary: s, Instructions: in}
+		})}
 		for _, e := range fresh {
 			e.emitted = true
-			hits = append(hits, hitOf(base, e, summary, instr))
+			hits = append(hits, hitOf(base, e, tx))
 		}
 	}
 	return hits
 }
 
-// thresholdTexts: opis i instrukcja alertu progowego (zmienne {{count}},
-// {{window}} i {{values}} – lista różnych wartości pola Distinct).
-func thresholdTexts(r *detect.Rule, ev detect.Event, win []*entry) (string, string) {
+// thresholdTexts: opis i instrukcja alertu progowego w języku lang (zmienne
+// {{count}}, {{window}} i {{values}} – lista różnych wartości pola Distinct;
+// instrukcja bez tłumaczenia – pusta).
+func thresholdTexts(lang string, r *detect.Rule, ev detect.Event, win []*entry) (string, string) {
 	th := r.Vardr.Threshold
 	window := fmtWindow(time.Duration(th.Window))
 	var key []string
@@ -397,9 +409,10 @@ func thresholdTexts(r *detect.Rule, ev detect.Event, win []*entry) (string, stri
 			list = append(list[:10:10], fmt.Sprintf("… (+%d)", len(vals)-10))
 		}
 		extra["values"] = strings.Join(list, ", ")
-		s = fmt.Sprintf("próg: %d różnych %s w %s (%d zdarzeń)", len(vals), th.Distinct, window, len(win))
+		s = fmt.Sprintf(pick(lang, "próg: %d różnych %s w %s (%d zdarzeń)", "threshold: %d distinct %s in %s (%d events)"),
+			len(vals), th.Distinct, window, len(win))
 	} else {
-		s = fmt.Sprintf("próg: %d zdarzeń w %s", len(win), window)
+		s = fmt.Sprintf(pick(lang, "próg: %d zdarzeń w %s", "threshold: %d events in %s"), len(win), window)
 	}
 	if len(key) > 0 {
 		s += ", " + strings.Join(key, ", ")
@@ -407,7 +420,11 @@ func thresholdTexts(r *detect.Rule, ev detect.Event, win []*entry) (string, stri
 	if th.Distinct != "" {
 		s += "; " + th.Distinct + ": " + extra["values"]
 	}
-	return s, detect.RenderWith(r.Vardr.Instructions, ev, extra)
+	instr := r.Vardr.Instructions
+	if lang != "pl" {
+		instr = r.Vardr.I18n[lang].Instructions
+	}
+	return s, detect.RenderWith(instr, ev, extra)
 }
 
 // fmtWindow: czas okna po polsku („5 min”, „1 h”, „90 s”).

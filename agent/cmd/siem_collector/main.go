@@ -44,40 +44,40 @@ func loadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 	if c.Syslog.UDP == "" && c.Syslog.TCP == "" {
-		return nil, errors.New("syslog: podaj udp albo tcp (np. \":514\")")
+		return nil, errors.New("syslog: specify udp or tcp (e.g. \":514\")")
 	}
 	return c, nil
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "użycie: siem-collector enroll|run|version …")
+		fmt.Fprintln(os.Stderr, "usage: siem-collector enroll|run|version …")
 		os.Exit(2)
 	}
 	var err error
 	switch os.Args[1] {
 	case "enroll":
 		fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-		server := fs.String("server", "", "adres serwera (ingest), np. 192.168.88.98:8443")
-		token := fs.String("token", "", "token rejestracyjny z panelu (Bifröst)")
-		ca := fs.String("ca", "ca.crt", "certyfikat CA serwera")
-		panel := fs.String("panel", "", "adres panelu (domyślnie z adresu serwera)")
-		dir := fs.String("dir", ".", "katalog kolektora (certyfikaty, collector.yaml, stan)")
+		server := fs.String("server", "", "server (ingest) address, e.g. 192.168.88.98:8443")
+		token := fs.String("token", "", "enrollment token from the panel (Bifröst)")
+		ca := fs.String("ca", "ca.crt", "server CA certificate")
+		panel := fs.String("panel", "", "panel address (default from the server address)")
+		dir := fs.String("dir", ".", "collector directory (certificates, collector.yaml, state)")
 		_ = fs.Parse(os.Args[2:])
 		err = hostagent.Enroll(hostagent.EnrollOptions{Server: *server, Token: *token, CAFile: *ca, Panel: *panel, Dir: *dir,
 			OS: "kolektor syslog", Version: version, ConfigName: "collector.yaml", Config: configTemplate})
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		cfgPath := fs.String("config", "collector.yaml", "plik konfiguracji")
+		cfgPath := fs.String("config", "collector.yaml", "configuration file")
 		_ = fs.Parse(os.Args[2:])
 		err = run(*cfgPath)
 	case "version":
 		fmt.Println("siem-collector", version)
 	default:
-		err = fmt.Errorf("nieznane polecenie %q", os.Args[1])
+		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "błąd:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -124,7 +124,7 @@ func run(cfgPath string) error {
 		Sources: func(_ string, log *slog.Logger, _ *status.Tracker) ([]source.Source, error) {
 			src = &syslog.Source{Cfg: syslog.Config{UDP: cfg.Syslog.UDP, TCP: cfg.Syslog.TCP, MaxMessage: cfg.Syslog.MaxMessageKB << 10,
 				Allow: allow}, Log: log}
-			log.Info("kolektor: nasłuch", "udp", cfg.Syslog.UDP, "tcp", cfg.Syslog.TCP, "allow", cfg.Syslog.Allow)
+			log.Info("collector: listening", "udp", cfg.Syslog.UDP, "tcp", cfg.Syslog.TCP, "allow", cfg.Syslog.Allow)
 			return []source.Source{src}, nil
 		},
 		Every: func(log *slog.Logger) {

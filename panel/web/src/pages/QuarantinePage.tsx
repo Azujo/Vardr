@@ -31,19 +31,17 @@ import {
   type QuarantineGroup,
   type QuarantineJob,
 } from "../api";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 
-const jobStatus: Record<QuarantineJob["status"], { label: string; color: string }> = {
-  running: { label: "w toku", color: "blue" },
-  done: { label: "zakończone", color: "green" },
-  failed: { label: "błąd", color: "red" },
-};
+const jobColors: Record<QuarantineJob["status"], string> = { running: "blue", done: "green", failed: "red" };
 
 function supportedSource(s: string) {
   return s.startsWith("wineventlog:") || s.startsWith("syslog:") || s.startsWith("entra:");
 }
 
 function EntryRow({ e }: { e: QuarantineEntry }) {
+  const { t } = useTranslation("quarantine");
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -69,19 +67,19 @@ function EntryRow({ e }: { e: QuarantineEntry }) {
           {e.outcome ? (
             e.outcome.recovered ? (
               <Badge color="green" size="sm">
-                odzyskane (#{e.outcome.job_id})
+                {t("entry.recovered", { id: e.outcome.job_id })}
               </Badge>
             ) : (
               <Tooltip label={e.outcome.reason} multiline w={360}>
                 <Badge color="orange" size="sm">
-                  nadal błędne (#{e.outcome.job_id})
+                  {t("entry.stillFailed", { id: e.outcome.job_id })}
                 </Badge>
               </Tooltip>
             )
           ) : !e.supported ? (
-            <Tooltip label="Wpis odrzucony przy zapisie do ClickHouse albo ze ścieżki odtwarzania – nie da się go przetworzyć ponownie">
+            <Tooltip label={t("entry.unsupportedTip")}>
               <Badge color="gray" size="sm" variant="outline">
-                nie do przetworzenia
+                {t("entry.unsupported")}
               </Badge>
             </Tooltip>
           ) : null}
@@ -92,8 +90,8 @@ function EntryRow({ e }: { e: QuarantineEntry }) {
           <Table.Td colSpan={4}>
             <Text size="xs" c="dimmed">
               {e.event_id} · {formatBytes(e.raw_bytes)}
-              {e.truncated ? " · treść przycięta przez agenta" : ""}
-              {e.raw_bytes > e.raw.length ? " · podgląd: pierwsze 4000 znaków" : ""}
+              {e.truncated ? ` · ${t("entry.truncated")}` : ""}
+              {e.raw_bytes > e.raw.length ? ` · ${t("entry.preview")}` : ""}
             </Text>
             <Code block fz="xs" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {e.raw}
@@ -106,6 +104,7 @@ function EntryRow({ e }: { e: QuarantineEntry }) {
 }
 
 export default function QuarantinePage() {
+  const { t } = useTranslation("quarantine");
   const { can } = useAuth();
   const admin = can("quarantine", "write");
   const [hours, setHours] = useState("168");
@@ -156,7 +155,7 @@ export default function QuarantinePage() {
       const r = await quarantineApi.reprocess(confirm.params);
       notifications.show({
         color: "green",
-        message: `Zlecenie #${r.job.id}: ${r.job.total} wpisów${r.limited ? " (pierwsze 10 000 – zleć ponownie dla reszty)" : ""}`,
+        message: t("jobStarted", { id: r.job.id, count: r.job.total }) + (r.limited ? t("jobLimited") : ""),
       });
       setConfirm(null);
       setRunning(true);
@@ -171,47 +170,48 @@ export default function QuarantinePage() {
   return (
     <Stack>
       <div>
-        <Title order={2}>Kwarantanna</Title>
+        <Title order={2}>{t("title")}</Title>
         <Text c="dimmed" size="sm" maw={880}>
-          Zdarzenia, których nie udało się znormalizować (np. treść niepasująca do dekodera, uszkodzony XML) albo zapisać – z oryginałem
-          i powodem. Po poprawce dekodera (<Anchor component={Link} to="/decoders">Dekodery</Anchor>) albo programu można je przetworzyć
-          ponownie: odzyskane zdarzenia trafiają do bazy i detekcji jak nowe (z polem <Code>siem.quarantined_at</Code>), a wpisy nadal
-          błędne dostają aktualny powód. Archiwum NIS2 ma oryginały od początku – nic nie jest archiwizowane drugi raz.
+          {t("intro.0")}
+          <Anchor component={Link} to="/decoders">
+            {t("intro.1")}
+          </Anchor>
+          {t("intro.2")}
         </Text>
       </div>
       {error && <MAlert color="red">{error}</MAlert>}
       {!canReprocess && !error && (
-        <MAlert color="gray">Panel nie jest połączony z NATS – ponowne przetwarzanie niedostępne (podgląd działa).</MAlert>
+        <MAlert color="gray">{t("noNats")}</MAlert>
       )}
 
       <Group align="flex-end" gap="xs">
         <Select
-          label="Okres"
+          label={t("filter.period")}
           w={160}
           allowDeselect={false}
           value={hours}
           onChange={(v) => setHours(v ?? "168")}
           data={[
-            { value: "24", label: "ostatnie 24 h" },
-            { value: "168", label: "ostatnie 7 dni" },
-            { value: "720", label: "ostatnie 30 dni" },
-            { value: "2160", label: "ostatnie 90 dni" },
+            { value: "24", label: t("filter.h24") },
+            { value: "168", label: t("filter.d7") },
+            { value: "720", label: t("filter.d30") },
+            { value: "2160", label: t("filter.d90") },
           ]}
         />
-        <TextInput label="Źródło (początek)" placeholder="syslog:" w={180} value={source} onChange={(e) => setSource(e.currentTarget.value)} />
-        <TextInput label="Powód zawiera" w={220} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
-        <TextInput label="Agent" w={200} value={agent} onChange={(e) => setAgent(e.currentTarget.value)} />
+        <TextInput label={t("filter.source")} placeholder="syslog:" w={180} value={source} onChange={(e) => setSource(e.currentTarget.value)} />
+        <TextInput label={t("filter.reason")} w={220} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
+        <TextInput label={t("filter.agent")} w={200} value={agent} onChange={(e) => setAgent(e.currentTarget.value)} />
         <Button leftSection={<IconRefresh size={16} />} onClick={apply}>
-          Pokaż
+          {t("filter.show")}
         </Button>
         {admin && canReprocess && total > 0 && (
           <Button
             variant="light"
             leftSection={<IconRotateClockwise size={16} />}
             disabled={running}
-            onClick={() => setConfirm({ title: "wszystkie wpisy pasujące do filtra", params: applied })}
+            onClick={() => setConfirm({ title: t("confirm.allFiltered"), params: applied })}
           >
-            Przetwórz ponownie (filtr)
+            {t("reprocessFilter")}
           </Button>
         )}
       </Group>
@@ -219,7 +219,7 @@ export default function QuarantinePage() {
       {jobs.length > 0 && (
         <Stack gap={4}>
           <Text fw={600} size="sm">
-            Zlecenia
+            {t("jobs")}
           </Text>
           <Table verticalSpacing={4}>
             <Table.Tbody>
@@ -227,7 +227,7 @@ export default function QuarantinePage() {
                 <Table.Tr key={j.id}>
                   <Table.Td w={60}>#{j.id}</Table.Td>
                   <Table.Td w={140}>
-                    <Badge color={jobStatus[j.status].color}>{jobStatus[j.status].label}</Badge>
+                    <Badge color={jobColors[j.status]}>{t(`jobStatus.${j.status}`)}</Badge>
                   </Table.Td>
                   <Table.Td w={260}>
                     <Progress.Root size="lg">
@@ -237,9 +237,9 @@ export default function QuarantinePage() {
                   </Table.Td>
                   <Table.Td>
                     <Text size="xs">
-                      odzyskane {j.recovered} · nadal błędne {j.failed} · razem {j.total} — {j.created_by}, {formatDate(j.created_at)}
-                      {j.filter.source ? ` · źródło ${j.filter.source}` : ""}
-                      {j.filter.reason ? ` · powód „${j.filter.reason}”` : ""}
+                      {t("job", { recovered: j.recovered, failed: j.failed, total: j.total, by: j.created_by, date: formatDate(j.created_at) })}
+                      {j.filter.source ? ` · ${t("jobSource", { source: j.filter.source })}` : ""}
+                      {j.filter.reason ? ` · ${t("jobReason", { reason: j.filter.reason })}` : ""}
                       {j.error ? ` · ${j.error}` : ""}
                     </Text>
                   </Table.Td>
@@ -251,22 +251,22 @@ export default function QuarantinePage() {
       )}
 
       <Text fw={600} size="sm">
-        Grupy ({total} wpisów)
+        {t("groups", { count: total })}
       </Text>
       {groups.length === 0 ? (
         <Text size="sm" c="dimmed">
-          Kwarantanna jest pusta w wybranym okresie.
+          {t("empty")}
         </Text>
       ) : (
         <Table.ScrollContainer minWidth={820}>
           <Table striped verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Źródło</Table.Th>
-                <Table.Th>Powód (przykład)</Table.Th>
-                <Table.Th>Wpisów (także odzyskane)</Table.Th>
-                <Table.Th>Agentów</Table.Th>
-                <Table.Th>Ostatni</Table.Th>
+                <Table.Th>{t("col.source")}</Table.Th>
+                <Table.Th>{t("col.reasonSample")}</Table.Th>
+                <Table.Th>{t("col.count")}</Table.Th>
+                <Table.Th>{t("col.agents")}</Table.Th>
+                <Table.Th>{t("col.last")}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -301,7 +301,7 @@ export default function QuarantinePage() {
                           setWizard({ samples: mine.map((e) => e.raw), peer: peers.size === 1 ? [...peers][0] : undefined });
                         }}
                       >
-                        kreator dekodera
+                        {t("decoderWizard")}
                       </Button>
                     )}
                     {admin && canReprocess && supportedSource(g.source) && (
@@ -311,13 +311,13 @@ export default function QuarantinePage() {
                         disabled={running}
                         onClick={() =>
                           setConfirm({
-                            title: `grupa: ${g.source} – ${g.reason.slice(0, 80)}`,
+                            title: t("confirm.group", { source: g.source, reason: g.reason.slice(0, 80) }),
                             // Grupa łączy powody różniące się liczbami – filtr: tekst do pierwszej cyfry.
                             params: { ...applied, source: g.source, reason: g.reason.split(/[0-9]/)[0].trim().slice(0, 200) },
                           })
                         }
                       >
-                        przetwórz ponownie
+                        {t("reprocessShort")}
                       </Button>
                     )}
                   </Table.Td>
@@ -331,16 +331,16 @@ export default function QuarantinePage() {
       {entries.length > 0 && (
         <>
           <Text fw={600} size="sm">
-            Najnowsze wpisy ({entries.length}) – kliknij, aby zobaczyć oryginał
+            {t("entries", { count: entries.length })}
           </Text>
           <Table.ScrollContainer minWidth={820}>
             <Table verticalSpacing={4} highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th w={150}>Przyjęte</Table.Th>
-                  <Table.Th w={220}>Źródło / agent</Table.Th>
-                  <Table.Th>Powód</Table.Th>
-                  <Table.Th w={190}>Ponowne przetworzenie</Table.Th>
+                  <Table.Th w={150}>{t("col.ingested")}</Table.Th>
+                  <Table.Th w={220}>{t("col.sourceAgent")}</Table.Th>
+                  <Table.Th>{t("col.reason")}</Table.Th>
+                  <Table.Th w={190}>{t("col.reprocess")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -353,22 +353,21 @@ export default function QuarantinePage() {
         </>
       )}
 
-      <Modal opened={!!confirm} onClose={() => setConfirm(null)} title="Ponowne przetworzenie kwarantanny" centered>
+      <Modal opened={!!confirm} onClose={() => setConfirm(null)} title={t("confirm.title")} centered>
         {confirm && (
           <Stack>
             <Text size="sm">
-              Wpisy: {confirm.title}. Normalizator przetworzy je bieżącym kodem i dekoderami. Odzyskane zdarzenia trafią do bazy i do detekcji
-              (mogą wywołać alerty), wpisy już odzyskane są pomijane. Najwyżej 10 000 wpisów w jednym zleceniu.
+              {t("confirm.text", { what: confirm.title })}
             </Text>
             <Group justify="flex-end">
               <Button loading={busy} onClick={() => void start()}>
-                Przetwórz ponownie
+                {t("confirm.run")}
               </Button>
             </Group>
           </Stack>
         )}
       </Modal>
-      <Modal opened={!!wizard} onClose={() => setWizard(null)} title="Kreator dekodera – zaznacz pola w wiadomościach z kwarantanny" size="95%">
+      <Modal opened={!!wizard} onClose={() => setWizard(null)} title={t("wizardTitle")} size="95%">
         {wizard && (
           <DecoderWizard
             initialSamples={wizard.samples}
@@ -378,7 +377,7 @@ export default function QuarantinePage() {
             onEdit={(yaml) => navigate("/decoders", { state: { draft: yaml } })}
             onSaved={() => {
               setWizard(null);
-              notifications.show({ color: "green", message: "Dekoder zapisany – teraz przetwórz grupę ponownie" });
+              notifications.show({ color: "green", message: t("decoderSaved") });
             }}
           />
         )}

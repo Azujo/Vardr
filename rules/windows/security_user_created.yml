@@ -20,6 +20,15 @@ falsepositives:
   - Zakładanie kont przez dział IT
 level: low
 vardr:
+  i18n:
+    en:
+      title: "User account created"
+      description: |
+        A new account (domain or local) was created. Ordinary in itself, but accounts
+        created outside the HR process or on servers are a typical way to persist access.
+      instructions: |
+        Account {{TargetUserName}} (domain {{TargetDomainName}}) was created by
+        {{SubjectDomainName}}\{{SubjectUserName}}. Check whether there was a request.
   instructions: |
     Konto {{TargetUserName}} (domena {{TargetDomainName}}) założył
     {{SubjectDomainName}}\{{SubjectUserName}}. Sprawdź, czy było zgłoszenie.

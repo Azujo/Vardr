@@ -36,14 +36,21 @@ func TestReportDraft(t *testing.T) {
 		CrossBorder: "no", Significant: true, AwareAt: &aware, IOCs: "1.2.3.4"}
 	als := []store.IncidentAlert{{RuleTitle: "Wyczyszczenie dziennika", Level: "high", HostName: "dc01", UserName: "jan",
 		FirstSeen: aware, LastSeen: aware.Add(time.Hour), Summary: "komputer dc01"}}
-	ew := reportDraft("early_warning", x, als, aware)
+	ew := reportDraft("early_warning", x, als, aware, "pl")
 	if !strings.Contains(ew, "Wczesne ostrzeżenie – incydent #7") || !strings.Contains(ew, "złośliwego: tak") || strings.Contains(ew, "Wskaźniki") {
 		t.Fatalf("wczesne ostrzeżenie:\n%s", ew)
 	}
-	fin := reportDraft("final", x, als, aware)
+	fin := reportDraft("final", x, als, aware, "pl")
 	for _, want := range []string{"1.2.3.4", "dc01", "Wyczyszczenie dziennika", "pierwotna przyczyna", "[uzupełnij]"} {
 		if !strings.Contains(fin, want) {
 			t.Errorf("sprawozdanie końcowe bez %q:\n%s", want, fin)
+		}
+	}
+	en := reportDraft("final", x, als, aware, "en")
+	for _, want := range []string{"Final report – incident #7", "Suspected unlawful or malicious act: yes", "root cause", "[to complete]",
+		"Severity (internal assessment): critical; status: contained"} {
+		if !strings.Contains(en, want) {
+			t.Errorf("final report without %q:\n%s", want, en)
 		}
 	}
 }

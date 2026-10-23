@@ -1,0 +1,76 @@
+{
+  "title": "Tożsamości",
+  "intro": "Każde zdarzenie z kontem dostaje osobę (user.identity): nazwę konta bez domeny, małymi literami – to samo konto w AD (AZUJO\\jkowalski), w Entra ID (jkowalski@azujo.pl) i na VPN (jkowalski) to jedna osoba. Dzięki temu reguły i wyszukiwarka łączą zdarzenia z różnych źródeł. Konta techniczne (komputery, usługi systemowe) osoby nie mają. Zmiany działają dla nowych zdarzeń w ciągu kilku sekund; zapisanych nie zmieniają.",
+  "uncovered": {
+    "title": "Domeny kont spoza listy domen organizacji",
+    "text": "W zdarzeniach z ostatnich 7 dni są konta z domen spoza listy: {{list}}. Ich osoby dostają nazwę z domeną (np. azujo\\jan) i nie łączą się z tą samą osobą z innych źródeł. Jeśli to domeny organizacji – dodaj je w zakładce „Domeny i konta wspólne” (konta lokalne komputerów zostaw poza listą)."
+  },
+  "noNats": "Panel nie jest połączony z NATS – zmiany trafią do normalizatorów po przywróceniu połączenia.",
+  "saved": {
+    "ok": "Zapisano; nowe zdarzenia dostają tożsamość według zmiany w ciągu kilku sekund (zapisane – bez zmian).",
+    "no_nats": "Zapisano; brak połączenia z NATS – normalizatory dostaną zmianę po jego przywróceniu.",
+    "failed": "Zapisano; dostarczenie do normalizatorów nieudane – panel ponowi je w ciągu 5 minut."
+  },
+  "tab": {
+    "people": "Osoby",
+    "suggestions": "Podpowiedzi",
+    "aliases": "Aliasy kont ({{count}})",
+    "domains": "Domeny i konta wspólne"
+  },
+  "people": {
+    "period": "Okres",
+    "h24": "ostatnie 24 h",
+    "d7": "ostatnie 7 dni",
+    "d30": "ostatnie 30 dni",
+    "search": "Szukaj",
+    "searchPlaceholder": "osoba albo konto",
+    "hint": "Najaktywniejsze osoby (do 500) – z jakich źródeł i kont. Kliknij osobę, aby zobaczyć jej zdarzenia w Mímirze."
+  },
+  "col": {
+    "person": "Osoba",
+    "sources": "Źródła",
+    "accounts": "Konta",
+    "events": "Zdarzenia",
+    "failures": "Nieudane",
+    "hosts": "Komputery",
+    "last": "Ostatnio",
+    "account": "Konto",
+    "note": "Opis",
+    "added": "Dodany"
+  },
+  "suggestions": {
+    "hint": "Osoby, których nazwy różnią się tylko kropkami, podkreśleniami albo myślnikami (np. j.kowalski na VPN i jkowalski w AD) – prawdopodobnie ta sama osoba. „Połącz” dodaje alias do wybranej nazwy.",
+    "none": "Brak podpowiedzi w wybranym okresie.",
+    "note": "połączone z podpowiedzi",
+    "merge": "połącz jako {{id}}"
+  },
+  "aliases": {
+    "hint": "Alias przypisuje konto do osoby, gdy nazwy się różnią – np. login VPN j.kowalski → jkowalski. Alias może być nazwą konta, pełną nazwą DOMENA\\konto albo adresem konto@domena.",
+    "notePlaceholder": "login VPN",
+    "add": "Dodaj alias",
+    "remove": "usuń"
+  },
+  "domains": {
+    "hint": "Domeny, których konta należą do osób z organizacji – nazwy NetBIOS i DNS (np. azujo, azujo.centrala, azujo.pl). Konta z innych domen – lokalne konta komputerów (DESKTOP-1\\admin) i goście z innych firm – zostają osobnymi tożsamościami z domeną. Pusta lista: każda domena należy do organizacji (konto lokalne „admin” i domenowe „admin” to wtedy ta sama osoba).",
+    "seen": "Domeny kont w zdarzeniach (7 dni)",
+    "clickToAdd": "kliknij, aby dodać do listy (potem Zapisz)",
+    "legend": "Zielone – na liście; pomarańczowe – poza listą (kliknij, aby dodać). Nazwy komputerów (konta lokalne) zostaw poza listą.",
+    "label": "Domeny organizacji",
+    "enter": "wpisz i naciśnij Enter",
+    "save": "Zapisz domeny"
+  },
+  "shared": {
+    "title": "Konta wspólne urządzeń",
+    "hint": "Konta bez domeny, które nie należą do jednej osoby – np. admin na routerze MikroTik i na FortiGate, root na urządzeniu. Takie konto dostaje tożsamość z nazwą urządzenia (mikrotik\\admin), więc korelacje nie łączą prób na różnych urządzeniach ani z domenowym kontem „admin”. Konto z domeną (AZUJO\\admin) liczy się jak dotąd. Jeśli konto na urządzeniu ma właściciela, dodaj alias (np. mikrotik\\admin → osoba).",
+    "label": "Konta wspólne",
+    "save": "Zapisz konta wspólne"
+  },
+  "check": {
+    "title": "Sprawdź konto",
+    "domain": "Domena (opcjonalnie)",
+    "device": "Urządzenie (opcjonalnie)",
+    "run": "Sprawdź",
+    "result": "osoba:",
+    "technical": "brak (konto techniczne)"
+  }
+}

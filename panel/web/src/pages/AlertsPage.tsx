@@ -23,6 +23,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ago,
   alertStatusLabels,
+  alertText,
   alertsApi,
   formatDate,
   levelLabels,
@@ -32,14 +33,16 @@ import {
   type AlertStatus,
   type RuleAttack,
 } from "../api";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { AttackBadges } from "../attack";
 import AddToIncident from "./AddToIncident";
 
-const engineLabels: Record<string, string> = { stream: "w locie", index_query: "zapytania", system: "wbudowana", correlation: "korelacja" };
+const engines = ["stream", "index_query", "system", "correlation"];
 
 // Gjallarhorn – lista alertów (najnowsze pierwsze) z filtrami i akcjami zbiorczymi.
 export default function AlertsPage() {
+  const { t } = useTranslation("alerts");
   const { can } = useAuth();
   const canEdit = can("alerts", "write");
   const [params, setParams] = useSearchParams();
@@ -128,7 +131,7 @@ export default function AlertsPage() {
   const bulk = async (s: AlertStatus, why?: string) => {
     try {
       const r = await alertsApi.bulkStatus([...selected], s, why);
-      notifications.show({ color: "green", message: `Zmieniono ${r.changed} z ${selected.size} alertów.` });
+      notifications.show({ color: "green", message: t("list.bulkDone", { changed: r.changed, count: selected.size }) });
       setSelected(new Set());
       setClosing(false);
       setReason("");
@@ -146,11 +149,11 @@ export default function AlertsPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Gjallarhorn – alerty</Title>
+          <Title order={2}>{t("list.title")}</Title>
           <Text c="dimmed" size="sm">
-            Alerty z reguł detekcji. Trafienia z tym samym kluczem w oknie reguły łączą się w jeden alert z licznikiem.{" "}
+            {t("list.intro")}{" "}
             <Text span component={Link} to="/rules" c="blue" size="sm">
-              Reguły →
+              {t("list.rulesLink")}
             </Text>
           </Text>
         </div>
@@ -158,10 +161,10 @@ export default function AlertsPage() {
           value={status}
           onChange={(v) => set("status", v === "open" ? "" : v)}
           data={[
-            { value: "open", label: "otwarte" },
-            { value: "acknowledged", label: "w analizie" },
-            { value: "closed", label: "zamknięte" },
-            { value: "all", label: "wszystkie" },
+            { value: "open", label: t("list.scope.open") },
+            { value: "acknowledged", label: t("list.scope.acknowledged") },
+            { value: "closed", label: t("list.scope.closed") },
+            { value: "all", label: t("list.scope.all") },
           ]}
         />
       </Group>
@@ -175,7 +178,7 @@ export default function AlertsPage() {
         >
           <TextInput
             w={240}
-            placeholder="szukaj: reguła, opis, komputer, konto"
+            placeholder={t("list.search")}
             leftSection={<IconSearch size={14} />}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
@@ -183,42 +186,42 @@ export default function AlertsPage() {
           />
         </form>
         <Select
-          placeholder="każdy poziom"
+          placeholder={t("list.anyLevel")}
           clearable
           w={150}
           value={filter.level || null}
           onChange={(v) => set("level", v ?? "")}
           data={(Object.keys(levelLabels) as AlertLevel[])
             .reverse()
-            .map((l) => ({ value: l, label: `od: ${levelLabels[l].label}` }))}
+            .map((l) => ({ value: l, label: t("list.fromLevel", { level: levelLabels[l].label }) }))}
         />
         <Select
-          placeholder="przypisane: każde"
+          placeholder={t("list.anyAssignee")}
           clearable
           w={180}
           value={filter.assignee || null}
           onChange={(v) => set("assignee", v ?? "")}
-          data={[{ value: "me", label: "moje" }, { value: "-", label: "nieprzypisane" }, ...assignees]}
+          data={[{ value: "me", label: t("list.mine") }, { value: "-", label: t("list.unassigned") }, ...assignees]}
         />
         <Select
-          placeholder="ostatnie zdarzenie: kiedykolwiek"
+          placeholder={t("list.anyTime")}
           clearable
           w={220}
           value={filter.since || null}
           onChange={(v) => set("since", v ?? "")}
           data={[
-            { value: "24h", label: "ostatnie 24 h" },
-            { value: "7d", label: "ostatnie 7 dni" },
-            { value: "30d", label: "ostatnie 30 dni" },
+            { value: "24h", label: t("list.since.24h") },
+            { value: "7d", label: t("list.since.7d") },
+            { value: "30d", label: t("list.since.30d") },
           ]}
         />
         <Select
-          placeholder="każdy silnik"
+          placeholder={t("list.anyEngine")}
           clearable
           w={140}
           value={filter.engine || null}
           onChange={(v) => set("engine", v ?? "")}
-          data={Object.entries(engineLabels).map(([value, label]) => ({ value, label }))}
+          data={engines.map((value) => ({ value, label: t(`engine.${value}`) }))}
         />
         {(filter.host || filter.user || filter.rule || filter.technique || filter.tactic) && (
           <Group gap={4}>
@@ -229,22 +232,22 @@ export default function AlertsPage() {
             )}
             {filter.tactic && (
               <Badge variant="outline" color="grape" style={{ cursor: "pointer" }} onClick={() => set("tactic", "")}>
-                taktyka {filter.tactic} ✕
+                {t("list.tactic", { tactic: filter.tactic })} ✕
               </Badge>
             )}
             {filter.host && (
               <Badge variant="outline" style={{ cursor: "pointer" }} onClick={() => set("host", "")}>
-                komputer: {filter.host} ✕
+                {t("list.host", { host: filter.host })} ✕
               </Badge>
             )}
             {filter.user && (
               <Badge variant="outline" style={{ cursor: "pointer" }} onClick={() => set("user", "")}>
-                konto: {filter.user} ✕
+                {t("list.user", { user: filter.user })} ✕
               </Badge>
             )}
             {filter.rule && (
               <Badge variant="outline" style={{ cursor: "pointer" }} onClick={() => set("rule", "")}>
-                reguła ✕
+                {t("list.rule")} ✕
               </Badge>
             )}
           </Group>
@@ -258,7 +261,7 @@ export default function AlertsPage() {
               setParams(status === "open" ? {} : { status });
             }}
           >
-            wyczyść filtry
+            {t("list.clear")}
           </Button>
         )}
       </Group>
@@ -266,30 +269,30 @@ export default function AlertsPage() {
       {error && <MAlert color="red">{error}</MAlert>}
       {!configured && (
         <MAlert color="gray" icon={<IconAlertTriangle />}>
-          Detektor (siem-detector) jeszcze nie działał – nie ma alertów ani reguł.
+          {t("list.notConfigured")}
         </MAlert>
       )}
 
       <Group justify="space-between">
         <Text size="sm" c="dimmed">
-          {total} {total === 1 ? "alert" : "alertów"} w tym widoku
-          {items.length < total ? ` (pokazane ${items.length})` : ""}
+          {t("list.total", { count: total })}
+          {items.length < total ? t("list.shown", { count: items.length }) : ""}
         </Text>
         {canEdit && selected.size > 0 && (
           <Group gap="xs">
-            <Text size="sm">zaznaczone: {selected.size}</Text>
+            <Text size="sm">{t("list.selected", { count: selected.size })}</Text>
             <Button size="xs" onClick={() => void bulk("acknowledged")}>
-              Weź do analizy
+              {t("list.acknowledge")}
             </Button>
             <Button size="xs" color="gray" variant="light" onClick={() => setClosing(true)}>
-              Zamknij
+              {t("close")}
             </Button>
             <Button size="xs" variant="subtle" onClick={() => void bulk("open")}>
-              Otwórz ponownie
+              {t("reopen")}
             </Button>
             {can("incidents", "write") && (
               <Button size="xs" variant="light" color="red" onClick={() => setToIncident(true)}>
-                Do incydentu
+                {t("toIncident")}
               </Button>
             )}
           </Group>
@@ -298,7 +301,7 @@ export default function AlertsPage() {
 
       {configured && items.length === 0 && (
         <Text c="dimmed" size="sm">
-          Brak alertów w tym widoku.
+          {t("list.empty")}
         </Text>
       )}
       {items.length > 0 && (
@@ -309,21 +312,21 @@ export default function AlertsPage() {
                 {canEdit && (
                   <Table.Th w={36}>
                     <Checkbox
-                      aria-label="zaznacz wszystkie"
+                      aria-label={t("list.selectAll")}
                       checked={allSelected}
                       indeterminate={selected.size > 0 && !allSelected}
                       onChange={() => setSelected(allSelected ? new Set() : new Set(items.map((a) => a.id)))}
                     />
                   </Table.Th>
                 )}
-                <Table.Th>Poziom</Table.Th>
-                <Table.Th>Reguła</Table.Th>
-                <Table.Th>Komputer</Table.Th>
-                <Table.Th>Konto</Table.Th>
-                <Table.Th>Trafienia</Table.Th>
-                <Table.Th>Ostatnie zdarzenie</Table.Th>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Przypisany</Table.Th>
+                <Table.Th>{t("col.level")}</Table.Th>
+                <Table.Th>{t("col.rule")}</Table.Th>
+                <Table.Th>{t("col.host")}</Table.Th>
+                <Table.Th>{t("col.user")}</Table.Th>
+                <Table.Th>{t("col.hits")}</Table.Th>
+                <Table.Th>{t("col.lastSeen")}</Table.Th>
+                <Table.Th>{t("col.status")}</Table.Th>
+                <Table.Th>{t("col.assignee")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -331,7 +334,7 @@ export default function AlertsPage() {
                 <Table.Tr key={a.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/alerts/${a.id}`)}>
                   {canEdit && (
                     <Table.Td onClick={(e) => e.stopPropagation()}>
-                      <Checkbox aria-label={`zaznacz alert ${a.id}`} checked={selected.has(a.id)} onChange={() => toggle(a.id)} />
+                      <Checkbox aria-label={t("list.selectOne", { id: a.id })} checked={selected.has(a.id)} onChange={() => toggle(a.id)} />
                     </Table.Td>
                   )}
                   <Table.Td>
@@ -339,16 +342,16 @@ export default function AlertsPage() {
                   </Table.Td>
                   <Table.Td maw={420}>
                     <Text size="sm" fw={500}>
-                      {a.rule_title}
+                      {alertText(a).title}
                     </Text>
-                    <Text size="xs" c="dimmed" lineClamp={1} title={a.summary}>
-                      {a.summary}
+                    <Text size="xs" c="dimmed" lineClamp={1} title={alertText(a).summary}>
+                      {alertText(a).summary}
                     </Text>
                     <AttackBadges ra={attack[a.rule_id]} tactics={false} size="xs" />
                   </Table.Td>
                   <Table.Td onClick={(e) => e.stopPropagation()}>
                     {a.host_name ? (
-                      <Text size="sm" c="blue" style={{ cursor: "pointer" }} onClick={() => set("host", a.host_name)} title="pokaż alerty z tego komputera">
+                      <Text size="sm" c="blue" style={{ cursor: "pointer" }} onClick={() => set("host", a.host_name)} title={t("list.byHost")}>
                         {a.host_name}
                       </Text>
                     ) : (
@@ -357,7 +360,7 @@ export default function AlertsPage() {
                   </Table.Td>
                   <Table.Td onClick={(e) => e.stopPropagation()}>
                     {a.user_name ? (
-                      <Text size="sm" c="blue" style={{ cursor: "pointer" }} onClick={() => set("user", a.user_name)} title="pokaż alerty tego konta">
+                      <Text size="sm" c="blue" style={{ cursor: "pointer" }} onClick={() => set("user", a.user_name)} title={t("list.byUser")}>
                         {a.user_name}
                       </Text>
                     ) : (
@@ -387,29 +390,32 @@ export default function AlertsPage() {
       {more && (
         <Group>
           <Button variant="subtle" onClick={() => load(items[items.length - 1].id)}>
-            Starsze alerty
+            {t("list.older")}
           </Button>
         </Group>
       )}
 
       <AddToIncident
         alertIds={[...selected]}
-        defaultTitle={items.find((a) => selected.has(a.id))?.rule_title}
+        defaultTitle={(() => {
+          const a = items.find((x) => selected.has(x.id));
+          return a && alertText(a).title;
+        })()}
         opened={toIncident}
         onClose={() => setToIncident(false)}
       />
-      <Modal opened={closing} onClose={() => setClosing(false)} title={`Zamknij zaznaczone alerty (${selected.size})`} centered>
+      <Modal opened={closing} onClose={() => setClosing(false)} title={t("list.closeTitle", { count: selected.size })} centered>
         <Stack>
           <Textarea
-            label="Powód"
-            description="trafi do każdego alertu i do audytu, np. fałszywy alarm – skaner podatności"
+            label={t("reason")}
+            description={t("list.reasonHint")}
             autosize
             minRows={2}
             value={reason}
             onChange={(e) => setReason(e.currentTarget.value)}
           />
           <Button disabled={reason.trim().length < 3} onClick={() => void bulk("closed", reason)}>
-            Zamknij
+            {t("close")}
           </Button>
         </Stack>
       </Modal>

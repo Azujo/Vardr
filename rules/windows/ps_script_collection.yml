@@ -28,6 +28,19 @@ falsepositives:
   - Skrypty pomocy zdalnej i automatyzacji pulpitu (rzadkie w PowerShell)
 level: high
 vardr:
+  i18n:
+    en:
+      title: "PowerShell script captures the screen, clipboard or keyboard"
+      description: |
+        The content of a PowerShell script (4104) contains functions for screenshots
+        (CopyFromScreen), reading the clipboard or capturing keystrokes
+        (GetAsyncKeyState, SetWindowsHookEx). They are used by spyware and data
+        collection modules of attack tools.
+      instructions: |
+        A PowerShell script with screen capture, clipboard reading or keystroke
+        capture was executed on {{host.name}}. Read the full script content in the event
+        (ScriptBlockText) and the process that started it. If it is not a known tool –
+        isolate the computer and change the user's passwords (they may have been captured).
   group_by: [host.name]
   suppress: 1h
   instructions: |

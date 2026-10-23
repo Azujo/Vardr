@@ -137,7 +137,7 @@ func EnsurePipeline(ctx context.Context, js jetstream.JetStream, l Limits) error
 	consumers := ConsumerConfigs()
 	for _, cfg := range StreamConfigs(l) {
 		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
-			return fmt.Errorf("strumień %s: %w", cfg.Name, err)
+			return fmt.Errorf("stream %s: %w", cfg.Name, err)
 		}
 		if _, err := js.CreateOrUpdateConsumer(ctx, cfg.Name, consumers[cfg.Name]); err != nil {
 			return fmt.Errorf("konsument %s/%s: %w", cfg.Name, consumers[cfg.Name].Durable, err)
@@ -277,7 +277,7 @@ func Gunzip(data []byte, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(out)) > limit {
-		return nil, fmt.Errorf("treść po rozpakowaniu przekracza %d B", limit)
+		return nil, fmt.Errorf("decompressed content exceeds %d B", limit)
 	}
 	return out, nil
 }
@@ -318,7 +318,7 @@ func PipelineByName(name string) (Pipeline, error) {
 	case Replay.Name:
 		return Replay, nil
 	}
-	return Pipeline{}, fmt.Errorf("nieznana ścieżka %q (live albo replay)", name)
+	return Pipeline{}, fmt.Errorf("unknown path %q (live or replay)", name)
 }
 
 func (p Pipeline) RawSubject(agentID string) string    { return p.RawPrefix + agentID }
@@ -343,7 +343,7 @@ func (p Pipeline) Ensure(ctx context.Context, js jetstream.JetStream, l Limits) 
 			Storage: jetstream.FileStorage, Retention: jetstream.InterestPolicy, Discard: jetstream.DiscardNew,
 			Duplicates: 10 * time.Minute, MaxMsgSize: MaxMessageBytes}
 		if _, err := js.CreateOrUpdateStream(ctx, cfg); err != nil {
-			return fmt.Errorf("strumień %s: %w", s.stream, err)
+			return fmt.Errorf("stream %s: %w", s.stream, err)
 		}
 		cc := consumers[s.liveStream]
 		cc.Durable = s.durable

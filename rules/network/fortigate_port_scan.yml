@@ -25,6 +25,21 @@ falsepositives:
   - Masowe skanery internetu (Shodan, Censys) – zwykle niegroźne, ale pokazują, co jest wystawione
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "FortiGate – port scan from one address"
+      description: |
+        The firewall blocked connections from one address to at least 20 different
+        ports within 2 minutes. From the internet this is reconnaissance before an attack
+        (looking for services to exploit), from the internal network – scanning by a
+        compromised computer. Requires logging of denied traffic in the firewall policy
+        (including the implicit deny policy).
+      instructions: |
+        Address {{source.ip}} tried to connect to {{count}} different ports
+        in {{window}} (ports: {{values}}). Internal address – check this computer
+        (compromised or an unapproved scanner). Address from the internet – block it
+        and check whether any connection to exposed services was allowed
+        (action=accept from this address).
   group_by: [source.ip]
   threshold:
     count: 20

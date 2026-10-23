@@ -42,6 +42,8 @@ Agent `vardr-agent` zbiera zdarzenia z dzienników Windows i wysyła je do serwe
 
 Usługa działa jako LocalSystem (dostęp do kanału Security). Log: `C:\ProgramData\SiemAgent\agent.log`.
 
+**Język.** Polecenia `vardr-agent` piszą po polsku albo po angielsku – według języka Windows (wymuszenie: zmienna `VARDR_LANG=pl` albo `en`). W tym języku są też ostrzeżenia w `status` i w panelu. Log agenta i wpisy w Podglądzie zdarzeń są po angielsku.
+
 ### Instalator MSI (od wersji 0.6)
 
 `deploy.sh agent` buduje na serwerze `vardr-agent.msi` (narzędziem `wixl` w kontenerze, z CA tej instalacji).
@@ -66,7 +68,7 @@ Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia 
 
 - **Uprawnienia usługi.** Administrator sprawdzi stan usługi, uruchomi ją i zrestartuje agenta (`vardr-agent restart` – polecenie 128 do usługi). Nie może jej zatrzymać, wstrzymać, przekonfigurować ani usunąć: `sc stop` i `services.msc` dostają odmowę dostępu. Zostaje mu prawo zmiany uprawnień – to granica ochrony.
 - **Token deinstalacji.** Panel → Huginn → agent → „Token deinstalacji”: rola administratora, powód i ponowne podanie hasła, wpis w audycie. Token jest jednorazowy, działa tylko na tym komputerze, domyślnie przez 24 h (do 7 dni). Panel pokazuje go raz; w bazie i na komputerze jest tylko skrót. Nowy token unieważnia poprzedni. Polecenie z tokenem samo pobiera świeżą konfigurację z panelu, więc token działa od razu. Użyty token panel oznacza na podstawie raportu agenta.
-- **Wycofanie po deinstalacji (od 0.7.4).** Deinstalacja usuwa klucz prywatny agenta (`certsgent.key`); konfiguracja i bufor zostają (`-purge` usuwa wszystko). Gdy agent zgłosi deinstalację tokenem wydanym w panelu dla tego komputera, panel unieważnia jego certyfikaty (rozsyłane do ingestu jak przy ręcznym unieważnieniu) i zapisuje `agent_retired` w audycie. Agent ma w Huginnie stan „wycofany” – znika z domyślnej listy (filtr „Wycofani”), historia zostaje. Ponowna instalacja na tym komputerze to nowa rejestracja tokenem i nowy identyfikator (identyfikatory nigdy nie są używane ponownie – zdarzenia z jednego identyfikatora zawsze pochodzą z jednego klucza).
+- **Wycofanie po deinstalacji (od 0.7.4).** Deinstalacja usuwa klucz prywatny agenta (`certs\agent.key`); konfiguracja i bufor zostają (`-purge` usuwa wszystko). Gdy agent zgłosi deinstalację tokenem wydanym w panelu dla tego komputera, panel unieważnia jego certyfikaty (rozsyłane do ingestu jak przy ręcznym unieważnieniu) i zapisuje `agent_retired` w audycie. Agent ma w Huginnie stan „wycofany” – znika z domyślnej listy (filtr „Wycofani”), historia zostaje. Ponowna instalacja na tym komputerze to nowa rejestracja tokenem i nowy identyfikator (identyfikatory nigdy nie są używane ponownie – zdarzenia z jednego identyfikatora zawsze pochodzą z jednego klucza).
 - **Pilnowanie co 30 s.** Agent sprawdza uprawnienia usługi, typ uruchamiania i ścieżkę programu, zarówno w menedżerze usług, jak i w rejestrze. Zmianę zgłasza i cofa.
 - **Zdarzenia ochrony.** Dziennik `tamper.jsonl` w katalogu stanu; agent wysyła w heartbeacie zdarzenia z ostatnich 7 dni. Zdarzenie z chwili zatrzymania dociera więc także po ponownym starcie. Przy zatrzymaniu agent wysyła od razu ostatni heartbeat z powodem.
 

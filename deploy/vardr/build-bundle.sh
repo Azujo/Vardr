@@ -20,22 +20,22 @@ lab=deploy/lab
 
 echo "== Vardr $version"
 if command -v npm >/dev/null; then
-  echo "== frontend panelu (npm)"
+  echo "== panel frontend (npm)"
   (cd panel/web && npm ci --no-audit --no-fund >/dev/null && npm run build >/dev/null)
 else
-  [ -f panel/web/dist/index.html ] || { echo "brak panel/web/dist – zbuduj frontend (npm albo deploy/lab/deploy.sh web)" >&2; exit 1; }
+  [ -f panel/web/dist/index.html ] || { echo "no panel/web/dist – build the frontend (npm or deploy/lab/deploy.sh web)" >&2; exit 1; }
   newer=$(find panel/web/src panel/web/index.html -newer panel/web/dist/index.html -type f | head -3)
-  [ -z "$newer" ] || { echo "panel/web/dist jest starszy niż źródła ($newer…) – przebuduj frontend" >&2; exit 1; }
-  echo "== frontend panelu: gotowy panel/web/dist"
+  [ -z "$newer" ] || { echo "panel/web/dist is older than the sources ($newer…) – rebuild the frontend" >&2; exit 1; }
+  echo "== panel frontend: using the built panel/web/dist"
 fi
 
-echo "== reguły detekcji (sprawdzenie)"
-GOOS= GOARCH= go run ./server/cmd/siem-detector check rules >/dev/null || { echo "reguły z błędami" >&2; exit 1; }
+echo "== detection rules (check)"
+GOOS= GOARCH= go run ./server/cmd/siem-detector check rules >/dev/null || { echo "rules with errors" >&2; exit 1; }
 
 rm -rf "$stage"
 mkdir -p "$stage/stack/bin" "$stage/stack/agent-dist" "$stage/stack/export-tools" "$stage/rules"
 
-echo "== programy serwera (linux/amd64)"
+echo "== server programs (linux/amd64)"
 ldv="-s -w -X siem/internal/svc.Version=$version"
 declare -A pkg=(
   [siem-ingest]=server/cmd/siem-ingest [siem-normalizer]=server/cmd/siem-normalizer
@@ -49,13 +49,13 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" -o "$stage/stack/bin/siem-connector" ./agent/cmd/siem_connector
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/stack/bin/siem-pki" ./tools/cmd/siem-pki
 
-echo "== agent Windows i czytnik eksportu"
+echo "== Windows agent and export reader"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$stage/stack/agent-dist/vardr-agent.exe" ./agent/cmd/vardr-agent
 sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go > "$stage/stack/agent-dist/AGENT_VERSION"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" \
   -o "$stage/stack/export-tools/odczytaj.exe" ./tools/cmd/odczytaj
 
-echo "== pliki stosu"
+echo "== stack files"
 tar -C "$lab" -cf - Dockerfile backup/Dockerfile msi/Dockerfile msi/agent.wxs nats clickhouse saga grafana prometheus \
   backup.sh restore.sh enroll-service.sh | tar -C "$stage/stack" -xf -
 cp deploy/vardr/docker-compose.yml deploy/vardr/.dockerignore "$stage/stack/"
@@ -66,21 +66,22 @@ cp deploy/vardr/sigmahq-import.sh "$stage/stack/"
 cp deploy/vardr/install.sh LICENSE "$stage/"
 echo "$version" > "$stage/VERSION"
 cat > "$stage/README.txt" <<EOF
-Vardr $version – serwer SIEM
+Vardr $version – SIEM server
 
-Instalacja (Linux x86_64, systemd, Docker Engine z wtyczką compose v2):
+Installation (Linux x86_64, systemd, Docker Engine with the compose v2 plugin):
 
   tar xzf $name.tar.gz
   cd $name
   sudo ./install.sh
 
-Aktualizacja: to samo polecenie z nowszej paczki (konfiguracja, certyfikaty
-i dane zostają). Opcje: sudo ./install.sh --help
-Dokumentacja: docs/instalacja.md w repozytorium Vardra.
-Licencja: GNU AGPL-3.0 lub późniejsza (plik LICENSE), kod: https://github.com/Azujo/Vardr
+Upgrade: the same command from a newer bundle (configuration, certificates
+and data stay). Options: sudo ./install.sh --help
+Documentation: docs/en/installation.md in the Vardr repository
+(Polish: docs/instalacja.md).
+License: GNU AGPL-3.0 or later (LICENSE file), code: https://github.com/Azujo/Vardr
 EOF
 
-echo "== archiwum"
+echo "== archive"
 # Prawa ustawiane w archiwum (na NTFS chmod nie działa): programy i skrypty
 # wykonywalne, reszta czytelna dla kontenerów (ClickHouse, Postgres, Grafana
 # działają jako własni użytkownicy); właściciel root.
@@ -101,5 +102,5 @@ with tarfile.open(out, "w:gz") as t:
 PY
 (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
 rm -rf "$stage"
-ls -l "dist/$name.tar.gz" | awk '{printf "gotowe: %s (%.0f MB)\n", $NF, $5/1048576}'
+ls -l "dist/$name.tar.gz" | awk '{printf "done: %s (%.0f MB)\n", $NF, $5/1048576}'
 cat "dist/$name.tar.gz.sha256"

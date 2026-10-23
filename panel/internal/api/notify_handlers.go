@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"siem/internal/lang"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/notify"
 )
@@ -197,7 +198,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := notify.ValidateURL(req.Kind, req.URL); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_url", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_url", err)
 		return
 	}
 	c, err := s.Notify.Store.CreateChannel(r.Context(), store.Channel{Name: req.Name, Kind: req.Kind, URL: req.URL,
@@ -240,7 +241,7 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.URL != "" {
 		if err := notify.ValidateURL(c.Kind, req.URL); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_url", err.Error())
+			writeErr(w, http.StatusBadRequest, "bad_url", err)
 			return
 		}
 	}
@@ -309,7 +310,7 @@ func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
 		Title: "Test kanału „" + c.Name + "”", Text: "Wiadomość testowa z panelu Vardr (wysłał " + a.user.Username + ").", At: s.now()})
 	s.audit(r, &a.user, "notify_channel_tested", c.Name, map[string]any{"ok": err == nil})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "send_failed", "wysyłka nieudana: "+err.Error())
+		writeErr(w, http.StatusBadGateway, "send_failed", lang.Errorf("wysyłka nieudana: %w", "sending failed: %w", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message": "wiadomość testowa wysłana"})
@@ -327,7 +328,7 @@ func (s *Server) sendAnchor(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := s.Notify.Anchor.Message(r.Context(), s.now())
 	if errors.Is(err, notify.ErrNoManifest) {
-		writeError(w, http.StatusConflict, "no_manifest", err.Error())
+		writeErr(w, http.StatusConflict, "no_manifest", err)
 		return
 	}
 	if err != nil {
@@ -344,7 +345,7 @@ func (s *Server) sendAnchor(w http.ResponseWriter, r *http.Request) {
 	n, err := s.Notify.Svc.Send(r.Context(), m)
 	s.audit(r, &a.user, "archive_anchor_sent", "urd", map[string]any{"seq": *m.AnchorSeq, "sha256": m.AnchorSHA256, "channels": n})
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "send_failed", "wysyłka nieudana: "+err.Error())
+		writeErr(w, http.StatusBadGateway, "send_failed", lang.Errorf("wysyłka nieudana: %w", "sending failed: %w", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"message": "kotwica wysłana (" + strconv.Itoa(n) + " kanał/y)"})

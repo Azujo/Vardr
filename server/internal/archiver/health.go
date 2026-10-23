@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Health to stan pętli archiwizatora zapisywany dla panelu (bezpieczny dla
@@ -59,16 +61,17 @@ func (r *Archiver) CheckDisk() string {
 
 	reason := ""
 	if free < r.Cfg.MinFreeBytes || pct < r.Cfg.MinFreePercent {
-		reason = fmt.Sprintf("mało miejsca na dysku archiwum: wolne %.1f GB (%.1f%%) – archiwizacja wstrzymana, paczki czekają w kolejce", gb, pct)
+		reason = fmt.Sprintf(lang.Pick(r.A.Language(), "mało miejsca na dysku archiwum: wolne %.1f GB (%.1f%%) – archiwizacja wstrzymana, paczki czekają w kolejce",
+			"low space on the archive disk: %.1f GB free (%.1f%%) – archiving paused, batches wait in the queue"), gb, pct)
 	}
 	switch {
 	case reason != "" && (r.paused == "" || now.After(r.diskWarn)):
 		r.Log.Error(reason, "free_gb", fmt.Sprintf("%.1f", gb), "min_free_percent", r.Cfg.MinFreePercent)
 		r.diskWarn = now.Add(5 * time.Minute)
 	case reason == "" && r.paused != "":
-		r.Log.Info("miejsce na dysku archiwum wróciło – archiwizacja wznowiona", "free_gb", fmt.Sprintf("%.1f", gb))
+		r.Log.Info("archive disk space is back – archiving resumed", "free_gb", fmt.Sprintf("%.1f", gb))
 	case reason == "" && pct < r.Cfg.WarnFreePercent && now.After(r.diskWarn):
-		r.Log.Warn("kończy się miejsce na dysku archiwum", "free_gb", fmt.Sprintf("%.1f", gb), "free_percent", fmt.Sprintf("%.1f", pct))
+		r.Log.Warn("the archive disk is running out of space", "free_gb", fmt.Sprintf("%.1f", gb), "free_percent", fmt.Sprintf("%.1f", pct))
 		r.diskWarn = now.Add(time.Hour)
 	}
 	paused := 0.0
@@ -84,7 +87,7 @@ func (r *Archiver) CheckDisk() string {
 // Pause zatwierdza otwarty segment i czeka (archiwizacja wstrzymana).
 func (r *Archiver) Pause(ctx context.Context, d time.Duration) {
 	if err := r.Flush(ctx); err != nil {
-		r.Log.Error("zatwierdzenie segmentu przy wstrzymaniu nieudane", "err", err)
+		r.Log.Error("committing the segment on pause failed", "err", err)
 	}
 	select {
 	case <-ctx.Done():

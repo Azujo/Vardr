@@ -23,7 +23,7 @@ func Level(name string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	}
-	return 0, fmt.Errorf("nieznany poziom logowania %q (debug, info, warn, error)", name)
+	return 0, fmt.Errorf("unknown log level %q (debug, info, warn, error)", name)
 }
 
 // Tee rozsyła wpisy do kilku handlerów.

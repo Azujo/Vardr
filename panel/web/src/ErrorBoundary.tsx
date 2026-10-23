@@ -2,6 +2,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Alert, Button, Code, Group, Stack, Text } from "@mantine/core";
+import i18n from "./i18n";
 
 // Granica błędów strony: wyjątek w renderowaniu jednego modułu pokazuje
 // komunikat w miejscu strony, a menu i reszta panelu działają dalej
@@ -35,16 +36,13 @@ export default class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <Alert color="red" title="Ta strona napotkała błąd">
+      <Alert color="red" title={i18n.t("pageError.title")}>
         <Stack gap="xs">
-          <Text size="sm">
-            Coś poszło nie tak przy wyświetlaniu strony. Reszta panelu działa – możesz przejść do innego modułu albo spróbować
-            ponownie. Jeśli błąd się powtarza, zgłoś go z treścią poniżej.
-          </Text>
+          <Text size="sm">{i18n.t("pageError.text")}</Text>
           <Code block>{this.state.error.message}</Code>
           <Group>
             <Button size="xs" variant="light" onClick={() => this.setState({ error: null })}>
-              Spróbuj ponownie
+              {i18n.t("pageError.retry")}
             </Button>
           </Group>
         </Stack>

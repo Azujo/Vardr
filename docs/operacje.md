@@ -107,8 +107,8 @@ Nic nie jest usuwane ani przepisywane: wynik weryfikacji, która wykryła niezgo
 
 ```bash
 ./backup.sh                 # kopia teraz (zlecenie dla usługi, czeka na wynik)
-./backup.sh haslo init      # pierwsze hasło (pokazywane raz – zapisz poza serwerem)
-./backup.sh haslo pokaz | zmien
+./backup.sh password init   # pierwsze hasło (pokazywane raz – zapisz poza serwerem); dawniej: haslo init
+./backup.sh password show | change   # dawniej: haslo pokaz | zmien (polskie polecenia nadal działają)
 ./restore.sh <vardr-….tar.gpg> [katalog z paczkami urd-…]   # odtworzenie na czystej VM
 ./restore.sh --zlecenie     # przywrócenie zlecone w panelu (uruchamia cron)
 ```
@@ -146,7 +146,7 @@ Planowanie dysku: ok. 125 B na zdarzenie w ClickHouse z surowym XML (ok. 75 GB n
 - **Grafana** (`:3000`): pulpity „SIEM – przegląd zdarzeń” i „SIEM – zdrowie potoku” (przepływ przez etapy, odmowy, kolejki, opóźnienia, CPU i pamięć usług, ClickHouse).
 - **Alerty Grafany** (`grafana/provisioning/alerting/vardr.yaml`): potok nie działa, detektor nie działa, archiwizator nie działa, kolejka NATS > 80%, ingest odmawia, silnik zapytań > 15 min w tyle, reguły z błędami, archiwum (niezgodności, brak weryfikacji, mało miejsca, archiwizacja wyłączona, zaplanowane osłabienie), dysk systemowy, kopie zapasowe. Alerty idą przez przekaźnik panelu na kanały powiadomień.
 - **Panel → Himinbjörg:** stan usług i kolejek.
-- **Logi:** `docker compose logs --since 10m <usługa>`; ostrzeżenia i błędy: `… | grep -E '"WARN"|"ERROR"'`.
+- **Logi:** `docker compose logs --since 10m <usługa>`; ostrzeżenia i błędy: `… | grep -E '"WARN"|"ERROR"'`. Logi usług i komunikaty skryptów serwera są po angielsku; teksty zapisywane dla panelu (wyniki kopii, weryfikacji archiwum) – w języku systemu.
 
 ## Diagnostyka
 

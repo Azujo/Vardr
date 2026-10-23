@@ -14,8 +14,10 @@ import (
 	"time"
 
 	"siem/internal/alerts"
+	"siem/internal/lang"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/notify"
+	"siem/panel/internal/syslang"
 )
 
 // IncidentStore to incydenty (implementuje store.PG).
@@ -123,10 +125,10 @@ func (s *Server) incidentError(w http.ResponseWriter, r *http.Request, err error
 // snapshot: migawki alertów (Gjallarhorn) do incydentu.
 func (s *Server) snapshot(ctx context.Context, ids []int64, by string, now time.Time) ([]store.IncidentAlert, error) {
 	if len(ids) > 500 {
-		return nil, errors.New("najwyżej 500 alertów naraz")
+		return nil, lang.Errorf("najwyżej 500 alertów naraz", "at most 500 alerts at once")
 	}
 	if len(ids) > 0 && s.Alerts == nil {
-		return nil, errors.New("moduł alertów wyłączony")
+		return nil, errors.New("alerts module disabled")
 	}
 	out := make([]store.IncidentAlert, 0, len(ids))
 	for _, id := range ids {
@@ -200,7 +202,7 @@ func (s *Server) createIncident(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	snaps, err := s.snapshot(r.Context(), req.AlertIDs, a.user.Username, now)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_alerts", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_alerts", err)
 		return
 	}
 	x, err := s.Incidents.CreateIncident(r.Context(), store.Incident{Title: req.Title, Description: req.Description,
@@ -422,8 +424,10 @@ func (s *Server) updateIncident(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, &a.user, "incident_status_changed", strconv.FormatInt(id, 10), map[string]any{"from": prev.Status, "to": x.Status})
 	}
 	if upd.Significant && !prev.Significant {
-		s.notifyIncident(r.Context(), upd, notify.SevCritical, "Incydent poważny (NIS2): "+upd.Title,
-			"Incydent oznaczony jako poważny – liczą się terminy zgłoszeń do CSIRT (24 h, 72 h, miesiąc).")
+		lang := s.systemLanguage(r.Context())
+		s.notifyIncident(r.Context(), upd, notify.SevCritical, pick(lang, "Incydent poważny (NIS2): ", "Significant incident (NIS2): ")+upd.Title,
+			pick(lang, "Incydent oznaczony jako poważny – liczą się terminy zgłoszeń do CSIRT (24 h, 72 h, miesiąc).",
+				"The incident was marked as significant – the CSIRT reporting deadlines are running (24 h, 72 h, one month)."))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"incident": upd})
 }
@@ -471,8 +475,14 @@ func (s *Server) addIncidentEvidence(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Text – opis w języku zlecającego (zostaje w osi czasu); pola eksportu
+	// pozwalają panelowi pokazać wpis w języku czytającego.
 	var req struct {
-		Text string `json:"text"`
+		Text     string     `json:"text"`
+		ExportID int64      `json:"export_id"`
+		From     *time.Time `json:"from"`
+		To       *time.Time `json:"to"`
+		Agents   int        `json:"agents"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -482,8 +492,12 @@ func (s *Server) addIncidentEvidence(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_evidence", "opis paczki: 1–2000 znaków")
 		return
 	}
+	var details map[string]any
+	if req.ExportID > 0 && req.From != nil && req.To != nil {
+		details = map[string]any{"export_id": req.ExportID, "from": req.From.UTC(), "to": req.To.UTC(), "agents": max(req.Agents, 0)}
+	}
 	if err := s.Incidents.AddIncidentEvidence(r.Context(), id, store.IncidentActivity{At: s.now(), Username: a.user.Username,
-		Kind: "evidence", Text: req.Text}); err != nil {
+		Kind: "evidence", Text: req.Text, Details: details}); err != nil {
 		s.incidentError(w, r, err)
 		return
 	}
@@ -512,7 +526,7 @@ func (s *Server) addIncidentAlerts(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	snaps, err := s.snapshot(r.Context(), req.AlertIDs, a.user.Username, now)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_alerts", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_alerts", err)
 		return
 	}
 	ids := make([]int64, len(snaps))
@@ -584,7 +598,21 @@ func (s *Server) draftReport(w http.ResponseWriter, r *http.Request) {
 		s.incidentError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"content": reportDraft(kind, x, als, s.now())})
+	// Język szkicu: wybrany w edytorze (np. polski dla krajowego CSIRT),
+	// domyślnie język systemu.
+	lang := r.URL.Query().Get("lang")
+	if !slices.Contains(syslang.Supported, lang) {
+		lang = s.systemLanguage(ctx)
+	}
+	if lang != "pl" && s.Alerts != nil {
+		for i, a := range als {
+			if full, err := s.Alerts.Alert(ctx, a.AlertID); err == nil {
+				t := full.Text(lang)
+				als[i].RuleTitle, als[i].Summary = t.Title, t.Summary
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"content": reportDraft(kind, x, als, s.now(), lang), "language": lang})
 }
 
 func (s *Server) saveReport(w http.ResponseWriter, r *http.Request) {
@@ -671,35 +699,61 @@ func (s *Server) submitReport(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// pick: tekst polski albo angielski (dla „en”).
+func pick(lang, pl, en string) string {
+	if lang == "en" {
+		return en
+	}
+	return pl
+}
+
+// Nazwy statusów, wag i zgłoszeń po angielsku (szkice i powiadomienia).
+var (
+	statusLabelsEN   = map[string]string{"open": "open", "investigating": "investigating", "contained": "contained", "resolved": "resolved", "closed": "closed"}
+	severityLabelsEN = map[string]string{"low": "low", "medium": "medium", "high": "high", "critical": "critical"}
+	reportLabelsEN   = map[string]string{"early_warning": "early warning", "notification": "incident notification",
+		"intermediate": "intermediate report", "final": "final report"}
+)
+
+// label: nazwa z mapy polskiej albo angielskiej.
+func label(lang string, pl, en map[string]string, k string) string {
+	if lang == "en" {
+		return en[k]
+	}
+	return pl[k]
+}
+
 // reportDraft: szkic zgłoszenia – struktura według art. 23 ust. 4 dyrektywy
-// NIS2; pola „[uzupełnij]” wymagają wiedzy spoza Vardra.
-func reportDraft(kind string, x store.Incident, als []store.IncidentAlert, now time.Time) string {
+// NIS2; pola „[uzupełnij]” wymagają wiedzy spoza Vardra. lang: pl albo en.
+func reportDraft(kind string, x store.Incident, als []store.IncidentAlert, now time.Time, lang string) string {
 	loc, _ := time.LoadLocation("Europe/Warsaw")
 	if loc == nil {
 		loc = time.UTC
 	}
 	tf := func(t time.Time) string { return t.In(loc).Format("2006-01-02 15:04") }
-	tri := map[string]string{"yes": "tak", "no": "nie", "unknown": "nieustalone"}
+	tri := map[string]string{"yes": pick(lang, "tak", "yes"), "no": pick(lang, "nie", "no"), "unknown": pick(lang, "nieustalone", "not determined")}
+	fill := pick(lang, "[uzupełnij]", "[to complete]")
 	orBlank := func(s string) string {
 		if strings.TrimSpace(s) == "" {
-			return "[uzupełnij]"
+			return fill
 		}
 		return strings.TrimSpace(s)
 	}
 	var b strings.Builder
 	line := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
-	line("%s – incydent #%d", strings.ToUpper(reportLabels[kind][:1])+reportLabels[kind][1:], x.ID)
-	line("Przygotowano: %s (czas polski)", tf(now))
+	title := label(lang, reportLabels, reportLabelsEN, kind)
+	line(pick(lang, "%s – incydent #%d", "%s – incident #%d"), strings.ToUpper(title[:1])+title[1:], x.ID)
+	line(pick(lang, "Przygotowano: %s (czas polski)", "Prepared: %s (Polish time)"), tf(now))
 	line("")
-	line("1. Podmiot zgłaszający")
-	line("   Nazwa podmiotu: [uzupełnij]")
-	line("   Sektor / rodzaj działalności: [uzupełnij]")
-	line("   Osoba do kontaktu (imię, telefon, e-mail): [uzupełnij]")
+	line(pick(lang, "1. Podmiot zgłaszający", "1. Reporting entity"))
+	line(pick(lang, "   Nazwa podmiotu: %s", "   Entity name: %s"), fill)
+	line(pick(lang, "   Sektor / rodzaj działalności: %s", "   Sector / type of activity: %s"), fill)
+	line(pick(lang, "   Osoba do kontaktu (imię, telefon, e-mail): %s", "   Contact person (name, phone, e-mail): %s"), fill)
 	line("")
-	line("2. Incydent")
-	line("   Tytuł: %s", x.Title)
+	line(pick(lang, "2. Incydent", "2. Incident"))
+	line(pick(lang, "   Tytuł: %s", "   Title: %s"), x.Title)
 	if x.AwareAt != nil {
-		line("   Stwierdzony: %s", tf(*x.AwareAt))
+		line(pick(lang, "   Stwierdzony: %s", "   Became aware: %s"), tf(*x.AwareAt))
 	}
 	hosts, users := map[string]bool{}, map[string]bool{}
 	var first, last time.Time
@@ -718,45 +772,47 @@ func reportDraft(kind string, x store.Incident, als []store.IncidentAlert, now t
 		}
 	}
 	if !first.IsZero() {
-		line("   Pierwsze wykryte zdarzenie: %s, ostatnie: %s", tf(first), tf(last))
+		line(pick(lang, "   Pierwsze wykryte zdarzenie: %s, ostatnie: %s", "   First detected event: %s, last: %s"), tf(first), tf(last))
 	}
-	line("   Waga (ocena wewnętrzna): %s; status: %s", severityLabels[x.Severity], statusLabels[x.Status])
-	line("   Opis: %s", orBlank(x.Description))
-	line("   Podejrzenie działania bezprawnego lub złośliwego: %s", tri[x.Malicious])
-	line("   Możliwy wpływ transgraniczny: %s", tri[x.CrossBorder])
+	line(pick(lang, "   Waga (ocena wewnętrzna): %s; status: %s", "   Severity (internal assessment): %s; status: %s"),
+		label(lang, severityLabels, severityLabelsEN, x.Severity), label(lang, statusLabels, statusLabelsEN, x.Status))
+	line(pick(lang, "   Opis: %s", "   Description: %s"), orBlank(x.Description))
+	line(pick(lang, "   Podejrzenie działania bezprawnego lub złośliwego: %s", "   Suspected unlawful or malicious act: %s"), tri[x.Malicious])
+	line(pick(lang, "   Możliwy wpływ transgraniczny: %s", "   Possible cross-border impact: %s"), tri[x.CrossBorder])
 	if kind == "early_warning" {
 		line("")
-		line("Wczesne ostrzeżenie (art. 23 ust. 4 lit. a) – szczegóły w zgłoszeniu incydentu w ciągu 72 h.")
+		line(pick(lang, "Wczesne ostrzeżenie (art. 23 ust. 4 lit. a) – szczegóły w zgłoszeniu incydentu w ciągu 72 h.",
+			"Early warning (Article 23(4)(a)) – details in the incident notification within 72 h."))
 		return b.String()
 	}
 	line("")
-	line("3. Wstępna ocena (powaga i skutki)")
-	line("   Skutki: %s", orBlank(x.Impact))
-	line("   Systemy, których dotyczy (%d): %s", len(hosts), joinKeys(hosts, "[uzupełnij]"))
-	line("   Konta, których dotyczy (%d): %s", len(users), joinKeys(users, "brak w alertach"))
+	line(pick(lang, "3. Wstępna ocena (powaga i skutki)", "3. Initial assessment (severity and impact)"))
+	line(pick(lang, "   Skutki: %s", "   Impact: %s"), orBlank(x.Impact))
+	line(pick(lang, "   Systemy, których dotyczy (%d): %s", "   Affected systems (%d): %s"), len(hosts), joinKeys(hosts, fill))
+	line(pick(lang, "   Konta, których dotyczy (%d): %s", "   Affected accounts (%d): %s"), len(users), joinKeys(users, pick(lang, "brak w alertach", "none in the alerts")))
 	line("")
-	line("4. Wskaźniki naruszenia (IoC)")
+	line(pick(lang, "4. Wskaźniki naruszenia (IoC)", "4. Indicators of compromise (IoC)"))
 	line("   %s", orBlank(x.IOCs))
 	line("")
-	line("5. Wykrycia (alerty Vardr, %d)", len(als))
+	line(pick(lang, "5. Wykrycia (alerty Vardr, %d)", "5. Detections (Vardr alerts, %d)"), len(als))
 	for i, a := range als {
 		if i == 30 {
-			line("   … i %d kolejnych", len(als)-30)
+			line(pick(lang, "   … i %d kolejnych", "   … and %d more"), len(als)-30)
 			break
 		}
 		line("   - %s [%s] %s – %s", tf(a.FirstSeen), a.Level, a.RuleTitle, a.Summary)
 	}
 	if kind == "final" || kind == "intermediate" {
 		line("")
-		line("6. Rodzaj zagrożenia / pierwotna przyczyna")
+		line(pick(lang, "6. Rodzaj zagrożenia / pierwotna przyczyna", "6. Type of threat / root cause"))
 		line("   %s", orBlank(x.RootCause))
 		line("")
-		line("7. Zastosowane i prowadzone środki ograniczające")
+		line(pick(lang, "7. Zastosowane i prowadzone środki ograniczające", "7. Applied and ongoing mitigation measures"))
 		line("   %s", orBlank(x.Mitigation))
 	}
 	if kind == "final" {
 		line("")
-		line("8. Wpływ transgraniczny (jeśli wystąpił): %s", tri[x.CrossBorder])
+		line(pick(lang, "8. Wpływ transgraniczny (jeśli wystąpił): %s", "8. Cross-border impact (if any): %s"), tri[x.CrossBorder])
 	}
 	return b.String()
 }
@@ -797,6 +853,7 @@ func (s *Server) RunIncidentReminders(ctx context.Context) {
 			continue
 		}
 		now := s.now()
+		lang := s.systemLanguage(ctx)
 		for _, x := range list {
 			if !x.Significant || x.AwareAt == nil {
 				continue
@@ -814,20 +871,23 @@ func (s *Server) RunIncidentReminders(ctx context.Context) {
 					lead = 72 * time.Hour
 				}
 				stage, sev, text := "", "", ""
+				name := label(lang, reportLabels, reportLabelsEN, d.Kind)
 				switch {
 				case now.After(d.Due):
 					stage, sev = "overdue", notify.SevCritical
-					text = fmt.Sprintf("Termin minął %s – %s nie zostało oznaczone jako wysłane.", d.Due.Format(time.RFC3339), d.Label)
+					text = fmt.Sprintf(pick(lang, "Termin minął %s – %s nie zostało oznaczone jako wysłane.",
+						"The deadline passed at %s – the %s has not been marked as submitted."), d.Due.Format(time.RFC3339), name)
 				case now.After(d.Due.Add(-lead)):
 					stage, sev = "soon", notify.SevWarning
-					text = fmt.Sprintf("%s – termin %s (zostało %s).", d.Label, d.Due.Format(time.RFC3339), d.Due.Sub(now).Round(time.Minute))
+					text = fmt.Sprintf(pick(lang, "%s – termin %s (zostało %s).", "%s – due %s (%s left)."), name, d.Due.Format(time.RFC3339),
+						d.Due.Sub(now).Round(time.Minute))
 				default:
 					continue
 				}
 				if fresh, err := s.Incidents.ReminderSent(ctx, x.ID, d.Kind, stage, now); err != nil || !fresh {
 					continue
 				}
-				s.notifyIncident(ctx, x, sev, fmt.Sprintf("NIS2: %s – incydent #%d", d.Label, x.ID), text)
+				s.notifyIncident(ctx, x, sev, fmt.Sprintf(pick(lang, "NIS2: %s – incydent #%d", "NIS2: %s – incident #%d"), name, x.ID), text)
 			}
 		}
 	}
@@ -837,10 +897,11 @@ func (s *Server) notifyIncident(ctx context.Context, x store.Incident, sev, titl
 	if s.Notify == nil || s.Notify.Svc == nil {
 		return
 	}
+	lang := s.systemLanguage(ctx)
 	if _, err := s.Notify.Svc.Send(ctx, notify.Message{Event: notify.EventIncident, Severity: sev, Title: title, Text: text, At: s.now(),
-		Fields: []notify.Field{{Name: "Incydent", Value: fmt.Sprintf("#%d %s", x.ID, x.Title)},
-			{Name: "Status", Value: statusLabels[x.Status], Inline: true, Trusted: true},
-			{Name: "Waga", Value: severityLabels[x.Severity], Inline: true, Trusted: true}}}); err != nil {
-		s.Log.Warn("powiadomienie o incydencie nieudane", "incident", x.ID, "err", err)
+		Fields: []notify.Field{{Name: pick(lang, "Incydent", "Incident"), Value: fmt.Sprintf("#%d %s", x.ID, x.Title)},
+			{Name: "Status", Value: label(lang, statusLabels, statusLabelsEN, x.Status), Inline: true, Trusted: true},
+			{Name: pick(lang, "Waga", "Severity"), Value: label(lang, severityLabels, severityLabelsEN, x.Severity), Inline: true, Trusted: true}}}); err != nil {
+		s.Log.Warn("incident notification failed", "incident", x.ID, "err", err)
 	}
 }

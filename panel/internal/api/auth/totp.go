@@ -191,7 +191,7 @@ func OpenSecret(key, sealed []byte, userID int64) ([]byte, error) {
 		return nil, err
 	}
 	if len(sealed) < g.NonceSize() {
-		return nil, errors.New("sekret MFA: uszkodzony zapis")
+		return nil, errors.New("MFA secret: damaged record")
 	}
 	return g.Open(nil, sealed[:g.NonceSize()], sealed[g.NonceSize():], aad(userID))
 }
@@ -228,7 +228,7 @@ func OpenData(key, sealed []byte, purpose string) ([]byte, error) {
 		return nil, err
 	}
 	if len(sealed) < g.NonceSize() {
-		return nil, errors.New("sekret: uszkodzony zapis")
+		return nil, errors.New("secret: damaged record")
 	}
 	return g.Open(nil, sealed[:g.NonceSize()], sealed[g.NonceSize():], []byte("vardr-data-v1:"+purpose))
 }

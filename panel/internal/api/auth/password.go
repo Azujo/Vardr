@@ -16,6 +16,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
+
+	"siem/internal/lang"
 )
 
 // Parametry argon2id (zalecenia OWASP: m ≥ 19 MiB, t ≥ 2). Zapisywane
@@ -41,7 +43,7 @@ func HashPassword(password string) (string, error) {
 		argon2.Version, argonMemory, argonTime, argonThreads, b64.EncodeToString(salt), b64.EncodeToString(key)), nil
 }
 
-var errBadHash = errors.New("nieobsługiwany format hasha hasła")
+var errBadHash = errors.New("unsupported password hash format")
 
 // VerifyPassword sprawdza hasło w czasie stałym względem treści klucza.
 // needsRehash=true, gdy hash ma słabsze parametry niż bieżące.
@@ -88,11 +90,11 @@ func CheckPasswordPolicy(username, password string) error {
 	n := utf8.RuneCountInString(password)
 	switch {
 	case n < MinPasswordLen:
-		return fmt.Errorf("hasło musi mieć co najmniej %d znaków", MinPasswordLen)
+		return lang.Errorf("hasło musi mieć co najmniej %d znaków", "the password must have at least %d characters", MinPasswordLen)
 	case n > 256:
-		return errors.New("hasło jest za długie (maks. 256 znaków)")
+		return lang.Errorf("hasło jest za długie (maks. 256 znaków)", "the password is too long (max 256 characters)")
 	case username != "" && strings.Contains(strings.ToLower(password), strings.ToLower(username)):
-		return errors.New("hasło nie może zawierać nazwy użytkownika")
+		return lang.Errorf("hasło nie może zawierać nazwy użytkownika", "the password must not contain the username")
 	}
 	return nil
 }

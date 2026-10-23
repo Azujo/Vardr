@@ -71,7 +71,7 @@ func (s *Server) ldapConfig(ctx context.Context) (*ldapauth.Config, error) {
 	if len(saved.BindPasswordEnc) > 0 {
 		pw, err := auth.OpenData(s.MFAKey, saved.BindPasswordEnc, ldapSecretUsage)
 		if err != nil {
-			return nil, errors.New("hasło konta usługowego LDAP nie do odczytania (zmieniony klucz MFA?) – zapisz je ponownie")
+			return nil, errors.New("the LDAP service account password cannot be read (MFA key changed?) – save it again")
 		}
 		cfg.BindPassword = string(pw)
 	}
@@ -127,7 +127,7 @@ func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, cfg *ldapauth
 		return
 	}
 	if err != nil {
-		s.Log.Error("logowanie domenowe – błąd połączenia z AD", "err", err)
+		s.Log.Error("domain sign-in – AD connection error", "err", err)
 		s.audit(r, nil, "login_failed", login, map[string]any{"reason": "ldap_error", "error": err.Error()})
 		writeError(w, http.StatusServiceUnavailable, "ldap_unavailable", "kontroler domeny jest niedostępny – spróbuj później albo użyj konta lokalnego")
 		return
@@ -175,7 +175,7 @@ func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, cfg *ldapauth
 func (s *Server) ldapReauth(ctx context.Context, u store.User, password string) (bool, error) {
 	cfg := s.ldapActive(ctx)
 	if cfg == nil {
-		return false, errors.New("logowanie domenowe jest wyłączone")
+		return false, errors.New("domain sign-in is disabled")
 	}
 	err := cfg.VerifyPassword(ctx, u.LDAPDN, password)
 	if errors.Is(err, ldapauth.ErrBadCredentials) {
@@ -217,7 +217,7 @@ func (s *Server) ldapSync(ctx context.Context, cfg *ldapauth.Config) {
 		case errors.Is(err, ldapauth.ErrNotFound):
 			reason = "konto usunięte z AD"
 		case err != nil:
-			s.Log.Warn("synchronizacja kont domenowych: AD niedostępne – bez zmian", "err", err)
+			s.Log.Warn("domain account sync: AD unavailable – no changes", "err", err)
 			return
 		case acct.Disabled:
 			reason = "konto wyłączone w AD"
@@ -240,10 +240,10 @@ func (s *Server) ldapSync(ctx context.Context, cfg *ldapauth.Config) {
 		s.ldap.mu.Unlock()
 		if reason != "" {
 			if err := s.Store.DeleteUserSessions(ctx, u.ID, ""); err != nil {
-				s.Log.Warn("synchronizacja kont domenowych: usunięcie sesji", "user", u.Username, "err", err)
+				s.Log.Warn("domain account sync: removing sessions", "user", u.Username, "err", err)
 			}
 			if !already {
-				s.Log.Info("konto domenowe straciło dostęp do panelu", "user", u.Username, "reason", reason)
+				s.Log.Info("domain account lost access to the panel", "user", u.Username, "reason", reason)
 				_ = s.Store.Audit(ctx, store.AuditEntry{Username: "(synchronizacja AD)", Action: "ldap_access_removed",
 					Target: u.Username, Details: map[string]any{"reason": reason}})
 			}
@@ -323,7 +323,7 @@ func (s *Server) draftConfig(w http.ResponseWriter, r *http.Request, d *ldapDraf
 		return nil, false
 	}
 	if err := c.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_config", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_config", err)
 		return nil, false
 	}
 	return &c, true
@@ -348,7 +348,7 @@ func (s *Server) testLDAP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	if err := cfg.Test(ctx); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		writeJSON(w, http.StatusOK, failed(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "połączenie LDAPS i logowanie kontem usługowym działają"})
@@ -370,7 +370,7 @@ func (s *Server) ldapGroups(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	groups, err := cfg.Groups(ctx)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "ldap_error", err.Error())
+		writeErr(w, http.StatusBadGateway, "ldap_error", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
@@ -398,7 +398,7 @@ func (s *Server) checkLDAPAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "ldap_error", err.Error())
+		writeErr(w, http.StatusBadGateway, "ldap_error", err)
 		return
 	}
 	has := map[string]bool{}
@@ -447,7 +447,7 @@ func (s *Server) saveLDAPSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Enabled {
 		if err := c.Validate(); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_config", err.Error())
+			writeErr(w, http.StatusBadRequest, "bad_config", err)
 			return
 		}
 		if c.BindPassword == "" {

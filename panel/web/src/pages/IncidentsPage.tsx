@@ -4,12 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Group, SegmentedControl, Stack, Table, Text, Title } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import { Link, useNavigate } from "react-router-dom";
-import { formatDate, incidentSeverityLabels, incidentStatusLabels, incidentsApi, type Incident, type IncidentDeadline } from "../api";
+import { useTranslation } from "react-i18next";
+import { formatDate, incidentSeverityColors, incidentStatusColors, incidentsApi, type Incident, type IncidentDeadline } from "../api";
 import { useAuth } from "../auth";
 import { DeadlineBadge, nextDeadline } from "../incidents";
 import AddToIncident from "./AddToIncident";
 
 export default function IncidentsPage() {
+  const { t } = useTranslation("incidents");
   const { can } = useAuth();
   const navigate = useNavigate();
   const [scope, setScope] = useState("active");
@@ -37,15 +39,14 @@ export default function IncidentsPage() {
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Incydenty</Title>
+          <Title order={2}>{t("list.title")}</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Incydent łączy alerty, ustalenia i działania w jedną historię. Incydent poważny w rozumieniu NIS2 ma terminy
-            zgłoszeń do CSIRT: wczesne ostrzeżenie w 24 h od stwierdzenia, zgłoszenie w 72 h, sprawozdanie końcowe w miesiąc.
+            {t("list.intro")}
           </Text>
         </div>
         {can("incidents", "write") && (
           <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
-            Nowy incydent
+            {t("list.new")}
           </Button>
         )}
       </Group>
@@ -54,15 +55,15 @@ export default function IncidentsPage() {
         value={scope}
         onChange={setScope}
         data={[
-          { value: "active", label: "Aktywne" },
-          { value: "closed", label: "Zamknięte" },
-          { value: "all", label: "Wszystkie" },
+          { value: "active", label: t("list.active") },
+          { value: "closed", label: t("list.closed") },
+          { value: "all", label: t("list.all") },
         ]}
       />
       {error && <Alert color="red">{error}</Alert>}
       {items.length === 0 && !error && (
         <Text c="dimmed" size="sm">
-          Brak incydentów w tym widoku. Incydent założysz tu albo z listy alertów (zaznacz alerty → „Do incydentu”).
+          {t("list.empty")}
         </Text>
       )}
       {items.length > 0 && (
@@ -71,13 +72,13 @@ export default function IncidentsPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>#</Table.Th>
-                <Table.Th>Incydent</Table.Th>
-                <Table.Th>Waga</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>NIS2</Table.Th>
-                <Table.Th>Alerty</Table.Th>
-                <Table.Th>Prowadzi</Table.Th>
-                <Table.Th>Zmiana</Table.Th>
+                <Table.Th>{t("list.colIncident")}</Table.Th>
+                <Table.Th>{t("list.colSeverity")}</Table.Th>
+                <Table.Th>{t("list.colStatus")}</Table.Th>
+                <Table.Th>{t("list.colNis2")}</Table.Th>
+                <Table.Th>{t("list.colAlerts")}</Table.Th>
+                <Table.Th>{t("list.colAssignee")}</Table.Th>
+                <Table.Th>{t("list.colChanged")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -92,11 +93,11 @@ export default function IncidentsPage() {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={incidentSeverityLabels[x.severity].color}>{incidentSeverityLabels[x.severity].label}</Badge>
+                      <Badge color={incidentSeverityColors[x.severity]}>{t(`severity.${x.severity}`)}</Badge>
                     </Table.Td>
                     <Table.Td>
-                      <Badge variant="light" color={incidentStatusLabels[x.status].color}>
-                        {incidentStatusLabels[x.status].label}
+                      <Badge variant="light" color={incidentStatusColors[x.status]}>
+                        {t(`status.${x.status}`)}
                       </Badge>
                     </Table.Td>
                     <Table.Td>
@@ -105,7 +106,7 @@ export default function IncidentsPage() {
                           <DeadlineBadge d={next} now={now} />
                         ) : (
                           <Badge color="green" variant="light">
-                            zgłoszenia wysłane
+                            {t("list.allSubmitted")}
                           </Badge>
                         )
                       ) : (

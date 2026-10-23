@@ -248,7 +248,7 @@ func TestExporterWritesVerifiablePackage(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if c := urd.CheckExport(f); !c.OK || c.Records != 1 {
+	if c := urd.CheckExport(f, "pl"); !c.OK || c.Records != 1 {
 		t.Fatalf("paczka z dysku: %+v", c)
 	}
 	// Wygasła paczka jest usuwana.

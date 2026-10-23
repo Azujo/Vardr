@@ -73,13 +73,13 @@ Wynik jest w zakładce *Actions* repozytorium.
 
 ## Konwencje
 
-- **Język:** komentarze, komunikaty, logi i interfejs po polsku. Identyfikatory w kodzie po angielsku. Opisy commitów po angielsku.
+- **Język:** komentarze w kodzie po polsku, identyfikatory i opisy commitów po angielsku. **Logi usług, błędy wewnętrzne i komunikaty programów serwera** – po angielsku. Teksty dla ludzi – w obu językach: panelu w plikach tłumaczeń, serwera przez `internal/lang` (niżej, „…tłumaczenie”). Dokumentacja po polsku (`docs/`) i po angielsku (`docs/en/` – przy zmianie zachowania popraw obie).
 - **Formatowanie:** `gofmt` (sprawdzane w CI); frontend sprawdza kompilator TypeScript (`npm run build`).
 - **Komentarze** mówią „dlaczego” i odwołują się do etapu lub incydentu, który wymusił rozwiązanie (np. „etap 8: przy 7000 zdarzeń/s …”). Kod mówi „co”.
 - **Programy serwera:** konfiguracja tylko ze zmiennych środowiskowych (`internal/svc`: `Env`, `EnvInt`, `EnvDuration`), log JSON (`svc.Logger`), metryki w `server/internal/metrics`, czyste zakończenie po SIGTERM.
 - **Potwierdzanie wiadomości NATS** dopiero po wykonaniu pracy; każdy etap musi znosić duplikaty.
 - **SQL:** wartości od użytkownika zawsze jako parametry; nazwy kolumn tylko z list dozwolonych (Mímir, reguły).
-- **Zmiany zachowania** opisuj w `docs/` (ten zestaw; `README.md` to tylko strona projektu), przebieg prac w `docs/PODSUMOWANIE.md`.
+- **Zmiany zachowania** opisuj w `docs/` i `docs/en/` (`README.md`/`README.pl.md` to tylko strona projektu), zmiany wersji w `CHANGELOG.md` (sekcja „Niewydane”), przebieg prac w `docs/PODSUMOWANIE.md`.
 
 ## Jak dodać…
 
@@ -117,6 +117,27 @@ Wzór: `server/internal/detector/silence.go` (cisza źródła).
 1. Handler w `panel/internal/api/<moduł>_handlers.go`, trasa w `server.go` z rolą (`roleViewer`, `roleAnalyst`, `roleAdmin`). Zmiany zapisuj do audytu (`s.audit`); operacje wrażliwe – z ponownym hasłem.
 2. Magazyn w `panel/internal/api/store` (+ migracja) i test na PostgreSQL.
 3. Typy i wywołania w `panel/web/src/api.ts`, strona w `panel/web/src/pages`, trasa w `App.tsx`, pozycja menu w `Layout.tsx`.
+4. Teksty strony w plikach tłumaczeń modułu (niżej).
+
+### …tłumaczenie panelu
+
+Panel tłumaczy się w przeglądarce ([i18next](https://www.i18next.com)) – serwer nie wykonuje żadnej pracy, a każdy język to zestaw statycznych plików ładowanych dopiero wtedy, gdy są potrzebne.
+
+- **Pliki:** `panel/web/src/locales/<język>/<moduł>.json` (`common` – menu i elementy wspólne, `incidents`, …). Polski jest źródłem kluczy, angielski – językiem zapasowym: brakujący tekst w innym języku panel pokazuje po angielsku.
+- **W kodzie:** `const { t } = useTranslation("<moduł>")` i `t("klucz", { zmienna })`; liczba mnoga przez `count` i klucze `_one`/`_few`/`_many`/`_other` (polski) albo `_one`/`_other` (angielski). Daty i liczby przez `formatDate`/`formatNumber` z `api.ts` – biorą format z bieżącego języka.
+- **Serwer mówi kodami:** statusy, rodzaje i wpisy osi czasu zapisuj jako kody i szczegóły (`details`), a tekst składaj w panelu – wtedy każdy czyta je w swoim języku. Błędy API mają stały kod (`writeError(w, status, "kod", "opis po polsku")`); tłumaczenie kodu – w `locales/en/errors.json`. Nowy kod bez tłumaczenia zatrzyma test `TestErrorCodesTranslated`.
+- **Kompletność:** `npm run build` (i `npm run check-locales`) sprawdza, czy angielski ma wszystkie klucze polskiego, i podaje procent przetłumaczenia pozostałych języków.
+- **Nowy język:** skopiuj `locales/en` do `locales/<kod>`, przetłumacz pliki, dopisz język w `languages` (`panel/web/src/i18n.ts`) i w `panelLanguages` (`panel/internal/api/auth_handlers.go`). Niepełne tłumaczenie można wydać – brakujące teksty będą po angielsku.
+- **Język konta:** użytkownik wybiera go w menu konta; zapis na koncie (`PUT /api/v1/account/language`), przed zalogowaniem – język przeglądarki.
+
+### …tłumaczenie tekstów serwera
+
+- **Logi i błędy wewnętrzne** – tylko po angielsku.
+- **Teksty dla ludzi tworzone przez serwer** – w obu językach, `internal/lang`:
+  - `lang.Pick(l, pl, en)` – wybór tekstu; język systemu: w panelu `syslang.Cache`, w usługach `langdb.System` (widok `system_language`, nowa rola potrzebuje `GRANT SELECT`);
+  - `lang.Errorf(pl, en, args…)` – błąd z dwoma wersjami (walidacja ustawień, reguł, dekoderów); `Error()` daje polski, `lang.English(err)` angielski, w logach (slog) – angielski; API zwraca oba (`message`, `message_en`; w wynikach testów `error`, `error_en`);
+  - `lang.L(pl, en)` – programy na komputerach (agent, czytnik eksportu) według języka systemu operacyjnego (`VARDR_LANG` wymusza); testy takich pakietów ustawiają `VARDR_LANG=pl` w `TestMain`.
+- **Reguły:** `vardr.i18n.en` w pliku reguły ([reguly.md](reguly.md#rozszerzenia-vardra)); reguły wbudowane – teksty w `server/internal/detector`. Test `TestOwnRulesTranslated` pilnuje reguł z repozytorium.
 
 ## Laboratorium deweloperskie
 

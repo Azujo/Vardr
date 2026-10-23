@@ -5,6 +5,8 @@ import { Alert, Anchor, Badge, Button, Card, Group, SimpleGrid, Stack, Table, Te
 import { notifications } from "@mantine/notifications";
 import { IconHistory } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { locale } from "../i18n";
 import { formatBytes, formatDate, formatNumber, replayStatusLabels, replaysApi, type ArchiveReplay } from "../api";
 
 function localHour(d: Date): string {
@@ -14,7 +16,7 @@ function localHour(d: Date): string {
 
 function hourRange(from: string, to: string) {
   const opt: Intl.DateTimeFormatOptions = { dateStyle: "short", timeStyle: "short" };
-  return `${new Date(from).toLocaleString("pl-PL", opt)} – ${new Date(to).toLocaleString("pl-PL", opt)}`;
+  return `${new Date(from).toLocaleString(locale(), opt)} – ${new Date(to).toLocaleString(locale(), opt)}`;
 }
 
 // Link do Mímira: dane odtworzone z archiwum, zakres zlecenia (czas zdarzeń
@@ -30,6 +32,7 @@ function mimirLink(x: ArchiveReplay) {
 // Odtworzenie z archiwum (tylko administrator): paczki z wybranych godzin
 // trafiają przez osobną ścieżkę do tabeli siem.events_replay.
 export default function ArchiveReplays() {
+  const { t } = useTranslation("archive");
   const [from, setFrom] = useState(() => localHour(new Date(Date.now() - 24 * 3600_000)));
   const [to, setTo] = useState(() => localHour(new Date()));
   const [agents, setAgents] = useState("");
@@ -66,7 +69,7 @@ export default function ArchiveReplays() {
           .filter(Boolean),
         reason,
       });
-      notifications.show({ color: "green", message: "Odtworzenie zlecone – archiwizator rozpocznie je w ciągu kilkunastu sekund." });
+      notifications.show({ color: "green", message: t("replay.requested") });
       setReason("");
       load();
     } catch (err) {
@@ -83,40 +86,37 @@ export default function ArchiveReplays() {
           <Stack gap="sm">
             <Group gap="xs">
               <IconHistory size={20} />
-              <Title order={4}>Odtworzenie z archiwum</Title>
+              <Title order={4}>{t("replay.title")}</Title>
             </Group>
             <Text size="sm" c="dimmed">
-              Oryginalne paczki z wybranych godzin archiwizacji przechodzą ponownie przez normalizację – osobną ścieżką, do
-              osobnej tabeli. Odtworzone zdarzenia widać w Mímirze po przełączeniu na „Odtworzone z archiwum”; nie mieszają
-              się z bieżącymi i nie trafią do detekcji. Przydatne np. do analizy danych starszych niż retencja bazy zdarzeń.
-              Zlecenie trafia do dziennika audytu.
+              {t("replay.intro")}
             </Text>
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 type="datetime-local"
-                label="Od (pełna godzina)"
+                label={t("from")}
                 required
                 value={from}
                 onChange={(e) => setFrom(e.currentTarget.value)}
               />
               <TextInput
                 type="datetime-local"
-                label="Do (pełna godzina, bez niej)"
+                label={t("to")}
                 required
                 value={to}
                 onChange={(e) => setTo(e.currentTarget.value)}
               />
             </SimpleGrid>
             <TextInput
-              label="Agenci (opcjonalnie)"
-              description="identyfikatory agentów oddzielone przecinkami; puste = wszyscy"
-              placeholder="np. agt-dc01, agt-iis01"
+              label={t("replay.agents")}
+              description={t("replay.agentsHint")}
+              placeholder={t("replay.agentsPlaceholder")}
               value={agents}
               onChange={(e) => setAgents(e.currentTarget.value)}
             />
             <Textarea
-              label="Powód odtworzenia"
-              description="np. numer incydentu – trafi do audytu"
+              label={t("replay.reason")}
+              description={t("replay.reasonHint")}
               required
               minLength={5}
               maxLength={1000}
@@ -127,7 +127,7 @@ export default function ArchiveReplays() {
             />
             <Group>
               <Button type="submit" loading={busy} leftSection={<IconHistory size={18} />}>
-                Zleć odtworzenie
+                {t("replay.submit")}
               </Button>
             </Group>
           </Stack>
@@ -140,12 +140,12 @@ export default function ArchiveReplays() {
           <Table striped verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr style={{ whiteSpace: "nowrap" }}>
-                <Table.Th>Nr</Table.Th>
-                <Table.Th>Zakres</Table.Th>
-                <Table.Th>Agenci</Table.Th>
-                <Table.Th>Zlecił / powód</Table.Th>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Odtworzono</Table.Th>
+                <Table.Th>{t("manifest.no")}</Table.Th>
+                <Table.Th>{t("col.range")}</Table.Th>
+                <Table.Th>{t("col.agents")}</Table.Th>
+                <Table.Th>{t("col.byReason")}</Table.Th>
+                <Table.Th>{t("col.state")}</Table.Th>
+                <Table.Th>{t("replay.replayed")}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -156,7 +156,7 @@ export default function ArchiveReplays() {
                   <Table.Td style={{ whiteSpace: "nowrap" }}>{hourRange(x.from, x.to)}</Table.Td>
                   <Table.Td maw={200}>
                     <Text size="sm" lineClamp={2}>
-                      {x.agents.length ? x.agents.join(", ") : "wszyscy"}
+                      {x.agents.length ? x.agents.join(", ") : t("all")}
                     </Text>
                   </Table.Td>
                   <Table.Td maw={240}>
@@ -174,18 +174,18 @@ export default function ArchiveReplays() {
                   </Table.Td>
                   <Table.Td style={{ whiteSpace: "nowrap" }}>
                     <Text size="sm">
-                      {formatNumber(x.batches)} paczek ({formatBytes(x.bytes)})
+                      {t("replay.batches", { n: formatNumber(x.batches), size: formatBytes(x.bytes) })}
                     </Text>
                     {x.skipped > 0 && (
                       <Text size="xs" c="dimmed">
-                        pominięte (inni agenci): {formatNumber(x.skipped)}
+                        {t("replay.skipped", { n: formatNumber(x.skipped) })}
                       </Text>
                     )}
                   </Table.Td>
                   <Table.Td>
                     {(x.status === "done" || x.status === "running") && (
                       <Anchor component={Link} to={mimirLink(x)} size="sm">
-                        pokaż w Mímirze
+                        {t("replay.show")}
                       </Anchor>
                     )}
                   </Table.Td>

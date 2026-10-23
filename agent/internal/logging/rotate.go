@@ -58,7 +58,7 @@ func (r *RotatingFile) Write(p []byte) (int, error) {
 		if err := r.rotate(); err != nil {
 			// Rotacja nieudana (np. plik zablokowany) – piszemy dalej do
 			// bieżącego pliku zamiast gubić wpisy.
-			fmt.Fprintln(os.Stderr, "rotacja logu nieudana:", err)
+			fmt.Fprintln(os.Stderr, "log rotation failed:", err)
 		}
 	}
 	n, err := r.f.Write(p)

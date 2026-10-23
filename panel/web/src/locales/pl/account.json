@@ -1,0 +1,89 @@
+{
+  "login": {
+    "subtitle": "Hliðskjálf – panel SIEM",
+    "username": "Login",
+    "usernameHint": "konto panelu albo domenowe (jan.kowalski)",
+    "password": "Hasło",
+    "submit": "Zaloguj",
+    "codePrompt": [
+      "Konto ",
+      ": podaj kod z aplikacji uwierzytelniającej."
+    ],
+    "confirm": "Potwierdź",
+    "enrollPrompt": [
+      "Panel wymaga drugiego składnika logowania. Skonfiguruj aplikację uwierzytelniającą dla konta ",
+      " – to jednorazowe."
+    ],
+    "enrollSubmit": "Włącz i zaloguj",
+    "toPanel": "Przejdź do panelu",
+    "back": "← inne konto / od nowa",
+    "recoveryUsed_one": "Użyto kodu zapasowego – został {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
+    "recoveryUsed_few": "Użyto kodu zapasowego – zostały {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
+    "recoveryUsed_many": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
+    "recoveryUsed_other": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”."
+  },
+  "mfa": {
+    "step1": "Zainstaluj na telefonie aplikację uwierzytelniającą, np. Microsoft Authenticator, Google Authenticator albo Aegis.",
+    "step2": "Dodaj konto, skanując kod QR (albo wpisz klucz ręcznie).",
+    "step3": "Wpisz poniżej 6-cyfrowy kod, który pokaże aplikacja.",
+    "qrAlt": "kod QR konfiguracji aplikacji uwierzytelniającej",
+    "manualKey": "Klucz do wpisania ręcznie ({{issuer}}: {{account}}):",
+    "copyShort": "kopiuj",
+    "copiedShort": "skopiowano",
+    "code": "Kod z aplikacji",
+    "codeOrRecovery": "Kod z aplikacji albo kod zapasowy",
+    "codeOrRecoveryPlaceholder": "123456 albo abcde-12345",
+    "fileHeader": "Vardr – kody zapasowe drugiego składnika logowania\nKażdy kod działa jeden raz.",
+    "fileName": "vardr-kody-zapasowe.txt",
+    "saveTitle": "Zapisz kody zapasowe",
+    "saveText": "Każdy kod pozwala zalogować się jeden raz bez telefonu (zgubiony, rozładowany). Przechowuj je bezpiecznie, np. w menedżerze haseł.",
+    "saveOnce": "Nie zostaną pokazane ponownie.",
+    "copy": "Kopiuj",
+    "copied": "Skopiowano",
+    "download": "Pobierz .txt",
+    "savedCheck": "Zapisałem kody zapasowe"
+  },
+  "password": {
+    "title": "Zmiana hasła",
+    "titleForced": "Ustaw własne hasło",
+    "intro": "Co najmniej {{min}} znaków; najlepiej kilka słów, które łatwo zapamiętać.",
+    "introForced": "Logujesz się hasłem startowym – przed dalszą pracą ustaw własne.",
+    "current": "Obecne hasło",
+    "new": "Nowe hasło",
+    "newHint": "minimum {{min}} znaków, bez nazwy użytkownika",
+    "tooShort": "za krótkie ({{len}}/{{min}})",
+    "repeat": "Powtórz nowe hasło",
+    "mismatch": "hasła się różnią",
+    "submit": "Zmień hasło",
+    "changed": "Hasło zmienione. Inne sesje tego konta zostały zakończone."
+  },
+  "security": {
+    "title": "Bezpieczeństwo konta",
+    "intro": "Drugi składnik logowania: po haśle panel prosi o kod z aplikacji uwierzytelniającej na telefonie. Kradzież samego hasła nie wystarczy wtedy do zalogowania.",
+    "unavailable": "Drugi składnik nie jest skonfigurowany na serwerze (brak klucza MFA) – zgłoś to administratorowi.",
+    "app": "Aplikacja uwierzytelniająca (TOTP)",
+    "on": "włączona",
+    "off": "wyłączona",
+    "policy": {
+      "all": "W tym panelu drugi składnik jest wymagany od wszystkich kont",
+      "admins": "W tym panelu drugi składnik jest wymagany od administratorów",
+      "none": "W tym panelu drugi składnik jest dobrowolny"
+    },
+    "requiredForYou": " – także od Ciebie.",
+    "enabledAt": "Włączony {{date}}, kody zapasowe: {{left}} z 10.",
+    "fewCodes": "Zostało mało kodów zapasowych – wygeneruj nowe.",
+    "enable": "Włącz",
+    "disable": "Wyłącz",
+    "newCodes": "Nowe kody zapasowe",
+    "enableTitle": "Włączenie drugiego składnika",
+    "disableTitle": "Wyłączenie drugiego składnika",
+    "codesTitle": "Kody zapasowe",
+    "yourPassword": "Twoje hasło",
+    "next": "Dalej",
+    "oldCodesInvalid": "Dotychczasowe kody zapasowe przestaną działać.",
+    "disableWarning": "Bez drugiego składnika do zalogowania wystarczy samo hasło.",
+    "disabled": "Drugi składnik wyłączony",
+    "generate": "Wygeneruj",
+    "done": "Gotowe"
+  }
+}

@@ -55,7 +55,7 @@ vardr:
 Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_access`; grupy i oprogramowanie (`attack.g0016`, `attack.s0002`) są dozwolone, ale nie trafiają do macierzy. Każda reguła, która tworzy alerty, powinna mieć co najmniej jedną technikę (reguła bazowa korelacji – nie musi; technikę ma korelacja).
 
 - **Słownik**: ATT&CK Enterprise wbudowany w Vardra (`internal/attack/enterprise.json`, obecnie wersja 20). Od wersji 20 taktyka Defense Evasion jest podzielona na `stealth` i `defense_impairment`, a część technik przeniesiono (np. czyszczenie dziennika: T1070.001 → T1685.005, wyłączenie narzędzi ochrony: T1562.001 → T1685).
-- **Sprawdzanie**: `siem-detector check` wypisuje `UWAGA` przy nieznanej technice, wycofanej technice (z następcą) i nieistniejącej taktyce; reguła działa dalej. Test reguły w panelu pokazuje te same ostrzeżenia, a test `TestRulesAttackTags` pilnuje reguł z repozytorium i wbudowanych.
+- **Sprawdzanie**: `siem-detector check` wypisuje `WARN` przy nieznanej technice, wycofanej technice (z następcą) i nieistniejącej taktyce; reguła działa dalej. Test reguły w panelu pokazuje te same ostrzeżenia, a test `TestRulesAttackTags` pilnuje reguł z repozytorium i wbudowanych.
 - **Bez stałej techniki**: wykrycia antywirusa (Defender, ASR) dotyczą różnych technik zależnie od zagrożenia – takie reguły mają tag `vardr.attack_dynamic` zamiast `attack.t…` (test pokrycia ich nie wymaga).
 - **Taktyki**: technika sama wskazuje swoje taktyki (kolumny macierzy), więc tag taktyki jest opcjonalny – pomaga tylko czytać regułę.
 - **W panelu**: plakietki technik przy regułach i alertach (z linkiem do attack.mitre.org), filtr alertów po technice (`/alerts?technique=T1110` – z podtechnikami) i taktyce, macierz pokrycia (*Wykrywanie → MITRE ATT&CK*) z eksportem warstwy dla ATT&CK Navigator, technika w powiadomieniach o alertach. Kreator korelacji dopisuje korelacji tagi `attack.*` reguł, z których ją złożono.
@@ -135,6 +135,13 @@ vardr:
   instructions: |
     …
   enabled: true
+  i18n:                 # tłumaczenia (opcjonalnie)
+    en:
+      title: Series of failed logons to one account
+      description: |
+        …
+      instructions: |
+        …
 ```
 
 | Klucz | Znaczenie |
@@ -146,6 +153,7 @@ vardr:
 | `threshold.distinct` | zamiast liczby zdarzeń – liczba różnych wartości pola (np. password spraying: 5 różnych kont z jednego adresu). Ta sama próba widoczna w dwóch dziennikach nie zawyża wyniku. |
 | `instructions` | co ma zrobić analityk; pokazywane w alercie i w powiadomieniu |
 | `enabled` | `false` wyłącza regułę bez usuwania pliku (panel może to nadpisać) |
+| `i18n` | tytuł, opis i instrukcja w innych językach (obsługiwany: `en`). Panel pokazuje je kontom z tym językiem, powiadomienia – przy takim języku systemu (Powiadomienia → *Język systemu*). Brak tłumaczenia – tekst bazowy (polski). Instrukcja w tłumaczeniu używa tych samych zmiennych `{{…}}`. |
 
 **Zmienne w `instructions`:** `{{Pole}}` – wartość pola z (pierwszego) zdarzenia, np. `{{TargetUserName}}`, `{{IpAddress}}`, `{{host.name}}`; brak wartości daje „(brak)”. Reguły progowe mają dodatkowo `{{count}}` (liczba zdarzeń albo wartości), `{{window}}` (okno) i `{{values}}` (lista wartości przy `distinct`).
 
@@ -184,7 +192,7 @@ vardr:
 - **`aliases`** – gdy to samo „coś” ma w każdej regule bazowej inne pole (SID nowego konta to `TargetSid` w 4720, a `MemberSid` przy dodaniu do grupy). Alias jest nazwą w `group-by`, a pod nim reguła bazowa (`id` albo `name`) → pole.
 - **`timespan`** – okno od `1m` do `24h` (jednostki `s`, `m`, `h`, `d`).
 - **`generate`** – `false` (domyślnie): reguły bazowe same nie tworzą alertów (w panelu opis „Reguła bazowa korelacji”). `true`: reguły bazowe nadal alarmują, korelacja to dodatkowy alert o wyższym poziomie.
-- **`vardr`** – w regule korelacyjnej tylko `enabled`, `suppress` (domyślnie większe z 1 h i `timespan`) i `instructions`. W instrukcji oprócz pól ostatniego zdarzenia są `{{count}}` (liczba zdarzeń), `{{window}}`, `{{rules}}` (tytuły reguł, które trafiły) i `{{key}}` (wartości `group-by`).
+- **`vardr`** – w regule korelacyjnej tylko `enabled`, `suppress` (domyślnie większe z 1 h i `timespan`), `instructions` i `i18n`. W instrukcji oprócz pól ostatniego zdarzenia są `{{count}}` (liczba zdarzeń), `{{window}}`, `{{rules}}` (tytuły reguł, które trafiły) i `{{key}}` (wartości `group-by`).
 
 **Jak działa.** Detektor co minutę (razem z korelacjami wbudowanymi) szuka w `siem.events` kluczy z nowo przyjętych zdarzeń reguł bazowych. Dla tych kluczy pobiera zdarzenia z okna `timespan` wstecz (plus godzina na zdarzenia spóźnione) i sprawdza warunek. Alert dostaje silnik `correlation` i zawiera wszystkie zdarzenia, które spełniły korelację. Ponowne przebiegi nie dublują zdarzeń (para reguła–zdarzenie jest w alercie raz), a kolejne trafienia tego samego klucza w oknie `suppress` dołączają do otwartego alertu.
 
@@ -214,7 +222,7 @@ vardr:
 
 ## Testowanie
 
-1. **Lokalnie:** `go run ./server/cmd/siem-detector check rules` wczytuje wszystkie reguły i wypisuje błędy (kod wyjścia 1).
+1. **Lokalnie:** `go run ./server/cmd/siem-detector check rules` wczytuje wszystkie reguły i wypisuje błędy (`ERROR`, po angielsku; kod wyjścia 1). Panel pokazuje błędy reguł w języku konta.
 2. **W panelu** (*Reguły detekcji → Test reguły*, rola `analyst`): wklejona reguła jest uruchamiana na zdarzeniach z ClickHouse z ostatnich 1–168 godzin. Widać trafienia, a dla reguł progowych – alerty, które by powstały. Regułę korelacyjną testuje się tak samo: wklejony tekst może zawierać też reguły bazowe (dokumenty po `---`), a brakujące są brane z wczytanych reguł; wynik to alerty z kluczem i zdarzeniami. Test korzysta z tych samych limitów co wyszukiwarka.
 3. **Test zgodności silników** (`server/internal/detector/compat_test.go`): korpus zdarzeń (`testdata/`) przechodzi przez oba silniki, a test sprawdza, że każda reguła z `rules/` daje te same trafienia w locie i w SQL. Nowa reguła powinna mieć zdarzenie w korpusie, które ją wywołuje. Uruchomienie: [rozwoj.md](rozwoj.md#testy).
 4. **W laboratorium:** wywołanie zdarzenia na prawdziwym źródle (np. nieudane logowania do DC, `fortisim -scenario vpn-brute`, `curl … entrasim/sim/scenario?name=spray`) i sprawdzenie alertu w Gjallarhornie.
@@ -301,9 +309,12 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 | `windows/defender_asr_block.yml` | reguła ASR zablokowała działanie (1121) |
 | `network/fortigate_host_sweep.yml` | rozpoznanie: ≥30 odrzuconych adresów docelowych z jednego adresu w 2 min |
 
-Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – domeny, serwery, konta poza firmą) nie ma reguł: nie zostawia śladów w logach organizacji. Reguły skanowania na FortiGate wymagają logowania odrzuconego ruchu w polityce zapory.
 | `correlation/new_account_privileged.yml` | korelacja: konto utworzone i w ciągu godziny dodane do grupy uprzywilejowanej |
 | `correlation/account_failures_many_sources.yml` | korelacja: nieudane logowania na jedno konto z ≥4 adresów w 15 min (z regułą bazową) |
+
+Taktyka *Resource Development* (przygotowanie infrastruktury napastnika – domeny, serwery, konta poza firmą) nie ma reguł: nie zostawia śladów w logach organizacji. Reguły skanowania na FortiGate wymagają logowania odrzuconego ruchu w polityce zapory.
+
+Wszystkie reguły z repozytorium mają tłumaczenie na angielski (`vardr.i18n.en`); pilnuje tego test `TestOwnRulesTranslated`.
 
 ## Import reguł SigmaHQ
 
@@ -349,11 +360,11 @@ Testy Vardra (zgodność silników, korpus, tagi ATT&CK) ten katalog pomijają, 
 4. Sprawdzenie parserem i usunięcie reguł, których Vardr nie obsługuje (drugie polecenie; potem pierwsze jeszcze raz – licznik błędów ma pokazać 0):
 
    ```powershell
-   & "C:\Program Files\Go\bin\go.exe" run ./server/cmd/siem-detector check rules > check.txt; "OK: " + (Select-String -Path check.txt -Pattern '^OK').Count; "błędy: " + (Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+sigmahq/').Count
+   & "C:\Program Files\Go\bin\go.exe" run ./server/cmd/siem-detector check rules > check.txt; "OK: " + (Select-String -Path check.txt -Pattern '^OK').Count; "błędy: " + (Select-String -Path check.txt -Pattern '^(?!OK|WARN)\S+\s+sigmahq/').Count
    ```
 
    ```powershell
-   Select-String -Path check.txt -Pattern '^(?!OK|UWAGA)\S+\s+(sigmahq/[^\s:]+\.yml)' | ForEach-Object { "rules/" + $_.Matches[0].Groups[1].Value } | Sort-Object -Unique | Where-Object { Test-Path $_ } | Remove-Item
+   Select-String -Path check.txt -Pattern '^(?!OK|WARN)\S+\s+(sigmahq/[^\s:]+\.yml)' | ForEach-Object { "rules/" + $_.Matches[0].Groups[1].Value } | Sort-Object -Unique | Where-Object { Test-Path $_ } | Remove-Item
    ```
 
 5. Wszystkie zaimportowane reguły wyłączone w plikach (bez tego włączyłyby się setki reguł naraz):
@@ -375,7 +386,7 @@ git clone --depth 1 https://github.com/SigmaHQ/sigma.git ../sigma
 for d in windows/process_creation windows/powershell/powershell_script windows/builtin/security windows/builtin/system windows/builtin/windefend windows/network_connection windows/file/file_event windows/dns_query windows/registry/registry_set cloud/azure/signin_logs cloud/azure/audit_logs; do [ -d "../sigma/rules/$d" ] && mkdir -p "rules/sigmahq/$d" && cp -r "../sigma/rules/$d/." "rules/sigmahq/$d/"; done
 grep -rlE '^status: (experimental|deprecated|unsupported)' rules/sigmahq | xargs -r rm
 go run ./server/cmd/siem-detector check rules > check.txt
-grep -vE '^(OK|UWAGA)' check.txt | sed -nE 's/^[^ ]+ +(sigmahq\/[^ :]+\.yml).*/rules\/\1/p' | sort -u | xargs -r rm
+grep -vE '^(OK|WARN)' check.txt | sed -nE 's/^[^ ]+ +(sigmahq\/[^ :]+\.yml).*/rules\/\1/p' | sort -u | xargs -r rm
 find rules/sigmahq -name '*.yml' -exec sh -c 'printf "\nvardr:\n  enabled: false\n" >> "$1"' _ {} \;
 deploy/lab/deploy.sh rules
 ```

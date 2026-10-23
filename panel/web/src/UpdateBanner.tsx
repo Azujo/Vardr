@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Button, Group, Text } from "@mantine/core";
 import { IconRefresh } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 
 const bundleRe = /assets\/index-[^"']+\.js/;
 
@@ -19,6 +20,7 @@ function loadedBundle(): string | null {
 }
 
 export default function UpdateBanner() {
+  const { t } = useTranslation();
   const [outdated, setOutdated] = useState(false);
   useEffect(() => {
     const mine = loadedBundle();
@@ -47,9 +49,9 @@ export default function UpdateBanner() {
   return (
     <Alert color="blue" variant="light" mb="md" py={8}>
       <Group justify="space-between" wrap="nowrap">
-        <Text size="sm">Panel został zaktualizowany – odśwież stronę, żeby korzystać z nowej wersji.</Text>
+        <Text size="sm">{t("update.text")}</Text>
         <Button size="xs" leftSection={<IconRefresh size={14} />} onClick={() => window.location.reload()}>
-          Odśwież
+          {t("update.reload")}
         </Button>
       </Group>
     </Alert>

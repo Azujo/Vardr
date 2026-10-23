@@ -3,11 +3,12 @@
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 
-import { StrictMode } from "react";
+import { StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { Badge, MantineProvider, createTheme, localStorageColorSchemeManager } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
+import "./i18n";
 import { AuthProvider } from "./auth";
 import App from "./App";
 
@@ -32,9 +33,12 @@ createRoot(document.getElementById("root")!).render(
     >
       <Notifications position="top-right" />
       <BrowserRouter>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
+        {/* Tłumaczenia ładują się w tle – do tego czasu pusty ekran (ułamek sekundy). */}
+        <Suspense fallback={null}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </Suspense>
       </BrowserRouter>
     </MantineProvider>
   </StrictMode>,

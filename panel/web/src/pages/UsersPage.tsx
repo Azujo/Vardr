@@ -32,7 +32,8 @@ import {
   IconShieldOff,
   IconUserPlus,
 } from "@tabler/icons-react";
-import { api, formatDate, roleLabels, type MFAPolicy, type Profile, type Role, type User } from "../api";
+import { api, formatDate, profileName, roleLabels, type MFAPolicy, type Profile, type Role, type User } from "../api";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 
 
@@ -42,13 +43,13 @@ function errorMessage(err: unknown) {
 
 // Hasło startowe pokazywane jeden raz – administrator przekazuje je użytkownikowi.
 function TempPassword({ data, onClose }: { data: { user: User; temp_password: string } | null; onClose: () => void }) {
+  const { t } = useTranslation("admin");
   return (
-    <Modal opened={data !== null} onClose={onClose} title="Hasło startowe" centered>
+    <Modal opened={data !== null} onClose={onClose} title={t("users.temp.title")} centered>
       {data && (
         <Stack>
           <Text size="sm">
-            Konto <b>{data.user.username}</b>. Przekaż hasło użytkownikowi bezpiecznym kanałem – przy pierwszym
-            logowaniu ustawi własne. <b>Hasło nie zostanie pokazane ponownie.</b>
+            {t("users.temp.text", { user: data.user.username })} <b>{t("users.temp.once")}</b>
           </Text>
           <Group>
             <Code fz="lg" style={{ flex: 1 }}>
@@ -57,13 +58,13 @@ function TempPassword({ data, onClose }: { data: { user: User; temp_password: st
             <CopyButton value={data.temp_password}>
               {({ copied, copy }) => (
                 <Button leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
-                  {copied ? "Skopiowano" : "Kopiuj"}
+                  {copied ? t("copied") : t("copy")}
                 </Button>
               )}
             </CopyButton>
           </Group>
           <Button variant="default" onClick={onClose}>
-            Gotowe
+            {t("done")}
           </Button>
         </Stack>
       )}
@@ -72,11 +73,12 @@ function TempPassword({ data, onClose }: { data: { user: User; temp_password: st
 }
 
 export default function UsersPage() {
+  const { t } = useTranslation("admin");
   const { user: me, can } = useAuth();
   const canWrite = can("users", "write");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const roleOptions = profiles.length
-    ? profiles.map((p) => ({ value: p.id, label: p.name }))
+    ? profiles.map((p) => ({ value: p.id, label: profileName(p.id, p.name) }))
     : Object.entries(roleLabels).map(([value, label]) => ({ value, label }));
   const isAdminProfile = (id: string) => profiles.find((p) => p.id === id)?.admin ?? id === "admin";
   const [users, setUsers] = useState<User[]>([]);
@@ -112,7 +114,7 @@ export default function UsersPage() {
     setBusy(true);
     try {
       await api.setSecuritySettings(policyEdit, password);
-      notifications.show({ color: "green", message: "Zapisano wymaganie drugiego składnika" });
+      notifications.show({ color: "green", message: t("users.policySaved") });
       setPolicyEdit(null);
       setPassword("");
       load();
@@ -127,7 +129,7 @@ export default function UsersPage() {
     setBusy(true);
     try {
       await api.resetUserMFA(mfaReset.id, password);
-      notifications.show({ color: "green", message: `Drugi składnik konta ${mfaReset.username} usunięty` });
+      notifications.show({ color: "green", message: t("users.mfaRemoved", { user: mfaReset.username }) });
       setMfaReset(null);
       setPassword("");
       load();
@@ -158,7 +160,7 @@ export default function UsersPage() {
   const update = async (u: User, patch: { role?: Role; disabled?: boolean }) => {
     try {
       await api.updateUser(u.id, patch);
-      notifications.show({ color: "green", message: `Zapisano zmiany konta ${u.username}` });
+      notifications.show({ color: "green", message: t("users.saved", { user: u.username }) });
       load();
     } catch (err) {
       notifications.show({ color: "red", message: errorMessage(err) });
@@ -166,7 +168,7 @@ export default function UsersPage() {
   };
 
   const reset = async (u: User) => {
-    if (!window.confirm(`Nadać nowe hasło startowe dla ${u.username}? Bieżące sesje tego konta zostaną zakończone.`)) return;
+    if (!window.confirm(t("users.resetConfirm", { user: u.username }))) return;
     try {
       setTemp(await api.resetPassword(u.id));
       load();
@@ -181,14 +183,14 @@ export default function UsersPage() {
     <Stack>
       <Group justify="space-between">
         <div>
-          <Title order={2}>Użytkownicy</Title>
+          <Title order={2}>{t("users.title")}</Title>
           <Text c="dimmed" size="sm">
-            Konta panelu i ich profile uprawnień (Administracja → Profile uprawnień). Każda zmiana trafia do dziennika audytu.
+            {t("users.intro")}
           </Text>
         </div>
         {canWrite && (
           <Button leftSection={<IconUserPlus size={18} />} onClick={() => setCreateOpen(true)}>
-            Nowe konto
+            {t("users.new")}
           </Button>
         )}
       </Group>
@@ -196,7 +198,7 @@ export default function UsersPage() {
       {mfaAvailable ? (
         <Group gap="sm" align="center">
           <Text size="sm" fw={500}>
-            Drugi składnik logowania (TOTP) wymagany od:
+            {t("users.mfaRequiredFrom")}
           </Text>
           <SegmentedControl
             size="xs"
@@ -209,16 +211,17 @@ export default function UsersPage() {
               }
             }}
             data={[
-              { value: "all", label: "wszystkich" },
-              { value: "admins", label: "administratorów" },
-              { value: "none", label: "nikogo (dobrowolnie)" },
+              { value: "all", label: t("users.policy.all") },
+              { value: "admins", label: t("users.policy.admins") },
+              { value: "none", label: t("users.policy.none") },
             ]}
           />
         </Group>
       ) : (
         <Alert color="gray">
-          Drugi składnik logowania niedostępny – brak klucza MFA na serwerze (plik <Code>certs/mfa.key</Code>, tworzy go{" "}
-          <Code>deploy.sh config</Code>).
+          {t("users.mfaUnavailable.0")}
+          <Code>certs/mfa.key</Code>
+          {t("users.mfaUnavailable.1")}
         </Alert>
       )}
 
@@ -226,12 +229,12 @@ export default function UsersPage() {
         <Table striped highlightOnHover verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Login</Table.Th>
-              <Table.Th>Nazwa</Table.Th>
-              <Table.Th>Profil</Table.Th>
-              <Table.Th>Stan</Table.Th>
+              <Table.Th>{t("users.col.login")}</Table.Th>
+              <Table.Th>{t("users.col.name")}</Table.Th>
+              <Table.Th>{t("users.col.profile")}</Table.Th>
+              <Table.Th>{t("users.col.state")}</Table.Th>
               <Table.Th>MFA</Table.Th>
-              <Table.Th>Ostatnie logowanie</Table.Th>
+              <Table.Th>{t("users.col.lastLogin")}</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
@@ -242,7 +245,7 @@ export default function UsersPage() {
                   <Group gap={6}>
                     <Text fw={500}>{u.username}</Text>
                     {u.source === "ldap" && (
-                      <Tooltip label="konto domenowe – hasło i profil z Active Directory">
+                      <Tooltip label={t("users.adTip")}>
                         <Badge size="xs" color="cyan" variant="light">
                           AD
                         </Badge>
@@ -259,29 +262,29 @@ export default function UsersPage() {
                     value={u.role}
                     allowDeselect={false}
                     disabled={!canWrite || u.source === "ldap"}
-                    title={u.source === "ldap" ? "profil konta domenowego wynika z grup AD" : undefined}
-                    aria-label={`Profil ${u.username}`}
+                    title={u.source === "ldap" ? t("users.adProfile") : undefined}
+                    aria-label={t("users.profileOf", { user: u.username })}
                     onChange={(v) => v && v !== u.role && void update(u, { role: v as Role })}
                   />
                 </Table.Td>
                 <Table.Td>
                   <Group gap={4}>
                     {u.disabled ? (
-                      <Badge color="gray">wyłączone</Badge>
+                      <Badge color="gray">{t("users.state.disabled")}</Badge>
                     ) : (
                       <Badge color="green" variant="light">
-                        aktywne
+                        {t("users.state.active")}
                       </Badge>
                     )}
                     {u.must_change_password && (
                       <Badge color="yellow" variant="light">
-                        hasło startowe
+                        {t("users.state.initial")}
                       </Badge>
                     )}
                     {locked(u) && (
-                      <Tooltip label={`do ${formatDate(u.locked_until)}`}>
+                      <Tooltip label={t("users.until", { date: formatDate(u.locked_until) })}>
                         <Badge color="orange" variant="light">
-                          zablokowane
+                          {t("users.state.locked")}
                         </Badge>
                       </Tooltip>
                     )}
@@ -289,14 +292,14 @@ export default function UsersPage() {
                 </Table.Td>
                 <Table.Td>
                   {mfa[String(u.id)] ? (
-                    <Tooltip label={`włączone ${formatDate(mfa[String(u.id)])}`}>
+                    <Tooltip label={t("users.mfaOn", { date: formatDate(mfa[String(u.id)]) })}>
                       <Badge color="green" variant="light">
                         TOTP
                       </Badge>
                     </Tooltip>
                   ) : (
                     <Badge color={policy === "all" || (policy === "admins" && isAdminProfile(u.role)) ? "orange" : "gray"} variant="light">
-                      {policy === "all" || (policy === "admins" && isAdminProfile(u.role)) ? "skonfiguruje przy logowaniu" : "brak"}
+                      {policy === "all" || (policy === "admins" && isAdminProfile(u.role)) ? t("users.mfaAtLogin") : t("users.mfaNone")}
                     </Badge>
                   )}
                 </Table.Td>
@@ -307,14 +310,14 @@ export default function UsersPage() {
                   {canWrite && (
                   <Menu position="bottom-end">
                     <Menu.Target>
-                      <ActionIcon variant="subtle" aria-label={`Akcje ${u.username}`}>
+                      <ActionIcon variant="subtle" aria-label={t("users.actions", { user: u.username })}>
                         <IconDots size={18} />
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
                       {u.source !== "ldap" && (
                         <Menu.Item leftSection={<IconKey size={16} />} onClick={() => void reset(u)}>
-                          Nowe hasło startowe
+                          {t("users.newPassword")}
                         </Menu.Item>
                       )}
                       {mfa[String(u.id)] && (
@@ -325,13 +328,13 @@ export default function UsersPage() {
                             setMfaReset(u);
                           }}
                         >
-                          Resetuj drugi składnik
+                          {t("users.resetMfa")}
                         </Menu.Item>
                       )}
                       {u.id !== me?.id &&
                         (u.disabled ? (
                           <Menu.Item leftSection={<IconLockOpen size={16} />} onClick={() => void update(u, { disabled: false })}>
-                            Włącz konto
+                            {t("users.enable")}
                           </Menu.Item>
                         ) : (
                           <Menu.Item
@@ -339,7 +342,7 @@ export default function UsersPage() {
                             leftSection={<IconLock size={16} />}
                             onClick={() => void update(u, { disabled: true })}
                           >
-                            Wyłącz konto
+                            {t("users.disable")}
                           </Menu.Item>
                         ))}
                     </Menu.Dropdown>
@@ -352,60 +355,57 @@ export default function UsersPage() {
         </Table>
       </Table.ScrollContainer>
 
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Nowe konto" centered>
+      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title={t("users.new")} centered>
         <form onSubmit={create}>
           <Stack>
             <TextInput
-              label="Login"
-              description="2–64 znaki: litery, cyfry, kropka, myślnik, podkreślenie"
+              label={t("users.col.login")}
+              description={t("users.loginHint")}
               required
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.currentTarget.value })}
             />
             <TextInput
-              label="Nazwa wyświetlana"
+              label={t("users.displayName")}
               value={form.display_name}
               onChange={(e) => setForm({ ...form, display_name: e.currentTarget.value })}
             />
             <Select
-              label="Profil uprawnień"
+              label={t("users.profile")}
               data={roleOptions}
               value={form.role}
               allowDeselect={false}
               onChange={(v) => v && setForm({ ...form, role: v as Role })}
             />
             <Button type="submit" loading={busy}>
-              Utwórz i pokaż hasło startowe
+              {t("users.create")}
             </Button>
           </Stack>
         </form>
       </Modal>
       <TempPassword data={temp} onClose={() => setTemp(null)} />
-      <Modal opened={!!policyEdit} onClose={() => setPolicyEdit(null)} title="Wymaganie drugiego składnika" centered>
+      <Modal opened={!!policyEdit} onClose={() => setPolicyEdit(null)} title={t("users.policyTitle")} centered>
         {policyEdit && (
           <Stack>
             <Text size="sm">
-              {policyEdit === "none"
-                ? "Drugi składnik będzie dobrowolny – do zalogowania wystarczy samo hasło."
-                : `Konta ${policyEdit === "all" ? "" : "administratorów "}bez drugiego składnika skonfigurują go przy najbliższym logowaniu; ich bieżące sesje bez drugiego składnika zostaną zakończone.`}
+              {policyEdit === "none" ? t("users.policyNone") : policyEdit === "all" ? t("users.policyAll") : t("users.policyAdmins")}
             </Text>
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
             <Button color={policyEdit === "none" ? "red" : undefined} loading={busy} disabled={!password} onClick={() => void savePolicy()}>
-              Zapisz
+              {t("save")}
             </Button>
           </Stack>
         )}
       </Modal>
-      <Modal opened={!!mfaReset} onClose={() => setMfaReset(null)} title={`Reset drugiego składnika – ${mfaReset?.username ?? ""}`} centered>
+      <Modal opened={!!mfaReset} onClose={() => setMfaReset(null)} title={t("users.resetMfaTitle", { user: mfaReset?.username ?? "" })} centered>
         {mfaReset && (
           <Stack>
             <Text size="sm">
-              Np. przy zgubionym telefonie. Konto straci aplikację i kody zapasowe, jego sesje zostaną zakończone; przy
-              następnym logowaniu skonfiguruje aplikację od nowa (jeśli drugi składnik jest wymagany). Zmiana trafi do audytu.
+              {t("users.resetMfaText")}
             </Text>
-            <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
             <Button color="red" loading={busy} disabled={!password} onClick={() => void resetMFA()}>
-              Resetuj
+              {t("users.reset")}
             </Button>
           </Stack>
         )}

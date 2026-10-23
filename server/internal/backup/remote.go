@@ -58,7 +58,7 @@ func (r *Runner) rcloneConfig(ctx context.Context, cfg backupcfg.Config, work st
 		case backupcfg.AuthServerKey:
 			key := filepath.Join(r.StateDir, "ssh_key")
 			if _, err := os.Stat(key); err != nil {
-				return "", "", fmt.Errorf("brak klucza SSH usługi kopii – wygeneruj go w panelu")
+				return "", "", r.errf(ctx, "brak klucza SSH usługi kopii – wygeneruj go w panelu", "the backup service has no SSH key – generate it in the panel")
 			}
 			set("key_file", key)
 		case backupcfg.AuthPrivateKey:
@@ -107,11 +107,11 @@ func (r *Runner) rcloneConfig(ctx context.Context, cfg backupcfg.Config, work st
 		set("no_check_bucket", "true")
 		base = strings.TrimSuffix(t.Bucket+"/"+t.Path, "/")
 	default:
-		return "", "", fmt.Errorf("brak miejsca docelowego")
+		return "", "", r.errf(ctx, "brak miejsca docelowego", "no destination")
 	}
 	for _, l := range lines {
 		if strings.ContainsAny(l, "\n\r") {
-			return "", "", fmt.Errorf("niepoprawny znak w ustawieniach miejsca docelowego")
+			return "", "", r.errf(ctx, "niepoprawny znak w ustawieniach miejsca docelowego", "invalid character in the destination settings")
 		}
 	}
 	path := filepath.Join(work, "rclone.conf")
@@ -156,28 +156,28 @@ func (r *Runner) upload(ctx context.Context, cfg backupcfg.Config, work, file, s
 	var notes []string
 	if file != "" {
 		if out, err := r.rclone(ctx, 2*time.Hour, conf, "copyto", filepath.Join(r.BackupDir, file), base+"/config/"+file); err != nil {
-			return "", fmt.Errorf("kopia: %s", out)
+			return "", fmt.Errorf(r.tr(ctx, "kopia: %s", "backup: %s"), out)
 		}
-		notes = append(notes, "wysłano kopię")
+		notes = append(notes, r.tr(ctx, "wysłano kopię", "backup uploaded"))
 	}
 	if cfg.Include.Archive {
 		n, size, err := r.uploadArchive(ctx, conf, base, work, stamp, kid)
 		if err != nil {
-			return "", fmt.Errorf("archiwum NIS2: %w", err)
+			return "", fmt.Errorf(r.tr(ctx, "archiwum NIS2: %w", "NIS2 archive: %w"), err)
 		}
 		if n > 0 {
-			notes = append(notes, fmt.Sprintf("archiwum NIS2: %d nowych plików (%s)", n, human(size)))
+			notes = append(notes, fmt.Sprintf(r.tr(ctx, "archiwum NIS2: %d nowych plików (%s)", "NIS2 archive: %d new files (%s)"), n, human(size)))
 		}
 	}
 	if n, err := r.remoteRetention(ctx, conf, base+"/config", cfg.Remote); err != nil {
-		notes = append(notes, "retencja zdalna nieudana: "+err.Error())
+		notes = append(notes, r.tr(ctx, "retencja zdalna nieudana: ", "remote retention failed: ")+err.Error())
 	} else if n > 0 {
-		notes = append(notes, fmt.Sprintf("usunięte stare kopie zdalne: %d", n))
+		notes = append(notes, fmt.Sprintf(r.tr(ctx, "usunięte stare kopie zdalne: %d", "old remote backups removed: %d"), n))
 	}
 	// Przyrosty archiwum: tylko po wieku – liczba paczek nie mówi nic
 	// o zakresie archiwum, a każda niesie inne segmenty.
 	if n, err := r.remoteRetention(ctx, conf, base+"/urd", backupcfg.Retention{KeepDays: cfg.Remote.KeepDays}); err == nil && n > 0 {
-		notes = append(notes, fmt.Sprintf("usunięte stare paczki archiwum: %d", n))
+		notes = append(notes, fmt.Sprintf(r.tr(ctx, "usunięte stare paczki archiwum: %d", "old archive packages removed: %d"), n))
 	}
 	return strings.Join(notes, "; "), nil
 }
@@ -281,7 +281,7 @@ func (r *Runner) remoteRetention(ctx context.Context, conf, dir string, ret back
 // test sprawdza połączenie z miejscem docelowym (zapis i odczyt katalogu).
 func (r *Runner) test(ctx context.Context, cfg backupcfg.Config) (string, error) {
 	if cfg.Target.Method == backupcfg.MethodNone {
-		return "", fmt.Errorf("nie ustawiono miejsca docelowego – kopie są tylko lokalne")
+		return "", r.errf(ctx, "nie ustawiono miejsca docelowego – kopie są tylko lokalne", "no destination set – backups are local only")
 	}
 	work, err := os.MkdirTemp(r.BackupDir, ".test-")
 	if err != nil {
@@ -293,17 +293,17 @@ func (r *Runner) test(ctx context.Context, cfg backupcfg.Config) (string, error)
 		return "", err
 	}
 	if out, err := r.rclone(ctx, 2*time.Minute, conf, "mkdir", base+"/config"); err != nil {
-		return "", fmt.Errorf("utworzenie katalogu nieudane: %s", out)
+		return "", r.errf(ctx, "utworzenie katalogu nieudane: %s", "creating the directory failed: %s", out)
 	}
 	probe := filepath.Join(work, ".vardr-test")
 	_ = os.WriteFile(probe, []byte(time.Now().UTC().Format(time.RFC3339)), 0o600)
 	if out, err := r.rclone(ctx, 2*time.Minute, conf, "copyto", probe, base+"/config/.vardr-test"); err != nil {
-		return "", fmt.Errorf("zapis nieudany: %s", out)
+		return "", r.errf(ctx, "zapis nieudany: %s", "write failed: %s", out)
 	}
 	_, _ = r.rclone(ctx, time.Minute, conf, "deletefile", base+"/config/.vardr-test")
 	out, err := r.rclone(ctx, 2*time.Minute, conf, "lsf", "--files-only", base+"/config")
 	if err != nil {
-		return "", fmt.Errorf("odczyt katalogu nieudany: %s", out)
+		return "", r.errf(ctx, "odczyt katalogu nieudany: %s", "reading the directory failed: %s", out)
 	}
 	n := 0
 	for _, l := range strings.Split(out, "\n") {
@@ -311,7 +311,8 @@ func (r *Runner) test(ctx context.Context, cfg backupcfg.Config) (string, error)
 			n++
 		}
 	}
-	msg := fmt.Sprintf("połączenie działa: zapis i odczyt w %s, kopii w katalogu: %d", strings.TrimPrefix(base, remoteName+":"), n)
+	msg := fmt.Sprintf(r.tr(ctx, "połączenie działa: zapis i odczyt w %s, kopii w katalogu: %d", "connection works: write and read in %s, backups in the directory: %d"),
+		strings.TrimPrefix(base, remoteName+":"), n)
 	return msg, nil
 }
 
@@ -336,7 +337,7 @@ func (r *Runner) ensureHostKey(ctx context.Context, t backupcfg.Target) (string,
 		}
 	}
 	if err != nil || len(keys) == 0 {
-		return "", fmt.Errorf("serwer %s:%d nie odpowiada na SSH (%s)", t.Host, port, out)
+		return "", r.errf(ctx, "serwer %s:%d nie odpowiada na SSH (%s)", "server %s:%d does not respond on SSH (%s)", t.Host, port, out)
 	}
 	f, err := os.OpenFile(kh, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -349,7 +350,7 @@ func (r *Runner) ensureHostKey(ctx context.Context, t backupcfg.Target) (string,
 	}
 	fp, _ := r.cmd(ctx, 10*time.Second, strings.NewReader(keys[0]+"\n"), "ssh-keygen", "-l", "-f", "-")
 	r.setHostKey(ctx, t.Host+": "+fp)
-	r.Log.Info("zapamiętano klucz serwera kopii", "host", t.Host, "fingerprint", fp)
+	r.Log.Info("backup server host key saved", "host", t.Host, "fingerprint", fp)
 	return kh, nil
 }
 
@@ -369,5 +370,6 @@ func (r *Runner) genKey(ctx context.Context) (string, error) {
 	if err := r.heartbeat(ctx); err != nil {
 		return "", err
 	}
-	return "nowy klucz SSH: dopisz klucz publiczny do authorized_keys na serwerze kopii – " + strings.TrimSpace(string(pub)), nil
+	return r.tr(ctx, "nowy klucz SSH: dopisz klucz publiczny do authorized_keys na serwerze kopii – ",
+		"new SSH key: add the public key to authorized_keys on the backup server – ") + strings.TrimSpace(string(pub)), nil
 }

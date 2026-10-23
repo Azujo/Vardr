@@ -33,7 +33,7 @@ func Serve(ctx context.Context, log *slog.Logger, addr string) {
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		log.Warn("profilowanie włączone (SIEM_PPROF=1) – tylko do pomiarów", "addr", addr)
+		log.Warn("profiling enabled (SIEM_PPROF=1) – for measurements only", "addr", addr)
 	}
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -41,7 +41,7 @@ func Serve(ctx context.Context, log *slog.Logger, addr string) {
 		_ = srv.Close()
 	}()
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Error("serwer metryk nie wystartował", "addr", addr, "err", err)
+		log.Error("metrics server failed to start", "addr", addr, "err", err)
 	}
 }
 
@@ -66,16 +66,16 @@ type Ingest struct {
 // przy każdym pobraniu metryk.
 func NewIngest(inFlight, queueFill func() float64) *Ingest {
 	promauto.NewGaugeFunc(prometheus.GaugeOpts{Namespace: ns, Subsystem: "ingest", Name: "in_flight",
-		Help: "Paczki obsługiwane w tej chwili."}, inFlight)
+		Help: "Batches being handled right now."}, inFlight)
 	promauto.NewGaugeFunc(prometheus.GaugeOpts{Namespace: ns, Subsystem: "ingest", Name: "queue_fill_ratio",
-		Help: "Zajętość kolejki SIEM_RAW widziana przez kontrolę przyjęć (0–1)."}, queueFill)
+		Help: "SIEM_RAW queue fill level seen by admission control (0–1)."}, queueFill)
 	return &Ingest{
 		batches: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "ingest", Name: "batches_total",
-			Help: "Paczki według wyniku obsługi."}, []string{"result"}),
+			Help: "Batches by handling result."}, []string{"result"}),
 		events: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "ingest", Name: "events_total",
-			Help: "Zdarzenia przyjęte do kolejki (bez duplikatów)."}),
+			Help: "Events accepted into the queue (without duplicates)."}),
 		duration: promauto.NewHistogramVec(prometheus.HistogramOpts{Namespace: ns, Subsystem: "ingest", Name: "request_seconds",
-			Help: "Czas obsługi paczki.", Buckets: prometheus.ExponentialBuckets(0.001, 2, 14)}, []string{"result"}),
+			Help: "Batch handling time.", Buckets: prometheus.ExponentialBuckets(0.001, 2, 14)}, []string{"result"}),
 	}
 }
 
@@ -102,13 +102,13 @@ type Normalizer struct {
 func NewNormalizer() *Normalizer {
 	return &Normalizer{
 		Batches: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "normalizer", Name: "batches_total",
-			Help: "Paczki według wyniku (ok, poison – nieczytelne, retry – ponowienie)."}, []string{"result"}),
+			Help: "Batches by result (ok, poison – unreadable, retry)."}, []string{"result"}),
 		Events: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "normalizer", Name: "events_total",
-			Help: "Zdarzenia znormalizowane."}),
+			Help: "Normalized events."}),
 		Quarantined: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "normalizer", Name: "quarantined_total",
-			Help: "Zdarzenia, których nie udało się znormalizować."}),
+			Help: "Events that could not be normalized."}),
 		Duration: promauto.NewHistogram(prometheus.HistogramOpts{Namespace: ns, Subsystem: "normalizer", Name: "batch_seconds",
-			Help: "Czas normalizacji i publikacji paczki.", Buckets: prometheus.ExponentialBuckets(0.0005, 2, 14)}),
+			Help: "Batch normalization and publishing time.", Buckets: prometheus.ExponentialBuckets(0.0005, 2, 14)}),
 	}
 }
 
@@ -125,15 +125,15 @@ func NewWriter() *Writer {
 		return promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "writer", Name: name, Help: help})
 	}
 	return &Writer{
-		Rows:         c("rows_total", "Zdarzenia zapisane w siem.events."),
-		Quarantined:  c("quarantined_total", "Wpisy zapisane w siem.quarantine."),
-		Rejected:     c("rejected_total", "Zdarzenia odrzucone przez ClickHouse (przeniesione do kwarantanny)."),
-		Duplicates:   c("duplicates_total", "Zdarzenia pominięte jako już zapisane."),
-		InsertErrors: c("insert_errors_total", "Nieudane zapisy (awaria – paczka ponowiona)."),
+		Rows:         c("rows_total", "Events written to siem.events."),
+		Quarantined:  c("quarantined_total", "Entries written to siem.quarantine."),
+		Rejected:     c("rejected_total", "Events rejected by ClickHouse (moved to quarantine)."),
+		Duplicates:   c("duplicates_total", "Events skipped as already written."),
+		InsertErrors: c("insert_errors_total", "Failed writes (failure – batch retried)."),
 		InsertDuration: promauto.NewHistogram(prometheus.HistogramOpts{Namespace: ns, Subsystem: "writer", Name: "insert_seconds",
-			Help: "Czas zapisu paczki do ClickHouse.", Buckets: prometheus.ExponentialBuckets(0.005, 2, 12)}),
+			Help: "Time to write a batch to ClickHouse.", Buckets: prometheus.ExponentialBuckets(0.005, 2, 12)}),
 		Latency: promauto.NewHistogram(prometheus.HistogramOpts{Namespace: ns, Subsystem: "writer", Name: "pipeline_latency_seconds",
-			Help: "Czas od przyjęcia zdarzenia przez ingest do zapisu w bazie.", Buckets: prometheus.ExponentialBuckets(0.05, 2, 14)}),
+			Help: "Time from ingest accepting an event to writing it to the database.", Buckets: prometheus.ExponentialBuckets(0.05, 2, 14)}),
 	}
 }
 
@@ -148,9 +148,9 @@ func NewQueue() *Queue {
 			[]string{"stream", "consumer"})
 	}
 	return &Queue{
-		fill:    g("fill_ratio", "Zajętość strumienia względem limitu (0–1)."),
+		fill:    g("fill_ratio", "Stream fill level relative to the limit (0–1)."),
 		bytes:   g("bytes", "Bajty w strumieniu."),
-		pending: g("pending_messages", "Wiadomości czekające na odbiorcę."),
+		pending: g("pending_messages", "Messages waiting for a consumer."),
 	}
 }
 
@@ -194,26 +194,26 @@ func NewArchiver() *Archiver {
 		return promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "archive", Name: name, Help: help})
 	}
 	return &Archiver{
-		Batches:   c("batches_total", "Paczki zapisane w archiwum."),
-		Bytes:     c("bytes_total", "Bajty zapisane w segmentach archiwum."),
+		Batches:   c("batches_total", "Batches written to the archive."),
+		Bytes:     c("bytes_total", "Bytes written to archive segments."),
 		Segments:  c("segments_total", "Zatwierdzone segmenty archiwum."),
 		Manifests: c("manifests_total", "Utworzone manifesty godzinowe."),
 		Errors: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive", Name: "errors_total",
-			Help: "Błędy archiwizatora według etapu."}, []string{"stage"}),
+			Help: "Archiver errors by stage."}, []string{"stage"}),
 		LastSegment:   g("last_segment_timestamp_seconds", "Czas zatwierdzenia ostatniego segmentu."),
-		VerifyOK:      g("verify_ok", "Wynik ostatniej weryfikacji integralności (1 = zgodne, 0 = problemy)."),
-		VerifyProblem: g("verify_problems", "Liczba problemów w ostatniej weryfikacji."),
-		LastVerify:    g("last_verify_timestamp_seconds", "Czas zakończenia ostatniej weryfikacji."),
+		VerifyOK:      g("verify_ok", "Result of the last integrity verification (1 = consistent, 0 = problems)."),
+		VerifyProblem: g("verify_problems", "Number of problems in the last verification."),
+		LastVerify:    g("last_verify_timestamp_seconds", "Completion time of the last verification."),
 		Skipped: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive", Name: "skipped_total",
-			Help: "Paczki pominięte przez archiwizator według powodu (prefix, disabled, agent, group)."}, []string{"reason"}),
+			Help: "Batches skipped by the archiver by reason (prefix, disabled, agent, group)."}, []string{"reason"}),
 		DiskFree:      g("disk_free_bytes", "Wolne miejsce na dysku archiwum."),
 		DiskTotal:     g("disk_total_bytes", "Rozmiar dysku archiwum."),
-		Paused:        g("paused", "1 = archiwizacja wstrzymana z braku miejsca (paczki czekają w kolejce)."),
-		PolicyEnabled: g("policy_enabled", "1 = polityka archiwum włącza archiwizację nowych paczek."),
+		Paused:        g("paused", "1 = archiving paused for lack of space (batches wait in the queue)."),
+		PolicyEnabled: g("policy_enabled", "1 = the archive policy enables archiving of new batches."),
 		PolicyScheduled: g("policy_scheduled_weakening",
-			"1 = zaplanowane osłabienie polityki archiwum (wejdzie w życie po karencji, można je anulować w panelu)."),
-		PolicyRetentionDays: g("policy_retention_days", "Obowiązująca retencja archiwum (dni)."),
-		PolicyExcluded:      g("policy_excluded_sources", "Liczba grup i agentów wyłączonych z archiwum w polityce."),
+			"1 = archive policy weakening scheduled (takes effect after the grace period, can be cancelled in the panel)."),
+		PolicyRetentionDays: g("policy_retention_days", "Current archive retention (days)."),
+		PolicyExcluded:      g("policy_excluded_sources", "Number of groups and agents excluded from the archive by the policy."),
 	}
 }
 
@@ -242,34 +242,34 @@ type Detector struct {
 func NewDetector() *Detector {
 	return &Detector{
 		Events: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "events_total",
-			Help: "Zdarzenia ocenione przez reguły."}),
+			Help: "Events evaluated by rules."}),
 		Matches: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "matches_total",
-			Help: "Trafienia reguł."}, []string{"rule"}),
+			Help: "Rule hits."}, []string{"rule"}),
 		Alerts: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "alerts_total",
-			Help: "Zapis trafień: nowy alert, dopisanie do alertu, duplikat."}, []string{"result"}),
+			Help: "Hit recording: new alert, appended to an alert, duplicate."}, []string{"result"}),
 		Errors: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "errors_total",
-			Help: "Błędy detektora według etapu."}, []string{"stage"}),
+			Help: "Detector errors by stage."}, []string{"stage"}),
 		Rules: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "rules",
-			Help: "Włączone reguły wykonywane w locie."}),
+			Help: "Enabled rules evaluated in the stream."}),
 		RuleErrors: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "rule_errors",
-			Help: "Pliki reguł z błędami (niewczytane)."}),
+			Help: "Rule files with errors (not loaded)."}),
 		EvalTime: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "eval_seconds_total",
-			Help: "Łączny czas oceny zdarzeń przez reguły."}),
+			Help: "Total time spent evaluating events against rules."}),
 		LastEvent: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "last_event_timestamp_seconds",
-			Help: "Czas przyjęcia ostatniego ocenionego zdarzenia."}),
+			Help: "Ingest time of the last evaluated event."}),
 		ThresholdKeys: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "threshold_keys",
-			Help: "Klucze reguł progowych (group_by) trzymane w pamięci."}),
+			Help: "Threshold rule keys (group_by) kept in memory."}),
 		IndexRuns: promauto.NewCounterVec(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_runs_total",
-			Help: "Przebiegi silnika zapytań (ClickHouse)."}, []string{"result"}),
+			Help: "Query engine runs (ClickHouse)."}, []string{"result"}),
 		IndexRows: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_rows_total",
-			Help: "Zdarzenia pasujące do reguł w przebiegach silnika zapytań."}),
+			Help: "Events matching rules in query engine runs."}),
 		IndexLag: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_lag_seconds",
-			Help: "Opóźnienie punktu kontrolnego silnika zapytań względem bieżącego czasu."}),
+			Help: "Query engine checkpoint lag behind the current time."}),
 		IndexRules: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_rules",
-			Help: "Włączone reguły wykonywane przez silnik zapytań."}),
+			Help: "Enabled rules run by the query engine."}),
 		IndexRuleErrors: promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "detector", Name: "index_rule_errors",
-			Help: "Reguły pominięte przez silnik zapytań (SQL odrzucony przez ClickHouse)."}),
+			Help: "Rules skipped by the query engine (SQL rejected by ClickHouse)."}),
 		IndexTime: promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "detector", Name: "index_seconds_total",
-			Help: "Łączny czas przebiegów silnika zapytań."}),
+			Help: "Total time of query engine runs."}),
 	}
 }

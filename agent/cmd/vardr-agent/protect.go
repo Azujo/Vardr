@@ -17,6 +17,7 @@ import (
 	"siem/agent/internal/managed"
 	"siem/agent/internal/status"
 	"siem/internal/contract"
+	"siem/internal/lang"
 )
 
 // svcGuard: ochrona agenta w procesie usługi (nil w trybie konsoli).
@@ -52,11 +53,12 @@ func newGuardian(dir string, log *slog.Logger) *guardian {
 func (g *guardian) startup() {
 	prev, err := guard.MarkRunning(g.dir, guard.BootTime())
 	if err != nil {
-		g.log.Warn("ochrona agenta: zapis znacznika działania nieudany", "err", err)
+		g.log.Warn("agent protection: writing the running marker failed", "err", err)
 	}
 	if prev != nil {
 		g.record(contract.TamperRecord{Kind: contract.TamperUncleanExit,
-			Detail: fmt.Sprintf("poprzedni proces agenta (PID %d, start %s UTC) zakończył się bez zatrzymania usługi – zabity albo awaria",
+			Detail: fmt.Sprintf(lang.L("poprzedni proces agenta (PID %d, start %s UTC) zakończył się bez zatrzymania usługi – zabity albo awaria",
+				"the previous agent process (PID %d, started %s UTC) ended without stopping the service – killed or crashed"),
 				prev.PID, prev.Started.UTC().Format("2006-01-02 15:04:05"))})
 	}
 	if u, _ := guard.ReadUnlock(g.dir); u != nil {
@@ -79,13 +81,13 @@ func (g *guardian) record(r contract.TamperRecord) {
 	level := contract.TamperKinds[r.Kind].Level
 	args := []any{"kind", r.Kind, "detail", r.Detail, "user", r.User, "token", r.TokenID, "eventlog", level != ""}
 	if err != nil {
-		g.log.Error("ochrona agenta: zapis zdarzenia nieudany", append(args, "err", err)...)
+		g.log.Error("agent protection: recording the event failed", append(args, "err", err)...)
 		return
 	}
 	if level != "" {
-		g.log.Warn("ochrona agenta: "+contract.TamperKinds[r.Kind].Title, args...)
+		g.log.Warn("agent protection: "+contract.TamperKinds[r.Kind].TitleEn, args...)
 	} else {
-		g.log.Info("ochrona agenta: "+contract.TamperKinds[r.Kind].Title, args...)
+		g.log.Info("agent protection: "+contract.TamperKinds[r.Kind].TitleEn, args...)
 	}
 }
 
@@ -129,7 +131,7 @@ func (g *guardian) enforce(now time.Time) {
 			}
 			_ = guard.RecordState(g.dir, guard.StateOpen)
 			if recorded == guard.StateProtected {
-				g.record(contract.TamperRecord{Kind: contract.TamperProtectionOff, Detail: "uprawnienia usługi przywrócone do zwykłych"})
+				g.record(contract.TamperRecord{Kind: contract.TamperProtectionOff, Detail: lang.L("uprawnienia usługi przywrócone do zwykłych", "service permissions restored to the ordinary ones")})
 			}
 			acl = guard.StateOpen
 		}
@@ -138,11 +140,11 @@ func (g *guardian) enforce(now time.Time) {
 	}
 	if acl != guard.StateProtected {
 		if recorded == guard.StateProtected {
-			what := "zwykłe uprawnienia (jak po instalacji)"
+			what := lang.L("zwykłe uprawnienia (jak po instalacji)", "ordinary permissions (as after installation)")
 			if acl != guard.StateOpen {
 				what = acl
 			}
-			g.record(contract.TamperRecord{Kind: contract.TamperACL, Detail: "uprawnienia usługi zmienione z zewnątrz: " + what})
+			g.record(contract.TamperRecord{Kind: contract.TamperACL, Detail: lang.L("uprawnienia usługi zmienione z zewnątrz: ", "service permissions changed from outside: ") + what})
 		}
 		if err := guard.SetServiceACL(serviceName, guard.StateProtected); err != nil {
 			g.setState(acl, err)
@@ -157,7 +159,7 @@ func (g *guardian) enforce(now time.Time) {
 			g.record(contract.TamperRecord{Kind: contract.TamperConfig, Detail: strings.Join(diffs, "; ")})
 		}
 		if err != nil {
-			g.setState(acl, fmt.Errorf("konfiguracja usługi: %w", err))
+			g.setState(acl, fmt.Errorf(lang.L("konfiguracja usługi: %w", "service configuration: %w"), err))
 			return
 		}
 	}
@@ -195,10 +197,10 @@ func (g *guardian) stopReason() string {
 	rec := contract.TamperRecord{Kind: contract.TamperStop}
 	switch {
 	case u != nil && (u.Action == "upgrade" || u.Action == "install"):
-		rec = contract.TamperRecord{Kind: contract.TamperUpgrade, User: u.User, Detail: "zatrzymanie przez instalator (" + u.Action + ")"}
+		rec = contract.TamperRecord{Kind: contract.TamperUpgrade, User: u.User, Detail: lang.L("zatrzymanie przez instalator (", "stopped by the installer (") + u.Action + ")"}
 		if u.Token != "" {
 			if t, err := g.verify(u.Token, now); err == nil {
-				rec.TokenID, rec.Detail = t.ID, "aktualizacja tokenem"
+				rec.TokenID, rec.Detail = t.ID, lang.L("aktualizacja tokenem", "upgrade with a token")
 			}
 		}
 	case u != nil:
@@ -209,12 +211,12 @@ func (g *guardian) stopReason() string {
 		case err == nil:
 			rec = contract.TamperRecord{Kind: contract.TamperStopToken, User: u.User, TokenID: t.ID}
 		default:
-			rec.User, rec.Detail = u.User, "znacznik odblokowania bez ważnego tokenu: "+err.Error()
+			rec.User, rec.Detail = u.User, lang.L("znacznik odblokowania bez ważnego tokenu: ", "unlock marker without a valid token: ")+err.Error()
 		}
 	case !g.enabled():
 		return contract.TamperStop // ochrona wyłączona – bez wpisu (alarmuje utrata łączności)
 	default:
-		rec.Detail = "zatrzymanie z pominięciem tokenu (konto SYSTEM albo zmienione uprawnienia usługi)"
+		rec.Detail = lang.L("zatrzymanie z pominięciem tokenu (konto SYSTEM albo zmienione uprawnienia usługi)", "stop bypassing the token (SYSTEM account or changed service permissions)")
 	}
 	g.record(rec)
 	return rec.Kind

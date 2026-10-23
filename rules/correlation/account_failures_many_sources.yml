@@ -20,6 +20,13 @@ detection:
       - '-'
   condition: selection and not computer_account and not empty
 level: low
+vardr:
+  i18n:
+    en:
+      title: "Failed logon to a user account (correlation base)"
+      description: |
+        Failed logon (4625) to a user account (excluding computer accounts
+        and empty names). Does not create alerts on its own – it feeds the correlation below.
 ---
 title: Nieudane logowania na jedno konto z wielu adresów
 id: 0afb58f4-2c6c-401f-8418-d95015d9a27b
@@ -46,6 +53,18 @@ correlation:
 falsepositives:
   - Użytkownik z zapamiętanym starym hasłem na kilku urządzeniach (telefon, laptop, VPN)
 vardr:
+  i18n:
+    en:
+      title: "Failed logons to one account from many addresses"
+      description: |
+        Failed logons to the same account from at least 4 different IP addresses
+        within 15 minutes. A remembered old password usually gives a single source; many
+        sources mean distributed password guessing or use of a stolen login.
+      instructions: |
+        Account {{TargetDomainName}}\{{TargetUserName}}: {{count}} failed logons
+        from different addresses in {{window}}. Check the address list in the alert events.
+        Addresses outside the network or unknown computers – block the sources, check
+        whether a successful logon (4624) followed the series, consider a password change.
   instructions: |
     Konto {{TargetDomainName}}\{{TargetUserName}}: {{count}} nieudanych logowań
     z różnych adresów w {{window}}. Sprawdź listę adresów w zdarzeniach alertu.

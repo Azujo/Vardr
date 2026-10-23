@@ -75,7 +75,7 @@ func (a *AlertSender) Run(ctx context.Context) {
 	for {
 		if err := a.tick(ctx); err != nil && ctx.Err() == nil {
 			if !failing {
-				a.Log.Warn("obsługa outboxa alertów nieudana", "err", err)
+				a.Log.Warn("processing the alert outbox failed", "err", err)
 			}
 			failing = true
 		} else {
@@ -131,9 +131,9 @@ func (a *AlertSender) tick(ctx context.Context) error {
 			// Odbiorca trwale odrzuca (np. usunięty webhook) – bez końca nie ponawiamy;
 			// alert jest w panelu, a błąd zostaje w outboxie.
 			next = now.AddDate(100, 0, 0)
-			a.Log.Error("powiadomienie o alercie porzucone po wielu próbach", "alert", p.Alert.ID, "attempts", p.Attempts+1, "err", err)
+			a.Log.Error("alert notification dropped after many attempts", "alert", p.Alert.ID, "attempts", p.Attempts+1, "err", err)
 		} else {
-			a.Log.Warn("powiadomienie o alercie nieudane – ponowię", "alert", p.Alert.ID, "attempt", p.Attempts+1, "next", next, "err", err)
+			a.Log.Warn("alert notification failed – will retry", "alert", p.Alert.ID, "attempt", p.Attempts+1, "next", next, "err", err)
 		}
 		if err := a.Store.MarkFailed(ctx, p.OutboxID, err.Error(), next); err != nil {
 			return err
@@ -156,7 +156,7 @@ func (a *AlertSender) digests(ctx context.Context, now time.Time) error {
 	for _, d := range due {
 		if _, err := a.Svc.Send(ctx, a.DigestMessage(d)); err != nil {
 			a.digestRetry = now.Add(time.Minute)
-			a.Log.Warn("wiadomość zbiorcza o alertach nieudana – ponowię", "rule", d.RuleID, "alerts", d.Count, "err", err)
+			a.Log.Warn("alert digest message failed – will retry", "rule", d.RuleID, "alerts", d.Count, "err", err)
 			return nil
 		}
 		if err := a.Store.MarkDigested(ctx, d.RuleID, d.Upto, now); err != nil {
@@ -166,8 +166,19 @@ func (a *AlertSender) digests(ctx context.Context, now time.Time) error {
 	return nil
 }
 
+// ruleTitle: tytuł reguły w języku lang (tłumaczenie z opisu reguły).
+func (a *AlertSender) ruleTitle(lang, id, title string) string {
+	if a.Rule != nil {
+		if r, ok := a.Rule(id); ok && r.I18n[lang].Title != "" {
+			return r.I18n[lang].Title
+		}
+	}
+	return title
+}
+
 // DigestMessage buduje wiadomość zbiorczą dla reguły.
 func (a *AlertSender) DigestMessage(d alerts.Digest) Message {
+	lang := a.Svc.Language(context.Background())
 	top := ""
 	for _, l := range Levels {
 		if slices.Contains(d.Levels, l) {
@@ -177,9 +188,12 @@ func (a *AlertSender) DigestMessage(d alerts.Digest) Message {
 	perRule, window := a.limits()
 	m := Message{
 		Event: EventAlert, Level: top, RuleID: d.RuleID, Severity: levelSeverity[top], At: a.Svc.now(), Untrusted: true,
-		Title: fmt.Sprintf("[ZBIORCZO] %s – %d %s", d.RuleTitle, d.Count, plural(d.Count, "alert", "alerty", "alertów")),
-		Text: fmt.Sprintf("Reguła przekroczyła limit %d osobnych powiadomień w %s – kolejne alerty zebrane w tej wiadomości "+
-			"(pierwszy wstrzymany %s). Wszystkie są w panelu.", perRule, humanDuration(window), d.First.Local().Format("15:04")),
+		Title: fmt.Sprintf(pick(lang, "[ZBIORCZO] %s – %d %s", "[DIGEST] %s – %d %s"), a.ruleTitle(lang, d.RuleID, d.RuleTitle), d.Count,
+			pick(lang, plural(d.Count, "alert", "alerty", "alertów"), plural(d.Count, "alert", "alerts", "alerts"))),
+		Text: fmt.Sprintf(pick(lang, "Reguła przekroczyła limit %d osobnych powiadomień w %s – kolejne alerty zebrane w tej wiadomości "+
+			"(pierwszy wstrzymany %s). Wszystkie są w panelu.", "The rule exceeded the limit of %d separate notifications in %s – further "+
+			"alerts are collected in this message (first held back at %s). All of them are in the panel."),
+			perRule, humanDuration(window), d.First.Local().Format("15:04")),
 	}
 	if m.Severity == "" {
 		m.Severity = SevWarning
@@ -187,9 +201,9 @@ func (a *AlertSender) DigestMessage(d alerts.Digest) Message {
 	if len(d.Hosts) > 0 {
 		hosts := strings.Join(d.Hosts, ", ")
 		if d.HostCount > len(d.Hosts) {
-			hosts += fmt.Sprintf(" … (łącznie %d)", d.HostCount)
+			hosts += fmt.Sprintf(pick(lang, " … (łącznie %d)", " … (%d in total)"), d.HostCount)
 		}
-		m.Fields = append(m.Fields, Field{Name: "Komputery", Value: hosts})
+		m.Fields = append(m.Fields, Field{Name: pick(lang, "Komputery", "Computers"), Value: hosts})
 	}
 	if a.PanelURL != "" {
 		m.Fields = append(m.Fields, Field{Name: "Panel", Trusted: true,
@@ -222,22 +236,37 @@ func backoff(attempts int) time.Duration {
 
 var levelSeverity = map[string]string{"critical": SevCritical, "high": SevCritical, "medium": SevWarning, "low": SevInfo, "informational": SevInfo}
 
-var levelLabel = map[string]string{"critical": "KRYTYCZNY", "high": "WYSOKI", "medium": "ŚREDNI", "low": "NISKI", "informational": "INFO"}
+var levelLabel = map[string]map[string]string{
+	"pl": {"critical": "KRYTYCZNY", "high": "WYSOKI", "medium": "ŚREDNI", "low": "NISKI", "informational": "INFO"},
+	"en": {"critical": "CRITICAL", "high": "HIGH", "medium": "MEDIUM", "low": "LOW", "informational": "INFO"},
+}
+
+// autoCloseEN: powód zamknięcia przez system po angielsku (zamknięcie
+// zapisuje detektor po polsku) – według reguły.
+var autoCloseEN = map[string]string{
+	"heimdall-agent-heartbeat-lost": "The agent is sending heartbeats again – closed automatically.",
+	"heimdall-source-silent":        "The source is sending events again – closed automatically.",
+}
 
 // Resolved buduje wiadomość o rozwiązaniu alertu (np. agent znów
 // w kontakcie). Filtr kanału jak dla samego alertu (poziom, reguła).
 func (a *AlertSender) Resolved(al alerts.Alert) Message {
+	lang := a.Svc.Language(context.Background())
+	reason := al.CloseReason
+	if r := autoCloseEN[al.RuleID]; lang == "en" && al.ClosedBy == "system" && r != "" {
+		reason = r
+	}
 	m := Message{
 		Event: EventAlert, Severity: SevOK, Level: al.Level, RuleID: al.RuleID,
-		Title: "[ROZWIĄZANY] " + al.RuleTitle, Text: al.CloseReason, At: a.Svc.now(), Untrusted: true,
+		Title: pick(lang, "[ROZWIĄZANY] ", "[RESOLVED] ") + al.Text(lang).Title, Text: reason, At: a.Svc.now(), Untrusted: true,
 	}
 	if al.ClosedAt != nil {
 		m.At = *al.ClosedAt
-		m.Fields = append(m.Fields, Field{Name: "Przerwa", Trusted: true, Inline: true,
+		m.Fields = append(m.Fields, Field{Name: pick(lang, "Przerwa", "Outage"), Trusted: true, Inline: true,
 			Value: humanDuration(al.ClosedAt.Sub(al.FirstSeen))})
 	}
 	if al.HostName != "" {
-		m.Fields = append(m.Fields, Field{Name: "Komputer", Value: al.HostName, Inline: true})
+		m.Fields = append(m.Fields, Field{Name: pick(lang, "Komputer", "Computer"), Value: al.HostName, Inline: true})
 	}
 	if a.PanelURL != "" {
 		m.Fields = append(m.Fields, Field{Name: "Panel", Trusted: true, Value: a.PanelURL + "/alerts/" + strconv.FormatInt(al.ID, 10)})
@@ -255,11 +284,16 @@ func humanDuration(d time.Duration) string {
 
 // Message buduje wiadomość o alercie.
 func (a *AlertSender) Message(al alerts.Alert) Message {
+	lang := a.Svc.Language(context.Background())
+	if _, ok := levelLabel[lang]; !ok {
+		lang = "pl"
+	}
+	tx := al.Text(lang)
 	m := Message{
 		Event:    EventAlert,
 		Severity: levelSeverity[al.Level],
-		Title:    fmt.Sprintf("[%s] %s", levelLabel[al.Level], al.RuleTitle),
-		Text:     al.Summary,
+		Title:    fmt.Sprintf("[%s] %s", levelLabel[lang][al.Level], tx.Title),
+		Text:     tx.Summary,
 		At:       al.CreatedAt,
 		Level:    al.Level,
 		RuleID:   al.RuleID,
@@ -277,9 +311,9 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 	trusted := func(name, val string, inline bool) {
 		m.Fields = append(m.Fields, Field{Name: name, Value: val, Inline: inline, Trusted: true})
 	}
-	add("Komputer", al.HostName, true)
-	add("Konto", al.UserName, true)
-	add("Adres źródłowy", al.SourceIP, true)
+	add(pick(lang, "Komputer", "Computer"), al.HostName, true)
+	add(pick(lang, "Konto", "Account"), al.UserName, true)
+	add(pick(lang, "Adres źródłowy", "Source address"), al.SourceIP, true)
 	if len(al.GroupFields) > 0 {
 		keys := make([]string, 0, len(al.GroupFields))
 		for k := range al.GroupFields {
@@ -290,9 +324,9 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 		for _, k := range keys {
 			parts = append(parts, k+" = "+al.GroupFields[k])
 		}
-		add("Klucz alertu", strings.Join(parts, "\n"), false)
+		add(pick(lang, "Klucz alertu", "Alert key"), strings.Join(parts, "\n"), false)
 	}
-	trusted("Czas zdarzenia", al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
+	trusted(pick(lang, "Czas zdarzenia", "Event time"), al.FirstSeen.Local().Format("2006-01-02 15:04:05"), true)
 	if a.Rule != nil {
 		if r, ok := a.Rule(al.RuleID); ok {
 			if s := attackLine(r.Tags); s != "" {
@@ -300,11 +334,11 @@ func (a *AlertSender) Message(al alerts.Alert) Message {
 			}
 			// Autor z pliku reguły (treść spoza Vardra – jak pola zdarzenia).
 			if at := r.SigmaHQAttribution(); at != nil {
-				add("Autor reguły", at.Line(), false)
+				add(pick(lang, "Autor reguły", "Rule author"), at.Line(lang), false)
 			}
 		}
 	}
-	add("Co zrobić", strings.TrimSpace(al.Instructions), false)
+	add(pick(lang, "Co zrobić", "What to do"), strings.TrimSpace(tx.Instructions), false)
 	if a.PanelURL != "" {
 		trusted("Panel", a.PanelURL+"/alerts/"+strconv.FormatInt(al.ID, 10), false)
 	}

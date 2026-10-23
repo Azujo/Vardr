@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Uzgodnienie spisu z dyskiem – obsługa niezgodności „plik nie występuje
@@ -73,23 +75,23 @@ type ReconcileResult struct {
 	Rejected    []Rejected           `json:"rejected"`
 }
 
-// Summary opisuje wynik jednym zdaniem (dziennik, panel).
-func (r ReconcileResult) Summary() string {
+// Summary opisuje wynik jednym zdaniem (dziennik, panel) w języku l.
+func (r ReconcileResult) Summary(l string) string {
 	var parts []string
 	if n := len(r.Manifests); n > 0 {
-		parts = append(parts, fmt.Sprintf("przywrócone manifesty: %d", n))
+		parts = append(parts, fmt.Sprintf(lang.Pick(l, "przywrócone manifesty: %d", "manifests restored: %d"), n))
 	}
 	if n := len(r.Segments); n > 0 {
-		parts = append(parts, fmt.Sprintf("przyjęte segmenty: %d", n))
+		parts = append(parts, fmt.Sprintf(lang.Pick(l, "przyjęte segmenty: %d", "segments accepted: %d"), n))
 	}
 	if n := len(r.Quarantined); n > 0 {
-		parts = append(parts, fmt.Sprintf("w kwarantannie: %d", n))
+		parts = append(parts, fmt.Sprintf(lang.Pick(l, "w kwarantannie: %d", "quarantined: %d"), n))
 	}
 	if n := len(r.Rejected); n > 0 {
-		parts = append(parts, fmt.Sprintf("odrzucone: %d", n))
+		parts = append(parts, fmt.Sprintf(lang.Pick(l, "odrzucone: %d", "rejected: %d"), n))
 	}
 	if len(parts) == 0 {
-		return "brak plików do uzgodnienia"
+		return lang.Pick(l, "brak plików do uzgodnienia", "no files to reconcile")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -190,7 +192,7 @@ func (a *Archive) unknownFiles(ctx context.Context) (unknown []string, open map[
 func (a *Archive) readSegment(p string) (Segment, error) {
 	hour, created, ok := segmentTimes(p)
 	if !ok {
-		return Segment{}, errors.New("nazwa pliku nie jest nazwą segmentu archiwizatora")
+		return Segment{}, lang.Errorf("nazwa pliku nie jest nazwą segmentu archiwizatora", "the file name is not an archiver segment name")
 	}
 	s := Segment{Path: p, Hour: hour, CreatedAt: created}
 	f, err := os.Open(a.abs(p))
@@ -210,10 +212,10 @@ func (a *Archive) readSegment(p string) (Segment, error) {
 			break
 		}
 		if err != nil {
-			return s, fmt.Errorf("paczka %d: %w", s.Records+1, err)
+			return s, lang.Errorf("paczka %d: %w", "batch %d: %w", s.Records+1, err)
 		}
 		if SumHex(payload) != meta.SHA256 || len(payload) != meta.Bytes {
-			return s, fmt.Errorf("paczka %d niezgodna z jej sumą SHA-256", s.Records+1)
+			return s, lang.Errorf("paczka %d niezgodna z jej sumą SHA-256", "batch %d does not match its SHA-256", s.Records+1)
 		}
 		s.Records++
 		at := meta.ReceivedAt.UTC()
@@ -245,7 +247,7 @@ func (a *Archive) Reconcile(ctx context.Context, opt ReconcileOptions) (Reconcil
 	want := func(p string) bool { return len(opt.Only) == 0 || slices.Contains(opt.Only, p) }
 	for _, p := range opt.Only {
 		if !slices.Contains(unknown, p) {
-			res.Rejected = append(res.Rejected, Rejected{p, "plik nie jest (już) nieznany spisowi albo go nie ma"})
+			res.Rejected = append(res.Rejected, Rejected{p, a.tr("plik nie jest (już) nieznany spisowi albo go nie ma", "the file is not (or no longer) unknown to the catalog, or it is gone")})
 		}
 	}
 	isUnknown := map[string]bool{}
@@ -271,10 +273,10 @@ func (a *Archive) Reconcile(ctx context.Context, opt ReconcileOptions) (Reconcil
 		hour, _ := manifestHour(mp)
 		body, rec, segs, reason := a.checkDiskManifest(mp, hour, last, hasLast, open, isUnknown)
 		if reason == "" && !want(mp) {
-			reason = "nie wskazano"
+			reason = a.tr("nie wskazano", "not selected")
 		}
 		if reason == "" && !opt.inWindow(body.CreatedAt) {
-			reason = fmt.Sprintf("utworzony %s – poza oknem przywrócenia", body.CreatedAt.Format(time.RFC3339))
+			reason = fmt.Sprintf(a.tr("utworzony %s – poza oknem przywrócenia", "created %s – outside the restore window"), body.CreatedAt.Format(time.RFC3339))
 		}
 		if reason != "" {
 			for _, s := range body.Segments {
@@ -289,14 +291,14 @@ func (a *Archive) Reconcile(ctx context.Context, opt ReconcileOptions) (Reconcil
 		for _, s := range segs {
 			if _, ok := open[s.Path]; !ok {
 				if err := a.Cat.AddSegment(ctx, s); err != nil {
-					return res, fmt.Errorf("rejestracja segmentu %s: %w", s.Path, err)
+					return res, fmt.Errorf("registering segment %s: %w", s.Path, err)
 				}
 			}
 			paths = append(paths, s.Path)
 			accepted[s.Path] = true
 		}
 		if err := a.Cat.AddManifest(ctx, rec, paths); err != nil {
-			return res, fmt.Errorf("przywrócenie manifestu %s: %w", mp, err)
+			return res, fmt.Errorf("restoring manifest %s: %w", mp, err)
 		}
 		res.Manifests = append(res.Manifests, ReconciledManifest{Seq: rec.Seq, Hour: rec.Hour, Path: mp, Segments: rec.Segments,
 			Records: rec.Records})
@@ -314,24 +316,24 @@ func (a *Archive) Reconcile(ctx context.Context, opt ReconcileOptions) (Reconcil
 		_, created, ok := segmentTimes(p)
 		switch {
 		case !ok:
-			res.Rejected = append(res.Rejected, Rejected{p, "nazwa pliku nie jest nazwą segmentu archiwizatora"})
+			res.Rejected = append(res.Rejected, Rejected{p, a.tr("nazwa pliku nie jest nazwą segmentu archiwizatora", "the file name is not an archiver segment name")})
 			continue
 		case inManifest[p] != "":
-			res.Rejected = append(res.Rejected, Rejected{p, "należy do manifestu " + inManifest[p] + ", którego nie przyjęto"})
+			res.Rejected = append(res.Rejected, Rejected{p, fmt.Sprintf(a.tr("należy do manifestu %s, którego nie przyjęto", "belongs to manifest %s, which was not accepted"), inManifest[p])})
 			continue
 		case !opt.inWindow(created):
-			res.Rejected = append(res.Rejected, Rejected{p, fmt.Sprintf("utworzony %s – poza oknem przywrócenia",
+			res.Rejected = append(res.Rejected, Rejected{p, fmt.Sprintf(a.tr("utworzony %s – poza oknem przywrócenia", "created %s – outside the restore window"),
 				created.Format(time.RFC3339))})
 			continue
 		}
 		s, err := a.readSegment(p)
 		if err != nil {
-			res.Rejected = append(res.Rejected, Rejected{p, "uszkodzony: " + err.Error()})
+			res.Rejected = append(res.Rejected, Rejected{p, a.tr("uszkodzony: ", "damaged: ") + a.msg(err)})
 			continue
 		}
 		s.RegisteredAt = a.now()
 		if err := a.Cat.AddSegment(ctx, s); err != nil {
-			return res, fmt.Errorf("rejestracja segmentu %s: %w", p, err)
+			return res, fmt.Errorf("registering segment %s: %w", p, err)
 		}
 		res.Segments = append(res.Segments, s)
 	}
@@ -348,7 +350,7 @@ func (a *Archive) checkDiskManifest(mp string, hour time.Time, last ManifestReco
 		return body, ManifestRecord{}, nil, err.Error()
 	}
 	if err := json.Unmarshal(data, &body); err != nil {
-		return body, ManifestRecord{}, nil, "nieczytelna treść: " + err.Error()
+		return body, ManifestRecord{}, nil, a.tr("nieczytelna treść: ", "unreadable content: ") + err.Error()
 	}
 	wantSeq, wantPrev := int64(1), GenesisPrev
 	if hasLast {
@@ -356,33 +358,34 @@ func (a *Archive) checkDiskManifest(mp string, hour time.Time, last ManifestReco
 	}
 	switch {
 	case body.Format != ManifestFormat:
-		return body, ManifestRecord{}, nil, "nieznany format manifestu"
+		return body, ManifestRecord{}, nil, a.tr("nieznany format manifestu", "unknown manifest format")
 	case !body.Hour.Equal(hour):
-		return body, ManifestRecord{}, nil, "godzina w treści różni się od nazwy pliku"
+		return body, ManifestRecord{}, nil, a.tr("godzina w treści różni się od nazwy pliku", "the hour in the content differs from the file name")
 	case body.Seq != wantSeq || body.PrevSHA256 != wantPrev:
-		return body, ManifestRecord{}, nil, fmt.Sprintf("nie przedłuża łańcucha (numer %d, oczekiwany %d z hashem poprzednika końca spisu)",
+		return body, ManifestRecord{}, nil, fmt.Sprintf(a.tr("nie przedłuża łańcucha (numer %d, oczekiwany %d z hashem poprzednika końca spisu)",
+			"does not extend the chain (number %d, expected %d with the previous hash of the catalog end)"),
 			body.Seq, wantSeq)
 	case hasLast && !hour.Equal(last.Hour.UTC().Add(time.Hour)):
-		return body, ManifestRecord{}, nil, "nie jest kolejną godziną po końcu spisu"
+		return body, ManifestRecord{}, nil, a.tr("nie jest kolejną godziną po końcu spisu", "is not the next hour after the catalog end")
 	}
 	var segs []Segment
 	for _, s := range body.Segments {
 		if o, ok := open[s.Path]; ok {
 			if o.SHA256 != s.SHA256 || o.Bytes != s.Bytes || o.Records != s.Records {
-				return body, ManifestRecord{}, nil, "segment " + s.Path + " różni się od wpisu w spisie"
+				return body, ManifestRecord{}, nil, fmt.Sprintf(a.tr("segment %s różni się od wpisu w spisie", "segment %s differs from the catalog entry"), s.Path)
 			}
 			segs = append(segs, o)
 			continue
 		}
 		if !unknown[s.Path] {
-			return body, ManifestRecord{}, nil, "segment " + s.Path + " brakuje albo należy już do innego manifestu"
+			return body, ManifestRecord{}, nil, fmt.Sprintf(a.tr("segment %s brakuje albo należy już do innego manifestu", "segment %s is missing or already belongs to another manifest"), s.Path)
 		}
 		got, err := a.readSegment(s.Path)
 		if err != nil {
-			return body, ManifestRecord{}, nil, "segment " + s.Path + ": " + err.Error()
+			return body, ManifestRecord{}, nil, "segment " + s.Path + ": " + a.msg(err)
 		}
 		if got.SHA256 != s.SHA256 || got.Bytes != s.Bytes || got.Records != s.Records {
-			return body, ManifestRecord{}, nil, "segment " + s.Path + " niezgodny z manifestem"
+			return body, ManifestRecord{}, nil, fmt.Sprintf(a.tr("segment %s niezgodny z manifestem", "segment %s does not match the manifest"), s.Path)
 		}
 		got.FirstReceivedAt, got.LastReceivedAt = s.FirstReceivedAt, s.LastReceivedAt
 		segs = append(segs, got)
@@ -393,7 +396,7 @@ func (a *Archive) checkDiskManifest(mp string, hour time.Time, last ManifestReco
 		size += s.Bytes
 	}
 	if recs != body.Records || size != body.Bytes {
-		return body, ManifestRecord{}, nil, "sumy manifestu nie zgadzają się z listą segmentów"
+		return body, ManifestRecord{}, nil, a.tr("sumy manifestu nie zgadzają się z listą segmentów", "manifest totals do not match the segment list")
 	}
 	rec := ManifestRecord{Seq: body.Seq, Hour: hour, SHA256: SumHex(data), PrevSHA256: body.PrevSHA256, Segments: len(body.Segments),
 		Records: body.Records, Bytes: body.Bytes, CreatedAt: body.CreatedAt.UTC(), Body: data}
@@ -416,7 +419,7 @@ func (a *Archive) Quarantine(ctx context.Context, paths []string) (ReconcileResu
 	stamp := a.now().Format("20060102-150405")
 	for _, p := range paths {
 		if !ValidUnknownPath(p) || !slices.Contains(unknown, p) {
-			res.Rejected = append(res.Rejected, Rejected{p, "plik nie jest (już) nieznany spisowi albo go nie ma"})
+			res.Rejected = append(res.Rejected, Rejected{p, a.tr("plik nie jest (już) nieznany spisowi albo go nie ma", "the file is not (or no longer) unknown to the catalog, or it is gone")})
 			continue
 		}
 		dst := path.Join(QuarantineDir, stamp, p)
@@ -476,19 +479,20 @@ func (a *Archive) Run(ctx context.Context, r Recovery) (ReconcileResult, error) 
 	switch r.Kind {
 	case "restore":
 		if r.WindowFrom == nil || r.WindowTo == nil {
-			return ReconcileResult{}, errors.New("brak okna czasu przywrócenia (czasu zrzutu bazy) – pliki rozstrzygnie administrator w panelu")
+			return ReconcileResult{}, lang.Errorf("brak okna czasu przywrócenia (czasu zrzutu bazy) – pliki rozstrzygnie administrator w panelu",
+				"no restore time window (database dump time) – an administrator will decide on the files in the panel")
 		}
 		return a.Reconcile(ctx, ReconcileOptions{From: *r.WindowFrom, To: *r.WindowTo})
 	case "adopt":
 		if len(r.Paths) == 0 {
-			return ReconcileResult{}, errors.New("brak wskazanych plików")
+			return ReconcileResult{}, lang.Errorf("brak wskazanych plików", "no files selected")
 		}
 		return a.Reconcile(ctx, ReconcileOptions{Only: r.Paths})
 	case "quarantine":
 		if len(r.Paths) == 0 {
-			return ReconcileResult{}, errors.New("brak wskazanych plików")
+			return ReconcileResult{}, lang.Errorf("brak wskazanych plików", "no files selected")
 		}
 		return a.Quarantine(ctx, r.Paths)
 	}
-	return ReconcileResult{}, fmt.Errorf("nieznany rodzaj operacji %q", r.Kind)
+	return ReconcileResult{}, fmt.Errorf("unknown operation kind %q", r.Kind)
 }

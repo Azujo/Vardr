@@ -19,6 +19,8 @@ groups:
         annotations:
           summary: "Archiwum NIS2: weryfikacja wykryła niezgodności"
           description: "Dane w archiwum Urd zostały zmienione, usunięte lub dodane poza archiwizatorem. Szczegóły: panel → Urd."
+          summary_en: "NIS2 archive: verification found mismatches"
+          description_en: "Data in the Urd archive was modified, removed or added outside the archiver. Details: panel → Urd."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -42,6 +44,8 @@ groups:
         annotations:
           summary: "Archiwizator nie działa"
           description: "Prometheus nie widzi archiwizatora. Paczki czekają w kolejce; po jej zapełnieniu serwer przestanie przyjmować zdarzenia."
+          summary_en: "Archiver not running"
+          description_en: "Prometheus does not see the archiver. Batches wait in the queue; once it is full, the server stops accepting events."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -65,6 +69,8 @@ groups:
         annotations:
           summary: "Archiwizacja NIS2 wyłączona w polityce"
           description: "Polityka archiwum wyłączyła zapis nowych paczek. Sprawdź historię zmian polityki w panelu (Urd → Polityka) i dziennik audytu."
+          summary_en: "NIS2 archiving disabled by the policy"
+          description_en: "The archive policy stopped writing new batches. Check the policy change history in the panel (Urd → Policy) and the audit log."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -88,6 +94,8 @@ groups:
         annotations:
           summary: "Zaplanowane osłabienie polityki archiwum NIS2"
           description: "Ktoś zlecił wyłączenie archiwum, krótszą retencję albo wyłączenie źródeł. Zmiana wejdzie w życie po karencji – jeśli nie była uzgodniona, anuluj ją w panelu (Urd → Polityka)."
+          summary_en: "NIS2 archive policy weakening scheduled"
+          description_en: "Someone requested disabling the archive, a shorter retention or excluding sources. The change takes effect after the grace period – if it was not agreed, cancel it in the panel (Urd → Policy)."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -111,6 +119,8 @@ groups:
         annotations:
           summary: "Archiwizacja wstrzymana – brak miejsca na dysku archiwum"
           description: "Na dysku archiwum zostało poniżej progu miejsca. Paczki czekają w kolejce. Zwolnij lub powiększ dysk."
+          summary_en: "Archiving paused – out of space on the archive disk"
+          description_en: "The archive disk has less free space than the threshold. Batches wait in the queue. Free up or enlarge the disk."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -134,6 +144,8 @@ groups:
         annotations:
           summary: "Mało miejsca na dysku archiwum (< 15%)"
           description: "Archiwum wkrótce się zatrzyma. Sprawdź retencję (panel: Urd → Polityka) albo powiększ dysk."
+          summary_en: "Low space on the archive disk (< 15%)"
+          description_en: "Archiving will stop soon. Check the retention (panel: Urd → Policy) or enlarge the disk."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -157,6 +169,8 @@ groups:
         annotations:
           summary: "Weryfikacja archiwum nie przeszła od ponad 13 h"
           description: "Okresowa weryfikacja integralności archiwum nie działa."
+          summary_en: "Archive verification has not run for over 13 h"
+          description_en: "The periodic archive integrity verification is not working."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -180,6 +194,8 @@ groups:
         annotations:
           summary: "Mało miejsca na dysku systemowym VM (< 15%)"
           description: "Na dysku systemowym są kolejka NATS i ClickHouse. Jego zapełnienie zatrzyma cały SIEM."
+          summary_en: "Low space on the VM system disk (< 15%)"
+          description_en: "The system disk holds the NATS queue and ClickHouse. Filling it up stops the whole SIEM."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -203,6 +219,8 @@ groups:
         annotations:
           summary: "Kopia zapasowa nie trafiła poza VM od ponad 26 h"
           description: "Wysyłka kopii na serwer kopii (SIEM_BACKUP_REMOTE, np. TrueNAS) nie powiodła się. Szczegóły: panel → Kopie zapasowe, log usługi: docker compose logs backup."
+          summary_en: "Backup has not left the VM for over 26 h"
+          description_en: "Uploading the backup to the backup server (SIEM_BACKUP_REMOTE, e.g. TrueNAS) failed. Details: panel → Backups, service log: docker compose logs backup."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -226,6 +244,8 @@ groups:
         annotations:
           summary: "Brak udanej kopii zapasowej od ponad 26 h"
           description: "Nocna kopia bazy Saga i kluczy (backup.sh, cron 02:15) nie powiodła się – np. brak hasła kopii (./backup.sh haslo init). Log: ~/siem-lab/backup.log."
+          summary_en: "No successful backup for over 26 h"
+          description_en: "The nightly backup of the Saga database and keys failed – e.g. no backup password (./backup.sh password init). Details: panel → Backups."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -249,6 +269,8 @@ groups:
         annotations:
           summary: "Kolejka NATS zapełniona ponad 80%"
           description: "Któryś etap nie nadąża. Powyżej 90% ingest odmawia przyjęcia (503)."
+          summary_en: "NATS queue over 80% full"
+          description_en: "One of the stages cannot keep up. Above 90% ingest rejects batches (503)."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -272,6 +294,8 @@ groups:
         annotations:
           summary: "Ingest odmawia przyjęcia zdarzeń (kolejka pełna)"
           description: "Serwer odsyła agentom 503; zdarzenia czekają u agentów."
+          summary_en: "Ingest is rejecting events (queue full)"
+          description_en: "The server returns 503 to agents; events wait on the agents."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -295,6 +319,8 @@ groups:
         annotations:
           summary: "Detektor (Gjallarhorn) nie działa"
           description: "Prometheus nie widzi siem-detector. Reguły nie są wykonywane – ataki nie wywołają alertów; zdarzenia czekają w kolejce."
+          summary_en: "Detector (Gjallarhorn) not running"
+          description_en: "Prometheus does not see siem-detector. Rules are not evaluated – attacks will not raise alerts; events wait in the queue."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -318,6 +344,8 @@ groups:
         annotations:
           summary: "Potok zdarzeń nie działa"
           description: "Któraś z usług ingest, normalizer, writer nie działa przez większość ostatnich 5 min (zatrzymana albo restartuje się w pętli – np. bez NATS po restarcie VM). Zdarzenia czekają u agentów, nic nie trafia do bazy ani detekcji. Sprawdź: docker compose ps, docker compose logs nats."
+          summary_en: "Event pipeline not working"
+          description_en: "One of the ingest, normalizer, writer services has been down for most of the last 5 min (stopped or restarting in a loop – e.g. without NATS after a VM restart). Events wait on the agents, nothing reaches the database or detection. Check: docker compose ps, docker compose logs nats."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -343,6 +371,8 @@ groups:
         annotations:
           summary: "Silnik zapytań detekcji ma ponad 15 min zaległości"
           description: "Punkt kontrolny silnika zapytań (ClickHouse) stoi. Sprawdź logi siem-detector i obciążenie ClickHouse."
+          summary_en: "Detection query engine lags by over 15 min"
+          description_en: "The query engine checkpoint (ClickHouse) is stuck. Check the siem-detector logs and ClickHouse load."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -366,6 +396,8 @@ groups:
         annotations:
           summary: "Reguły detekcji z błędami"
           description: "Część reguł nie działa: pliki z błędami (panel → Reguły detekcji) albo SQL odrzucony przez ClickHouse w silniku zapytań (logi siem-detector)."
+          summary_en: "Detection rules with errors"
+          description_en: "Some rules do not work: files with errors (panel → Detection rules) or SQL rejected by ClickHouse in the query engine (siem-detector logs)."
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }

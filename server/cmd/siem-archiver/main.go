@@ -28,6 +28,8 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"siem/internal/lang"
+	"siem/internal/lang/langdb"
 	"siem/internal/svc"
 	"siem/internal/urd"
 	"siem/server/internal/archiver"
@@ -55,7 +57,7 @@ func main() {
 		}
 	case "check-export":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "użycie: siem-archiver check-export <plik.tar>")
+			fmt.Fprintln(os.Stderr, "usage: siem-archiver check-export <file.tar>")
 			os.Exit(2)
 		}
 		ok, cerr := checkExport(os.Args[2])
@@ -66,11 +68,11 @@ func main() {
 	case "disable":
 		err = disable(log)
 	default:
-		fmt.Fprintln(os.Stderr, "użycie: siem-archiver [serve|verify [--full]|check-export <plik.tar>|disable]")
+		fmt.Fprintln(os.Stderr, "usage: siem-archiver [serve|verify [--full]|check-export <file.tar>|disable]")
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -100,7 +102,7 @@ func load(log *slog.Logger) (settings, error) {
 		return s, err
 	}
 	if days < 1 {
-		return s, fmt.Errorf("SIEM_ARCHIVE_RETENTION_DAYS musi być ≥ 1")
+		return s, fmt.Errorf("SIEM_ARCHIVE_RETENTION_DAYS must be ≥ 1")
 	}
 	s.retention = time.Duration(days) * 24 * time.Hour
 	// Granice polityki ustawianej w panelu: przejęcie panelu nie pozwala
@@ -112,7 +114,7 @@ func load(log *slog.Logger) (settings, error) {
 		return s, err
 	}
 	if s.bounds.MinRetentionDays < 1 || s.bounds.MaxRetentionDays < s.bounds.MinRetentionDays {
-		return s, fmt.Errorf("SIEM_ARCHIVE_MIN_RETENTION_DAYS musi być ≥ 1 i ≤ SIEM_ARCHIVE_MAX_RETENTION_DAYS")
+		return s, fmt.Errorf("SIEM_ARCHIVE_MIN_RETENTION_DAYS must be ≥ 1 and ≤ SIEM_ARCHIVE_MAX_RETENTION_DAYS")
 	}
 	if err := s.bounds.Check(days); err != nil {
 		return s, fmt.Errorf("SIEM_ARCHIVE_RETENTION_DAYS: %w", err)
@@ -157,14 +159,14 @@ func load(log *slog.Logger) (settings, error) {
 		return s, err
 	}
 	if st, err := os.Stat(s.dir); err != nil || !st.IsDir() {
-		return s, fmt.Errorf("katalog archiwum %s niedostępny: %v", s.dir, err)
+		return s, fmt.Errorf("archive directory %s unavailable: %v", s.dir, err)
 	}
 	return s, nil
 }
 
 func openCatalog(ctx context.Context, log *slog.Logger, url string) (*urd.PG, error) {
 	var cat *urd.PG
-	err := svc.Retry(ctx, log, "baza Saga", func() error {
+	err := svc.Retry(ctx, log, "Saga database", func() error {
 		var err error
 		cat, err = urd.OpenPG(ctx, url)
 		return err
@@ -178,7 +180,7 @@ func openCatalog(ctx context.Context, log *slog.Logger, url string) (*urd.PG, er
 		return nil, err
 	}
 	if len(applied) > 0 {
-		log.Info("migracje schematu urd", "applied", applied)
+		log.Info("urd schema migrations", "applied", applied)
 	}
 	return cat, nil
 }
@@ -195,7 +197,9 @@ func serve(log *slog.Logger) error {
 		return err
 	}
 	defer cat.Close()
-	log.Info("oczekiwanie na blokadę jedynego archiwizatora")
+	// Język systemu (panel) – opisy wyników widoczne w panelu.
+	sys := &langdb.System{DB: cat}
+	log.Info("waiting for the single-archiver lock")
 	release, err := cat.LockWriter(ctx)
 	if err != nil {
 		return err
@@ -204,33 +208,34 @@ func serve(log *slog.Logger) error {
 
 	// Polityka: przy pierwszym starcie z konfiguracji serwera, potem z panelu.
 	initial, created, err := cat.InitPolicy(ctx, urd.Policy{Enabled: true, RetentionDays: int(cfg.retention / (24 * time.Hour)),
-		UpdatedAt: time.Now().UTC(), UpdatedBy: "konfiguracja serwera"})
+		UpdatedAt: time.Now().UTC(), UpdatedBy: lang.Pick(sys.Get(ctx), "konfiguracja serwera", "server configuration")})
 	if err != nil {
-		return fmt.Errorf("polityka archiwum: %w", err)
+		return fmt.Errorf("archive policy: %w", err)
 	}
 	if created {
-		log.Info("założono politykę archiwum z konfiguracji serwera (dalsze zmiany w panelu)", "retention_days", initial.RetentionDays)
+		log.Info("archive policy created from the server configuration (further changes in the panel)", "retention_days", initial.RetentionDays)
 	} else {
-		log.Info("polityka archiwum z panelu", "enabled", initial.Enabled, "retention_days", initial.RetentionDays,
+		log.Info("archive policy from the panel", "enabled", initial.Enabled, "retention_days", initial.RetentionDays,
 			"excluded_groups", initial.ExcludedGroups, "excluded_agents", initial.ExcludedAgents)
 	}
 	policy := archiver.NewPolicy(initial, cfg.bounds, cfg.grace)
 
 	a := urd.New(cfg.dir, cat)
+	a.Lang = func() string { return sys.Get(ctx) }
 	if err := a.CheckDir(ctx); err != nil {
 		return fmt.Errorf("%s: %w", cfg.dir, err)
 	}
 	if n, err := a.CleanTemp(); err != nil {
-		return fmt.Errorf("sprzątanie niezatwierdzonych segmentów: %w", err)
+		return fmt.Errorf("cleaning up uncommitted segments: %w", err)
 	} else if n > 0 {
-		log.Warn("usunięto niezatwierdzone segmenty po przerwanej pracy (ich paczki wrócą z kolejki)", "files", n)
+		log.Warn("uncommitted segments removed after an interrupted run (their batches will come back from the queue)", "files", n)
 	}
 	// Po przywróceniu kopii bazy (restore.sh zostawia zlecenie): pliki
 	// zapisane między zrzutem a przywróceniem wracają do spisu, zanim
 	// archiwizator zamknie kolejną godzinę.
 	sealLock := &sync.Mutex{}
 	if n := archiver.ProcessRecoveries(ctx, a, cat, log, sealLock); n > 0 {
-		log.Info("wykonano zlecenia obsługi niezgodności przed startem", "count", n)
+		log.Info("inconsistency handling requests completed before startup", "count", n)
 	}
 
 	limits, err := queue.Limits()
@@ -246,7 +251,7 @@ func serve(log *slog.Logger) error {
 	go normalize.WatchDecoders(ctx, js, log)
 	go normalize.WatchIdentity(ctx, js, log)
 	var cons jetstream.Consumer
-	if err := svc.Retry(ctx, log, "konsument archiwum", func() error {
+	if err := svc.Retry(ctx, log, "archive consumer", func() error {
 		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
 			return err
 		}
@@ -285,7 +290,7 @@ func serve(log *slog.Logger) error {
 	r := &archiver.Archiver{A: a, Log: log, M: m, Health: health, Policy: policy, SealLock: sealLock,
 		Cfg: archiver.Config{SegmentMaxBytes: cfg.segBytes, SegmentMaxAge: cfg.segAge, ExcludeAgents: cfg.exclude,
 			MinFreeBytes: uint64(cfg.minFreeGB) << 30, MinFreePercent: cfg.minFreePct, WarnFreePercent: cfg.warnFreePct}}
-	log.Info("archiwizator uruchomiony", "dir", cfg.dir, "retention", cfg.retention.String(),
+	log.Info("archiver started", "dir", cfg.dir, "retention", cfg.retention.String(),
 		"min_retention_days", cfg.bounds.MinRetentionDays, "policy_grace", cfg.grace.String(),
 		"segment_mb", cfg.segBytes>>20, "segment_age", cfg.segAge.String(), "verify_every", cfg.verifyEvery.String(),
 		"exclude_agents", cfg.exclude, "min_free_gb", cfg.minFreeGB, "min_free_percent", cfg.minFreePct)
@@ -296,21 +301,21 @@ func serve(log *slog.Logger) error {
 		}
 		msgs, err := cons.Fetch(512, jetstream.FetchMaxWait(time.Second))
 		if err != nil {
-			log.Warn("pobranie z kolejki nieudane", "err", err)
+			log.Warn("fetching from the queue failed", "err", err)
 			time.Sleep(time.Second)
 			continue
 		}
 		for msg := range msgs.Messages() {
 			if err := r.Add(ctx, msg); err != nil {
-				log.Error("zapis do archiwum nieudany – paczki wrócą z kolejki", "err", err)
+				log.Error("writing to the archive failed – batches will come back from the queue", "err", err)
 			}
 		}
 		if err := r.Tick(ctx); err != nil {
-			log.Error("zamykanie segmentu lub godziny nieudane", "err", err)
+			log.Error("closing a segment or hour failed", "err", err)
 		}
 	}
 	if err := r.Close(context.WithoutCancel(ctx)); err != nil {
-		log.Error("zatwierdzenie ostatniego segmentu nieudane", "err", err)
+		log.Error("committing the last segment failed", "err", err)
 	}
 	return nil
 }
@@ -332,9 +337,12 @@ func verify(log *slog.Logger) (bool, error) {
 	if slices.Contains(os.Args[2:], "--full") {
 		opt.BudgetBytes = 0
 	}
-	v := urd.New(cfg.dir, cat).Verify(ctx, opt)
+	a := urd.New(cfg.dir, cat)
+	sys := &langdb.System{DB: cat}
+	a.Lang = func() string { return sys.Get(ctx) }
+	v := a.Verify(ctx, opt)
 	if _, err := cat.SaveVerification(ctx, v); err != nil {
-		log.Warn("zapis wyniku nieudany", "err", err)
+		log.Warn("recording the result failed", "err", err)
 	}
 	out, _ := json.MarshalIndent(v, "", "  ")
 	fmt.Println(string(out))
@@ -352,7 +360,7 @@ func disable(log *slog.Logger) error {
 	if err := bus.DisableArchiver(ctx, js); err != nil {
 		return err
 	}
-	log.Warn("archiwizacja nowych paczek WYŁĄCZONA (konsument usunięty); zatrzymaj usługę archiver – dane w archiwum zostają do końca retencji")
+	log.Warn("archiving of new batches DISABLED (consumer removed); stop the archiver service – data in the archive stays until the end of retention")
 	return nil
 }
 
@@ -363,11 +371,11 @@ func checkExport(path string) (bool, error) {
 		return false, err
 	}
 	defer f.Close()
-	c := urd.CheckExport(f)
+	c := urd.CheckExport(f, "en")
 	out, _ := json.MarshalIndent(c, "", "  ")
 	fmt.Println(string(out))
 	if c.OK {
-		fmt.Fprintf(os.Stderr, "Paczka zgodna. Porównaj kotwicę (SHA-256 najnowszego manifestu) z wartością zapisaną niezależnie:\n%s\n", c.Latest)
+		fmt.Fprintf(os.Stderr, "Package consistent. Compare the anchor (SHA-256 of the latest manifest) with a value recorded independently:\n%s\n", c.Latest)
 	}
 	return c.OK, nil
 }

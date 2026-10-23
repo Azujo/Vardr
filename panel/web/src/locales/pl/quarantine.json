@@ -1,0 +1,65 @@
+{
+  "title": "Kwarantanna",
+  "intro": [
+    "Zdarzenia, których nie udało się znormalizować (np. treść niepasująca do dekodera, uszkodzony XML) albo zapisać – z oryginałem i powodem. Po poprawce dekodera (",
+    "Dekodery",
+    ") albo programu można je przetworzyć ponownie: odzyskane zdarzenia trafiają do bazy i detekcji jak nowe (z polem siem.quarantined_at), a wpisy nadal błędne dostają aktualny powód. Archiwum NIS2 ma oryginały od początku – nic nie jest archiwizowane drugi raz."
+  ],
+  "noNats": "Panel nie jest połączony z NATS – ponowne przetwarzanie niedostępne (podgląd działa).",
+  "filter": {
+    "period": "Okres",
+    "h24": "ostatnie 24 h",
+    "d7": "ostatnie 7 dni",
+    "d30": "ostatnie 30 dni",
+    "d90": "ostatnie 90 dni",
+    "source": "Źródło (początek)",
+    "reason": "Powód zawiera",
+    "agent": "Agent",
+    "show": "Pokaż"
+  },
+  "reprocessFilter": "Przetwórz ponownie (filtr)",
+  "reprocessShort": "przetwórz ponownie",
+  "jobs": "Zlecenia",
+  "jobStatus": {
+    "running": "w toku",
+    "done": "zakończone",
+    "failed": "błąd"
+  },
+  "job": "odzyskane {{recovered}} · nadal błędne {{failed}} · razem {{total}} — {{by}}, {{date}}",
+  "jobSource": "źródło {{source}}",
+  "jobReason": "powód „{{reason}}”",
+  "jobStarted": "Zlecenie #{{id}}: wpisów {{count}}",
+  "jobLimited": " (pierwsze 10 000 – zleć ponownie dla reszty)",
+  "groups": "Grupy (wpisów: {{count}})",
+  "empty": "Kwarantanna jest pusta w wybranym okresie.",
+  "col": {
+    "source": "Źródło",
+    "reasonSample": "Powód (przykład)",
+    "count": "Wpisów (także odzyskane)",
+    "agents": "Agentów",
+    "last": "Ostatni",
+    "ingested": "Przyjęte",
+    "sourceAgent": "Źródło / agent",
+    "reason": "Powód",
+    "reprocess": "Ponowne przetworzenie"
+  },
+  "decoderWizard": "kreator dekodera",
+  "entries": "Najnowsze wpisy ({{count}}) – kliknij, aby zobaczyć oryginał",
+  "entry": {
+    "recovered": "odzyskane (#{{id}})",
+    "stillFailed": "nadal błędne (#{{id}})",
+    "unsupportedTip": "Wpis odrzucony przy zapisie do ClickHouse albo ze ścieżki odtwarzania – nie da się go przetworzyć ponownie",
+    "unsupported": "nie do przetworzenia",
+    "truncated": "treść przycięta przez agenta",
+    "preview": "podgląd: pierwsze 4000 znaków"
+  },
+  "confirm": {
+    "title": "Ponowne przetworzenie kwarantanny",
+    "allFiltered": "wszystkie wpisy pasujące do filtra",
+    "group": "grupa: {{source}} – {{reason}}",
+    "text": "Wpisy: {{what}}. Normalizator przetworzy je bieżącym kodem i dekoderami. Odzyskane zdarzenia trafią do bazy i do detekcji (mogą wywołać alerty), wpisy już odzyskane są pomijane. Najwyżej 10 000 wpisów w jednym zleceniu.",
+    "run": "Przetwórz ponownie"
+  },
+  "wizardTitle": "Kreator dekodera – zaznacz pola w wiadomościach z kwarantanny",
+  "decoderSaved": "Dekoder zapisany – teraz przetwórz grupę ponownie"
+}

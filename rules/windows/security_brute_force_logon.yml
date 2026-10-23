@@ -27,6 +27,20 @@ falsepositives:
   - Użytkownik, który zapomniał hasła po jego zmianie
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Series of failed logons to one account (brute force)"
+      description: |
+        At least 10 failed logons (4625) to the same account within 5 minutes,
+        from any computers. Typical of password guessing over RDP, SMB, LDAP or forms
+        using Windows authentication.
+      instructions: |
+        {{count}} failed logons to account {{TargetDomainName}}\{{TargetUserName}}
+        in {{window}}. Check in the alert events where the attempts came from (computer,
+        IP address, logon type). One computer with a service – most likely a remembered
+        old password. Many sources or an address outside the network – block the source,
+        check whether the account was taken over (successful logon 4624 after the series)
+        and consider forcing a password change.
   group_by: [TargetUserName]
   threshold:
     count: 10

@@ -98,6 +98,9 @@ func (m *memStore) UpdateUser(_ context.Context, id int64, p store.UserPatch) (s
 	if p.Disabled != nil {
 		u.Disabled = *p.Disabled
 	}
+	if p.Language != nil {
+		u.Language = *p.Language
+	}
 	m.users[id] = u
 	return u, nil
 }
@@ -490,3 +493,19 @@ func TestUIAndHeaders(t *testing.T) {
 }
 
 func itoa(n int64) string { b, _ := json.Marshal(n); return string(b) }
+
+func TestAccountLanguage(t *testing.T) {
+	e := newEnv(t)
+	e.addUser("ola", store.RoleViewer, "dlugie-haslo-ola-123", false)
+	c := e.client("10.0.0.1")
+	c.login("ola", "dlugie-haslo-ola-123")
+	if code, out, _ := c.do("PUT", "/api/v1/account/language", map[string]string{"language": "xx"}); code != 400 || out["error"] != "bad_language" {
+		t.Fatalf("nieznany język: %d %v", code, out)
+	}
+	if code, _, _ := c.do("PUT", "/api/v1/account/language", map[string]string{"language": "en"}); code != 200 {
+		t.Fatalf("zmiana języka: %d", code)
+	}
+	if _, out, _ := c.do("GET", "/api/v1/auth/session", nil); out["user"].(map[string]any)["language"] != "en" {
+		t.Fatalf("sesja po zmianie: %v", out["user"])
+	}
+}

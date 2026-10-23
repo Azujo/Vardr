@@ -22,6 +22,17 @@ falsepositives:
   - Plik zablokowany przez inny program w chwili usuwania (Defender ponowi próbę po restarcie)
 level: critical
 vardr:
+  i18n:
+    en:
+      title: "Microsoft Defender failed to remove a threat"
+      description: |
+        Defender detected a threat, but the action (quarantine, removal) failed
+        (1008, 1118, 1119). The malicious file may still be on the computer and running.
+      instructions: |
+        Defender failed to remove {{Threat Name}} on {{host.name}} ({{Path}}): {{Error Description}}.
+        Isolate the computer from the network, run a full offline scan (Microsoft
+        Defender Offline) and check processes and autostart entries. Do not return the
+        computer to work until the scan confirms removal.
   group_by: [host.name]
   suppress: 24h
   instructions: |

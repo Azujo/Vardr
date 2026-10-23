@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+
+	"siem/internal/lang"
 )
 
 // Config to ustawienia logowania domenowego (panel → Logowanie domenowe).
@@ -70,9 +72,9 @@ type Group struct {
 
 var (
 	// ErrBadCredentials: zły login albo hasło (także konto wyłączone w AD).
-	ErrBadCredentials = errors.New("nieprawidłowy login lub hasło konta domenowego")
+	ErrBadCredentials = lang.Errorf("nieprawidłowy login lub hasło konta domenowego", "invalid domain account username or password")
 	// ErrNotFound: brak takiego konta w AD.
-	ErrNotFound = errors.New("nie ma takiego konta w domenie")
+	ErrNotFound = lang.Errorf("nie ma takiego konta w domenie", "no such account in the domain")
 )
 
 const timeout = 10 * time.Second
@@ -88,7 +90,7 @@ func (c *Config) Validate() error {
 	for _, u := range c.URLs {
 		p, err := url.Parse(u)
 		if err != nil || p.Scheme != "ldaps" || p.Hostname() == "" {
-			return fmt.Errorf("adres %q: tylko ldaps://nazwa-kontrolera[:636] (bez szyfrowania hasła szłyby otwartym tekstem)", u)
+			return lang.Errorf("adres %q: tylko ldaps://nazwa-kontrolera[:636] (bez szyfrowania hasła szłyby otwartym tekstem)", "address %q: only ldaps://controller-name[:636] (without encryption passwords would travel in clear text)", u)
 		}
 	}
 	if strings.TrimSpace(c.CAPEM) != "" {
@@ -97,7 +99,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	if strings.TrimSpace(c.BindDN) == "" || strings.TrimSpace(c.BaseDN) == "" {
-		return errors.New("podaj konto usługowe i bazę wyszukiwania kont")
+		return lang.Errorf("podaj konto usługowe i bazę wyszukiwania kont", "enter the service account and the account search base")
 	}
 	if _, err := ldap.ParseDN(c.BaseDN); err != nil {
 		return fmt.Errorf("baza kont: %v", err)
@@ -153,13 +155,13 @@ func (c *Config) dial(ctx context.Context) (*ldap.Conn, error) {
 		}
 		return conn, nil
 	}
-	return nil, fmt.Errorf("kontroler domeny niedostępny: %s", strings.Join(errs, "; "))
+	return nil, lang.Errorf("kontroler domeny niedostępny: %s", "domain controller unavailable: %s", strings.Join(errs, "; "))
 }
 
 // service: połączenie zalogowane kontem usługowym.
 func (c *Config) service(ctx context.Context) (*ldap.Conn, error) {
 	if c.BindPassword == "" {
-		return nil, errors.New("brak hasła konta usługowego")
+		return nil, lang.Errorf("brak hasła konta usługowego", "the service account password is missing")
 	}
 	conn, err := c.dial(ctx)
 	if err != nil {
@@ -167,7 +169,7 @@ func (c *Config) service(ctx context.Context) (*ldap.Conn, error) {
 	}
 	if err := conn.Bind(c.BindDN, c.BindPassword); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("logowanie kontem usługowym: %v", err)
+		return nil, lang.Errorf("logowanie kontem usługowym: %v", "signing in with the service account: %v", err)
 	}
 	return conn, nil
 }
@@ -298,7 +300,7 @@ func (c *Config) verify(ctx context.Context, dn, password string) error {
 		if ldap.IsErrorWithCode(err, ldap.LDAPResultInvalidCredentials) {
 			return ErrBadCredentials
 		}
-		return fmt.Errorf("sprawdzenie hasła: %v", err)
+		return lang.Errorf("sprawdzenie hasła: %v", "checking the password: %v", err)
 	}
 	return nil
 }

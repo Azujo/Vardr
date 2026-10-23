@@ -60,7 +60,7 @@ func loadConfig(path string) (*Config, string, error) {
 	}
 	for _, u := range []string{e.LoginURL, e.GraphURL} {
 		if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-			return nil, "", fmt.Errorf("entra: adres %q bez http(s)://", u)
+			return nil, "", fmt.Errorf("entra: address %q without http(s)://", u)
 		}
 	}
 	return c, base, nil
@@ -70,33 +70,33 @@ func enabled(b *bool) bool { return b == nil || *b }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "użycie: siem-connector enroll|run|version …")
+		fmt.Fprintln(os.Stderr, "usage: siem-connector enroll|run|version …")
 		os.Exit(2)
 	}
 	var err error
 	switch os.Args[1] {
 	case "enroll":
 		fs := flag.NewFlagSet("enroll", flag.ExitOnError)
-		server := fs.String("server", "", "adres serwera (ingest), np. 192.168.88.98:8443")
-		token := fs.String("token", "", "token rejestracyjny z panelu (Bifröst)")
-		ca := fs.String("ca", "ca.crt", "certyfikat CA serwera")
-		panel := fs.String("panel", "", "adres panelu (domyślnie z adresu serwera)")
-		dir := fs.String("dir", ".", "katalog konektora (certyfikaty, connector.yaml, stan)")
+		server := fs.String("server", "", "server (ingest) address, e.g. 192.168.88.98:8443")
+		token := fs.String("token", "", "enrollment token from the panel (Bifröst)")
+		ca := fs.String("ca", "ca.crt", "server CA certificate")
+		panel := fs.String("panel", "", "panel address (default from the server address)")
+		dir := fs.String("dir", ".", "connector directory (certificates, connector.yaml, state)")
 		_ = fs.Parse(os.Args[2:])
 		err = hostagent.Enroll(hostagent.EnrollOptions{Server: *server, Token: *token, CAFile: *ca, Panel: *panel, Dir: *dir,
 			OS: "konektor API", Version: version, ConfigName: "connector.yaml", Config: configTemplate})
 	case "run":
 		fs := flag.NewFlagSet("run", flag.ExitOnError)
-		cfgPath := fs.String("config", "connector.yaml", "plik konfiguracji")
+		cfgPath := fs.String("config", "connector.yaml", "configuration file")
 		_ = fs.Parse(os.Args[2:])
 		err = run(*cfgPath)
 	case "version":
 		fmt.Println("siem-connector", version)
 	default:
-		err = fmt.Errorf("nieznane polecenie %q", os.Args[1])
+		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "błąd:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -157,7 +157,7 @@ func run(cfgPath string) error {
 				}
 			}
 			if len(srcs) == 0 {
-				return nil, errors.New("entra: włącz sign_ins albo audits")
+				return nil, errors.New("entra: enable sign_ins or audits")
 			}
 			log.Info("konektor Entra ID", "tenant", e.TenantID, "graph", graphURL(e.GraphURL), "sources", len(srcs))
 			return srcs, nil

@@ -77,7 +77,7 @@ func WaitConfig(ctx context.Context, timeout time.Duration, log *slog.Logger) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			log.Warn("konfiguracja z panelu niewczytana – start z ustawieniami domyślnymi", "what", c.what, "timeout", timeout)
+			log.Warn("configuration from the panel not loaded – starting with defaults", "what", c.what, "timeout", timeout)
 			return
 		}
 	}
@@ -95,9 +95,9 @@ func WatchDecoders(ctx context.Context, js jetstream.JetStream, log *slog.Logger
 		return decodekv.Watch(ctx, kv, log, func(custom map[string]decode.Custom) {
 			n, errs := SetCustom(custom)
 			for _, err := range errs {
-				log.Error("dekoder z panelu pominięty", "err", err)
+				log.Error("decoder from the panel skipped", "err", err)
 			}
-			log.Info("dekodery syslog wczytane", "decoders", n, "changed_in_panel", len(custom))
+			log.Info("syslog decoders loaded", "decoders", n, "changed_in_panel", len(custom))
 			decodersOnce.Do(func() { close(decodersReady) })
 		})
 	})
@@ -106,7 +106,7 @@ func WatchDecoders(ctx context.Context, js jetstream.JetStream, log *slog.Logger
 // WatchIdentity obserwuje konfigurację tożsamości z panelu (NATS KV) do
 // zakończenia ctx. Do czasu wczytania: każda domena „swoja”, bez aliasów.
 func WatchIdentity(ctx context.Context, js jetstream.JetStream, log *slog.Logger) {
-	_ = svc.Retry(ctx, log, "tożsamości z panelu", func() error {
+	_ = svc.Retry(ctx, log, "identities from the panel", func() error {
 		kv, err := identity.Ensure(ctx, js)
 		if err != nil {
 			return err

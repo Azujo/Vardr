@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"siem/internal/lang"
 	"siem/internal/urd"
 	"siem/internal/windesc"
 )
@@ -52,10 +53,11 @@ func readInfo(dir string) (packageInfo, error) {
 		return info, err
 	}
 	if err := json.Unmarshal(data, &info); err != nil {
-		return info, fmt.Errorf("export.json nieczytelny: %w", err)
+		return info, fmt.Errorf(tr("export.json nieczytelny: %w", "export.json is unreadable: %w"), err)
 	}
 	if len(info.Readable.Files) == 0 {
-		return info, errors.New("paczka nie zawiera czytelnych zdarzeń (starszy format eksportu) – zleć eksport ponownie")
+		return info, errors.New(tr("paczka nie zawiera czytelnych zdarzeń (starszy format eksportu) – zleć eksport ponownie",
+			"the package contains no readable events (older export format) – request the export again"))
 	}
 	return info, nil
 }
@@ -145,7 +147,7 @@ func eventData(raw string) [][2]string {
 				}
 				if dataName == "" {
 					unnamed++
-					dataName = "Dane " + strconv.Itoa(unnamed)
+					dataName = tr("Dane ", "Data ") + strconv.Itoa(unnamed)
 				}
 			}
 		case xml.CharData:
@@ -199,7 +201,23 @@ func (t *txt) close() error {
 	return t.f.Close()
 }
 
-var pl = func() *time.Location {
+// L: język odczytu (pl, en) – według języka Windows (main, lang.OS).
+var L = "pl"
+
+func tr(pl, en string) string { return lang.Pick(L, pl, en) }
+
+// zone: strefa czasu raportu – czas polski (raport po polsku) albo czas
+// lokalny komputera (po angielsku); zoneLabel – jej opis w raporcie.
+func zone() *time.Location {
+	if L == "en" {
+		return time.Local
+	}
+	return warsaw
+}
+
+func zoneLabel() string { return tr("czas polski", "local time") }
+
+var warsaw = func() *time.Location {
 	loc, err := time.LoadLocation("Europe/Warsaw")
 	if err != nil {
 		return time.UTC
@@ -209,14 +227,14 @@ var pl = func() *time.Location {
 
 const rule = "------------------------------------------------------------------------------"
 
-func plTime(t time.Time) string { return t.In(pl).Format("2006-01-02 15:04:05") }
+func plTime(t time.Time) string { return t.In(zone()).Format("2006-01-02 15:04:05") }
 
 func outcome(o string) string {
 	switch o {
 	case "success":
-		return "sukces"
+		return tr("sukces", "success")
 	case "failure":
-		return "porażka"
+		return tr("porażka", "failure")
 	}
 	return o
 }
@@ -250,14 +268,14 @@ func clip(s string, n int) string {
 	if len(r) <= n {
 		return s
 	}
-	return string(r[:n]) + fmt.Sprintf(" … (+%d znaków – pełna treść w event.original)", len(r)-n)
+	return string(r[:n]) + fmt.Sprintf(tr(" … (+%d znaków – pełna treść w event.original)", " … (+%d characters – full content in event.original)"), len(r)-n)
 }
 
 func describe(code uint32) string {
-	if d := windesc.Describe(code); d != "" {
+	if d := windesc.Describe(code, L); d != "" {
 		return d
 	}
-	return "(opis niedostępny – zob. dokumentację Microsoft dla tego Event ID)"
+	return tr("(opis niedostępny – zob. dokumentację Microsoft dla tego Event ID)", "(no description – see the Microsoft documentation for this Event ID)")
 }
 
 func userOf(r urd.Readable) string {
@@ -272,7 +290,7 @@ type dayFile struct {
 	count int
 }
 
-// writeDays zapisuje zdarzenia w plikach dziennych (data w czasie polskim).
+// writeDays zapisuje zdarzenia w plikach dziennych (data w strefie raportu).
 func writeDays(dir string, l loaded) ([]dayFile, error) {
 	var days []dayFile
 	var cur *txt
@@ -285,7 +303,7 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 		return cur.close()
 	}
 	for _, e := range l.events {
-		day := e.t.In(pl).Format("2006-01-02")
+		day := e.t.In(zone()).Format("2006-01-02")
 		if day != curDay || part >= maxPerFile {
 			if err := flush(); err != nil {
 				return days, err
@@ -293,7 +311,7 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 			name := day + ".txt"
 			if day == curDay {
 				partNo++
-				name = fmt.Sprintf("%s_czesc%d.txt", day, partNo)
+				name = fmt.Sprintf(tr("%s_czesc%d.txt", "%s_part%d.txt"), day, partNo)
 			} else {
 				partNo = 1
 			}
@@ -304,58 +322,61 @@ func writeDays(dir string, l loaded) ([]dayFile, error) {
 			}
 			curDay, part = day, 0
 			days = append(days, dayFile{name: name})
-			cur.line("VARDR – zdarzenia z dnia %s (czas polski), plik %s", day, name)
-			cur.line("Kolejność: według czasu zdarzenia. Pełny oryginalny zapis (XML) każdego zdarzenia: pliki")
-			cur.line("zdarzenia/*.ndjson.gz w paczce, pole event.original (wyszukaj po identyfikatorze).")
+			cur.line(tr("VARDR – zdarzenia z dnia %s (%s), plik %s", "VARDR – events of %s (%s), file %s"), day, zoneLabel(), name)
+			cur.line("%s", tr("Kolejność: według czasu zdarzenia. Pełny oryginalny zapis (XML) każdego zdarzenia: pliki",
+				"Order: by event time. The full original record (XML) of every event: files"))
+			cur.line("%s", tr("zdarzenia/*.ndjson.gz w paczce, pole event.original (wyszukaj po identyfikatorze).",
+				"zdarzenia/*.ndjson.gz in the package, field event.original (search by identifier)."))
 			cur.line("")
 		}
 		part++
 		days[len(days)-1].count++
 		r := e.r
 		cur.line("%s", rule)
-		cur.line("%s (czas polski)   |   %s UTC", plTime(e.t), e.t.UTC().Format("2006-01-02 15:04:05"))
+		cur.line("%s (%s)   |   %s UTC", plTime(e.t), zoneLabel(), e.t.UTC().Format("2006-01-02 15:04:05"))
 		head := fmt.Sprintf("%d  %s", r.Code, describe(r.Code))
 		if isSyslog(r) {
 			head = kindOf(r)
 		} else if r.Code == 0 {
-			head = "(zdarzenie bez rozpoznanego kodu)"
+			head = tr("(zdarzenie bez rozpoznanego kodu)", "(event without a recognized code)")
 		}
 		if r.Outcome != "" {
 			head += "  [" + outcome(r.Outcome) + "]"
 		}
 		cur.line("%s", head)
-		cur.line("  Komputer:       %s", orDash(r.HostName))
-		cur.line("  Użytkownik:     %s", userOf(r))
-		cur.line("  Adres IP:       %s", orDash(r.SourceIP))
+		cur.line(tr("  Komputer:       %s", "  Computer:       %s"), orDash(r.HostName))
+		cur.line(tr("  Użytkownik:     %s", "  User:           %s"), userOf(r))
+		cur.line(tr("  Adres IP:       %s", "  IP address:     %s"), orDash(r.SourceIP))
 		if r.ProcessName != "" {
-			cur.line("  Proces:         %s", r.ProcessName)
+			cur.line(tr("  Proces:         %s", "  Process:        %s"), r.ProcessName)
 		}
 		if r.CommandLine != "" {
-			cur.line("  Polecenie:      %s", r.CommandLine)
+			cur.line(tr("  Polecenie:      %s", "  Command line:   %s"), r.CommandLine)
 		}
 		if isSyslog(r) {
-			cur.line("  Nadawca:        %s   (%s, zbiór danych: %s)", orDash(r.Peer), r.Channel, orDash(r.Dataset))
+			cur.line(tr("  Nadawca:        %s   (%s, zbiór danych: %s)", "  Sender:         %s   (%s, dataset: %s)"), orDash(r.Peer), r.Channel, orDash(r.Dataset))
 		} else {
-			cur.line("  Dziennik:       %s   (źródło: %s)", orDash(strings.TrimPrefix(r.Channel, "wineventlog:")), orDash(r.Provider))
+			cur.line(tr("  Dziennik:       %s   (źródło: %s)", "  Log:            %s   (source: %s)"), orDash(strings.TrimPrefix(r.Channel, "wineventlog:")), orDash(r.Provider))
 		}
-		cur.line("  Agent:          %s   przyjęto: %s (czas polski)", r.AgentID, plTimeStr(r.Ingested))
-		cur.line("  Identyfikator:  %s", r.EventID)
+		cur.line(tr("  Agent:          %s   przyjęto: %s (%s)", "  Agent:          %s   ingested: %s (%s)"), r.AgentID, plTimeStr(r.Ingested), zoneLabel())
+		cur.line(tr("  Identyfikator:  %s", "  Identifier:     %s"), r.EventID)
 		if r.Truncated {
-			cur.line("  UWAGA: zdarzenie zostało przycięte przez agenta (bardzo długi zapis).")
+			cur.line("%s", tr("  UWAGA: zdarzenie zostało przycięte przez agenta (bardzo długi zapis).",
+				"  NOTE: the event was truncated by the agent (very long record)."))
 		}
 		if isSyslog(r) {
 			// Syslog nie ma struktury XML – pokazujemy oryginalną wiadomość.
-			cur.line("  Treść:          %s", clip(r.Original, 2000))
+			cur.line(tr("  Treść:          %s", "  Content:        %s"), clip(r.Original, 2000))
 		}
 		if len(e.data) > 0 {
-			cur.line("  Dane zdarzenia:")
+			cur.line("%s", tr("  Dane zdarzenia:", "  Event data:"))
 			width := 0
 			for _, kv := range e.data {
 				width = max(width, len([]rune(kv[0])))
 			}
 			for _, kv := range e.data {
 				v := orDash(kv[1])
-				if h := windesc.FieldHint(kv[0], kv[1]); h != "" {
+				if h := windesc.FieldHint(kv[0], kv[1], L); h != "" {
 					v += " (" + h + ")"
 				}
 				cur.line("    %s%s = %s", kv[0], strings.Repeat(" ", width-len([]rune(kv[0]))), v)
@@ -401,56 +422,65 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 	if err != nil {
 		return err
 	}
-	t.line("VARDR – ODCZYT EKSPORTU ARCHIWUM NIS2")
+	z := zoneLabel()
+	t.line("%s", tr("VARDR – ODCZYT EKSPORTU ARCHIWUM NIS2", "VARDR – NIS2 ARCHIVE EXPORT READOUT"))
 	t.line("========================================")
-	t.line("Utworzono:      %s (czas polski), odczytaj.exe wersja %s", plTime(now), version)
-	t.line("Folder paczki:  %s", dir)
+	t.line(tr("Utworzono:      %s (%s), odczytaj.exe wersja %s", "Created:        %s (%s), odczytaj.exe version %s"), plTime(now), z, version)
+	t.line(tr("Folder paczki:  %s", "Package folder: %s"), dir)
 	t.line("")
 
-	t.line("1. WYNIK SPRAWDZENIA INTEGRALNOŚCI")
+	t.line("%s", tr("1. WYNIK SPRAWDZENIA INTEGRALNOŚCI", "1. INTEGRITY CHECK RESULT"))
 	t.line("%s", rule)
 	if check.OK {
-		t.line("   ZGODNE – żaden plik paczki nie został zmieniony, łańcuch manifestów jest ciągły,")
-		t.line("   a zdarzenia w tym odczycie pochodzą z nienaruszonych oryginałów.")
+		t.line("%s", tr("   ZGODNE – żaden plik paczki nie został zmieniony, łańcuch manifestów jest ciągły,",
+			"   CONSISTENT – no file of the package was modified, the manifest chain is continuous,"))
+		t.line("%s", tr("   a zdarzenia w tym odczycie pochodzą z nienaruszonych oryginałów.",
+			"   and the events in this readout come from intact originals."))
 	} else {
-		t.line("   NIEZGODNOŚCI – paczka została zmieniona albo jest niekompletna. Zdarzeń poniżej")
-		t.line("   nie należy traktować jako wiarygodnych do czasu wyjaśnienia:")
+		t.line("%s", tr("   NIEZGODNOŚCI – paczka została zmieniona albo jest niekompletna. Zdarzeń poniżej",
+			"   INCONSISTENCIES – the package was modified or is incomplete. The events below"))
+		t.line("%s", tr("   nie należy traktować jako wiarygodnych do czasu wyjaśnienia:",
+			"   must not be treated as reliable until this is explained:"))
 		for _, p := range check.Problems {
 			t.line("     - %s", p)
 		}
 	}
-	t.line("   Kotwica (SHA-256 najnowszego manifestu archiwum):")
+	t.line("%s", tr("   Kotwica (SHA-256 najnowszego manifestu archiwum):", "   Anchor (SHA-256 of the latest archive manifest):"))
 	t.line("     %s", info.Latest.SHA256)
-	t.line("   Porównaj ją z wartością przekazaną niezależnie (protokół przekazania, panel Vardra).")
+	t.line("%s", tr("   Porównaj ją z wartością przekazaną niezależnie (protokół przekazania, panel Vardra).",
+		"   Compare it with a value provided independently (handover protocol, Vardr panel)."))
 	t.line("")
 
-	t.line("2. O EKSPORCIE")
+	t.line("%s", tr("2. O EKSPORCIE", "2. ABOUT THE EXPORT"))
 	t.line("%s", rule)
-	t.line("   Numer eksportu:     %d", info.ExportID)
-	t.line("   Zlecił:             %s, %s (czas polski)", info.RequestedBy, plTime(info.RequestedAt))
-	t.line("   Powód:              %s", info.Reason)
-	t.line("   Zakres (przyjęcie przez serwer): %s – %s (czas polski)", plTime(info.From), plTime(info.To))
-	t.line("   Paczkę utworzono:   %s (czas polski), Vardr %s", plTime(info.CreatedAt), info.ServerVersion)
+	t.line(tr("   Numer eksportu:     %d", "   Export number:      %d"), info.ExportID)
+	t.line(tr("   Zlecił:             %s, %s (%s)", "   Requested by:       %s, %s (%s)"), info.RequestedBy, plTime(info.RequestedAt), z)
+	t.line(tr("   Powód:              %s", "   Reason:             %s"), info.Reason)
+	t.line(tr("   Zakres (przyjęcie przez serwer): %s – %s (%s)", "   Range (accepted by the server): %s – %s (%s)"), plTime(info.From), plTime(info.To), z)
+	t.line(tr("   Paczkę utworzono:   %s (%s), Vardr %s", "   Package created:    %s (%s), Vardr %s"), plTime(info.CreatedAt), z, info.ServerVersion)
 	if len(info.Agents) > 0 {
-		t.line("   Tylko agenci:       %s", strings.Join(info.Agents, ", "))
-		t.line("                       (zdarzenia innych agentów są tylko w segmentach – dowodzie)")
+		t.line(tr("   Tylko agenci:       %s", "   Agents only:        %s"), strings.Join(info.Agents, ", "))
+		t.line("%s", tr("                       (zdarzenia innych agentów są tylko w segmentach – dowodzie)",
+			"                       (events of other agents are only in the segments – the evidence)"))
 	}
 	hosts, agents := map[string]int{}, map[string]int{}
 	for _, e := range l.events {
 		hosts[orDash(e.r.HostName)]++
 		agents[e.r.AgentID]++
 	}
-	t.line("   Zawartość:          %d zdarzeń z %d komputerów (%d agentów), %d paczek agentów",
+	t.line(tr("   Zawartość:          %d zdarzeń z %d komputerów (%d agentów), %d paczek agentów",
+		"   Contents:           %d events from %d computers (%d agents), %d agent batches"),
 		len(l.events), len(hosts), len(agents), info.Totals.Records)
 	if len(l.events) > 0 {
-		t.line("   Czas zdarzeń:       %s – %s (czas polski)", plTime(l.events[0].t), plTime(l.events[len(l.events)-1].t))
+		t.line(tr("   Czas zdarzeń:       %s – %s (%s)", "   Event time:         %s – %s (%s)"), plTime(l.events[0].t), plTime(l.events[len(l.events)-1].t), z)
 	}
 	if l.unreadable > 0 {
-		t.line("   Nieczytelne paczki: %d (oryginały są w segments/, opis błędu w zdarzenia/*.ndjson.gz)", l.unreadable)
+		t.line(tr("   Nieczytelne paczki: %d (oryginały są w segments/, opis błędu w zdarzenia/*.ndjson.gz)",
+			"   Unreadable batches: %d (originals are in segments/, error description in zdarzenia/*.ndjson.gz)"), l.unreadable)
 	}
 	t.line("")
 
-	t.line("3. ZDARZENIA WYMAGAJĄCE UWAGI")
+	t.line("%s", tr("3. ZDARZENIA WYMAGAJĄCE UWAGI", "3. EVENTS REQUIRING ATTENTION"))
 	t.line("%s", rule)
 	byCat := map[string][]event{}
 	failedUsers, failedIPs := map[string]int{}, map[string]int{}
@@ -472,7 +502,7 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 		}
 	}
 	if len(byCat) == 0 {
-		t.line("   Brak zdarzeń z listy wymagających uwagi.")
+		t.line("%s", tr("   Brak zdarzeń z listy wymagających uwagi.", "   No events from the attention list."))
 	}
 	for _, cat := range []string{windesc.AttentionSecurity, windesc.AttentionSystem, windesc.AttentionLogon} {
 		list := byCat[cat]
@@ -483,15 +513,15 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 		for _, e := range list {
 			codes[fmt.Sprintf("%d  %s", e.r.Code, describe(e.r.Code))]++
 		}
-		t.line("   [%s] – %d zdarzeń", cat, len(list))
+		t.line(tr("   [%s] – %d zdarzeń", "   [%s] – %d events"), windesc.AttentionLabel(cat, L), len(list))
 		for _, c := range top(codes, 50) {
 			t.line("     %7d × %s", c.count, c.key)
 		}
 		if cat != windesc.AttentionLogon {
-			t.line("     Lista (najwyżej 100 pierwszych):")
+			t.line("%s", tr("     Lista (najwyżej 100 pierwszych):", "     List (at most the first 100):"))
 			for i, e := range list {
 				if i == 100 {
-					t.line("     … oraz %d kolejnych – zob. pliki dzienne", len(list)-100)
+					t.line(tr("     … oraz %d kolejnych – zob. pliki dzienne", "     … and %d more – see the daily files"), len(list)-100)
 					break
 				}
 				detail := windesc.Detail(dataMap(e.data))
@@ -504,18 +534,18 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 		t.line("")
 	}
 	if len(failedUsers) > 0 {
-		t.line("   Nieudane logowania – najczęstsze konta:")
+		t.line("%s", tr("   Nieudane logowania – najczęstsze konta:", "   Failed logons – most frequent accounts:"))
 		for _, c := range top(failedUsers, 15) {
 			t.line("     %7d × %s", c.count, c.key)
 		}
-		t.line("   Nieudane logowania – najczęstsze adresy źródłowe:")
+		t.line("%s", tr("   Nieudane logowania – najczęstsze adresy źródłowe:", "   Failed logons – most frequent source addresses:"))
 		for _, c := range top(failedIPs, 15) {
 			t.line("     %7d × %s", c.count, c.key)
 		}
 		t.line("")
 	}
 
-	t.line("4. STATYSTYKI")
+	t.line("%s", tr("4. STATYSTYKI", "4. STATISTICS"))
 	t.line("%s", rule)
 	codes := map[string]int{}
 	for _, e := range l.events {
@@ -525,27 +555,33 @@ func writeReport(path, dir string, info packageInfo, check urd.ExportCheck, l lo
 		}
 		codes[fmt.Sprintf("%-6d %s", e.r.Code, describe(e.r.Code))]++
 	}
-	t.line("   Rodzaje zdarzeń (najczęstsze):")
+	t.line("%s", tr("   Rodzaje zdarzeń (najczęstsze):", "   Event types (most frequent):"))
 	for _, c := range top(codes, 30) {
 		t.line("     %9d × %s", c.count, c.key)
 	}
-	t.line("   Komputery (najczęstsze):")
+	t.line("%s", tr("   Komputery (najczęstsze):", "   Computers (most frequent):"))
 	for _, c := range top(hosts, 30) {
 		t.line("     %9d × %s", c.count, c.key)
 	}
 	t.line("")
 
-	t.line("5. PLIKI ODCZYTU")
+	t.line("%s", tr("5. PLIKI ODCZYTU", "5. READOUT FILES"))
 	t.line("%s", rule)
-	t.line("   Wszystkie zdarzenia w kolejności czasu, plik na każdy dzień (czas polski):")
+	t.line(tr("   Wszystkie zdarzenia w kolejności czasu, plik na każdy dzień (%s):", "   All events in time order, one file per day (%s):"), z)
 	for _, d := range days {
-		t.line("     ODCZYT\\zdarzenia\\%s   – %d zdarzeń", d.name, d.count)
+		t.line(tr("     ODCZYT\\zdarzenia\\%s   – %d zdarzeń", "     ODCZYT\\zdarzenia\\%s   – %d events"), d.name, d.count)
 	}
 	t.line("")
-	t.line("   Pola „komputer”, „użytkownik” itp. wylicza Vardr z oryginalnego zapisu. Rozstrzygający")
-	t.line("   jest zawsze oryginał: zdarzenia/*.ndjson.gz, pole event.original (XML Windows), a jako")
-	t.line("   dowód – segments/ i chain/ (opis w README.txt). Folder ODCZYT można usunąć i odtworzyć")
-	t.line("   ponownie; nie jest częścią paczki i nie wpływa na wynik sprawdzenia.")
+	for _, s := range strings.Split(tr(`   Pola „komputer”, „użytkownik” itp. wylicza Vardr z oryginalnego zapisu. Rozstrzygający
+   jest zawsze oryginał: zdarzenia/*.ndjson.gz, pole event.original (XML Windows), a jako
+   dowód – segments/ i chain/ (opis w README.txt). Folder ODCZYT można usunąć i odtworzyć
+   ponownie; nie jest częścią paczki i nie wpływa na wynik sprawdzenia.`,
+		`   Fields such as "computer" and "user" are computed by Vardr from the original record. The
+   original is always decisive: zdarzenia/*.ndjson.gz, field event.original (Windows XML),
+   and as evidence – segments/ and chain/ (described in README-EN.txt). The ODCZYT folder can
+   be deleted and recreated; it is not part of the package and does not affect the check.`), "\n") {
+		t.line("%s", s)
+	}
 	return t.close()
 }
 

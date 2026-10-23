@@ -43,7 +43,7 @@ if [[ $(ch -q "EXISTS TABLE siem.auth_events") == 1 ]]; then
 ALTER TABLE siem.auth_events MODIFY TTL addDays(toDateTime(ingested), if(event_dataset = 'windows.security' AND outcome = 'success', 1, $ttl));
 GRANT SELECT ON siem.auth_events TO siem_detector;
 SQL
-  echo "siem.auth_events już jest (retencja $ttl dni)"
+  echo "siem.auth_events already exists (retention $ttl days)"
   exit 0
 fi
 
@@ -77,4 +77,4 @@ SQL
 # Logowania sprzed założenia tabeli (dubel z widokiem w tej samej chwili
 # korelacje pomijają – liczą po event_id).
 ch -q "INSERT INTO siem.auth_events $select AND ingested >= now() - INTERVAL $ttl DAY"
-echo "siem.auth_events: $(ch -q "SELECT count() FROM siem.auth_events") logowań"
+echo "siem.auth_events: $(ch -q "SELECT count() FROM siem.auth_events") sign-ins"

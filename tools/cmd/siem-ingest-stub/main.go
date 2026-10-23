@@ -53,17 +53,17 @@ type storedEvent struct {
 }
 
 func main() {
-	listen := flag.String("listen", ":8443", "adres nasłuchu")
-	caFile := flag.String("ca", "certs/ca.crt", "CA weryfikujące certyfikaty agentów")
-	certFile := flag.String("cert", "certs/server.crt", "certyfikat serwera")
-	keyFile := flag.String("key", "certs/server.key", "klucz serwera")
-	outFile := flag.String("out", "data/events.ndjson", "plik wyjściowy NDJSON")
-	failRate := flag.Float64("fail-rate", 0, "odsetek żądań odrzucanych kodem 503 (test ponowień), np. 0.3")
+	listen := flag.String("listen", ":8443", "listen address")
+	caFile := flag.String("ca", "certs/ca.crt", "CA verifying agent certificates")
+	certFile := flag.String("cert", "certs/server.crt", "server certificate")
+	keyFile := flag.String("key", "certs/server.key", "server key")
+	outFile := flag.String("out", "data/events.ndjson", "NDJSON output file")
+	failRate := flag.Float64("fail-rate", 0, "share of requests rejected with 503 (retry test), e.g. 0.3")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(*listen, *caFile, *certFile, *keyFile, *outFile, *failRate, log); err != nil {
-		log.Error("błąd", "err", err)
+		log.Error("error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -75,7 +75,7 @@ func run(listen, caFile, certFile, keyFile, outFile string, failRate float64, lo
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return errors.New("niepoprawny plik CA")
+		return errors.New("invalid CA file")
 	}
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -130,7 +130,7 @@ func run(listen, caFile, certFile, keyFile, outFile string, failRate float64, lo
 		_ = srv.Shutdown(shCtx)
 	}()
 
-	log.Info("nasłuchuję", "addr", listen, "out", outFile, "fail_rate", failRate)
+	log.Info("listening", "addr", listen, "out", outFile, "fail_rate", failRate)
 	if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -139,7 +139,7 @@ func run(listen, caFile, certFile, keyFile, outFile string, failRate float64, lo
 }
 
 func (s *server) logStats() {
-	s.log.Info("statystyki", "batches", s.batches.Load(), "events", s.events.Load(),
+	s.log.Info("stats", "batches", s.batches.Load(), "events", s.events.Load(),
 		"duplicates", s.duplicates.Load(), "rejected", s.rejected.Load())
 }
 
@@ -155,14 +155,14 @@ func (s *server) reply(w http.ResponseWriter, code int, resp contract.Response) 
 func (s *server) ingest(w http.ResponseWriter, r *http.Request) {
 	// Tożsamość wynika wyłącznie z certyfikatu klienta.
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		s.reply(w, http.StatusUnauthorized, contract.Response{Error: "brak certyfikatu klienta"})
+		s.reply(w, http.StatusUnauthorized, contract.Response{Error: "missing client certificate"})
 		return
 	}
 	agentID := r.TLS.PeerCertificates[0].Subject.CommonName
 
 	if s.failRate > 0 && rand.Float64() < s.failRate {
 		w.Header().Set("Retry-After", "1")
-		s.reply(w, http.StatusServiceUnavailable, contract.Response{Error: "symulowane przeciążenie"})
+		s.reply(w, http.StatusServiceUnavailable, contract.Response{Error: "simulated overload"})
 		return
 	}
 
@@ -171,14 +171,14 @@ func (s *server) ingest(w http.ResponseWriter, r *http.Request) {
 	case "gzip":
 		zr, err := gzip.NewReader(body)
 		if err != nil {
-			s.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny gzip"})
+			s.reply(w, http.StatusBadRequest, contract.Response{Error: "invalid gzip"})
 			return
 		}
 		defer zr.Close()
 		body = zr
 	case "":
 	default:
-		s.reply(w, http.StatusUnsupportedMediaType, contract.Response{Error: "nieobsługiwane kodowanie " + enc})
+		s.reply(w, http.StatusUnsupportedMediaType, contract.Response{Error: "unsupported encoding " + enc})
 		return
 	}
 
@@ -186,21 +186,21 @@ func (s *server) ingest(w http.ResponseWriter, r *http.Request) {
 	var mbe *http.MaxBytesError
 	switch {
 	case errors.As(err, &mbe) || len(data) > maxDecompressed:
-		s.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "paczka za duża"})
+		s.reply(w, http.StatusRequestEntityTooLarge, contract.Response{Error: "batch too large"})
 		return
 	case err != nil:
-		s.reply(w, http.StatusBadRequest, contract.Response{Error: "błąd odczytu: " + err.Error()})
+		s.reply(w, http.StatusBadRequest, contract.Response{Error: "read error: " + err.Error()})
 		return
 	}
 
 	var b contract.Batch
 	if err := json.Unmarshal(data, &b); err != nil {
-		s.reply(w, http.StatusBadRequest, contract.Response{Error: "niepoprawny JSON"})
+		s.reply(w, http.StatusBadRequest, contract.Response{Error: "invalid JSON"})
 		return
 	}
 	if b.AgentID != agentID {
-		s.log.Warn("niezgodna tożsamość agenta", "cert_cn", agentID, "batch_agent_id", b.AgentID)
-		s.reply(w, http.StatusForbidden, contract.Response{BatchID: b.BatchID, Error: "agent_id niezgodny z certyfikatem"})
+		s.log.Warn("agent identity mismatch", "cert_cn", agentID, "batch_agent_id", b.AgentID)
+		s.reply(w, http.StatusForbidden, contract.Response{BatchID: b.BatchID, Error: "agent_id does not match the certificate"})
 		return
 	}
 	if err := b.Validate(); err != nil {
@@ -209,8 +209,8 @@ func (s *server) ingest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store(&b); err != nil {
-		s.log.Error("zapis nieudany", "err", err)
-		s.reply(w, http.StatusServiceUnavailable, contract.Response{BatchID: b.BatchID, Error: "zapis nieudany"})
+		s.log.Error("write failed", "err", err)
+		s.reply(w, http.StatusServiceUnavailable, contract.Response{BatchID: b.BatchID, Error: "write failed"})
 		return
 	}
 	s.reply(w, http.StatusOK, contract.Response{BatchID: b.BatchID, Status: contract.StatusAccepted})

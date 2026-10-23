@@ -25,6 +25,22 @@ falsepositives:
   - Narzędzia administracyjne i testy penetracyjne uznawane za niechciane (HackTool, PUA)
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Microsoft Defender detected a threat"
+      description: |
+        Microsoft Defender detected malware (1116, older 1006) or suspicious
+        behaviour (1015). Detection usually ends with the file being blocked, but it
+        means something dangerous reached the computer – you need to find out where it
+        came from and whether there is more. The ATT&CK technique depends on the detected
+        threat (name in Threat Name).
+      instructions: |
+        Defender detected {{Threat Name}} ({{Severity Name}}, {{Category Name}}) on
+        {{host.name}}: {{Path}}, process {{Process Name}}, account {{Detection User}}.
+        Check whether the threat was removed (event 1117 or the alert
+        "Microsoft Defender failed to remove a threat"), where the file came from
+        (download, e-mail, removable media) and what happened on the computer just before
+        detection. A serious or recurring threat – isolate the computer and run a full scan.
   group_by: [host.name, Threat Name]
   suppress: 24h
   instructions: |

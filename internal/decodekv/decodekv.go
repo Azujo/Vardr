@@ -96,7 +96,7 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, apply f
 			apply(clone(cur))
 		case e, ok := <-w.Updates():
 			if !ok {
-				return errors.New("obserwacja dekoderów zakończona")
+				return errors.New("watching decoders ended")
 			}
 			if e == nil {
 				if initial {
@@ -108,7 +108,7 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, apply f
 			if e.Operation() == jetstream.KeyValuePut {
 				var c decode.Custom
 				if err := json.Unmarshal(e.Value(), &c); err != nil {
-					log.Error("nieczytelny wpis dekodera w NATS – pominięty", "id", e.Key(), "err", err)
+					log.Error("unreadable decoder entry in NATS – skipped", "id", e.Key(), "err", err)
 					continue
 				}
 				cur[e.Key()] = c

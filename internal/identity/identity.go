@@ -175,7 +175,7 @@ const (
 func Ensure(ctx context.Context, js jetstream.JetStream) (jetstream.KeyValue, error) {
 	return js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:       Bucket,
-		Description:  "Tożsamości osób (domeny organizacji, aliasy kont) z panelu Vardr",
+		Description:  "Person identities (organization domains, account aliases) from the Vardr panel",
 		History:      1,
 		Storage:      jetstream.FileStorage,
 		MaxValueSize: 4 << 20,
@@ -210,7 +210,7 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, ready f
 			return nil
 		case e, ok := <-w.Updates():
 			if !ok {
-				return errors.New("obserwacja tożsamości zakończona")
+				return errors.New("watching identities ended")
 			}
 			if e == nil {
 				if ready != nil {
@@ -221,12 +221,12 @@ func Watch(ctx context.Context, kv jetstream.KeyValue, log *slog.Logger, ready f
 			var c Config
 			if e.Operation() == jetstream.KeyValuePut {
 				if err := json.Unmarshal(e.Value(), &c); err != nil {
-					log.Error("nieczytelna konfiguracja tożsamości w NATS – pominięta", "err", err)
+					log.Error("unreadable identity configuration in NATS – skipped", "err", err)
 					continue
 				}
 			}
 			Set(c)
-			log.Info("tożsamości wczytane", "domains", len(c.Domains), "aliases", len(c.Aliases), "shared", len(c.Shared))
+			log.Info("identities loaded", "domains", len(c.Domains), "aliases", len(c.Aliases), "shared", len(c.Shared))
 			if ready != nil {
 				ready()
 			}

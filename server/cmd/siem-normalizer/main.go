@@ -35,7 +35,7 @@ import (
 func main() {
 	log := svc.Logger("normalizer")
 	if err := run(log); err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -83,7 +83,7 @@ func run(log *slog.Logger) error {
 		sub, err := nc.QueueSubscribe(reprocess.Subject, "normalizer", func(m *nats.Msg) {
 			rep := handleReprocess(ctx, js, pl, m.Data)
 			if rep.Error != "" {
-				log.Warn("ponowne przetworzenie kwarantanny nieudane", "err", rep.Error)
+				log.Warn("quarantine reprocessing failed", "err", rep.Error)
 			}
 			b, _ := json.Marshal(rep)
 			_ = m.Respond(b)
@@ -105,7 +105,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	workers = max(1, workers)
-	log.Info("normalizator uruchomiony", "pipeline", pl.Name, "workers", workers)
+	log.Info("normalizer started", "pipeline", pl.Name, "workers", workers)
 
 	// Paczki są przetwarzane równolegle (etap 1.5, W1): normalizacja zajmuje
 	// CPU, a publikacja czeka na potwierdzenie NATS – jedna paczka naraz
@@ -116,11 +116,11 @@ func run(log *slog.Logger) error {
 		n, q, err := process(ctx, js, pl, msg)
 		switch {
 		case errors.Is(err, normalize.ErrUnreadable):
-			log.Error("nieczytelna paczka w kolejce – pominięta", "subject", msg.Subject(), "err", err)
+			log.Error("unreadable batch in the queue – skipped", "subject", msg.Subject(), "err", err)
 			_ = msg.Term()
 			m.Batches.WithLabelValues("poison").Inc()
 		case err != nil:
-			log.Warn("publikacja wyniku nieudana – ponowię", "err", err)
+			log.Warn("publishing the result failed – will retry", "err", err)
 			_ = msg.NakWithDelay(5 * time.Second)
 			m.Batches.WithLabelValues("retry").Inc()
 		default:
@@ -151,12 +151,12 @@ func run(log *slog.Logger) error {
 	for ctx.Err() == nil {
 		select {
 		case <-statsTick.C:
-			log.Info("statystyki", "batches", batches.Load(), "events", events.Load(), "quarantined", quarantined.Load())
+			log.Info("stats", "batches", batches.Load(), "events", events.Load(), "quarantined", quarantined.Load())
 		default:
 		}
 		msgs, err := cons.Fetch(max(32, 4*workers), jetstream.FetchMaxWait(time.Second))
 		if err != nil {
-			log.Warn("pobranie z kolejki nieudane", "err", err)
+			log.Warn("fetching from the queue failed", "err", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -172,13 +172,13 @@ func process(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, msg j
 	agentID := h.Get(bus.HdrAgent)
 	receivedAt, terr := time.Parse(time.RFC3339Nano, h.Get(bus.HdrReceivedAt))
 	if agentID == "" || terr != nil {
-		return 0, 0, errors.Join(normalize.ErrUnreadable, errors.New("brak nagłówków agenta lub czasu"))
+		return 0, 0, errors.Join(normalize.ErrUnreadable, errors.New("missing agent or time headers"))
 	}
 	var replayID uint32
 	if v := h.Get(bus.HdrReplay); v != "" {
 		id, perr := strconv.ParseUint(v, 10, 32)
 		if perr != nil || id == 0 {
-			return 0, 0, errors.Join(normalize.ErrUnreadable, fmt.Errorf("niepoprawny nagłówek %s: %q", bus.HdrReplay, v))
+			return 0, 0, errors.Join(normalize.ErrUnreadable, fmt.Errorf("invalid header %s: %q", bus.HdrReplay, v))
 		}
 		replayID = uint32(id)
 	}
@@ -208,7 +208,7 @@ func process(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, msg j
 func handleReprocess(ctx context.Context, js jetstream.JetStream, pl bus.Pipeline, data []byte) reprocess.Reply {
 	var req reprocess.Request
 	if err := json.Unmarshal(data, &req); err != nil {
-		return reprocess.Reply{Error: "nieczytelne żądanie: " + err.Error()}
+		return reprocess.Reply{Error: "unreadable request: " + err.Error()}
 	}
 	evs, rep := normalize.Reprocess(req, time.Now())
 	agents := make([]string, 0, len(evs))
@@ -234,7 +234,7 @@ func handleReprocess(ctx context.Context, js jetstream.JetStream, pl bus.Pipelin
 		_, err = js.PublishMsg(pctx, pub, jetstream.WithMsgID(nb.BatchID))
 		cancel()
 		if err != nil {
-			return reprocess.Reply{Error: "publikacja zdarzeń: " + err.Error()}
+			return reprocess.Reply{Error: "publishing events: " + err.Error()}
 		}
 	}
 	return rep

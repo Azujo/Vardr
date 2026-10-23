@@ -135,7 +135,7 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 			defer wg.Done()
 			errc <- s.serveUDP(ctx, pc, emit)
 		}()
-		s.Log.Info("syslog: nasłuch UDP", "addr", pc.LocalAddr().String())
+		s.Log.Info("syslog: listening on UDP", "addr", pc.LocalAddr().String())
 	}
 	if s.Cfg.TCP != "" {
 		ln, err := net.Listen("tcp", s.Cfg.TCP)
@@ -147,10 +147,10 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 			defer wg.Done()
 			errc <- s.serveTCP(ctx, ln, emit)
 		}()
-		s.Log.Info("syslog: nasłuch TCP", "addr", ln.Addr().String())
+		s.Log.Info("syslog: listening on TCP", "addr", ln.Addr().String())
 	}
 	if s.Cfg.UDP == "" && s.Cfg.TCP == "" {
-		return start, errors.New("syslog: brak adresu nasłuchu (udp albo tcp)")
+		return start, errors.New("syslog: no listen address (udp or tcp)")
 	}
 	var err error
 	select {
@@ -299,7 +299,7 @@ func readLength(r *bufio.Reader) (int, error) {
 			return n, nil
 		}
 		if c < '0' || c > '9' || i >= 7 {
-			return 0, fmt.Errorf("zła długość ramki")
+			return 0, fmt.Errorf("bad frame length")
 		}
 		n = n*10 + int(c-'0')
 	}

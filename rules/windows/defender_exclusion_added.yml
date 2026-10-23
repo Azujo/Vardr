@@ -21,6 +21,18 @@ falsepositives:
   - Wykluczenia wymagane przez oprogramowanie (bazy danych, kopie zapasowe) dodawane przez administratora
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Exclusion added in Microsoft Defender"
+      description: |
+        A Defender settings change (5007) adding an exclusion – of a path,
+        extension, process or address. An excluded folder is not scanned, so an attacker
+        can safely keep their tools there.
+      instructions: |
+        A Defender exclusion was added on {{host.name}}: {{New Value}}. Find out whether
+        it is an agreed change (software documentation, a request). If not – remove the
+        exclusion, scan the excluded location and check who was signed in to the
+        computer at that time.
   group_by: [host.name]
   suppress: 1h
   instructions: |

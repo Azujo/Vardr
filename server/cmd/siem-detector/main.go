@@ -70,11 +70,11 @@ func main() {
 	case "disable":
 		err = disable()
 	default:
-		fmt.Fprintln(os.Stderr, "użycie: siem-detector [serve|check <katalog>|disable]")
+		fmt.Fprintln(os.Stderr, "usage: siem-detector [serve|check <directory>|disable]")
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -88,12 +88,12 @@ func check(dir string) int {
 	for _, r := range set.Rules {
 		note := ""
 		if r.CorrelationOnly {
-			note = "  [tylko korelacja]"
+			note = "  [correlation only]"
 		}
 		fmt.Printf("OK     %-8s %s  (%s)%s\n", r.Level, r.Title, r.File, note)
 	}
 	for _, c := range set.Correlations {
-		fmt.Printf("OK     %-8s %s  (%s)  [korelacja %s, %s]\n", c.Level, c.Title, c.File, c.Type, c.Timespan)
+		fmt.Printf("OK     %-8s %s  (%s)  [correlation %s, %s]\n", c.Level, c.Title, c.File, c.Type, c.Timespan)
 	}
 	// Tagi MITRE ATT&CK: nieznane i wycofane techniki – ostrzeżenie (reguła działa).
 	d := attack.Enterprise()
@@ -105,12 +105,12 @@ func check(dir string) int {
 		tags[c.Title+"  ("+c.File+")"] = c.Tags
 	}
 	for _, name := range slices.Sorted(maps.Keys(tags)) {
-		for _, w := range d.Map(tags[name]).Warnings {
-			fmt.Printf("UWAGA  %s: %s\n", name, w)
+		for _, w := range d.Map(tags[name]).WarningsEn {
+			fmt.Printf("WARN   %s: %s\n", name, w)
 		}
 	}
 	for _, e := range errs {
-		fmt.Printf("BŁĄD   %s: %s\n", e.File, e.Err)
+		fmt.Printf("ERROR  %s: %s\n", e.File, e.ErrEn)
 	}
 	if len(errs) > 0 {
 		return 1
@@ -136,12 +136,12 @@ func serve(log *slog.Logger) error {
 	dbURL := svc.MustEnv(log, "SIEM_DETECTOR_DB_URL")
 	mode := svc.Env("SIEM_DETECTION_MODE", "stream")
 	if mode != "stream" && mode != "index_query" && mode != "both" {
-		return fmt.Errorf("SIEM_DETECTION_MODE: stream, index_query albo both (jest %q)", mode)
+		return fmt.Errorf("SIEM_DETECTION_MODE: stream, index_query or both (got %q)", mode)
 	}
 	streamOn, indexOn := mode != "index_query", mode != "stream"
 
 	var store *alerts.PG
-	if err := svc.Retry(ctx, log, "baza Saga", func() error {
+	if err := svc.Retry(ctx, log, "Saga database", func() error {
 		var err error
 		store, err = alerts.Open(ctx, dbURL)
 		return err
@@ -152,9 +152,9 @@ func serve(log *slog.Logger) error {
 	if applied, err := store.Migrate(ctx); err != nil {
 		return err
 	} else if len(applied) > 0 {
-		log.Info("migracje schematu gjallarhorn", "applied", applied)
+		log.Info("gjallarhorn schema migrations", "applied", applied)
 	}
-	log.Info("oczekiwanie na blokadę jedynego detektora")
+	log.Info("waiting for the single-detector lock")
 	release, err := store.LockDetector(ctx)
 	if err != nil {
 		return err
@@ -170,10 +170,10 @@ func serve(log *slog.Logger) error {
 		obs, err := store.Observations(ctx, time.Now().UTC())
 		if err != nil {
 			m.Errors.WithLabelValues("thresholds").Inc()
-			log.Warn("odczyt stanu progów nieudany – liczniki od zera", "err", err)
+			log.Warn("reading threshold state failed – counters start from zero", "err", err)
 		}
 		if n := eng.RestoreThresholds(obs); n > 0 {
-			log.Info("stan progów odtworzony", "events", n)
+			log.Info("threshold state restored", "events", n)
 		}
 	}
 	reload := func() {
@@ -181,14 +181,14 @@ func serve(log *slog.Logger) error {
 		ov, sig, err := store.RuleOverrides(ctx)
 		if err != nil {
 			m.Errors.WithLabelValues("rule_overrides").Inc()
-			log.Warn("odczyt ustawień reguł z panelu nieudany – zostają poprzednie", "err", err)
+			log.Warn("reading rule settings from the panel failed – keeping the previous ones", "err", err)
 			return
 		}
 		// Reguły zapisane w panelu (kreator korelacji) – obok plików.
 		prs, psig, err := store.PanelRules(ctx)
 		if err != nil {
 			m.Errors.WithLabelValues("panel_rules").Inc()
-			log.Warn("odczyt reguł z panelu nieudany – zostają poprzednie", "err", err)
+			log.Warn("reading rules from the panel failed – keeping the previous ones", "err", err)
 			return
 		}
 		cur := detector.Fingerprint(dir) + "|" + sig + "|" + psig
@@ -202,7 +202,7 @@ func serve(log *slog.Logger) error {
 		set, errs, err := detect.LoadSetWith(dir, extra)
 		if err != nil {
 			m.Errors.WithLabelValues("rules").Inc()
-			log.Error("odczyt katalogu reguł nieudany – zostają poprzednie", "dir", dir, "err", err)
+			log.Error("reading the rules directory failed – keeping the previous ones", "dir", dir, "err", err)
 			return
 		}
 		rules := set.Rules
@@ -213,7 +213,7 @@ func serve(log *slog.Logger) error {
 		trial := detector.TrialRules(rules, ov)
 		eng.SetTrial(trial)
 		if len(trial) > 0 && !streamOn {
-			log.Warn("reguły w trybie próbnym nie liczą trafień – próby działają w silniku w locie (SIEM_DETECTION_MODE=stream albo both)",
+			log.Warn("rules in trial mode do not count hits – trials run in the stream engine (SIEM_DETECTION_MODE=stream or both)",
 				"trial", len(trial))
 		}
 		changed := 0
@@ -225,8 +225,8 @@ func serve(log *slog.Logger) error {
 		n := eng.SetRules(rules)
 		var rerrs []alerts.RuleError
 		for _, e := range errs {
-			rerrs = append(rerrs, alerts.RuleError{File: e.File, Error: e.Err})
-			log.Warn("reguła odrzucona", "file", e.File, "err", e.Err)
+			rerrs = append(rerrs, alerts.RuleError{File: e.File, Error: e.Err, ErrorEn: e.ErrEn})
+			log.Warn("rule rejected", "file", e.File, "err", e.ErrEn)
 		}
 		infos := append(detector.Infos(rules, fileEnabled), detector.HeartbeatRule(), detector.TamperRule())
 		corrInfos, corrOff := detector.CorrelationInfos(ov)
@@ -235,12 +235,12 @@ func serve(log *slog.Logger) error {
 		corrDisabled.Store(&corrOff)
 		if err := store.SyncRules(ctx, infos, rerrs, time.Now().UTC()); err != nil {
 			m.Errors.WithLabelValues("rules_sync").Inc()
-			log.Warn("zapis reguł w bazie nieudany", "err", err)
+			log.Warn("saving rules to the database failed", "err", err)
 		}
 		fp = cur
 		m.Rules.Set(float64(n))
 		m.RuleErrors.Set(float64(len(errs)))
-		log.Info("reguły wczytane", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs),
+		log.Info("rules loaded", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs),
 			"overrides", changed, "trial", len(trial), "errors", len(errs))
 	}
 	reload()
@@ -271,7 +271,7 @@ func serve(log *slog.Logger) error {
 		go runCorrelation(ctx, log, corr, store, m)
 		go runSilence(ctx, log, corr, store, m)
 	} else {
-		log.Warn("brak połączenia z ClickHouse (SIEM_DETECTOR_CH_PASSWORD) – korelacje międzyźródłowe wyłączone")
+		log.Warn("no ClickHouse connection (SIEM_DETECTOR_CH_PASSWORD) – cross-source correlations disabled")
 	}
 	if !streamOn {
 		// Tylko zapytania: konsument strumienia nie może zostać, bo
@@ -281,10 +281,10 @@ func serve(log *slog.Logger) error {
 			return err
 		}
 		if err := bus.DisableDetector(ctx, js); err != nil {
-			log.Warn("usunięcie konsumenta detekcji w locie nieudane", "err", err)
+			log.Warn("removing the stream detection consumer failed", "err", err)
 		}
 		nc.Close()
-		log.Info("detektor uruchomiony – tylko silnik zapytań", "rules_dir", dir)
+		log.Info("detector started – query engine only", "rules_dir", dir)
 		for ctx.Err() == nil {
 			select {
 			case <-ctx.Done():
@@ -305,7 +305,7 @@ func serve(log *slog.Logger) error {
 	}
 	defer nc.Close()
 	var cons jetstream.Consumer
-	if err := svc.Retry(ctx, log, "konsument detekcji", func() error {
+	if err := svc.Retry(ctx, log, "detection consumer", func() error {
 		if err := bus.EnsurePipeline(ctx, js, limits); err != nil {
 			return err
 		}
@@ -317,11 +317,11 @@ func serve(log *slog.Logger) error {
 	}
 	go queue.Watch(ctx, log, js, bus.StreamEvents, bus.ConsumerDetector, 0.5, 0.8, metrics.NewQueue())
 
-	log.Info("detektor uruchomiony", "rules_dir", dir, "mode", mode)
+	log.Info("detector started", "rules_dir", dir, "mode", mode)
 	lastReload := time.Now()
 	var beat atomic.Int64
 	beat.Store(time.Now().UnixNano())
-	go watchdog(ctx, log, "pętla detekcji w locie", &beat, 3*time.Minute)
+	go watchdog(ctx, log, "stream detection loop", &beat, 3*time.Minute)
 	for ctx.Err() == nil {
 		beat.Store(time.Now().UnixNano())
 		if time.Since(lastReload) > 30*time.Second {
@@ -331,7 +331,7 @@ func serve(log *slog.Logger) error {
 			if th := eng.TakeTrial(); len(th) > 0 {
 				if err := store.RecordTrial(ctx, th); err != nil {
 					m.Errors.WithLabelValues("trial").Inc()
-					log.Warn("zapis trafień reguł próbnych nieudany – ponowię", "entries", len(th), "err", err)
+					log.Warn("recording trial rule hits failed – will retry", "entries", len(th), "err", err)
 					eng.GiveBackTrial(th)
 				}
 			}
@@ -339,15 +339,15 @@ func serve(log *slog.Logger) error {
 			m.ThresholdKeys.Set(float64(keys))
 			if dropped > 0 {
 				m.Errors.WithLabelValues("threshold_limit").Add(float64(dropped))
-				log.Warn("stan progów: zdarzenia pominięte przez limit kluczy", "dropped", dropped)
+				log.Warn("threshold state: events dropped by the key limit", "dropped", dropped)
 			}
 			if _, err := store.PruneObservations(ctx, time.Now().UTC()); err != nil {
-				log.Warn("czyszczenie stanu progów nieudane", "err", err)
+				log.Warn("cleaning threshold state failed", "err", err)
 			}
 		}
 		msgs, err := cons.Fetch(256, jetstream.FetchMaxWait(time.Second))
 		if err != nil {
-			log.Warn("pobranie z kolejki nieudane", "err", err)
+			log.Warn("fetching from the queue failed", "err", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -362,7 +362,7 @@ func serve(log *slog.Logger) error {
 			}
 			if err != nil {
 				m.Errors.WithLabelValues("decode").Inc()
-				log.Error("nieczytelna wiadomość w SIEM_EVENTS – pominięta", "subject", msg.Subject(), "err", err)
+				log.Error("unreadable message in SIEM_EVENTS – skipped", "subject", msg.Subject(), "err", err)
 				_ = msg.Term()
 				continue
 			}
@@ -388,7 +388,7 @@ func serve(log *slog.Logger) error {
 			// Alerty nie zapisane – zdarzenia wrócą (zapis jest idempotentny),
 			// a stan progów wraca do ostatniej udanej transakcji.
 			m.Errors.WithLabelValues("record").Inc()
-			log.Error("zapis alertów nieudany – paczki wrócą z kolejki", "hits", len(hits), "err", err)
+			log.Error("recording alerts failed – batches will come back from the queue", "hits", len(hits), "err", err)
 			for _, msg := range batch {
 				_ = msg.NakWithDelay(5 * time.Second)
 			}
@@ -404,7 +404,7 @@ func serve(log *slog.Logger) error {
 		m.Alerts.WithLabelValues("merged").Add(float64(res.Merged))
 		m.Alerts.WithLabelValues("duplicate").Add(float64(res.Duplicates))
 		if res.NewAlerts > 0 {
-			log.Info("nowe alerty", "count", res.NewAlerts, "merged", res.Merged)
+			log.Info("new alerts", "count", res.NewAlerts, "merged", res.Merged)
 		}
 	}
 	return nil
@@ -421,7 +421,7 @@ func openIndex(ctx context.Context, log *slog.Logger, store *alerts.PG) (*detect
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.Retry(ctx, log, "ClickHouse (silnik zapytań)", func() error { return conn.Ping(ctx) }); err != nil {
+	if err := svc.Retry(ctx, log, "ClickHouse (query engine)", func() error { return conn.Ping(ctx) }); err != nil {
 		return nil, err
 	}
 	maxRows, err := svc.EnvInt("SIEM_INDEX_MAX_ROWS", detector.MaxIndexRows)
@@ -443,11 +443,11 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 	overlap, _ := svc.EnvDuration("SIEM_INDEX_OVERLAP", 5*time.Minute)
 	lookback, _ := svc.EnvDuration("SIEM_INDEX_LOOKBACK", time.Hour)
 	const step = 6 * time.Hour
-	log.Info("silnik zapytań uruchomiony", "interval", interval, "delay", delay, "overlap", overlap)
+	log.Info("query engine started", "interval", interval, "delay", delay, "overlap", overlap)
 	wait := 10 * time.Second
 	var beat atomic.Int64
 	beat.Store(time.Now().UnixNano())
-	go watchdog(ctx, log, "silnik zapytań", &beat, max(15*time.Minute, 3*interval))
+	go watchdog(ctx, log, "query engine", &beat, max(15*time.Minute, 3*interval))
 	var resume *detector.Cursor // dalszy ciąg przebiegu przerwanego limitem wierszy
 	var resumeTo time.Time
 	failing := map[string]bool{}
@@ -470,7 +470,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 			cp, ok, err := store.IndexCheckpoint(ctx)
 			if err != nil {
 				m.IndexRuns.WithLabelValues("error").Inc()
-				log.Warn("odczyt punktu kontrolnego nieudany", "err", err)
+				log.Warn("reading the checkpoint failed", "err", err)
 				continue
 			}
 			from = detector.Cursor{Ingested: to.Add(-lookback)}
@@ -488,7 +488,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		m.IndexTime.Add(time.Since(t0).Seconds())
 		if err != nil {
 			m.IndexRuns.WithLabelValues("error").Inc()
-			log.Error("przebieg silnika zapytań nieudany", "from", from.Ingested, "to", to, "err", err)
+			log.Error("query engine run failed", "from", from.Ingested, "to", to, "err", err)
 			resume = nil
 			continue
 		}
@@ -498,7 +498,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		for _, f := range res.Failed {
 			now[f.RuleID] = true
 			if !failing[f.RuleID] {
-				log.Error("reguła odrzucona przez ClickHouse – pominięta w silniku zapytań", "rule", f.RuleID, "err", f.Err)
+				log.Error("rule rejected by ClickHouse – skipped by the query engine", "rule", f.RuleID, "err", f.Err)
 			}
 		}
 		failing = now
@@ -515,7 +515,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		if err != nil {
 			m.IndexRuns.WithLabelValues("error").Inc()
 			m.Errors.WithLabelValues("record").Inc()
-			log.Error("zapis alertów silnika zapytań nieudany", "hits", len(hits), "err", err)
+			log.Error("recording query engine alerts failed", "hits", len(hits), "err", err)
 			resume = nil
 			continue
 		}
@@ -531,7 +531,7 @@ func runIndex(ctx context.Context, log *slog.Logger, idx *detector.Index, eng *d
 		m.Alerts.WithLabelValues("merged").Add(float64(rec.Merged))
 		m.Alerts.WithLabelValues("duplicate").Add(float64(rec.Duplicates))
 		if rec.NewAlerts > 0 {
-			log.Info("nowe alerty (silnik zapytań)", "count", rec.NewAlerts, "merged", rec.Merged)
+			log.Info("new alerts (query engine)", "count", rec.NewAlerts, "merged", rec.Merged)
 		}
 	}
 }
@@ -552,7 +552,7 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 		if err != nil {
 			m.Errors.WithLabelValues("heartbeat").Inc()
 			if !warned {
-				log.Warn("odczyt heartbeatu agentów nieudany – reguła utraty łączności nie działa", "err", err)
+				log.Warn("reading agent heartbeats failed – the lost-contact rule does not work", "err", err)
 				warned = true
 			}
 			continue
@@ -564,12 +564,12 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 			res, err := store.Record(ctx, hits, nil)
 			if err != nil {
 				m.Errors.WithLabelValues("record").Inc()
-				log.Error("zapis alertów utraty łączności nieudany", "err", err)
+				log.Error("recording lost-contact alerts failed", "err", err)
 				continue
 			}
 			m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
 			if res.NewAlerts > 0 {
-				log.Info("utrata łączności z agentem – nowe alerty", "count", res.NewAlerts)
+				log.Info("lost contact with an agent – new alerts", "count", res.NewAlerts)
 			}
 		}
 		open, err := store.OpenAgents(ctx, detector.HeartbeatRuleID)
@@ -582,9 +582,9 @@ func runHeartbeat(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 			}
 			reason := "Agent znów wysyła heartbeat (" + now.Format("2006-01-02 15:04") + " UTC) – zamknięte automatycznie."
 			if n, err := store.CloseOpen(ctx, detector.HeartbeatRuleID, detector.HeartbeatKey(b.ID), reason, b.NotifyReturn, now); err != nil {
-				log.Warn("zamknięcie alertu utraty łączności nieudane", "agent", b.ID, "err", err)
+				log.Warn("closing the lost-contact alert failed", "agent", b.ID, "err", err)
 			} else if n > 0 {
-				log.Info("agent wrócił – alert zamknięty", "agent", b.ID)
+				log.Info("agent is back – alert closed", "agent", b.ID)
 			}
 		}
 	}
@@ -601,7 +601,7 @@ func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metri
 	beats, err := store.TamperBeats(ctx)
 	if err != nil {
 		m.Errors.WithLabelValues("tamper").Inc()
-		log.Warn("odczyt zdarzeń ochrony agentów nieudany", "err", err)
+		log.Warn("reading agent protection events failed", "err", err)
 		return
 	}
 	var hits []alerts.Hit
@@ -621,7 +621,7 @@ func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metri
 	res, err := store.Record(ctx, hits, nil)
 	if err != nil {
 		m.Errors.WithLabelValues("record").Inc()
-		log.Error("zapis alertów sabotażu agenta nieudany", "err", err)
+		log.Error("recording agent tampering alerts failed", "err", err)
 		return
 	}
 	for _, h := range hits {
@@ -629,7 +629,7 @@ func runTamper(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metri
 	}
 	m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
 	if res.NewAlerts > 0 {
-		log.Info("próba sabotażu agenta – nowe alerty", "count", res.NewAlerts)
+		log.Info("agent tampering attempt – new alerts", "count", res.NewAlerts)
 	}
 }
 
@@ -647,7 +647,7 @@ func watchdog(ctx context.Context, log *slog.Logger, what string, beat *atomic.I
 		case <-t.C:
 		}
 		if idle := time.Since(time.Unix(0, beat.Load())); idle > limit {
-			log.Error("brak postępu – kończę proces, Docker uruchomi detektor ponownie", "loop", what, "idle", idle.Round(time.Second))
+			log.Error("no progress – exiting, Docker will restart the detector", "loop", what, "idle", idle.Round(time.Second))
 			os.Exit(3)
 		}
 	}
@@ -659,7 +659,7 @@ func watchdog(ctx context.Context, log *slog.Logger, what string, beat *atomic.I
 func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *metrics.Detector) {
 	days, err := svc.EnvInt("SIEM_ALERT_RETENTION_DAYS", 365)
 	if err != nil {
-		log.Error("SIEM_ALERT_RETENTION_DAYS – zostaje 365", "err", err)
+		log.Error("SIEM_ALERT_RETENTION_DAYS – keeping 365", "err", err)
 		days = 365
 	}
 	wait := 5 * time.Minute
@@ -678,18 +678,18 @@ func runRetention(ctx context.Context, log *slog.Logger, store *alerts.PG, m *me
 		res, err := store.Prune(ctx, closedBefore, now.AddDate(0, 0, -30), 5000)
 		if err != nil {
 			m.Errors.WithLabelValues("retention").Inc()
-			log.Warn("sprzątanie alertów nieudane", "err", err)
+			log.Warn("alert cleanup failed", "err", err)
 			continue
 		}
 		if res.Alerts > 0 || res.Outbox > 0 {
-			log.Info("sprzątanie alertów", "closed_alerts", res.Alerts, "outbox", res.Outbox, "retention_days", days)
+			log.Info("alert cleanup", "closed_alerts", res.Alerts, "outbox", res.Outbox, "retention_days", days)
 		}
 		// Trafienia reguł próbnych – 35 dni (próba trwa zwykle tydzień–dwa).
 		if n, err := store.PruneTrial(ctx, now.AddDate(0, 0, -35)); err != nil {
 			m.Errors.WithLabelValues("retention").Inc()
-			log.Warn("sprzątanie trafień reguł próbnych nieudane", "err", err)
+			log.Warn("trial rule hit cleanup failed", "err", err)
 		} else if n > 0 {
-			log.Info("sprzątanie trafień reguł próbnych", "rows", n)
+			log.Info("trial rule hit cleanup", "rows", n)
 		}
 	}
 }
@@ -706,7 +706,7 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 		hits, err := c.Run(qctx, to.Add(-lookback), to)
 		if err != nil {
 			m.Errors.WithLabelValues("correlation").Inc()
-			log.Warn("korelacje międzyźródłowe nieudane", "err", err)
+			log.Warn("cross-source correlations failed", "err", err)
 			hits = nil
 		}
 		// Reguły korelacyjne Sigma – błąd jednej nie zatrzymuje pozostałych.
@@ -714,7 +714,7 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 			sh, errs := c.RunSigma(qctx, *p, to.Add(-lookback), to)
 			for _, e := range errs {
 				m.Errors.WithLabelValues("correlation").Inc()
-				log.Warn("reguła korelacyjna nieudana", "err", e)
+				log.Warn("correlation rule failed", "err", e)
 			}
 			hits = append(hits, sh...)
 		}
@@ -725,12 +725,12 @@ func runCorrelation(ctx context.Context, log *slog.Logger, c *detector.Correlato
 				res, err := store.Record(ctx, hits, nil)
 				if err != nil {
 					m.Errors.WithLabelValues("record").Inc()
-					log.Error("zapis alertów korelacji nieudany", "err", err)
+					log.Error("recording correlation alerts failed", "err", err)
 				} else {
 					m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
 					m.Alerts.WithLabelValues("merged").Add(float64(res.Merged))
 					if res.NewAlerts > 0 {
-						log.Info("korelacje – nowe alerty", "count", res.NewAlerts, "merged", res.Merged)
+						log.Info("correlations – new alerts", "count", res.NewAlerts, "merged", res.Merged)
 					}
 				}
 			}
@@ -762,7 +762,7 @@ func runSilence(ctx context.Context, log *slog.Logger, c *detector.Correlator, s
 		cancel()
 		if err != nil {
 			m.Errors.WithLabelValues("silence").Inc()
-			log.Warn("cisza źródła: odczyt źródeł nieudany", "err", err)
+			log.Warn("silent source: reading sources failed", "err", err)
 			continue
 		}
 		hits, back := detector.SilenceCheck(srcs, now, minSilence)
@@ -770,12 +770,12 @@ func runSilence(ctx context.Context, log *slog.Logger, c *detector.Correlator, s
 			res, err := store.Record(ctx, hits, nil)
 			if err != nil {
 				m.Errors.WithLabelValues("record").Inc()
-				log.Error("zapis alertów ciszy źródła nieudany", "err", err)
+				log.Error("recording silent-source alerts failed", "err", err)
 				continue
 			}
 			m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
 			if res.NewAlerts > 0 {
-				log.Info("cisza źródła – nowe alerty", "count", res.NewAlerts)
+				log.Info("silent source – new alerts", "count", res.NewAlerts)
 			}
 		}
 		open, err := store.OpenAlerts(ctx, detector.SourceSilentID, now.Add(-365*24*time.Hour))
@@ -792,9 +792,9 @@ func runSilence(ctx context.Context, log *slog.Logger, c *detector.Correlator, s
 			}
 			reason := "Źródło znów przysyła zdarzenia (" + now.Format("2006-01-02 15:04") + " UTC) – zamknięte automatycznie."
 			if n, err := store.CloseOpen(ctx, detector.SourceSilentID, key, reason, true, now); err != nil {
-				log.Warn("zamknięcie alertu ciszy źródła nieudane", "source", key, "err", err)
+				log.Warn("closing the silent-source alert failed", "source", key, "err", err)
 			} else if n > 0 {
-				log.Info("źródło wróciło – alert zamknięty", "source", key)
+				log.Info("source is back – alert closed", "source", key)
 			}
 		}
 	}

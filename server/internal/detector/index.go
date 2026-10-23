@@ -197,7 +197,7 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 		eventCols, strings.Join(flags, ", "), x.table(), x.rangeSQL(from, to), strings.Join(conds, " OR "), x.maxRows())
 	rows, err := x.Conn.Query(ctx, q)
 	if err != nil {
-		return fmt.Errorf("zapytanie reguł: %w", err)
+		return fmt.Errorf("rules query: %w", err)
 	}
 	type cand struct {
 		events []detect.Event
@@ -262,7 +262,7 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 	for _, i := range idx {
 		hits, n, err := x.threshold(ctx, rules[i], cands[i].events, cands[i].keys, cands[i].lo, cands[i].hi)
 		if err != nil {
-			return fmt.Errorf("próg %s: %w", rules[i].ID, err)
+			return fmt.Errorf("threshold %s: %w", rules[i].ID, err)
 		}
 		res.Context += n
 		res.Hits = append(res.Hits, hits...)
@@ -366,7 +366,7 @@ func (x *Index) threshold(ctx context.Context, r *detect.Rule, fresh []detect.Ev
 		}
 		known, err := x.Known(ctx, r.ID, list)
 		if err != nil {
-			return nil, n, fmt.Errorf("zdarzenia w alertach: %w", err)
+			return nil, n, fmt.Errorf("events in alerts: %w", err)
 		}
 		for _, es := range byKey {
 			for _, e := range es {

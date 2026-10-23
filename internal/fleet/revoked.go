@@ -21,7 +21,7 @@ const RevokedBucket = "SIEM_REVOKED_CERTS"
 func EnsureRevoked(ctx context.Context, js jetstream.JetStream) (jetstream.KeyValue, error) {
 	return js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:      RevokedBucket,
-		Description: "Unieważnione certyfikaty agentów Vardr",
+		Description: "Revoked Vardr agent certificates",
 		History:     1,
 		Storage:     jetstream.FileStorage,
 	})
@@ -78,11 +78,11 @@ func (r *RevokedSet) Watch(ctx context.Context, kv jetstream.KeyValue, log *slog
 			return nil
 		case e, ok := <-w.Updates():
 			if !ok {
-				return errors.New("obserwacja unieważnień zakończona")
+				return errors.New("watching revocations ended")
 			}
 			if e == nil { // koniec stanu początkowego
 				if initial {
-					log.Info("lista unieważnionych certyfikatów wczytana", "count", r.Len())
+					log.Info("revoked certificate list loaded", "count", r.Len())
 					initial = false
 				}
 				continue
@@ -90,7 +90,7 @@ func (r *RevokedSet) Watch(ctx context.Context, kv jetstream.KeyValue, log *slog
 			present := e.Operation() == jetstream.KeyValuePut
 			r.set(e.Key(), string(e.Value()), present)
 			if !initial && present {
-				log.Warn("certyfikat agenta unieważniony – połączenia z nim będą odrzucane", "serial", e.Key(), "reason", string(e.Value()))
+				log.Warn("agent certificate revoked – connections with it will be rejected", "serial", e.Key(), "reason", string(e.Value()))
 			}
 		}
 	}

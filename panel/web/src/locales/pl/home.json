@@ -1,0 +1,18 @@
+{
+  "welcome": "Witaj, {{name}}",
+  "intro": "Vardr czuwa – tu widać, co dzieje się w sieci.",
+  "alertsTitle": "Gjallarhorn – otwarte alerty",
+  "open": "otwarte: {{count}}",
+  "agentsTitle": "Huginn – agenci",
+  "withProblems": "z problemami: {{count}}",
+  "archiveTitle": "Urd – archiwum NIS2",
+  "systemTitle": "Himinbjörg – stan systemu",
+  "allOk": "wszystko działa",
+  "needsAttention": "wymaga uwagi: {{count}}",
+  "db": "baza Saga: {{status}}",
+  "dbOk": "ok",
+  "dbDown": "niedostępna",
+  "noData": "brak danych",
+  "eventsWhat": "zdarzenia – wyszukiwanie, histogram i szczegóły z surowym XML",
+  "deployWhat": "wdrażanie agentów tokenem i paczki instalacyjne"
+}

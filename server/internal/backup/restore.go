@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"siem/internal/backupcfg"
+	"siem/internal/lang"
 )
 
 // Przywracanie z panelu. Usługa kopii przygotowuje przywrócenie: lista
@@ -121,12 +122,12 @@ func (r *Runner) listFiles(ctx context.Context, cfg backupcfg.Config) (string, e
 	if err := tx.Commit(ctx); err != nil {
 		return "", err
 	}
-	msg := fmt.Sprintf("kopie lokalne: %d", nLocal)
+	msg := fmt.Sprintf(r.tr(ctx, "kopie lokalne: %d", "local backups: %d"), nLocal)
 	if cfg.Target.Method != backupcfg.MethodNone {
 		if remoteErr != nil {
-			return msg, fmt.Errorf("%s; miejsce docelowe niedostępne: %v", msg, remoteErr)
+			return msg, fmt.Errorf(r.tr(ctx, "%s; miejsce docelowe niedostępne: %v", "%s; destination unavailable: %v"), msg, remoteErr)
 		}
-		msg += fmt.Sprintf(", w miejscu docelowym: %d", nRemote)
+		msg += fmt.Sprintf(r.tr(ctx, ", w miejscu docelowym: %d", ", at the destination: %d"), nRemote)
 	}
 	return msg, nil
 }
@@ -135,13 +136,13 @@ func (r *Runner) listFiles(ctx context.Context, cfg backupcfg.Config) (string, e
 // pobraną do .przywracanie/).
 func (r *Runner) localCopy(ctx context.Context, cfg backupcfg.Config, location, name string) (string, error) {
 	if !backupName.MatchString(name) {
-		return "", fmt.Errorf("niepoprawna nazwa kopii")
+		return "", r.errf(ctx, "niepoprawna nazwa kopii", "invalid backup name")
 	}
 	switch location {
 	case "local":
 		p := filepath.Join(r.BackupDir, name)
 		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("kopii %s nie ma już na serwerze – odśwież listę", name)
+			return "", r.errf(ctx, "kopii %s nie ma już na serwerze – odśwież listę", "backup %s is no longer on the server – refresh the list", name)
 		}
 		return p, nil
 	case "remote":
@@ -163,7 +164,7 @@ func (r *Runner) localCopy(ctx context.Context, cfg backupcfg.Config, location, 
 			return "", err
 		}
 		if out, err := r.rclone(ctx, 2*time.Hour, conf, "copyto", base+"/config/"+name, p+".tmp"); err != nil {
-			return "", fmt.Errorf("pobranie kopii nieudane: %s", out)
+			return "", r.errf(ctx, "pobranie kopii nieudane: %s", "downloading the backup failed: %s", out)
 		}
 		if err := os.Rename(p+".tmp", p); err != nil {
 			return "", err
@@ -171,7 +172,7 @@ func (r *Runner) localCopy(ctx context.Context, cfg backupcfg.Config, location, 
 		r.own(p)
 		return p, nil
 	}
-	return "", fmt.Errorf("niepoprawne miejsce kopii")
+	return "", r.errf(ctx, "niepoprawne miejsce kopii", "invalid backup location")
 }
 
 // contentsOf odszyfrowuje kopię hasłem kopii i zwraca jej części.
@@ -196,12 +197,13 @@ func (r *Runner) contentsOf(ctx context.Context, path string) ([]string, error) 
 	if gerr != nil {
 		msg := strings.TrimSpace(gpgErr.String())
 		if strings.Contains(msg, "decryption failed") || strings.Contains(msg, "Bad session key") {
-			return nil, fmt.Errorf("kopii nie da się odszyfrować obecnym hasłem kopii – zaszyfrowano ją innym (identyfikator w nazwie)")
+			return nil, r.errf(ctx, "kopii nie da się odszyfrować obecnym hasłem kopii – zaszyfrowano ją innym (identyfikator w nazwie)",
+				"the backup cannot be decrypted with the current backup password – it was encrypted with another one (identifier in the name)")
 		}
-		return nil, fmt.Errorf("odszyfrowanie nieudane: %s", truncate(msg, 500))
+		return nil, r.errf(ctx, "odszyfrowanie nieudane: %s", "decryption failed: %s", truncate(msg, 500))
 	}
 	if terr != nil {
-		return nil, fmt.Errorf("kopia uszkodzona: %v", terr)
+		return nil, r.errf(ctx, "kopia uszkodzona: %v", "the backup is damaged: %v", terr)
 	}
 	names := map[string]bool{}
 	for _, l := range strings.Split(string(out), "\n") {
@@ -218,13 +220,14 @@ func (r *Runner) contentsOf(ctx context.Context, path string) ([]string, error) 
 		parts = append(parts, "grafana")
 	}
 	if len(parts) == 0 {
-		return nil, fmt.Errorf("kopia nie zawiera niczego, co da się przywrócić")
+		return nil, r.errf(ctx, "kopia nie zawiera niczego, co da się przywrócić", "the backup contains nothing that can be restored")
 	}
 	return parts, nil
 }
 
-func partsLabel(parts []string) string {
-	labels := map[string]string{"saga": "baza Saga", "config": "konfiguracja", "grafana": "dane Grafany"}
+func partsLabel(parts []string, l string) string {
+	labels := map[string]string{"saga": lang.Pick(l, "baza Saga", "Saga database"), "config": lang.Pick(l, "konfiguracja", "configuration"),
+		"grafana": lang.Pick(l, "dane Grafany", "Grafana data")}
 	var out []string
 	for _, p := range parts {
 		out = append(out, labels[p])
@@ -250,7 +253,7 @@ func (r *Runner) inspect(ctx context.Context, cfg backupcfg.Config, location, na
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s: %s", name, partsLabel(parts)), nil
+	return fmt.Sprintf("%s: %s", name, partsLabel(parts, r.Lang.Get(ctx))), nil
 }
 
 // restoreJob to zlecenie dla restore.sh (proste linie klucz=wartość –
@@ -264,11 +267,11 @@ func restoreJob(id int64, file string, parts []string, by string) string {
 // sprawdzenie zawartości i zlecenie dla restore.sh.
 func (r *Runner) prepareRestore(ctx context.Context, cfg backupcfg.Config, id int64, location, name string, parts []string, safety bool) (string, error) {
 	if len(parts) == 0 {
-		return "", fmt.Errorf("nie wybrano, co przywrócić")
+		return "", r.errf(ctx, "nie wybrano, co przywrócić", "nothing selected to restore")
 	}
 	job := filepath.Join(r.restoreDir(), "zlecenie")
 	if _, err := os.Stat(job); err == nil {
-		return "", fmt.Errorf("inne przywracanie czeka na wykonanie przez serwer")
+		return "", r.errf(ctx, "inne przywracanie czeka na wykonanie przez serwer", "another restore is waiting to be performed by the server")
 	}
 	path, err := r.localCopy(ctx, cfg, location, name)
 	if err != nil {
@@ -280,16 +283,17 @@ func (r *Runner) prepareRestore(ctx context.Context, cfg backupcfg.Config, id in
 	}
 	for _, p := range parts {
 		if !contains(have, p) {
-			return "", fmt.Errorf("kopia nie zawiera części %q", p)
+			return "", r.errf(ctx, "kopia nie zawiera części %q", "the backup does not contain part %q", p)
 		}
 	}
 	var notes []string
 	if safety {
 		st := r.backup(ctx, cfg, "manual")
 		if st.failed {
-			return "", fmt.Errorf("kopia obecnego stanu przed przywróceniem nieudana – przywracanie przerwane: %s", st.message)
+			return "", r.errf(ctx, "kopia obecnego stanu przed przywróceniem nieudana – przywracanie przerwane: %s",
+				"backup of the current state before restoring failed – restore aborted: %s", st.message)
 		}
-		notes = append(notes, "kopia obecnego stanu: "+st.file)
+		notes = append(notes, r.tr(ctx, "kopia obecnego stanu: ", "backup of the current state: ")+st.file)
 	}
 	rel, err := filepath.Rel(r.BackupDir, path)
 	if err != nil {
@@ -305,9 +309,10 @@ func (r *Runner) prepareRestore(ctx context.Context, cfg backupcfg.Config, id in
 		return "", err
 	}
 	r.own(job)
-	notes = append(notes, fmt.Sprintf("przygotowane: %s (%s) – serwer przywraca w ciągu minuty, panel będzie chwilę niedostępny",
-		name, partsLabel(parts)))
-	r.Log.Info("przywracanie przygotowane – czeka na restore.sh", "file", rel, "parts", parts)
+	notes = append(notes, fmt.Sprintf(r.tr(ctx, "przygotowane: %s (%s) – serwer przywraca w ciągu minuty, panel będzie chwilę niedostępny",
+		"prepared: %s (%s) – the server restores within a minute, the panel will be unavailable for a moment"),
+		name, partsLabel(parts, r.Lang.Get(ctx))))
+	r.Log.Info("restore prepared – waiting for restore.sh", "file", rel, "parts", parts)
 	return strings.Join(notes, "; "), nil
 }
 

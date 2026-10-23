@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"siem/internal/contract"
+	"siem/internal/lang"
 	"siem/internal/urd"
 	"siem/server/internal/normalize"
 )
@@ -55,9 +55,9 @@ func (e *Exporter) Run(ctx context.Context) {
 		}
 	}
 	if n, err := e.Store.FailInterruptedExports(ctx); err != nil {
-		e.Log.Warn("oznaczanie przerwanych eksportów nieudane", "err", err)
+		e.Log.Warn("marking interrupted exports failed", "err", err)
 	} else if n > 0 {
-		e.Log.Warn("eksporty przerwane restartem oznaczone jako nieudane", "count", n)
+		e.Log.Warn("exports interrupted by a restart marked as failed", "count", n)
 	}
 	tick := time.NewTicker(15 * time.Second)
 	defer tick.Stop()
@@ -70,22 +70,22 @@ func (e *Exporter) Run(ctx context.Context) {
 		for ctx.Err() == nil {
 			j, ok, err := e.Store.ClaimExport(ctx)
 			if err != nil {
-				e.Log.Warn("odczyt zleceń eksportu nieudany", "err", err)
+				e.Log.Warn("reading export requests failed", "err", err)
 				break
 			}
 			if !ok {
 				break
 			}
-			e.Log.Info("eksport dla audytora: start", "id", j.ID, "by", j.RequestedBy,
+			e.Log.Info("auditor export: start", "id", j.ID, "by", j.RequestedBy,
 				"from", j.From.UTC().Format(time.RFC3339), "to", j.To.UTC().Format(time.RFC3339))
 			j = e.runJob(ctx, j)
 			if err := e.Store.FinishExport(context.WithoutCancel(ctx), j); err != nil {
-				e.Log.Error("zapis wyniku eksportu nieudany", "id", j.ID, "err", err)
+				e.Log.Error("recording the export result failed", "id", j.ID, "err", err)
 			}
 			if j.Status == urd.ExportDone {
-				e.Log.Info("eksport dla audytora: gotowy", "id", j.ID, "file", j.FileName, "bytes", j.Bytes, "sha256", j.SHA256)
+				e.Log.Info("auditor export: ready", "id", j.ID, "file", j.FileName, "bytes", j.Bytes, "sha256", j.SHA256)
 			} else {
-				e.Log.Error("eksport dla audytora nieudany", "id", j.ID, "err", j.Error)
+				e.Log.Error("auditor export failed", "id", j.ID, "err", j.Error)
 			}
 		}
 		select {
@@ -98,11 +98,11 @@ func (e *Exporter) Run(ctx context.Context) {
 
 func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 	fail := func(err error) urd.ExportJob {
-		j.Status, j.Error = urd.ExportFailed, err.Error()
+		j.Status, j.Error = urd.ExportFailed, e.A.Msg(err)
 		return j
 	}
 	if st, err := os.Stat(e.Dir); err != nil || !st.IsDir() {
-		return fail(fmt.Errorf("katalog eksportów %s niedostępny", e.Dir))
+		return fail(lang.Errorf("katalog eksportów %s niedostępny", "export directory %s unavailable", e.Dir))
 	}
 	e.Lock.Lock()
 	defer e.Lock.Unlock()
@@ -113,7 +113,7 @@ func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 	// Paczka: oryginały + czytelne zdarzenia (NDJSON gzip ≈ oryginały, CSV ≈ 2×)
 	// + pliki robocze – szacunkowo 4× rozmiar oryginałów.
 	if free, _, err := diskUsageFn(e.Dir); err == nil && free < 4*uint64(plan.Bytes)+e.MinFreeBytes+64<<20 {
-		return fail(fmt.Errorf("za mało miejsca na paczkę: potrzeba %.1f GB, wolne %.1f GB",
+		return fail(lang.Errorf("za mało miejsca na paczkę: potrzeba %.1f GB, wolne %.1f GB", "not enough space for the package: %.1f GB needed, %.1f GB free",
 			float64(4*plan.Bytes)/(1<<30), float64(free)/(1<<30)))
 	}
 
@@ -148,7 +148,7 @@ func (e *Exporter) runJob(ctx context.Context, j urd.ExportJob) urd.ExportJob {
 func (e *Exporter) expire(ctx context.Context) {
 	names, err := e.Store.ExpireExports(ctx, time.Now().Add(-e.Keep))
 	if err != nil {
-		e.Log.Warn("usuwanie starych eksportów nieudane", "err", err)
+		e.Log.Warn("removing old exports failed", "err", err)
 		return
 	}
 	for _, n := range names {
@@ -158,11 +158,11 @@ func (e *Exporter) expire(ctx context.Context) {
 		full := filepath.Join(e.Dir, n)
 		_ = os.Chmod(full, 0o640)
 		if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
-			e.Log.Warn("usunięcie paczki eksportu nieudane", "file", n, "err", err)
+			e.Log.Warn("removing an export package failed", "file", n, "err", err)
 		}
 	}
 	if len(names) > 0 {
-		e.Log.Info("usunięto stare paczki eksportu", "count", len(names), "keep", e.Keep.String())
+		e.Log.Info("old export packages removed", "count", len(names), "keep", e.Keep.String())
 	}
 }
 

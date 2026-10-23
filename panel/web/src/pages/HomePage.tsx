@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge, Card, Group, SimpleGrid, Stack, Text, ThemeIcon, Title } from "@mantine/core";
 import { IconActivityHeartbeat, IconAlertTriangle, IconArchive, IconBolt, IconDatabaseSearch, IconDeviceDesktop } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   agentsApi,
   alertsApi,
@@ -18,10 +19,11 @@ import {
   type ArchiveOverview,
   type SystemReport,
 } from "../api";
-import { statusLabels } from "./SystemPage";
+import { statusColors } from "./SystemPage";
 import { useAuth } from "../auth";
 
 export default function HomePage() {
+  const { t } = useTranslation("home");
   const { user } = useAuth();
   const [db, setDb] = useState<string>("…");
   const [fleet, setFleet] = useState<AgentsSummary | null>(null);
@@ -33,7 +35,7 @@ export default function HomePage() {
     api
       .health()
       .then((h) => setDb(h.database))
-      .catch(() => setDb("niedostępna"));
+      .catch(() => setDb(t("dbDown")));
     agentsApi
       .list()
       .then((r) => setFleet(r.summary))
@@ -56,8 +58,8 @@ export default function HomePage() {
   return (
     <Stack>
       <div>
-        <Title order={2}>Witaj, {user?.display_name || user?.username}</Title>
-        <Text c="dimmed">Vardr czuwa – tu widać, co dzieje się w sieci.</Text>
+        <Title order={2}>{t("welcome", { name: user?.display_name || user?.username })}</Title>
+        <Text c="dimmed">{t("intro")}</Text>
       </div>
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
@@ -66,12 +68,12 @@ export default function HomePage() {
             <ThemeIcon variant="light" size="lg" color={alertSum && alertSum.open > 0 ? "orange" : undefined}>
               <IconAlertTriangle size={20} />
             </ThemeIcon>
-            <Text fw={600}>Gjallarhorn – otwarte alerty</Text>
+            <Text fw={600}>{t("alertsTitle")}</Text>
           </Group>
           {alertSum ? (
             <Group gap="xs">
               <Badge variant="light" color={alertSum.open > 0 ? "orange" : "green"}>
-                otwarte: {alertSum.open}
+                {t("open", { count: alertSum.open })}
               </Badge>
               {(["critical", "high", "medium", "low", "informational"] as AlertLevel[])
                 .filter((l) => alertSum.open_by_level[l])
@@ -83,7 +85,7 @@ export default function HomePage() {
             </Group>
           ) : (
             <Text size="sm" c="dimmed">
-              brak danych
+              {t("noData")}
             </Text>
           )}
         </Card>
@@ -92,7 +94,7 @@ export default function HomePage() {
             <ThemeIcon variant="light" size="lg">
               <IconDeviceDesktop size={20} />
             </ThemeIcon>
-            <Text fw={600}>Huginn – agenci</Text>
+            <Text fw={600}>{t("agentsTitle")}</Text>
           </Group>
           {fleet ? (
             <Group gap="xs">
@@ -103,12 +105,12 @@ export default function HomePage() {
                 offline: {fleet.offline}
               </Badge>
               <Badge color={fleet.with_problems ? "orange" : "gray"} variant="light">
-                z problemami: {fleet.with_problems}
+                {t("withProblems", { count: fleet.with_problems })}
               </Badge>
             </Group>
           ) : (
             <Text size="sm" c="dimmed">
-              brak danych
+              {t("noData")}
             </Text>
           )}
         </Card>
@@ -117,7 +119,7 @@ export default function HomePage() {
             <ThemeIcon variant="light" size="lg">
               <IconArchive size={20} />
             </ThemeIcon>
-            <Text fw={600}>Urd – archiwum NIS2</Text>
+            <Text fw={600}>{t("archiveTitle")}</Text>
           </Group>
           {archive ? (
             <Badge color={complianceLabels[archive.compliance].color} variant="light">
@@ -125,29 +127,29 @@ export default function HomePage() {
             </Badge>
           ) : (
             <Text size="sm" c="dimmed">
-              brak danych
+              {t("noData")}
             </Text>
           )}
         </Card>
         <Card withBorder component={Link} to="/system">
           <Group mb="xs">
-            <ThemeIcon variant="light" size="lg" color={system ? statusLabels[system.overall].color : undefined}>
+            <ThemeIcon variant="light" size="lg" color={system ? statusColors[system.overall] : undefined}>
               <IconActivityHeartbeat size={20} />
             </ThemeIcon>
-            <Text fw={600}>Himinbjörg – stan systemu</Text>
+            <Text fw={600}>{t("systemTitle")}</Text>
           </Group>
           <Group gap="xs">
             {system ? (
-              <Badge color={statusLabels[system.overall].color} variant="light">
-                {system.overall === "ok" ? "wszystko działa" : `wymaga uwagi: ${problems}`}
+              <Badge color={statusColors[system.overall]} variant="light">
+                {system.overall === "ok" ? t("allOk") : t("needsAttention", { count: problems })}
               </Badge>
             ) : (
               <Badge color="gray" variant="light">
-                brak danych
+                {t("noData")}
               </Badge>
             )}
             <Badge color={db === "ok" ? "green" : "red"} variant="light">
-              baza Saga: {db}
+              {t("db", { status: db === "ok" ? t("dbOk") : db })}
             </Badge>
           </Group>
         </Card>
@@ -155,8 +157,8 @@ export default function HomePage() {
 
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         {[
-          { to: "/events", name: "Mímir", what: "zdarzenia – wyszukiwanie, histogram i szczegóły z surowym XML", icon: IconDatabaseSearch, soon: false },
-          { to: "/deploy", name: "Bifröst", what: "wdrażanie agentów tokenem i paczki instalacyjne", icon: IconBolt, soon: false },
+          { to: "/events", name: "Mímir", what: t("eventsWhat"), icon: IconDatabaseSearch },
+          { to: "/deploy", name: "Bifröst", what: t("deployWhat"), icon: IconBolt },
         ].map((m) => (
           <Card key={m.to} withBorder component={Link} to={m.to}>
             <Group mb="xs">
@@ -164,11 +166,6 @@ export default function HomePage() {
                 <m.icon size={20} />
               </ThemeIcon>
               <Text fw={600}>{m.name}</Text>
-              {m.soon && (
-                <Badge size="xs" variant="light" color="gray">
-                  w budowie
-                </Badge>
-              )}
             </Group>
             <Text size="sm" c="dimmed">
               {m.what}

@@ -33,7 +33,7 @@ type PG struct {
 func OpenPG(ctx context.Context, url string) (*PG, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
-		return nil, fmt.Errorf("adres bazy: %w", err)
+		return nil, fmt.Errorf("database address: %w", err)
 	}
 	cfg.MaxConns = 4
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -51,6 +51,11 @@ func OpenPG(ctx context.Context, url string) (*PG, error) {
 func NewPG(pool *pgxpool.Pool) *PG { return &PG{pool: pool} }
 
 func (p *PG) Close() { p.pool.Close() }
+
+// QueryRow: zapytanie do Sagi (np. język systemu – langdb).
+func (p *PG) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return p.pool.QueryRow(ctx, sql, args...)
+}
 
 // Migrate tworzy lub aktualizuje schemat urd.
 func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
@@ -104,7 +109,7 @@ func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
 		num, _, _ := strings.Cut(name, "_")
 		version, err := strconv.Atoi(num)
 		if err != nil {
-			return applied, fmt.Errorf("niepoprawna nazwa migracji %s", name)
+			return applied, fmt.Errorf("invalid migration name %s", name)
 		}
 		if done[version] {
 			continue
@@ -120,7 +125,7 @@ func (p *PG) Migrate(ctx context.Context) (applied []string, err error) {
 			_, err := tx.Exec(ctx, "INSERT INTO urd.schema_migrations (version, name) VALUES ($1, $2)", version, name)
 			return err
 		}); err != nil {
-			return applied, fmt.Errorf("migracja %s: %w", name, err)
+			return applied, fmt.Errorf("migration %s: %w", name, err)
 		}
 		applied = append(applied, name)
 	}
@@ -211,7 +216,7 @@ func (p *PG) AddManifest(ctx context.Context, m ManifestRecord, segPaths []strin
 			return err
 		}
 		if int(tag.RowsAffected()) != len(segPaths) {
-			return fmt.Errorf("manifest %d: oznaczono %d z %d segmentów", m.Seq, tag.RowsAffected(), len(segPaths))
+			return fmt.Errorf("manifest %d: marked %d of %d segments", m.Seq, tag.RowsAffected(), len(segPaths))
 		}
 		return nil
 	})

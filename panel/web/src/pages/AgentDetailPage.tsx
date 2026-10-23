@@ -34,8 +34,9 @@ import {
   type AgentView,
 } from "../api";
 import { limitsSummary, profileLabels } from "./GroupsPage";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
-import { StateBadge } from "./AgentsPage";
+import { StateBadge, agentProblems } from "./AgentsPage";
 import { AgentProtection } from "./AgentProtection";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -51,13 +52,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const channelState: Record<string, { label: string; color: string }> = {
-  ok: { label: "działa", color: "green" },
-  starting: { label: "uruchamianie", color: "blue" },
-  not_found: { label: "brak kanału", color: "gray" },
-  access_denied: { label: "brak dostępu", color: "red" },
-  error: { label: "błąd", color: "red" },
-};
+const channelColors: Record<string, string> = { ok: "green", starting: "blue", not_found: "gray", access_denied: "red", error: "red" };
 
 function duration(ns?: number): string {
   if (!ns) return "—";
@@ -69,6 +64,7 @@ function duration(ns?: number): string {
 }
 
 export default function AgentDetailPage() {
+  const { t } = useTranslation("agents");
   const { id = "" } = useParams();
   const { can } = useAuth();
   const navigate = useNavigate();
@@ -89,7 +85,7 @@ export default function AgentDetailPage() {
       await groupsApi.assign(id, groupId);
       const r = await agentsApi.get(id);
       setAgent(r.agent);
-      notifications.show({ color: "green", message: "Zmieniono grupę – agent pobierze nową konfigurację w ciągu ok. 5 minut." });
+      notifications.show({ color: "green", message: t("detail.groupChanged") });
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
     }
@@ -112,14 +108,12 @@ export default function AgentDetailPage() {
 
   const remove = async () => {
     if (
-      !window.confirm(
-        `Usunąć agenta ${id} z listy?\n\nJego certyfikaty zostaną unieważnione – agent nie wyśle już żadnych zdarzeń, nawet jeśli nadal działa. Powrót tylko przez nową rejestrację tokenem. Historia zdarzeń i alertów zostaje.`,
-      )
+      !window.confirm(t("detail.removeConfirm", { id }))
     )
       return;
     try {
       await agentsApi.remove(id);
-      notifications.show({ color: "green", message: `Usunięto ${id} z listy` });
+      notifications.show({ color: "green", message: t("detail.removed", { id }) });
       navigate("/agents");
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -127,20 +121,13 @@ export default function AgentDetailPage() {
   };
 
   const revokeCert = async () => {
-    const reason = window.prompt(
-      `Unieważnić certyfikaty agenta ${id}? Agent natychmiast straci dostęp do serwera (np. zgubiony laptop).
-
-Powód:`,
-      "zgubiony lub wycofany komputer",
-    );
+    const reason = window.prompt(t("detail.revokePrompt", { id }), t("detail.revokeDefault"));
     if (reason === null) return;
     try {
       const r = await enrollApi.revokeAgent(id, reason);
       notifications.show({
         color: r.revoked ? "green" : "yellow",
-        message: r.revoked
-          ? `Unieważniono certyfikaty: ${r.revoked}. Agent nie połączy się już z serwerem.`
-          : "Brak certyfikatów wystawionych przez panel (agent z paczki laboratoryjnej).",
+        message: r.revoked ? t("detail.revoked", { n: r.revoked }) : t("detail.noCerts"),
       });
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -150,7 +137,7 @@ Powód:`,
   const back = (
     <Anchor component={Link} to="/agents" size="sm">
       <Group gap={4}>
-        <IconArrowLeft size={14} /> Wszyscy agenci
+        <IconArrowLeft size={14} /> {t("detail.back")}
       </Group>
     </Anchor>
   );
@@ -175,25 +162,25 @@ Powód:`,
             <StateBadge a={agent} />
           </Group>
           <Text c="dimmed" size="sm">
-            {agent.id} · {agent.os || "system nieznany"} · agent {agent.version || "?"}
+            {agent.id} · {agent.os || t("detail.unknownOs")} · {t("detail.agentVersion", { v: agent.version || "?" })}
           </Text>
         </div>
         {can("agents", "write") && (
           <Group gap="xs">
             <Button variant="light" color="red" leftSection={<IconCertificateOff size={16} />} onClick={() => void revokeCert()}>
-              Unieważnij certyfikat
+              {t("detail.revokeCert")}
             </Button>
             <Button variant="default" leftSection={<IconTrash size={16} />} onClick={() => void remove()}>
-              Usuń z listy
+              {t("detail.remove")}
             </Button>
           </Group>
         )}
       </Group>
 
       {agent.problems.length > 0 && (
-        <Alert color="orange" title="Wymaga uwagi">
+        <Alert color="orange" title={t("detail.attention")}>
           <List size="sm">
-            {agent.problems.map((pr) => (
+            {agentProblems(agent).map((pr) => (
               <List.Item key={pr}>{pr}</List.Item>
             ))}
           </List>
@@ -204,7 +191,7 @@ Powód:`,
         <Group justify="space-between" align="flex-start" wrap="wrap">
           <div>
             <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-              Konfiguracja z panelu
+              {t("detail.config")}
             </Text>
             <Group gap="xs" mt={4}>
               <Badge variant="light" color={configStateLabels[agent.config_state]?.color}>
@@ -223,13 +210,13 @@ Powód:`,
               ) : null;
             })()}
             <Text size="xs" c="dimmed" ff="monospace" mt={4}>
-              wersja oczekiwana {agent.config_expected}
-              {agent.config_applied ? ` · zastosowana ${agent.config_applied}` : ""}
+              {t("detail.configExpected", { v: agent.config_expected })}
+              {agent.config_applied ? ` · ${t("detail.configApplied", { v: agent.config_applied })}` : ""}
             </Text>
           </div>
           {can("agents", "write") ? (
             <Select
-              label="Grupa"
+              label={t("col.group")}
               w={240}
               data={groups.map((g) => ({ value: String(g.id), label: g.name }))}
               value={String(agent.group_id)}
@@ -237,31 +224,31 @@ Powód:`,
               onChange={(v) => v && Number(v) !== agent.group_id && void changeGroup(Number(v))}
             />
           ) : (
-            <Text size="sm">Grupa: {agent.group}</Text>
+            <Text size="sm">{t("detail.groupIs", { group: agent.group })}</Text>
           )}
         </Group>
       </Card>
 
       <Card withBorder>
         <SimpleGrid cols={{ base: 2, md: 4 }} spacing="lg">
-          <Field label="Ostatni sygnał">
+          <Field label={t("col.lastSeen")}>
             {ago(agent.last_seen)} <Text span size="xs" c="dimmed">({formatDate(agent.last_seen)})</Text>
           </Field>
-          <Field label="Adres IP">{agent.remote_ip || "—"}</Field>
-          <Field label="Działa od">{agent.started_at ? `${formatDate(agent.started_at)} (${ago(agent.started_at)})` : "—"}</Field>
-          <Field label="Pierwszy raz widziany">{formatDate(agent.first_seen)}</Field>
-          <Field label="Wysyłka do serwera">
+          <Field label={t("col.ip")}>{agent.remote_ip || "—"}</Field>
+          <Field label={t("detail.runningSince")}>{agent.started_at ? `${formatDate(agent.started_at)} (${ago(agent.started_at)})` : "—"}</Field>
+          <Field label={t("detail.firstSeen")}>{formatDate(agent.first_seen)}</Field>
+          <Field label={t("detail.sending")}>
             {status.server?.healthy ? (
-              <Badge color="green" variant="light">działa</Badge>
+              <Badge color="green" variant="light">{t("detail.works")}</Badge>
             ) : (
-              <Badge color="red" variant="light">błąd</Badge>
+              <Badge color="red" variant="light">{t("detail.error")}</Badge>
             )}
           </Field>
-          <Field label="Ostatnia przyjęta paczka">{ago(status.server?.last_accepted_at)}</Field>
-          <Field label="Certyfikat ważny do">
-            {agent.cert_not_after ? `${formatDate(agent.cert_not_after)} (${agent.cert_days_left} dni)` : "—"}
+          <Field label={t("detail.lastBatch")}>{ago(status.server?.last_accepted_at)}</Field>
+          <Field label={t("detail.certValid")}>
+            {agent.cert_not_after ? `${formatDate(agent.cert_not_after)} (${t("detail.days", { count: agent.cert_days_left ?? 0 })})` : "—"}
           </Field>
-          <Field label="Ostatni błąd wysyłki">
+          <Field label={t("detail.lastError")}>
             {status.server?.last_error ? `${status.server.last_error} (${ago(status.server.last_error_at)})` : "—"}
           </Field>
         </SimpleGrid>
@@ -272,28 +259,28 @@ Powód:`,
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Zdarzenia (od startu agenta)
+            {t("detail.counters")}
           </Title>
           <SimpleGrid cols={3} spacing="md">
-            <Field label="Odczytane">{formatNumber(c.read)}</Field>
-            <Field label="Przyjęte">{formatNumber(c.accepted)}</Field>
-            <Field label="Odfiltrowane">{formatNumber(c.filtered)}</Field>
-            <Field label="Ponowienia">{formatNumber(c.retries)}</Field>
-            <Field label="Przycięte">{formatNumber(c.truncated)}</Field>
-            <Field label="Kwarantanna">{formatNumber(c.quarantined)}</Field>
+            <Field label={t("detail.read")}>{formatNumber(c.read)}</Field>
+            <Field label={t("detail.accepted")}>{formatNumber(c.accepted)}</Field>
+            <Field label={t("detail.filtered")}>{formatNumber(c.filtered)}</Field>
+            <Field label={t("detail.retries")}>{formatNumber(c.retries)}</Field>
+            <Field label={t("detail.truncated")}>{formatNumber(c.truncated)}</Field>
+            <Field label={t("detail.quarantined")}>{formatNumber(c.quarantined)}</Field>
           </SimpleGrid>
         </Card>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Zasoby agenta
+            {t("detail.resources")}
           </Title>
           <SimpleGrid cols={3} spacing="md">
-            <Field label="Czas CPU">{duration(p.cpu_time_ns)}</Field>
-            <Field label="Pamięć (sterta)">{p.heap_mb !== undefined ? `${p.heap_mb.toFixed(1)} MB` : "—"}</Field>
-            <Field label="Pamięć (system)">{p.sys_mb !== undefined ? `${p.sys_mb.toFixed(1)} MB` : "—"}</Field>
-            <Field label="Dławienie EPS">{duration(status.throttle?.eps_ns)}</Field>
-            <Field label="Dławienie łącza">{duration(status.throttle?.bandwidth_ns)}</Field>
-            <Field label="Wątki Go">{p.goroutines ?? "—"}</Field>
+            <Field label={t("detail.cpu")}>{duration(p.cpu_time_ns)}</Field>
+            <Field label={t("detail.heap")}>{p.heap_mb !== undefined ? `${p.heap_mb.toFixed(1)} MB` : "—"}</Field>
+            <Field label={t("detail.sys")}>{p.sys_mb !== undefined ? `${p.sys_mb.toFixed(1)} MB` : "—"}</Field>
+            <Field label={t("detail.throttleEps")}>{duration(status.throttle?.eps_ns)}</Field>
+            <Field label={t("detail.throttleBw")}>{duration(status.throttle?.bandwidth_ns)}</Field>
+            <Field label={t("detail.goroutines")}>{p.goroutines ?? "—"}</Field>
           </SimpleGrid>
         </Card>
       </SimpleGrid>
@@ -301,27 +288,27 @@ Powód:`,
       <SimpleGrid cols={{ base: 1, md: 2 }}>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Bufor dyskowy
+            {t("detail.buffer")}
           </Title>
           {!status.buffer ? (
             <Text size="sm" c="dimmed">
-              Agent starszy niż 0.6.0 – bez bufora dyskowego.
+              {t("detail.bufferOld")}
             </Text>
           ) : status.buffer.disabled ? (
-            <Text size="sm">Wyłączony – przy braku łączności zdarzenia czekają w dzienniku Windows.</Text>
+            <Text size="sm">{t("detail.bufferOff")}</Text>
           ) : (
             <SimpleGrid cols={3} spacing="md">
-              <Field label="W buforze">
-                {status.buffer.batches} paczek, {(status.buffer.bytes / 1048576).toFixed(1)} MB
+              <Field label={t("detail.inBuffer")}>
+                {t("detail.bufferContent", { batches: status.buffer.batches, mb: (status.buffer.bytes / 1048576).toFixed(1) })}
               </Field>
-              <Field label="Limit">{Math.round(status.buffer.max_bytes / 1048576)} MB</Field>
-              <Field label="Po zapełnieniu">{status.buffer.on_full === "drop_oldest" ? "usuwa najstarsze" : "wstrzymuje odczyt"}</Field>
-              <Field label="Najstarsza paczka">{status.buffer.oldest_at ? ago(status.buffer.oldest_at) : "—"}</Field>
-              <Field label="Buforowane od startu">{formatNumber(status.buffer.spooled_events)} zdarzeń</Field>
-              <Field label="Utracone">
+              <Field label={t("detail.limit")}>{Math.round(status.buffer.max_bytes / 1048576)} MB</Field>
+              <Field label={t("detail.onFull")}>{status.buffer.on_full === "drop_oldest" ? t("detail.dropOldest") : t("detail.pause")}</Field>
+              <Field label={t("detail.oldest")}>{status.buffer.oldest_at ? ago(status.buffer.oldest_at) : "—"}</Field>
+              <Field label={t("detail.spooled")}>{t("detail.events", { n: formatNumber(status.buffer.spooled_events) })}</Field>
+              <Field label={t("detail.dropped")}>
                 {status.buffer.dropped_events > 0 ? (
                   <Text c="red" size="sm">
-                    {formatNumber(status.buffer.dropped_events)} zdarzeń
+                    {t("detail.events", { n: formatNumber(status.buffer.dropped_events) })}
                   </Text>
                 ) : (
                   "0"
@@ -332,41 +319,41 @@ Powód:`,
         </Card>
         <Card withBorder>
           <Title order={4} mb="sm">
-            Zegar i Sysmon
+            {t("detail.clockSysmon")}
           </Title>
           {!status.clock?.measured_at && !status.clock?.time_service ? (
             <Text size="sm" c="dimmed">
-              Agent starszy niż 0.6.0 albo jeszcze bez pomiaru.
+              {t("detail.clockOld")}
             </Text>
           ) : (
             <SimpleGrid cols={3} spacing="md">
-              <Field label="Odchylenie od serwera">
+              <Field label={t("detail.offset")}>
                 {status.clock?.measured_at
                   ? `${status.clock.offset_ms > 0 ? "+" : ""}${(status.clock.offset_ms / 1000).toFixed(1)} s (±${status.clock.uncertainty_ms} ms)`
                   : "—"}
               </Field>
-              <Field label="Pomiar">{ago(status.clock?.measured_at)}</Field>
+              <Field label={t("detail.measured")}>{ago(status.clock?.measured_at)}</Field>
               <Field label="Sysmon">
                 {!status.sysmon ? (
                   "—"
                 ) : !status.sysmon.installed ? (
-                  <Badge color={agent.sysmon_required ? "red" : "gray"} variant="light">brak</Badge>
+                  <Badge color={agent.sysmon_required ? "red" : "gray"} variant="light">{t("detail.none")}</Badge>
                 ) : (
                   <Badge color={status.sysmon.running ? "green" : "red"} variant="light">
-                    {status.sysmon.running ? "działa" : "zatrzymany"} {status.sysmon.version}
+                    {status.sysmon.running ? t("detail.works") : t("detail.stopped")} {status.sysmon.version}
                   </Badge>
                 )}
               </Field>
-              <Field label="Konfiguracja Sysmona">
+              <Field label={t("detail.sysmonConfig")}>
                 <Text size="sm" ff="monospace">
                   {status.sysmon?.config_hash || "—"}
                 </Text>
               </Field>
-              <Field label="Usługa czasu Windows">
+              <Field label={t("detail.timeService")}>
                 {status.clock?.time_service === "running" ? (
-                  <Badge color="green" variant="light">działa</Badge>
+                  <Badge color="green" variant="light">{t("detail.works")}</Badge>
                 ) : status.clock?.time_service === "stopped" ? (
-                  <Badge color="gray" variant="light">na żądanie</Badge>
+                  <Badge color="gray" variant="light">{t("detail.onDemand")}</Badge>
                 ) : (
                   <Badge color="red" variant="light">{status.clock?.time_service ?? "—"}</Badge>
                 )}
@@ -378,22 +365,22 @@ Powód:`,
 
       <Card withBorder>
         <Title order={4} mb="sm">
-          Kanały
+          {t("col.channels")}
         </Title>
         <Table.ScrollContainer minWidth={640}>
           <Table verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Kanał</Table.Th>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Ostatni rekord</Table.Th>
-                <Table.Th>Odczyt</Table.Th>
-                <Table.Th>Opóźnienie</Table.Th>
+                <Table.Th>{t("detail.channel")}</Table.Th>
+                <Table.Th>{t("col.state")}</Table.Th>
+                <Table.Th>{t("detail.lastRecord")}</Table.Th>
+                <Table.Th>{t("detail.readAt")}</Table.Th>
+                <Table.Th>{t("detail.lag")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {(status.channels ?? []).map((ch) => {
-                const s = channelState[ch.state] ?? { label: ch.state, color: "gray" };
+                const s = { label: t(`channel.${ch.state}`, { defaultValue: ch.state }), color: channelColors[ch.state] ?? "gray" };
                 return (
                   <Table.Tr key={ch.name}>
                     <Table.Td>
@@ -424,11 +411,11 @@ Powód:`,
 
       <Card withBorder>
         <Title order={4} mb="sm">
-          Ostrzeżenia agenta
+          {t("detail.warnings")}
         </Title>
         {(status.warnings ?? []).length === 0 ? (
           <Text size="sm" c="dimmed">
-            Brak ostrzeżeń.
+            {t("detail.noWarnings")}
           </Text>
         ) : (
           <List size="sm" spacing={4}>
@@ -441,7 +428,7 @@ Powód:`,
 
       <div>
         <Button variant="subtle" size="xs" onClick={() => setRaw((r) => !r)}>
-          {raw ? "Ukryj" : "Pokaż"} pełny status (JSON)
+          {raw ? t("detail.hideRaw") : t("detail.showRaw")}
         </Button>
         <Collapse in={raw}>
           <Code block mt="xs">

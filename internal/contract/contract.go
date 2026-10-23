@@ -80,31 +80,31 @@ func EventID(agentID, channel string, generation uint32, recordID uint64) string
 // z certyfikatem) sprawdza serwer osobno.
 func (b *Batch) Validate() error {
 	if b.Schema != SchemaBatchV1 {
-		return fmt.Errorf("nieobsługiwany schemat %q", b.Schema)
+		return fmt.Errorf("unsupported schema %q", b.Schema)
 	}
 	if b.BatchID == "" {
-		return errors.New("brak batch_id")
+		return errors.New("missing batch_id")
 	}
 	if b.AgentID == "" {
-		return errors.New("brak agent_id")
+		return errors.New("missing agent_id")
 	}
 	if len(b.Events) == 0 {
-		return errors.New("paczka bez zdarzeń")
+		return errors.New("batch without events")
 	}
 	if len(b.Events) > MaxEventsPerBatch {
-		return fmt.Errorf("za dużo zdarzeń w paczce: %d > %d", len(b.Events), MaxEventsPerBatch)
+		return fmt.Errorf("too many events in the batch: %d > %d", len(b.Events), MaxEventsPerBatch)
 	}
 	prefix := b.AgentID + ":"
 	for i, e := range b.Events {
 		switch {
 		case !strings.HasPrefix(e.ID, prefix):
-			return fmt.Errorf("zdarzenie %d: id %q nie należy do agenta %q", i, e.ID, b.AgentID)
+			return fmt.Errorf("event %d: id %q does not belong to agent %q", i, e.ID, b.AgentID)
 		case e.Source == "":
-			return fmt.Errorf("zdarzenie %d: brak source", i)
+			return fmt.Errorf("event %d: missing source", i)
 		case e.Raw == "":
-			return fmt.Errorf("zdarzenie %d: puste raw", i)
+			return fmt.Errorf("event %d: empty raw", i)
 		case e.Peer != "" && !validPeer(e.Peer):
-			return fmt.Errorf("zdarzenie %d: peer %.64q to nie adres IP", i, e.Peer)
+			return fmt.Errorf("event %d: peer %.64q is not an IP address", i, e.Peer)
 		}
 	}
 	return nil

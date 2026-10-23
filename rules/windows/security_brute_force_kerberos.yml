@@ -24,6 +24,19 @@ falsepositives:
   - Urządzenie (telefon, drukarka) z zapamiętanym starym hasłem użytkownika
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Series of wrong Kerberos passwords for one account"
+      description: |
+        At least 10 failed Kerberos pre-authentications with a wrong password
+        (4771, code 0x18) for the same account within 5 minutes. The event is logged by
+        the domain controller – this is what password guessing with tools like kerbrute
+        looks like, which leaves no 4625 on computers.
+      instructions: |
+        {{count}} wrong Kerberos passwords for account {{TargetUserName}} in {{window}}
+        (first from address {{IpAddress}}). Check the source addresses in the alert
+        events: one user device – an old password; foreign addresses – block the
+        source and check whether a successful logon followed the series.
   group_by: [TargetUserName]
   threshold:
     count: 10

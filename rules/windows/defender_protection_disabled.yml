@@ -26,6 +26,20 @@ falsepositives:
   - Instalacja innego antywirusa (Defender przechodzi wtedy w tryb pasywny)
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Microsoft Defender protection disabled"
+      description: |
+        Real-time protection disabled (5001), antivirus or antispyware scanning
+        disabled (5010, 5012), or tamper protection blocked an attempt to change
+        settings (5013). Attackers disable the antivirus before running the actual
+        tool (e.g. ransomware).
+      instructions: |
+        Defender protection was disabled, or someone tried to disable it, on {{host.name}}
+        (event {{EventID}}). Find out who did it and why. Without an agreement – turn
+        protection back on, review the processes started on the computer in the last
+        hour and treat the computer as suspicious. Event 5013 means tamper protection
+        stopped the change – someone (or something) tried to weaken Defender.
   group_by: [host.name]
   suppress: 1h
   instructions: |

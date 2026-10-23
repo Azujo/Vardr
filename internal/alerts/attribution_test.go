@@ -17,10 +17,10 @@ func TestSigmaHQAttribution(t *testing.T) {
 	a := r.SigmaHQAttribution()
 	if a == nil || a.Author != "Jan Kowalski, Anna Nowak" ||
 		a.RuleURL != "https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_x.yml" ||
-		!strings.Contains(a.Line(), "DRL") {
+		!strings.Contains(a.Line("pl"), "DRL") {
 		t.Fatalf("%+v", a)
 	}
-	if b := (RuleInfo{File: "sigmahq/x.yml", Source: "title: X\n"}).SigmaHQAttribution(); b == nil || !strings.Contains(b.Author, "nieznany") {
+	if b := (RuleInfo{File: "sigmahq/x.yml", Source: "title: X\n"}).SigmaHQAttribution(); b == nil || b.Author != "" || !strings.Contains(b.Line("en"), "unknown author") {
 		t.Fatalf("bez autora: %+v", b)
 	}
 }

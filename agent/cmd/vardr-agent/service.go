@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	serviceName        = "SiemAgent"
-	serviceDisplayName = "SIEM Agent"
-	serviceDescription = "Zbiera zdarzenia z Windows Event Log i wysyła je szyfrowanym kanałem (mTLS) do serwera SIEM."
+	serviceName          = "SiemAgent"
+	serviceDisplayName   = "SIEM Agent"
+	serviceDescriptionPL = "Zbiera zdarzenia z Windows Event Log i wysyła je szyfrowanym kanałem (mTLS) do serwera SIEM."
+	serviceDescriptionEN = "Collects events from the Windows Event Log and sends them over an encrypted channel (mTLS) to the SIEM server."
 )
 
 type agentService struct {
@@ -57,11 +58,11 @@ func runService(cfgPath string) {
 	}
 	log := slog.New(handlers)
 	if cfgErr != nil {
-		log.Error("błędna konfiguracja agenta", "config", cfgPath, "err", cfgErr)
+		log.Error("invalid agent configuration", "config", cfgPath, "err", cfgErr)
 	}
 
 	if err := svc.Run(serviceName, &agentService{cfgPath: cfgPath, cfg: cfg, cfgErr: cfgErr, log: log}); err != nil {
-		log.Error("usługa zakończona błędem", "err", err)
+		log.Error("service ended with an error", "err", err)
 	}
 }
 
@@ -92,7 +93,7 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 		case <-done:
 			return true
 		case <-time.After(20 * time.Second):
-			s.log.Warn("agent nie zakończył się w ciągu 20 s")
+			s.log.Warn("the agent did not stop within 20 s")
 			return false
 		}
 	}
@@ -112,7 +113,7 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 					reason = g.stopReason()
 				}
 				g.setStopping(reason)
-				s.log.Info("otrzymano polecenie zatrzymania usługi", "reason", reason)
+				s.log.Info("service stop requested", "reason", reason)
 				status <- svc.Status{State: svc.StopPending}
 				stop()
 				return false, 0
@@ -121,7 +122,7 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 				// usługi (chroniona usługa nie pozwala administratorowi jej zatrzymać).
 				cfg, err := config.Load(s.cfgPath)
 				if err != nil {
-					s.log.Error("restart agenta: konfiguracja niepoprawna – zostaje bieżąca", "err", err, "eventlog", true)
+					s.log.Error("agent restart: invalid configuration – keeping the current one", "err", err, "eventlog", true)
 					continue
 				}
 				s.log.Info("polecenie restartu agenta", "eventlog", true)
@@ -133,7 +134,7 @@ func (s *agentService) Execute(_ []string, req <-chan svc.ChangeRequest, status 
 		case err := <-done:
 			// Agent zakończył się sam (np. błąd konfiguracji). Niezerowy kod
 			// wyjścia uruchamia akcje odzyskiwania (restart usługi).
-			s.log.Error("agent zakończył działanie", "err", err)
+			s.log.Error("the agent stopped", "err", err)
 			return false, 1
 		}
 	}

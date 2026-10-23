@@ -49,7 +49,7 @@ try {
     # Tylko program podpisany przez Microsoft.
     $sig = Get-AuthenticodeSignature $exe
     if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
-        throw "Sysmon64.exe bez ważnego podpisu Microsoftu ($($sig.Status)) – przerwano"
+        throw "Sysmon64.exe without a valid Microsoft signature ($($sig.Status)) – aborted"
     }
     [xml](Get-Content $cfg -Raw) | Out-Null   # konfiguracja musi być poprawnym XML
 
@@ -60,9 +60,9 @@ try {
 
     if (-not $svc) {
         & $exe -accepteula -i $cfg | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "instalacja Sysmona nieudana (kod $LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "Sysmon installation failed (code $LASTEXITCODE)" }
         Set-Content $stamp $cfgHash
-        Log "zainstalowano Sysmon $newVer z konfiguracją $($cfgHash.Substring(0,12))"
+        Log "installed Sysmon $newVer with configuration $($cfgHash.Substring(0,12))"
         return
     }
     $installed = (Get-CimInstance Win32_Service -Filter "Name='$($svc.Name)'").PathName.Trim('"')
@@ -70,27 +70,27 @@ try {
     if ($newVer -gt $curVer) {
         & $installed -u | Out-Null
         & $exe -accepteula -i $cfg | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "aktualizacja Sysmona nieudana (kod $LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "Sysmon upgrade failed (code $LASTEXITCODE)" }
         Set-Content $stamp $cfgHash
-        Log "zaktualizowano Sysmon $curVer -> $newVer"
+        Log "upgraded Sysmon $curVer -> $newVer"
         return
     }
     $prev = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
     if ($prev -ne $cfgHash) {
         & $installed -c $cfg | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "wczytanie konfiguracji Sysmona nieudane (kod $LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "loading the Sysmon configuration failed (code $LASTEXITCODE)" }
         Set-Content $stamp $cfgHash
-        Log "wczytano nową konfigurację Sysmona $($cfgHash.Substring(0,12))"
+        Log "loaded a new Sysmon configuration $($cfgHash.Substring(0,12))"
         return
     }
     if ($svc.Status -ne "Running") {
         Start-Service $svc.Name
-        Log "uruchomiono zatrzymaną usługę $($svc.Name)"
+        Log "started the stopped service $($svc.Name)"
         return
     }
-    Log "Sysmon $curVer aktualny, konfiguracja bez zmian"
+    Log "Sysmon $curVer up to date, configuration unchanged"
 } catch {
-    Log "BŁĄD: $_"
+    Log "ERROR: $_"
     exit 1
 } finally {
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue

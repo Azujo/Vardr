@@ -1,0 +1,87 @@
+{
+  "login": {
+    "subtitle": "Hliðskjálf – SIEM console",
+    "username": "Username",
+    "usernameHint": "panel or domain account (john.smith)",
+    "password": "Password",
+    "submit": "Sign in",
+    "codePrompt": [
+      "Account ",
+      ": enter the code from your authenticator app."
+    ],
+    "confirm": "Confirm",
+    "enrollPrompt": [
+      "The panel requires a second sign-in factor. Set up an authenticator app for the account ",
+      " – this is a one-time step."
+    ],
+    "enrollSubmit": "Enable and sign in",
+    "toPanel": "Go to the panel",
+    "back": "← another account / start over",
+    "recoveryUsed_one": "A recovery code was used – {{count}} left. Generate new ones in “Account security”.",
+    "recoveryUsed_other": "A recovery code was used – {{count}} left. Generate new ones in “Account security”."
+  },
+  "mfa": {
+    "step1": "Install an authenticator app on your phone, e.g. Microsoft Authenticator, Google Authenticator or Aegis.",
+    "step2": "Add an account by scanning the QR code (or enter the key manually).",
+    "step3": "Enter the 6-digit code shown by the app below.",
+    "qrAlt": "QR code for setting up the authenticator app",
+    "manualKey": "Key for manual entry ({{issuer}}: {{account}}):",
+    "copyShort": "copy",
+    "copiedShort": "copied",
+    "code": "Code from the app",
+    "codeOrRecovery": "Code from the app or a recovery code",
+    "codeOrRecoveryPlaceholder": "123456 or abcde-12345",
+    "fileHeader": "Vardr – recovery codes for the second sign-in factor\nEach code works once.",
+    "fileName": "vardr-recovery-codes.txt",
+    "saveTitle": "Save your recovery codes",
+    "saveText": "Each code lets you sign in once without your phone (lost, out of battery). Keep them safe, e.g. in a password manager.",
+    "saveOnce": "They will not be shown again.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "download": "Download .txt",
+    "savedCheck": "I have saved the recovery codes"
+  },
+  "password": {
+    "title": "Change password",
+    "titleForced": "Set your own password",
+    "intro": "At least {{min}} characters; a few easy-to-remember words work best.",
+    "introForced": "You are signed in with an initial password – set your own before continuing.",
+    "current": "Current password",
+    "new": "New password",
+    "newHint": "at least {{min}} characters, without the username",
+    "tooShort": "too short ({{len}}/{{min}})",
+    "repeat": "Repeat new password",
+    "mismatch": "passwords do not match",
+    "submit": "Change password",
+    "changed": "Password changed. Other sessions of this account were ended."
+  },
+  "security": {
+    "title": "Account security",
+    "intro": "Second sign-in factor: after the password the panel asks for a code from an authenticator app on your phone, so a stolen password alone is not enough to sign in.",
+    "unavailable": "The second factor is not configured on the server (no MFA key) – tell your administrator.",
+    "app": "Authenticator app (TOTP)",
+    "on": "enabled",
+    "off": "disabled",
+    "policy": {
+      "all": "In this panel the second factor is required for all accounts",
+      "admins": "In this panel the second factor is required for administrators",
+      "none": "In this panel the second factor is optional"
+    },
+    "requiredForYou": " – including you.",
+    "enabledAt": "Enabled {{date}}, recovery codes: {{left}} of 10.",
+    "fewCodes": "Few recovery codes left – generate new ones.",
+    "enable": "Enable",
+    "disable": "Disable",
+    "newCodes": "New recovery codes",
+    "enableTitle": "Enable the second factor",
+    "disableTitle": "Disable the second factor",
+    "codesTitle": "Recovery codes",
+    "yourPassword": "Your password",
+    "next": "Next",
+    "oldCodesInvalid": "Your existing recovery codes will stop working.",
+    "disableWarning": "Without the second factor the password alone is enough to sign in.",
+    "disabled": "Second factor disabled",
+    "generate": "Generate",
+    "done": "Done"
+  }
+}

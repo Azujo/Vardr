@@ -53,4 +53,4 @@ SETTINGS ttl_only_drop_parts = 1;
 ALTER TABLE siem.events_replay ADD COLUMN IF NOT EXISTS user_identity LowCardinality(String) DEFAULT '' AFTER time_quality;
 ALTER TABLE siem.events_replay MODIFY TTL toDateTime(replayed_at) + INTERVAL ${ttl} DAY;
 SQL
-echo "tabela siem.events_replay gotowa (retencja ${ttl} dni od odtworzenia)"
+echo "table siem.events_replay ready (retention ${ttl} days from the replay)"

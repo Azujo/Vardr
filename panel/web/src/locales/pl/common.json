@@ -1,0 +1,245 @@
+{
+  "nav": {
+    "home": "Start",
+    "detection": "Wykrywanie",
+    "alerts": "Alerty",
+    "incidents": "Incydenty",
+    "incidentsHint": "obsługa i zgłoszenia NIS2",
+    "rules": "Reguły detekcji",
+    "rulesHint": "Sigma i wbudowane",
+    "attack": "MITRE ATT&CK",
+    "attackHint": "pokrycie technik",
+    "events": "Zdarzenia",
+    "search": "Wyszukiwarka",
+    "identities": "Tożsamości",
+    "identitiesHint": "osoby i ich konta",
+    "decoders": "Dekodery",
+    "decodersHint": "syslog i API",
+    "quarantine": "Kwarantanna",
+    "quarantineHint": "nieprzetworzone zdarzenia",
+    "agents": "Agenci",
+    "agentList": "Lista agentów",
+    "groups": "Grupy agentów",
+    "groupsHint": "profile, limity, ochrona",
+    "deploy": "Wdrażanie",
+    "deployHint": "Bifröst – tokeny i paczki",
+    "system": "System",
+    "archive": "Archiwum NIS2",
+    "systemState": "Stan systemu",
+    "admin": "Administracja",
+    "users": "Użytkownicy",
+    "profiles": "Profile uprawnień",
+    "profilesHint": "macierz dostępu",
+    "ldap": "Logowanie domenowe",
+    "notifications": "Powiadomienia",
+    "backup": "Kopie zapasowe",
+    "backupHint": "harmonogram i miejsce",
+    "audit": "Dziennik audytu"
+  },
+  "header": {
+    "light": "Tryb jasny",
+    "dark": "Tryb ciemny",
+    "toggleScheme": "Przełącz tryb kolorów",
+    "accountMenu": "Menu konta",
+    "changePassword": "Zmień hasło",
+    "security": "Bezpieczeństwo konta",
+    "language": "Język",
+    "languageAuto": "Jak w przeglądarce",
+    "logout": "Wyloguj"
+  },
+  "footer": {
+    "version": "wersja {{version}}",
+    "versionTitle": "wersja siem-api",
+    "source": "kod źródłowy (AGPL-3.0)"
+  },
+  "ago": {
+    "seconds_one": "{{count}} s temu",
+    "seconds_few": "{{count}} s temu",
+    "seconds_many": "{{count}} s temu",
+    "seconds_other": "{{count}} s temu",
+    "minutes_one": "{{count}} min temu",
+    "minutes_few": "{{count}} min temu",
+    "minutes_many": "{{count}} min temu",
+    "minutes_other": "{{count}} min temu",
+    "hours_one": "{{count}} h temu",
+    "hours_few": "{{count}} h temu",
+    "hours_many": "{{count}} h temu",
+    "hours_other": "{{count}} h temu",
+    "days_one": "{{count}} dzień temu",
+    "days_few": "{{count}} dni temu",
+    "days_many": "{{count}} dni temu",
+    "days_other": "{{count}} dnia temu"
+  },
+  "duration": {
+    "days": "{{d}} d {{h}} h",
+    "hours": "{{h}} h {{m}} min",
+    "minutes": "{{m}} min"
+  },
+  "httpError": "błąd HTTP {{status}}",
+  "languageSaveFailed": "Nie udało się zapisać języka na koncie: {{message}}",
+  "enum": {
+    "role": {
+      "admin": "Administrator",
+      "analyst": "Analityk",
+      "viewer": "Obserwator"
+    },
+    "tamper": {
+      "stop": {
+        "title": "Usługa zatrzymana bez tokenu"
+      },
+      "unclean_exit": {
+        "title": "Proces zakończony bez zatrzymania usługi (zabity albo awaria)"
+      },
+      "acl_restored": {
+        "title": "Zmieniono uprawnienia usługi (przywrócone)"
+      },
+      "config_restored": {
+        "title": "Zmieniono konfigurację usługi (przywrócona)"
+      },
+      "bad_token": {
+        "title": "Nieudana próba zatrzymania albo deinstalacji (bez ważnego tokenu)"
+      },
+      "stop_token": {
+        "title": "Zatrzymanie tokenem"
+      },
+      "uninstall_token": {
+        "title": "Deinstalacja tokenem"
+      },
+      "upgrade": {
+        "title": "Aktualizacja (instalator)"
+      },
+      "protection_off": {
+        "title": "Ochrona wyłączona w grupie"
+      }
+    },
+    "configState": {
+      "applied": {
+        "label": "aktualna",
+        "hint": "agent stosuje bieżącą konfigurację grupy"
+      },
+      "pending": {
+        "label": "oczekuje",
+        "hint": "agent pobierze nową konfigurację w ciągu ok. 5 minut"
+      },
+      "unknown": {
+        "label": "nieznana",
+        "hint": "agent starszy niż 0.5.0 albo jeszcze nie pobrał konfiguracji"
+      }
+    },
+    "weakening": {
+      "disable": "wyłączenie archiwizacji",
+      "retention": "krótsza retencja",
+      "groups": "wyłączenie grup agentów",
+      "agents": "wyłączenie agentów"
+    },
+    "policyStatus": {
+      "pending": "oczekuje",
+      "scheduled": "zaplanowana",
+      "applied": "obowiązuje / obowiązywała",
+      "rejected": "odrzucona",
+      "cancelled": "anulowana",
+      "superseded": "zastąpiona"
+    },
+    "unarchived": {
+      "disabled": "archiwum wyłączone",
+      "agent": "agent wyłączony",
+      "group": "grupa wyłączona",
+      "group_pending": "grupa wyłączona – po karencji (do tego czasu archiwizowany)",
+      "prefix": "konfiguracja serwera"
+    },
+    "compliance": {
+      "ok": {
+        "label": "zgodne",
+        "hint": "Archiwizator działa, ostatnia weryfikacja integralności nie wykryła zmian."
+      },
+      "problems": {
+        "label": "NIEZGODNOŚCI",
+        "hint": "Ostatnia weryfikacja wykryła zmienione, brakujące lub obce dane w archiwum – sprawdź listę problemów."
+      },
+      "archiver_down": {
+        "label": "archiwizator nie działa",
+        "hint": "Brak sygnału od archiwizatora od ponad 3 minut. Paczki czekają w kolejce, a po jej zapełnieniu serwer wstrzyma przyjmowanie."
+      },
+      "disk_full": {
+        "label": "archiwizacja wstrzymana – brak miejsca",
+        "hint": "Na dysku archiwum zostało za mało miejsca. Nowe paczki czekają w kolejce; po jej zapełnieniu serwer wstrzyma przyjmowanie zdarzeń. Zwolnij lub powiększ dysk archiwum."
+      },
+      "disabled": {
+        "label": "archiwizacja WYŁĄCZONA",
+        "hint": "Polityka archiwum wyłączyła zapis nowych paczek. Dane już zarchiwizowane zostają do końca retencji. Zmiana – zakładka Polityka."
+      },
+      "policy_scheduled": {
+        "label": "zaplanowane osłabienie polityki",
+        "hint": "Zlecono zmianę osłabiającą ochronę archiwum (wyłączenie, krótszą retencję albo wyłączenie źródeł). Wejdzie w życie po karencji – do tego czasu można ją anulować w zakładce Polityka."
+      },
+      "disk_low": {
+        "label": "mało miejsca na dysku",
+        "hint": "Na dysku archiwum zostało mniej niż 15% miejsca."
+      },
+      "stale": {
+        "label": "weryfikacja nieaktualna",
+        "hint": "Weryfikacja nie przeszła w zaplanowanym czasie."
+      },
+      "never_verified": {
+        "label": "czeka na weryfikację",
+        "hint": "Archiwizator działa; pierwsza weryfikacja ok. 2 min po starcie."
+      },
+      "not_configured": {
+        "label": "nie skonfigurowane",
+        "hint": "Archiwizator (siem-archiver) jeszcze nie działał."
+      }
+    },
+    "exportStatus": {
+      "pending": "w kolejce",
+      "running": "w przygotowaniu",
+      "done": "gotowy",
+      "failed": "nieudany",
+      "expired": "usunięty po terminie"
+    },
+    "replayStatus": {
+      "pending": "w kolejce",
+      "running": "w toku",
+      "done": "zakończone",
+      "failed": "nieudane"
+    },
+    "notifyEvent": {
+      "alert": "alerty detekcji (Gjallarhorn)",
+      "incident": "incydenty: poważne (NIS2) i terminy zgłoszeń",
+      "health": "alerty zdrowia systemu",
+      "anchor": "kotwica archiwum (codziennie)",
+      "test": "test"
+    },
+    "level": {
+      "critical": "krytyczny",
+      "high": "wysoki",
+      "medium": "średni",
+      "low": "niski",
+      "informational": "informacja"
+    },
+    "alertStatus": {
+      "open": "nowy",
+      "acknowledged": "w analizie",
+      "closed": "zamknięty"
+    }
+  },
+  "pageError": {
+    "title": "Ta strona napotkała błąd",
+    "text": "Coś poszło nie tak przy wyświetlaniu strony. Reszta panelu działa – możesz przejść do innego modułu albo spróbować ponownie. Jeśli błąd się powtarza, zgłoś go z treścią poniżej.",
+    "retry": "Spróbuj ponownie"
+  },
+  "update": {
+    "text": "Panel został zaktualizowany – odśwież stronę, żeby korzystać z nowej wersji.",
+    "reload": "Odśwież"
+  },
+  "loading": "wczytywanie…",
+  "attack": {
+    "unknown": "{{tag}}: nieznana technika",
+    "deprecated": "{{tag}}: wycofana",
+    "replaced": "{{tag}}: wycofana – zastąpiona przez {{by}}",
+    "tactic": "taktyka {{id}}",
+    "techniqueTip": "{{id}} {{name}} – opis w MITRE ATT&CK",
+    "author": "Autor reguły: {{author}} · źródło:",
+    "license": "· licencja",
+    "unknownAuthor": "autor nieznany (brak pola author)"
+  }
+}

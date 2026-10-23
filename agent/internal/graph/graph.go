@@ -66,7 +66,7 @@ func NewClient(c Config) *Client {
 }
 
 // ErrAuth: odmowa uwierzytelnienia (zły klient, sekret, brak zgody) – ponawianie bez zmiany konfiguracji nic nie da.
-var ErrAuth = errors.New("Graph: odmowa dostępu")
+var ErrAuth = errors.New("Graph: access denied")
 
 func (c *Client) accessToken(ctx context.Context, refresh bool) (string, error) {
 	c.mu.Lock()
@@ -268,11 +268,11 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 			}
 			// Błąd uwierzytelnienia: ostrzeżenie przy każdej próbie; inne – co dziesiąty raz.
 			if errors.Is(err, ErrAuth) || failures == 1 || failures%10 == 0 {
-				s.Log.Warn("Graph: odpytanie nieudane – ponowię", "kind", s.Kind.Channel, "err", err, "failures", failures)
+				s.Log.Warn("Graph: polling failed – will retry", "kind", s.Kind.Channel, "err", err, "failures", failures)
 			}
 		} else {
 			if failures > 0 {
-				s.Log.Info("Graph: odpytanie znów działa", "kind", s.Kind.Channel, "after_failures", failures)
+				s.Log.Info("Graph: polling works again", "kind", s.Kind.Channel, "after_failures", failures)
 			}
 			if s.State != nil {
 				s.State("ok", "")
@@ -355,7 +355,7 @@ func (s *Source) fetch(ctx context.Context, from, to time.Time, page int) ([]rec
 			ts, _ := h[s.Kind.TimeField].(string)
 			at, err := time.Parse(time.RFC3339Nano, ts)
 			if id == "" || err != nil {
-				s.Log.Warn("Graph: rekord bez id albo czasu – pominięty", "kind", s.Kind.Channel)
+				s.Log.Warn("Graph: record without id or time – skipped", "kind", s.Kind.Channel)
 				continue
 			}
 			out = append(out, record{id: id, at: at, data: raw})
@@ -363,11 +363,11 @@ func (s *Source) fetch(ctx context.Context, from, to time.Time, page int) ([]rec
 		// Kolejna strona tylko z tego samego serwera (nie wysyłamy tokenu gdzie indziej).
 		next = resp.NextLink
 		if next != "" && !strings.HasPrefix(next, s.Client.cfg.GraphURL+"/") {
-			return nil, fmt.Errorf("Graph: odnośnik do kolejnej strony poza %s", s.Client.cfg.GraphURL)
+			return nil, fmt.Errorf("Graph: next page link outside %s", s.Client.cfg.GraphURL)
 		}
 	}
 	if len(out) >= maxPerPoll {
-		s.Log.Warn("Graph: limit rekordów w jednym zapytaniu – skróć odstęp odpytań", "kind", s.Kind.Channel, "limit", maxPerPoll)
+		s.Log.Warn("Graph: record limit in a single query – shorten the polling interval", "kind", s.Kind.Channel, "limit", maxPerPoll)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].at.Equal(out[j].at) {

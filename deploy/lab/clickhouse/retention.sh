@@ -15,10 +15,10 @@ set -a; . ./.env; set +a
 events=${SIEM_EVENTS_TTL_DAYS:-5}
 raw=${SIEM_RAW_TTL_DAYS:-$events}
 if ! [[ $events =~ ^[0-9]+$ && $raw =~ ^[0-9]+$ ]] || (( events < 1 || raw < 1 )); then
-  echo "SIEM_EVENTS_TTL_DAYS i SIEM_RAW_TTL_DAYS muszą być liczbami dni ≥ 1" >&2; exit 2
+  echo "SIEM_EVENTS_TTL_DAYS and SIEM_RAW_TTL_DAYS must be numbers of days ≥ 1" >&2; exit 2
 fi
 if (( raw > events )); then
-  echo "SIEM_RAW_TTL_DAYS ($raw) nie może być większe niż SIEM_EVENTS_TTL_DAYS ($events)" >&2; exit 2
+  echo "SIEM_RAW_TTL_DAYS ($raw) cannot be greater than SIEM_EVENTS_TTL_DAYS ($events)" >&2; exit 2
 fi
 
 ch() { docker compose exec -T clickhouse clickhouse-client --user "$CLICKHOUSE_ADMIN_USER" --password "$CLICKHOUSE_ADMIN_PASSWORD" --multiquery "$@"; }
@@ -32,5 +32,5 @@ SQL
 # Tabela logowań korelacji (etap 8): ta sama retencja (udane logowania Windows – 1 dzień).
 docker compose exec -T -e SIEM_EVENTS_TTL_DAYS="$events" clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
 
-echo "Retencja: zdarzenia i kwarantanna $events dni, surowy XML $raw dni."
+echo "Retention: events and quarantine $events days, raw XML $raw days."
 ch -q "SELECT name, formatReadableSize(data_compressed_bytes) AS na_dysku FROM system.columns WHERE database = 'siem' AND table = 'events' ORDER BY data_compressed_bytes DESC LIMIT 4 FORMAT PrettyCompactMonoBlock"

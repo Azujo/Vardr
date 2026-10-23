@@ -3,10 +3,11 @@
 package decode
 
 import (
-	"fmt"
 	"net/netip"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Custom to dekoder zmieniony w panelu: własna definicja (nowy dekoder albo
@@ -35,9 +36,9 @@ func Merge(builtin []*Decoder, custom map[string]Custom, loc *time.Location) (*S
 			d, err := Parse([]byte(c.Source), loc)
 			switch {
 			case err != nil:
-				errs = append(errs, fmt.Errorf("dekoder %s: %w", id, err))
+				errs = append(errs, lang.Errorf("dekoder %s: %w", "decoder %s: %w", id, err))
 			case d.ID != id:
-				errs = append(errs, fmt.Errorf("dekoder %s: id w definicji to %q", id, d.ID))
+				errs = append(errs, lang.Errorf("dekoder %s: id w definicji to %q", "decoder %s: the id in the definition is %q", id, d.ID))
 			default:
 				byID[id] = d
 			}
@@ -66,10 +67,10 @@ func (d *Decoder) CheckSamples(now time.Time) error {
 	for i, raw := range d.Samples {
 		h := d.SampleHeader(raw, now)
 		if !d.Matches(h, peer) {
-			return fmt.Errorf("próbka %d nie pasuje do warunków match", i+1)
+			return lang.Errorf("próbka %d nie pasuje do warunków match", "sample %d does not match the match conditions", i+1)
 		}
 		if _, err := d.Decode(h); err != nil {
-			return fmt.Errorf("próbka %d: %w", i+1, err)
+			return lang.Errorf("próbka %d: %w", "sample %d: %w", i+1, err)
 		}
 	}
 	return nil

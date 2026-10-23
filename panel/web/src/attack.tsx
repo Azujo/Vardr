@@ -4,7 +4,9 @@
 // reguł (attack.t1110.001, attack.credential_access) i plakietki technik.
 import { useEffect, useState } from "react";
 import { Anchor, Badge, Group, Text, Tooltip } from "@mantine/core";
-import { request, type RuleAttack, type RuleAttribution } from "./api";
+import { useTranslation } from "react-i18next";
+import i18n from "./i18n";
+import { request, type RuleAttack, type RuleAttribution, type RuleTextI18n } from "./api";
 
 export interface AttackTactic {
   id: string;
@@ -39,6 +41,8 @@ export interface CoverageRule {
   techniques: string[];
   alerts: { total: number; open: number; last?: string };
   warnings?: string[];
+  warnings_en?: string[];
+  i18n?: Record<string, RuleTextI18n>;
 }
 
 export const attackApi = {
@@ -98,10 +102,11 @@ export function mapTags(d: AttackDict, tags: string[]): RuleAttack & { warnings:
     if (m) {
       const t = d.byId.get(m[1].toUpperCase());
       if (!t) {
-        out.warnings.push(`${raw}: nieznana technika`);
+        out.warnings.push(i18n.t("attack.unknown", { tag: raw }));
         continue;
       }
-      if (t.deprecated) out.warnings.push(`${raw}: wycofana${t.replaced_by ? ` – zastąpiona przez ${t.replaced_by}` : ""}`);
+      if (t.deprecated)
+        out.warnings.push(t.replaced_by ? i18n.t("attack.replaced", { tag: raw, by: t.replaced_by }) : i18n.t("attack.deprecated", { tag: raw }));
       if (!out.techniques.some((x) => x.id === t.id)) out.techniques.push({ id: t.id, name: t.name, url: techniqueURL(t.id) });
       t.tactics.forEach((x) => tactics.add(x));
       continue;
@@ -118,17 +123,18 @@ export function mapTags(d: AttackDict, tags: string[]): RuleAttack & { warnings:
 
 // Plakietki technik (z linkiem do MITRE) i – opcjonalnie – taktyk.
 export function AttackBadges({ ra, tactics = true, size = "sm" }: { ra?: RuleAttack; tactics?: boolean; size?: "xs" | "sm" }) {
+  const { t: tr } = useTranslation();
   if (!ra || ra.techniques.length + ra.tactics.length === 0) return null;
   return (
     <Group gap={4} wrap="wrap" onClick={(e) => e.stopPropagation()}>
       {tactics &&
         ra.tactics.map((t) => (
-          <Badge key={t.id} size={size} variant="outline" color="grape" title={`taktyka ${t.id}`}>
+          <Badge key={t.id} size={size} variant="outline" color="grape" title={tr("attack.tactic", { id: t.id })}>
             {t.name}
           </Badge>
         ))}
       {ra.techniques.map((t) => (
-        <Tooltip key={t.id} label={`${t.id} ${t.name} – opis w MITRE ATT&CK`}>
+        <Tooltip key={t.id} label={tr("attack.techniqueTip", { id: t.id, name: t.name })}>
           <Anchor href={t.url} target="_blank" rel="noopener noreferrer" underline="never">
             <Badge size={size} variant="light" color="grape" style={{ cursor: "pointer", textTransform: "none" }}>
               {t.id} {t.name}
@@ -149,14 +155,15 @@ export function AttackTags({ tags, size = "sm" }: { tags: string[]; size?: "xs" 
 
 // Autor i źródło reguły z SigmaHQ (licencja DRL 1.1).
 export function AttributionLine({ a }: { a?: RuleAttribution }) {
+  const { t } = useTranslation();
   if (!a) return null;
   return (
     <Text size="xs" c="dimmed">
-      Autor reguły: {a.author} · źródło:{" "}
+      {t("attack.author", { author: a.author || t("attack.unknownAuthor") })}{" "}
       <Anchor href={a.rule_url} target="_blank" rel="noopener noreferrer" size="xs">
         {a.source}
       </Anchor>{" "}
-      · licencja{" "}
+      {t("attack.license")}{" "}
       <Anchor href={a.license_url} target="_blank" rel="noopener noreferrer" size="xs">
         {a.license}
       </Anchor>

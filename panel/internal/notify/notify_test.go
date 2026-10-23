@@ -283,3 +283,22 @@ func TestAlertMessageAttribution(t *testing.T) {
 		t.Fatalf("reguła Vardra z autorem: %q", v)
 	}
 }
+
+func TestAlertMessageEnglish(t *testing.T) {
+	s := &AlertSender{Svc: &Service{Lang: func(context.Context) string { return "en" }}}
+	m := s.Message(alerts.Alert{RuleID: "r", Level: "high", RuleTitle: "Wyczyszczenie dziennika", Summary: "komputer dc01",
+		Instructions: "Sprawdź.", HostName: "dc01",
+		I18n: map[string]alerts.AlertText{"en": {Title: "Log cleared", Summary: "computer dc01"}}})
+	if m.Title != "[HIGH] Log cleared" || m.Text != "computer dc01" {
+		t.Fatalf("wiadomość: %q / %q", m.Title, m.Text)
+	}
+	var names []string
+	for _, f := range m.Fields {
+		names = append(names, f.Name+"="+f.Value)
+	}
+	got := strings.Join(names, "; ")
+	// Instrukcja bez tłumaczenia – oryginalna.
+	if !strings.Contains(got, "Computer=dc01") || !strings.Contains(got, "What to do=Sprawdź.") {
+		t.Fatalf("pola: %s", got)
+	}
+}

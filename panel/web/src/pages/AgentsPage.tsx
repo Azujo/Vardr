@@ -19,10 +19,38 @@ import {
 import { IconAlertTriangle, IconCircleCheck, IconDownload, IconPlugConnectedX, IconSearch, IconServer } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { Link } from "react-router-dom";
-import { agentsApi, ago, configStateLabels, enrollApi, formatNumber, type AgentView, type AgentsSummary } from "../api";
+import { agentsApi, ago, configStateLabels, enrollApi, formatDate, formatNumber, type AgentView, type AgentsSummary } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useAuth } from "../auth";
 
 type Filter = "all" | "online" | "offline" | "problems" | "retired";
+
+// Odstęp czasu w sekundach: „12 min”, „5 h”, „3 dni”.
+function span(s: number): string {
+  if (s < 3600) return i18n.t("agents:span.min", { n: Math.floor(s / 60) });
+  if (s < 172800) return i18n.t("agents:span.h", { n: Math.floor(s / 3600) });
+  return i18n.t("agents:span.d", { count: Math.floor(s / 86400) });
+}
+
+// Problemy agenta w języku użytkownika (serwer podaje kody; starszy serwer –
+// tylko polskie opisy).
+export function agentProblems(a: AgentView): string[] {
+  if (!a.issues) return a.problems;
+  return a.issues.map((p, i) => {
+    const x = p.args ?? {};
+    const key = `agents:issue.${p.code}`;
+    if (!i18n.exists(key)) return a.problems[i] ?? p.code;
+    const extra: Record<string, string> = {};
+    if (typeof x.s === "number") extra.span = span(x.s);
+    if (typeof x.how === "string") extra.how = i18n.t(`agents:stopHow.${x.how}`, { defaultValue: x.how });
+    if (typeof x.state === "string") extra.state = i18n.t(`agents:channel.${x.state}`, { defaultValue: x.state });
+    if (typeof x.bytes === "number") extra.mb = (x.bytes / 1048576).toFixed(1);
+    if (p.code === "protection_down") extra.error = x.error ? `: ${x.error}` : "";
+    if (p.code === "clock") extra.dir = i18n.t(x.ahead ? "agents:clockAhead" : "agents:clockBehind");
+    return i18n.t(key, { ...x, ...extra, count: typeof x.n === "number" ? x.n : typeof x.days === "number" ? x.days : undefined });
+  });
+}
 
 function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
   return (
@@ -43,25 +71,27 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
 }
 
 export function StateBadge({ a }: { a: AgentView }) {
+  const { t } = useTranslation("agents");
   if (a.state === "retired")
     return (
-      <Tooltip label="Certyfikat agenta unieważniony (deinstalacja tokenem albo unieważnienie w panelu) – agent nie może już wysyłać zdarzeń. Historia zostaje.">
+      <Tooltip label={t("state.retiredTip")}>
         <Badge color="dark" variant="light">
-          wycofany
+          {t("state.retired")}
         </Badge>
       </Tooltip>
     );
   if (a.state === "offline") {
-    if (a.stopping === "stop") return <Badge color="red">zatrzymany bez tokenu</Badge>;
-    if (a.stopping && a.stopping !== "shutdown") return <Badge color="gray">zatrzymany</Badge>;
+    if (a.stopping === "stop") return <Badge color="red">{t("state.stoppedNoToken")}</Badge>;
+    if (a.stopping && a.stopping !== "shutdown") return <Badge color="gray">{t("state.stopped")}</Badge>;
     return <Badge color="gray">offline</Badge>;
   }
-  if (a.tamper_24h) return <Badge color="red">próba sabotażu</Badge>;
-  if (a.problems.length > 0) return <Badge color="orange">problemy</Badge>;
+  if (a.tamper_24h) return <Badge color="red">{t("state.tamper")}</Badge>;
+  if (a.problems.length > 0) return <Badge color="orange">{t("state.problems")}</Badge>;
   return <Badge color="green">online</Badge>;
 }
 
 export default function AgentsPage() {
+  const { t } = useTranslation("agents");
   const { user, can } = useAuth();
   const [downloading, setDownloading] = useState(false);
   const [agents, setAgents] = useState<AgentView[]>([]);
@@ -113,13 +143,11 @@ export default function AgentsPage() {
   };
   useEffect(loadOrphans, [user]);
   const revokeOrphan = async (id: string) => {
-    const reason = window.prompt(`Unieważnić certyfikaty usuniętego agenta ${id}?
-
-Powód:`, "agent usunięty z listy bez unieważnienia");
+    const reason = window.prompt(t("orphans.prompt", { id }), t("orphans.defaultReason"));
     if (reason === null) return;
     try {
       const r = await enrollApi.revokeAgent(id, reason);
-      notifications.show({ color: "green", message: `Unieważniono certyfikaty: ${r.revoked}` });
+      notifications.show({ color: "green", message: t("orphans.revoked", { n: r.revoked }) });
       loadOrphans();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -141,29 +169,28 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
     <Stack>
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={2}>Huginn – agenci</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm">
-            Stan agentów z heartbeatu (co minutę). Agent bez sygnału przez 3 minuty jest oznaczany jako offline.
+            {t("intro")}
           </Text>
         </div>
         {can("agents", "write") && (
           <Tooltip
             multiline
             w={360}
-            label="Instalator najnowszej wersji agenta bez tokenu: podwójne kliknięcie na komputerze z agentem albo wdrożenie GPO/Intune podmienia wersję, rejestracja i ustawienia zostają. Nowych komputerów nim nie zarejestrujesz (Bifröst → token)."
+            label={t("updateTip")}
           >
             <Button variant="light" leftSection={<IconDownload size={16} />} loading={downloading} onClick={() => void updateMSI()}>
-              Pobierz aktualizację agenta (MSI)
+              {t("update")}
             </Button>
           </Tooltip>
         )}
       </Group>
       {error && <Alert color="red">{error}</Alert>}
       {orphans.length > 0 && (
-        <Alert color="red" title={`Ważne certyfikaty agentów spoza listy (${orphans.length})`}>
+        <Alert color="red" title={t("orphans.title", { count: orphans.length })}>
           <Text size="sm" mb="xs">
-            Te agenty usunięto z listy, ale ich certyfikaty są nadal ważne – ktoś z kluczem prywatnym mógłby wysyłać zdarzenia
-            w ich imieniu. Unieważnij je (wpis w audycie).
+            {t("orphans.text")}
           </Text>
           <Table fz="sm" verticalSpacing={4}>
             <Table.Tbody>
@@ -176,12 +203,12 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
                         {cs[0].hostname || id}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        {id} · certyfikaty: {cs.length} · ważny do {new Date(cs[cs.length - 1].not_after).toLocaleDateString()}
+                        {t("orphans.line", { id, n: cs.length, date: formatDate(cs[cs.length - 1].not_after) })}
                       </Text>
                     </Table.Td>
                     <Table.Td ta="right">
                       <Button size="xs" color="red" variant="light" onClick={() => void revokeOrphan(id)}>
-                        Unieważnij
+                        {t("revoke")}
                       </Button>
                     </Table.Td>
                   </Table.Tr>
@@ -194,7 +221,7 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
 
       {summary && (
         <SimpleGrid cols={{ base: 2, md: 4 }}>
-          <StatCard label="Agenci" value={summary.total} color="indigo" icon={<IconServer size={28} opacity={0.5} />} />
+          <StatCard label={t("stat.total")} value={summary.total} color="indigo" icon={<IconServer size={28} opacity={0.5} />} />
           <StatCard label="Online" value={summary.online} color="green" icon={<IconCircleCheck size={28} opacity={0.5} />} />
           <StatCard
             label="Offline"
@@ -203,7 +230,7 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
             icon={<IconPlugConnectedX size={28} opacity={0.5} />}
           />
           <StatCard
-            label="Z problemami"
+            label={t("stat.problems")}
             value={summary.with_problems}
             color={summary.with_problems ? "orange" : "dimmed"}
             icon={<IconAlertTriangle size={28} opacity={0.5} />}
@@ -213,7 +240,7 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
 
       <Group justify="space-between" wrap="wrap">
         <TextInput
-          placeholder="Szukaj: agent, host, IP, wersja, grupa"
+          placeholder={t("search")}
           leftSection={<IconSearch size={16} />}
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
@@ -224,34 +251,33 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
           value={filter}
           onChange={(v) => setFilter(v as Filter)}
           data={[
-            { value: "all", label: "Wszyscy" },
+            { value: "all", label: t("filter.all") },
             { value: "online", label: "Online" },
             { value: "offline", label: "Offline" },
-            { value: "problems", label: "Problemy" },
-            ...(summary?.retired ? [{ value: "retired", label: `Wycofani (${summary.retired})` }] : []),
+            { value: "problems", label: t("filter.problems") },
+            ...(summary?.retired ? [{ value: "retired", label: t("filter.retired", { n: summary.retired }) }] : []),
           ]}
         />
       </Group>
 
       {agents.length === 0 && !error ? (
-        <Alert color="blue" title="Brak agentów">
-          Agenci pojawią się tu po pierwszym heartbeacie. Wymagany agent w wersji 0.4.0 lub nowszej (starsze wersje
-          wysyłają zdarzenia, ale nie raportują stanu).
+        <Alert color="blue" title={t("empty.title")}>
+          {t("empty.text")}
         </Alert>
       ) : (
         <Table.ScrollContainer minWidth={900}>
           <Table striped highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Agent</Table.Th>
-                <Table.Th>Adres IP</Table.Th>
-                <Table.Th>Grupa</Table.Th>
-                <Table.Th>Wersja</Table.Th>
-                <Table.Th>Ostatni sygnał</Table.Th>
-                <Table.Th>Zdarzenia</Table.Th>
-                <Table.Th>Kanały</Table.Th>
-                <Table.Th>Problemy</Table.Th>
+                <Table.Th>{t("col.state")}</Table.Th>
+                <Table.Th>{t("col.agent")}</Table.Th>
+                <Table.Th>{t("col.ip")}</Table.Th>
+                <Table.Th>{t("col.group")}</Table.Th>
+                <Table.Th>{t("col.version")}</Table.Th>
+                <Table.Th>{t("col.lastSeen")}</Table.Th>
+                <Table.Th>{t("col.events")}</Table.Th>
+                <Table.Th>{t("col.channels")}</Table.Th>
+                <Table.Th>{t("col.problems")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -278,13 +304,13 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
                     <Text size="sm">{a.group}</Text>
                     <Tooltip label={configStateLabels[a.config_state]?.hint}>
                       <Badge size="xs" variant="light" color={configStateLabels[a.config_state]?.color}>
-                        konfiguracja {configStateLabels[a.config_state]?.label}
+                        {t("config", { state: configStateLabels[a.config_state]?.label })}
                       </Badge>
                     </Tooltip>
                   </Table.Td>
                   <Table.Td>{a.version || "—"}</Table.Td>
                   <Table.Td style={{ whiteSpace: "nowrap" }}>
-                    <Tooltip label={new Date(a.last_seen).toLocaleString("pl-PL")}>
+                    <Tooltip label={formatDate(a.last_seen)}>
                       <Text size="sm">{ago(a.last_seen)}</Text>
                     </Tooltip>
                   </Table.Td>
@@ -302,9 +328,9 @@ Powód:`, "agent usunięty z listy bez unieważnienia");
                         —
                       </Text>
                     ) : (
-                      <Tooltip label={a.problems.join("\n")} multiline maw={400} style={{ whiteSpace: "pre-line" }}>
+                      <Tooltip label={agentProblems(a).join("\n")} multiline maw={400} style={{ whiteSpace: "pre-line" }}>
                         <Text size="sm" c="orange" lineClamp={2}>
-                          {a.problems.join("; ")}
+                          {agentProblems(a).join("; ")}
                         </Text>
                       </Tooltip>
                     )}

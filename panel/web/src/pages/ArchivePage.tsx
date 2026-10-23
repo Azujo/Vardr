@@ -31,6 +31,8 @@ import {
   type ArchiveRecovery,
   type ArchiveVerification,
 } from "../api";
+import { useTranslation } from "react-i18next";
+import { locale } from "../i18n";
 import { useAuth } from "../auth";
 import ArchiveExports from "./ArchiveExports";
 import ArchivePolicy from "./ArchivePolicy";
@@ -41,7 +43,8 @@ function hourLabel(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
   const end = new Date(d.getTime() + 3600_000);
-  return `${d.toLocaleDateString("pl-PL")} ${d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}–${end.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}`;
+  const hm: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
+  return `${d.toLocaleDateString(locale())} ${d.toLocaleTimeString(locale(), hm)}–${end.toLocaleTimeString(locale(), hm)}`;
 }
 
 function duration(v: ArchiveVerification) {
@@ -68,10 +71,11 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 }
 
 function Hash({ value }: { value: string }) {
+  const { t } = useTranslation("archive");
   return (
     <CopyButton value={value}>
       {({ copied, copy }) => (
-        <Tooltip label={copied ? "skopiowano" : value} maw={600} multiline>
+        <Tooltip label={copied ? t("copied") : value} maw={600} multiline>
           <Text size="xs" ff="monospace" c="dimmed" style={{ cursor: "pointer" }} onClick={copy}>
             {value.slice(0, 16)}…
           </Text>
@@ -83,19 +87,20 @@ function Hash({ value }: { value: string }) {
 
 // Manifesty są od najnowszego: poprzednikiem wiersza i jest wiersz i+1.
 function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
+  const { t } = useTranslation("archive");
   return (
     <Table.ScrollContainer minWidth={820}>
       <Table striped verticalSpacing="xs">
         <Table.Thead>
           <Table.Tr style={{ whiteSpace: "nowrap" }}>
-            <Table.Th>Godzina</Table.Th>
-            <Table.Th>Nr</Table.Th>
-            <Table.Th>Segmenty</Table.Th>
-            <Table.Th>Paczki</Table.Th>
-            <Table.Th>Rozmiar</Table.Th>
-            <Table.Th>SHA-256 manifestu</Table.Th>
-            <Table.Th>Łańcuch</Table.Th>
-            <Table.Th>Dane</Table.Th>
+            <Table.Th>{t("manifest.hour")}</Table.Th>
+            <Table.Th>{t("manifest.no")}</Table.Th>
+            <Table.Th>{t("manifest.segments")}</Table.Th>
+            <Table.Th>{t("manifest.batches")}</Table.Th>
+            <Table.Th>{t("manifest.size")}</Table.Th>
+            <Table.Th>{t("manifest.sha")}</Table.Th>
+            <Table.Th>{t("manifest.chain")}</Table.Th>
+            <Table.Th>{t("manifest.data")}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -115,9 +120,7 @@ function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
                 <Table.Td>
                   <Tooltip
                     label={
-                      linked
-                        ? `Hash poprzednika: ${m.prev_sha256.slice(0, 16)}… – zgodny z poprzednim manifestem`
-                        : "Hash poprzednika nie zgadza się z poprzednim wierszem"
+                      linked ? t("manifest.linked", { hash: m.prev_sha256.slice(0, 16) }) : t("manifest.broken")
                     }
                   >
                     {linked ? <IconLink size={16} color="var(--mantine-color-green-6)" /> : <IconLinkOff size={16} color="var(--mantine-color-red-6)" />}
@@ -125,21 +128,21 @@ function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
                 </Table.Td>
                 <Table.Td>
                   {m.expired_at ? (
-                    <Tooltip label={`Dane usunięte po retencji ${formatDate(m.expired_at)}; wpis zostaje w łańcuchu`}>
+                    <Tooltip label={t("manifest.expiredTip", { date: formatDate(m.expired_at) })}>
                       <Badge size="sm" color="gray" variant="light">
-                        wygasłe
+                        {t("manifest.expired")}
                       </Badge>
                     </Tooltip>
                   ) : m.verified_at ? (
-                    <Tooltip label={`Treść sprawdzona w całości (SHA-256 każdej paczki) ${formatDate(m.verified_at)}`}>
+                    <Tooltip label={t("manifest.verifiedTip", { date: formatDate(m.verified_at) })}>
                       <Badge size="sm" color="green" variant="light">
-                        sprawdzone
+                        {t("manifest.verified")}
                       </Badge>
                     </Tooltip>
                   ) : (
-                    <Tooltip label="W archiwum; pełne sprawdzenie treści w kolejnych przebiegach weryfikacji (obecność i rozmiar plików są sprawdzane zawsze)">
+                    <Tooltip label={t("manifest.storedTip")}>
                       <Badge size="sm" color="blue" variant="light">
-                        w archiwum
+                        {t("manifest.stored")}
                       </Badge>
                     </Tooltip>
                   )}
@@ -154,20 +157,21 @@ function ManifestTable({ manifests }: { manifests: ArchiveManifest[] }) {
 }
 
 function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]; recoveries: ArchiveRecovery[] }) {
+  const { t } = useTranslation("archive");
   return (
     <Table.ScrollContainer minWidth={820}>
       <Table striped verticalSpacing="xs">
         <Table.Thead>
           <Table.Tr style={{ whiteSpace: "nowrap" }}>
-            <Table.Th>Zakończona</Table.Th>
-            <Table.Th>Wynik</Table.Th>
-            <Table.Th>Manifesty</Table.Th>
-            <Table.Th>Segmenty</Table.Th>
-            <Table.Th>W całości</Table.Th>
-            <Table.Th>Paczki</Table.Th>
-            <Table.Th>Odczytano</Table.Th>
-            <Table.Th>Czas</Table.Th>
-            <Table.Th>Problemy</Table.Th>
+            <Table.Th>{t("verif.finished")}</Table.Th>
+            <Table.Th>{t("verif.result")}</Table.Th>
+            <Table.Th>{t("verif.manifests")}</Table.Th>
+            <Table.Th>{t("manifest.segments")}</Table.Th>
+            <Table.Th>{t("verif.full")}</Table.Th>
+            <Table.Th>{t("manifest.batches")}</Table.Th>
+            <Table.Th>{t("verif.read")}</Table.Th>
+            <Table.Th>{t("verif.time")}</Table.Th>
+            <Table.Th>{t("verif.problems")}</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -176,13 +180,13 @@ function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]
               <Table.Td style={{ whiteSpace: "nowrap" }}>{formatDate(v.finished_at)}</Table.Td>
               <Table.Td>
                 <Badge color={v.ok ? "green" : "red"} variant="light">
-                  {v.ok ? "zgodne" : "niezgodności"}
+                  {v.ok ? t("verif.ok") : t("verif.bad")}
                 </Badge>
               </Table.Td>
               <Table.Td>{v.manifests}</Table.Td>
               <Table.Td>{v.segments}</Table.Td>
               <Table.Td>
-                <Tooltip label="Manifesty, których treść odczytano i sprawdzono w całości w tym przebiegu">
+                <Tooltip label={t("verif.fullTip")}>
                   <Text size="sm">{v.full_manifests}</Text>
                 </Tooltip>
               </Table.Td>
@@ -205,7 +209,7 @@ function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]
                   .filter((r) => r.verification_id === v.id)
                   .map((r) => (
                     <Badge key={r.id} size="xs" variant="light" color={r.processed_at && r.ok !== false ? "teal" : "gray"} mt={2}>
-                      {r.processed_at ? "rozstrzygnięte" : "zlecone"}: #{r.id} {recoveryKindLabels[r.kind]}
+                      {r.processed_at ? t("verif.resolved") : t("verif.requested")}: #{r.id} {recoveryKindLabels[r.kind]}
                     </Badge>
                   ))}
               </Table.Td>
@@ -218,6 +222,7 @@ function VerificationTable({ items, recoveries }: { items: ArchiveVerification[]
 }
 
 export default function ArchivePage() {
+  const { t } = useTranslation("archive");
   const { can } = useAuth();
   const [data, setData] = useState<ArchiveOverview | null>(null);
   const [error, setError] = useState("");
@@ -241,8 +246,8 @@ export default function ArchivePage() {
   const verify = async () => {
     setBusy(true);
     try {
-      const r = await archiveApi.verify();
-      notifications.show({ color: "green", message: r.message });
+      await archiveApi.verify();
+      notifications.show({ color: "green", message: t("verifyRequested") });
       load();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -262,10 +267,9 @@ export default function ArchivePage() {
     <Stack>
       <Group justify="space-between" align="flex-start">
         <div>
-          <Title order={2}>Urd – archiwum NIS2</Title>
+          <Title order={2}>{t("title")}</Title>
           <Text c="dimmed" size="sm" maw={820}>
-            Oryginalne paczki logów zapisane przed normalizacją. Każda godzina ma manifest z sumami SHA-256 segmentów,
-            powiązany z poprzednim hashem (łańcuch). Weryfikacja wykrywa zmianę, usunięcie lub dodanie danych.
+            {t("intro")}
           </Text>
         </div>
         {can("archive", "write") && data && data.compliance !== "not_configured" && (
@@ -275,7 +279,7 @@ export default function ArchivePage() {
             loading={busy}
             disabled={!!st?.verify_requested_at}
           >
-            {st?.verify_requested_at ? "Weryfikacja zlecona…" : "Zweryfikuj teraz"}
+            {st?.verify_requested_at ? t("verifyPending") : t("verifyNow")}
           </Button>
         )}
       </Group>
@@ -285,7 +289,7 @@ export default function ArchivePage() {
         <Alert
           color={c.color}
           variant="light"
-          title={`Stan archiwum: ${c.label}`}
+          title={t("state", { label: c.label })}
           icon={data?.compliance === "ok" ? <IconCheck /> : undefined}
         >
           <Text size="sm">{c.hint}</Text>
@@ -309,8 +313,7 @@ export default function ArchivePage() {
           <UnknownFiles verification={lv} pending={pendingDecision} onDone={load} />
         ) : (
           <Alert color="orange" variant="light">
-            Ostatnia weryfikacja znalazła {lv.unknown.length} plików nieznanych spisowi – o ich przyjęciu albo kwarantannie decyduje
-            administrator.
+            {t("unknownFiles", { count: lv.unknown.length })}
           </Alert>
         )
       )}
@@ -318,35 +321,31 @@ export default function ArchivePage() {
       {st && sum && (
         <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
           <Stat
-            label="Archiwizator"
+            label={t("stat.archiver")}
             value={
               <Badge size="lg" color={data?.archiver_running ? "green" : "red"} variant="light">
-                {data?.archiver_running ? "działa" : "brak sygnału"}
+                {data?.archiver_running ? t("stat.running") : t("stat.noSignal")}
               </Badge>
             }
-            sub={`wersja ${st.version}, sygnał ${ago(st.heartbeat_at)}`}
+            sub={t("stat.archiverSub", { version: st.version, ago: ago(st.heartbeat_at) })}
           />
-          <Stat label="Dane w archiwum" value={formatBytes(sum.bytes + sum.open_bytes)} sub={`${formatNumber(sum.batches + sum.open_batches)} paczek`} />
+          <Stat label={t("stat.data")} value={formatBytes(sum.bytes + sum.open_bytes)} sub={t("stat.batches", { n: formatNumber(sum.batches + sum.open_batches) })} />
           <Stat
-            label="Zakres"
+            label={t("stat.range")}
             value={`${sum.manifests} h`}
-            sub={sum.oldest_hour ? `od ${formatDate(sum.oldest_hour)}` : "pierwszy manifest po pełnej godzinie"}
+            sub={sum.oldest_hour ? t("stat.since", { date: formatDate(sum.oldest_hour) }) : t("stat.firstManifest")}
           />
           <Stat
-            label="Retencja"
-            value={`${st.retention_days} dni`}
-            sub={
-              data?.policy && !data.policy.enabled
-                ? "archiwizacja nowych paczek WYŁĄCZONA"
-                : `łańcuch: ${sum.manifests_total} manifestów od początku`
-            }
+            label={t("stat.retention")}
+            value={t("days", { n: st.retention_days })}
+            sub={data?.policy && !data.policy.enabled ? t("stat.disabled") : t("stat.chain", { n: sum.manifests_total })}
           />
           <Stat
-            label="Dysk archiwum"
+            label={t("stat.disk")}
             value={
               st.disk_total_bytes ? (
                 <Text fz={22} fw={700} c={st.paused ? "red" : st.disk_free_bytes < 0.15 * st.disk_total_bytes ? "orange" : undefined}>
-                  {formatBytes(st.disk_free_bytes)} wolne
+                  {t("stat.free", { size: formatBytes(st.disk_free_bytes) })}
                 </Text>
               ) : (
                 "—"
@@ -354,16 +353,16 @@ export default function ArchivePage() {
             }
             sub={
               st.disk_total_bytes
-                ? `z ${formatBytes(st.disk_total_bytes)} (${Math.round((100 * st.disk_free_bytes) / st.disk_total_bytes)}%)`
-                : "brak pomiaru"
+                ? t("stat.of", { size: formatBytes(st.disk_total_bytes), pct: Math.round((100 * st.disk_free_bytes) / st.disk_total_bytes) })
+                : t("stat.noMeasure")
             }
           />
           <Stat
-            label="Ostatnia weryfikacja"
+            label={t("stat.lastVerify")}
             value={
               lv ? (
                 <Badge size="lg" color={lv.ok ? "green" : "red"} variant="light">
-                  {lv.ok ? "zgodne" : "niezgodności"}
+                  {lv.ok ? t("verif.ok") : t("verif.bad")}
                 </Badge>
               ) : (
                 "—"
@@ -371,11 +370,11 @@ export default function ArchivePage() {
             }
             sub={
               lv
-                ? `${ago(lv.finished_at)}, co ${Math.round(st.verify_every_s / 3600)} h; ` +
+                ? `${ago(lv.finished_at)}, ${t("stat.every", { h: Math.round(st.verify_every_s / 3600) })}; ` +
                   (lv.oldest_full_check
-                    ? `całość sprawdzona od ${formatDate(lv.oldest_full_check)}`
-                    : `${lv.unverified} h czeka na pełne sprawdzenie`)
-                : `co ${Math.round(st.verify_every_s / 3600)} h`
+                    ? t("stat.fullSince", { date: formatDate(lv.oldest_full_check) })
+                    : t("stat.waiting", { h: lv.unverified }))
+                : t("stat.every", { h: Math.round(st.verify_every_s / 3600) })
             }
           />
         </SimpleGrid>
@@ -383,27 +382,31 @@ export default function ArchivePage() {
 
       {sum && sum.open_segments > 0 && (
         <Text size="sm" c="dimmed">
-          Bieżąca godzina: {sum.open_segments} segmentów, {formatNumber(sum.open_batches)} paczek ({formatBytes(sum.open_bytes)}),
-          ostatni zapis {ago(sum.last_segment_at)} – manifest powstanie po pełnej godzinie.
+          {t("currentHour", {
+            segments: sum.open_segments,
+            batches: formatNumber(sum.open_batches),
+            size: formatBytes(sum.open_bytes),
+            ago: ago(sum.last_segment_at),
+          })}
         </Text>
       )}
 
       {data && data.compliance !== "not_configured" && (
         <Tabs defaultValue="manifests">
           <Tabs.List>
-            <Tabs.Tab value="manifests">Manifesty ({data.manifests?.length ?? 0})</Tabs.Tab>
-            <Tabs.Tab value="verifications">Weryfikacje ({data.verifications?.length ?? 0})</Tabs.Tab>
-            <Tabs.Tab value="recoveries">Obsługa niezgodności ({recoveries.length})</Tabs.Tab>
-            <Tabs.Tab value="policy">Polityka</Tabs.Tab>
-            {can("archive", "export") && <Tabs.Tab value="exports">Eksport dla audytora</Tabs.Tab>}
-            {can("archive", "write") && <Tabs.Tab value="replays">Odtworzenie</Tabs.Tab>}
+            <Tabs.Tab value="manifests">{t("tab.manifests", { n: data.manifests?.length ?? 0 })}</Tabs.Tab>
+            <Tabs.Tab value="verifications">{t("tab.verifications", { n: data.verifications?.length ?? 0 })}</Tabs.Tab>
+            <Tabs.Tab value="recoveries">{t("tab.recoveries", { n: recoveries.length })}</Tabs.Tab>
+            <Tabs.Tab value="policy">{t("tab.policy")}</Tabs.Tab>
+            {can("archive", "export") && <Tabs.Tab value="exports">{t("tab.exports")}</Tabs.Tab>}
+            {can("archive", "write") && <Tabs.Tab value="replays">{t("tab.replays")}</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="manifests" pt="sm">
             {data.manifests?.length ? (
               <ManifestTable manifests={data.manifests} />
             ) : (
               <Text size="sm" c="dimmed">
-                Jeszcze nie ma manifestów – pierwszy powstanie po pełnej godzinie pracy archiwizatora.
+                {t("noManifests")}
               </Text>
             )}
           </Tabs.Panel>
@@ -412,21 +415,19 @@ export default function ArchivePage() {
               <VerificationTable items={data.verifications} recoveries={recoveries} />
             ) : (
               <Text size="sm" c="dimmed">
-                Jeszcze nie było weryfikacji.
+                {t("noVerifications")}
               </Text>
             )}
           </Tabs.Panel>
           <Tabs.Panel value="recoveries" pt="sm">
             <Text size="sm" c="dimmed" mb="xs" maw={900}>
-              Uzgodnienia spisu archiwum z plikami na dysku: automatyczne po przywróceniu kopii bazy (pliki zapisane między zrzutem a
-              przywróceniem, po sprawdzeniu sum i łańcucha) oraz decyzje administratora. Każda operacja jest też zapisana jako plik
-              w katalogu archiwum <code>recoveries/</code> – przetrwa kolejne przywrócenie bazy.
+              {t("recoveriesIntro")}
             </Text>
             {recoveries.length ? (
               <RecoveryTable items={recoveries} />
             ) : (
               <Text size="sm" c="dimmed">
-                Nie było jeszcze żadnej obsługi niezgodności.
+                {t("noRecoveries")}
               </Text>
             )}
           </Tabs.Panel>
@@ -447,9 +448,8 @@ export default function ArchivePage() {
       )}
 
       {data?.compliance === "not_configured" && (
-        <Alert color="gray" title="Jak włączyć archiwum">
-          Uruchom usługę <code>archiver</code> w stosie laboratoryjnym (katalog <code>archive</code> należący do użytkownika
-          1000) – szczegóły w README, sekcja „Archiwum NIS2 – Urd”.
+        <Alert color="gray" title={t("howToEnable")}>
+          {t("howToEnableText")}
         </Alert>
       )}
     </Stack>

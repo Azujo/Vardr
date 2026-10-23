@@ -28,30 +28,42 @@ const MaxCorrelationRows = 50000
 // lateness: jak daleko wstecz od okna szukać zdarzeń przyjętych z opóźnieniem.
 const lateness = detect.CorrelationLateness
 
-// CorrelationRuleInfo opisuje regułę korelacyjną dla panelu.
-func CorrelationRuleInfo(c *detect.Correlation) alerts.RuleInfo {
+// correlationText: tytuł, opis (z opisem warunku) i instrukcja reguły
+// korelacyjnej w języku lang.
+func correlationText(c *detect.Correlation, lang string) alerts.RuleText {
 	var refs []string
 	for _, r := range c.Rules {
-		refs = append(refs, r.Title)
+		refs = append(refs, r.Vardr.Text(lang, r.Title, r.Description).Title)
+	}
+	t := c.Vardr.Text(lang, c.Title, c.Description)
+	if lang == "pl" {
+		t.Instructions = c.Vardr.Instructions
 	}
 	what := map[string]string{
-		"event_count":      fmt.Sprintf("co najmniej %d zdarzeń reguł bazowych", c.Count),
-		"value_count":      fmt.Sprintf("co najmniej %d różnych wartości pola %s", c.Count, c.Field),
-		"temporal":         "wszystkie reguły bazowe (dowolna kolejność)",
-		"temporal_ordered": "reguły bazowe w podanej kolejności",
+		"event_count":      fmt.Sprintf(pick(lang, "co najmniej %d zdarzeń reguł bazowych", "at least %d events of the base rules"), c.Count),
+		"value_count":      fmt.Sprintf(pick(lang, "co najmniej %d różnych wartości pola %s", "at least %d distinct values of field %s"), c.Count, c.Field),
+		"temporal":         pick(lang, "wszystkie reguły bazowe (dowolna kolejność)", "all base rules (any order)"),
+		"temporal_ordered": pick(lang, "reguły bazowe w podanej kolejności", "base rules in the given order"),
 	}[c.Type]
-	desc := c.Description
+	desc := t.Description
 	if desc != "" {
 		desc += "\n\n"
 	}
-	desc += fmt.Sprintf("Korelacja %s: %s w oknie %s", c.Type, what, fmtWindow(c.Timespan))
+	desc += fmt.Sprintf(pick(lang, "Korelacja %s: %s w oknie %s", "Correlation %s: %s within %s"), c.Type, what, fmtWindow(c.Timespan))
 	if len(c.GroupBy) > 0 {
-		desc += ", ten sam klucz: " + strings.Join(c.GroupBy, ", ")
+		desc += pick(lang, ", ten sam klucz: ", ", same key: ") + strings.Join(c.GroupBy, ", ")
 	}
-	desc += ". Reguły bazowe: " + strings.Join(refs, "; ") + "."
-	return alerts.RuleInfo{ID: c.ID, Title: c.Title, Level: c.Level, Description: desc, Tags: c.Tags, File: c.File, Source: c.Source,
+	desc += pick(lang, ". Reguły bazowe: ", ". Base rules: ") + strings.Join(refs, "; ") + "."
+	return alerts.RuleText{Title: t.Title, Description: desc, Instructions: t.Instructions}
+}
+
+// CorrelationRuleInfo opisuje regułę korelacyjną dla panelu.
+func CorrelationRuleInfo(c *detect.Correlation) alerts.RuleInfo {
+	pl := correlationText(c, "pl")
+	return alerts.RuleInfo{ID: c.ID, Title: c.Title, Level: c.Level, Description: pl.Description, Tags: c.Tags, File: c.File, Source: c.Source,
 		Mode: "correlation", Enabled: c.Enabled(), FileEnabled: c.Enabled(), GroupBy: c.GroupBy,
-		SuppressS: int(time.Duration(c.Vardr.Suppress) / time.Second), Instructions: c.Vardr.Instructions}
+		SuppressS: int(time.Duration(c.Vardr.Suppress) / time.Second), Instructions: c.Vardr.Instructions,
+		I18n: ruleTexts(func(lang string) alerts.RuleText { return correlationText(c, lang) })}
 }
 
 // ApplyCorrelationOverrides stosuje ustawienia z panelu (włączenie) do
@@ -122,7 +134,7 @@ func (c *Correlator) runOne(ctx context.Context, cr *detect.Correlation, from, t
 			return nil, err
 		}
 		if n++; n > MaxCorrelationRows {
-			return nil, fmt.Errorf("ponad %d zdarzeń w oknie – zawęź reguły bazowe albo skróć timespan", MaxCorrelationRows)
+			return nil, fmt.Errorf("over %d events in the window – narrow the base rules or shorten the timespan", MaxCorrelationRows)
 		}
 		ev := detect.CorrEvent{Time: ts, ID: id, Value: val, New: fresh}
 		for i, ok := range m {
@@ -178,32 +190,43 @@ func (c *Correlator) runOne(ctx context.Context, cr *detect.Correlation, from, t
 		}
 		last := f.group[len(f.group)-1]
 		lastEv := details[last.ID]
-		var used []string
-		for _, e := range f.group {
-			for _, r := range e.Rules {
-				if t := cr.Rules[r].Title; !slices.Contains(used, t) {
-					used = append(used, t)
+		text := func(lang string) alerts.AlertText {
+			var used []string
+			for _, e := range f.group {
+				for _, r := range e.Rules {
+					rr := cr.Rules[r]
+					if t := rr.Vardr.Text(lang, rr.Title, rr.Description).Title; !slices.Contains(used, t) {
+						used = append(used, t)
+					}
 				}
 			}
-		}
-		keyText := "wszystkie zdarzenia"
-		if len(cr.GroupBy) > 0 {
-			var parts []string
-			for _, g := range cr.GroupBy {
-				parts = append(parts, g+"="+orDash(gf[g]))
+			keyText := pick(lang, "wszystkie zdarzenia", "all events")
+			if len(cr.GroupBy) > 0 {
+				var parts []string
+				for _, g := range cr.GroupBy {
+					parts = append(parts, g+"="+orDash(gf[g]))
+				}
+				keyText = strings.Join(parts, ", ")
 			}
-			keyText = strings.Join(parts, ", ")
+			title := cr.Vardr.Text(lang, cr.Title, cr.Description).Title
+			instr := cr.Vardr.Instructions
+			if lang != "pl" {
+				instr = cr.Vardr.I18n[lang].Instructions
+			}
+			return alerts.AlertText{Title: title,
+				Summary: fmt.Sprintf(pick(lang, "%s: %d zdarzeń w %s (%s) – %s", "%s: %d events in %s (%s) – %s"), keyText, len(f.group),
+					fmtSpanIn(lang, f.group[len(f.group)-1].Time.Sub(f.group[0].Time)), strings.Join(used, "; "), title),
+				Instructions: detect.RenderWith(instr, detect.Event{Event: &lastEv}, map[string]string{
+					"count": fmt.Sprint(len(f.group)), "window": fmtWindow(cr.Timespan), "rules": strings.Join(used, "; "), "key": keyText})}
 		}
-		summary := fmt.Sprintf("%s: %d zdarzeń w %s (%s) – %s", keyText, len(f.group),
-			fmtSpan(f.group[len(f.group)-1].Time.Sub(f.group[0].Time)), strings.Join(used, "; "), cr.Title)
-		instr := detect.RenderWith(cr.Vardr.Instructions, detect.Event{Event: &lastEv}, map[string]string{
-			"count": fmt.Sprint(len(f.group)), "window": fmtWindow(cr.Timespan), "rules": strings.Join(used, "; "), "key": keyText})
+		pl := text("pl")
+		summary, instr, tr := pl.Summary, pl.Instructions, texts(text)
 		for _, e := range f.group {
 			d := details[e.ID]
 			hits = append(hits, alerts.Hit{RuleID: cr.ID, RuleTitle: cr.Title, Level: cr.Level, Engine: "correlation",
 				GroupFields: gf, GroupKey: strings.Join(f.key, "\x1f"), Suppress: time.Duration(cr.Vardr.Suppress),
 				EventID: e.ID, EventTime: e.Time, AgentID: d.AgentID, HostName: d.HostName, UserName: d.UserName, SourceIP: d.SourceIP,
-				Identity: d.Identity, Summary: summary, Instructions: instr})
+				Identity: d.Identity, Summary: summary, Instructions: instr, I18n: tr})
 		}
 	}
 	return hits, nil

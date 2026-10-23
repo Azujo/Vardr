@@ -72,7 +72,7 @@ func (s *Server) saveBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := req.Config.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_config", err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_config", err)
 		return
 	}
 	// Zmiana kopii dotyczy poświadczeń do miejsca, gdzie trafiają dane
@@ -213,8 +213,12 @@ func (s *Server) backupFile(w http.ResponseWriter, r *http.Request, location, na
 // Części kopii, które da się przywrócić z panelu.
 var restoreParts = map[string]string{"saga": "baza Saga", "config": "konfiguracja (certs/, .env)", "grafana": "dane Grafany"}
 
-// restoreConfirm: słowo do wpisania przy przywracaniu.
-const restoreConfirm = "PRZYWRÓĆ"
+// restoreConfirm: słowo do wpisania przy przywracaniu (restoreConfirmEN –
+// to samo w angielskiej wersji panelu).
+const (
+	restoreConfirm   = "PRZYWRÓĆ"
+	restoreConfirmEN = "RESTORE"
+)
 
 func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	if !s.backupEnabled(w) {
@@ -260,7 +264,7 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_part", "bazę Saga i konfigurację przywraca się razem – hasła ról bazy są w .env")
 		return
 	}
-	if strings.TrimSpace(req.Confirm) != restoreConfirm {
+	if c := strings.TrimSpace(req.Confirm); c != restoreConfirm && c != restoreConfirmEN {
 		writeError(w, http.StatusBadRequest, "confirm_required", "wpisz "+restoreConfirm+", aby potwierdzić")
 		return
 	}

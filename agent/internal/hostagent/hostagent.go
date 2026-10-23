@@ -77,9 +77,9 @@ func Load(path string, cfg any, c *Common) (base string, err error) {
 	c.StateDir = Abs(base, c.StateDir)
 	switch {
 	case c.Server.URL == "":
-		return "", errors.New("server.url: brak adresu serwera")
+		return "", errors.New("server.url: missing server address")
 	case c.Buffer.OnFull != "" && c.Buffer.OnFull != "pause" && c.Buffer.OnFull != "drop_oldest":
-		return "", errors.New("buffer.on_full: pause albo drop_oldest")
+		return "", errors.New("buffer.on_full: pause or drop_oldest")
 	}
 	if c.Server.Timeout == 0 {
 		c.Server.Timeout = 30 * time.Second
@@ -150,15 +150,15 @@ func Enroll(o EnrollOptions) error {
 	}
 	caPEM, err := os.ReadFile(o.CAFile)
 	if err != nil {
-		return fmt.Errorf("plik CA (-ca): %w", err)
+		return fmt.Errorf("CA file (-ca): %w", err)
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(caPEM) {
-		return errors.New("niepoprawny plik CA")
+		return errors.New("invalid CA file")
 	}
 	certDir := filepath.Join(o.Dir, "certs")
 	if _, err := os.Stat(filepath.Join(certDir, "agent.key")); err == nil {
-		return fmt.Errorf("%s zawiera już klucz – wskaż pusty katalog", o.Dir)
+		return fmt.Errorf("%s already contains a key – choose an empty directory", o.Dir)
 	}
 	host, _ := os.Hostname()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -181,7 +181,7 @@ func Enroll(o EnrollOptions) error {
 	if err := os.WriteFile(cfgPath, []byte(o.Config(serverURL)), 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("Zarejestrowano %s (certyfikat ważny do %s).\nKonfiguracja: %s\n", res.AgentID,
+	fmt.Printf("Enrolled %s (certificate valid until %s).\nConfiguration: %s\n", res.AgentID,
 		res.NotAfter.Local().Format("2006-01-02"), cfgPath)
 	return nil
 }
@@ -207,7 +207,7 @@ func Run(o RunOptions) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := os.MkdirAll(c.StateDir, 0o700); err != nil {
-		return fmt.Errorf("katalog stanu: %w", err)
+		return fmt.Errorf("state directory: %w", err)
 	}
 	client, certs, err := shipper.NewReloadableTLSClient(c.Server.CAFile, c.Server.CertFile, c.Server.KeyFile, c.Server.Timeout)
 	if err != nil {
@@ -226,7 +226,7 @@ func Run(o RunOptions) error {
 
 	buf, err := spool.Open(filepath.Join(c.StateDir, "buffer"), sender, log)
 	if err != nil {
-		return fmt.Errorf("bufor dyskowy: %w", err)
+		return fmt.Errorf("disk buffer: %w", err)
 	}
 	buf.FreeSpace = spool.DiskFree
 	buf.Configure(int64(c.Buffer.MaxMB)<<20, c.Buffer.OnFull, int64(c.Buffer.MinFreeMB)<<20)
@@ -281,7 +281,7 @@ func Run(o RunOptions) error {
 		Status:     tracker,
 		RetryDelay: func(error) time.Duration { return 5 * time.Second },
 	}, sources, buf, store, log)
-	log.Info("uruchomiony", "mode", o.Mode, "version", o.Version)
+	log.Info("started", "mode", o.Mode, "version", o.Version)
 	err = agent.Run(ctx)
 	s := sender.Stats
 	log.Info("zatrzymany", "batches_accepted", s.BatchesAccepted.Load(), "events_accepted", s.EventsAccepted.Load())

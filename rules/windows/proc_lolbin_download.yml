@@ -33,6 +33,18 @@ falsepositives:
   - Stare skrypty instalacyjne pobierające pliki przez bitsadmin
 level: high
 vardr:
+  i18n:
+    en:
+      title: "File download with a system tool (certutil, bitsadmin)"
+      description: |
+        certutil with -urlcache or -verifyctl and a web address, bitsadmin with
+        /transfer or /addfile – built-in Windows tools used by attackers to download
+        further tools from their server, bypassing the browser and download protections.
+      instructions: |
+        A file was downloaded with a system tool on {{host.name}}: {{CommandLine}}.
+        Check the address in the command (reputation, whether it is a company server), the
+        saved file and what was started shortly afterwards. Block the address on the
+        firewall if it is not known.
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

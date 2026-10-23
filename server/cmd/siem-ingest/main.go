@@ -28,7 +28,7 @@ import (
 func main() {
 	log := svc.Logger("ingest")
 	if err := run(log); err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -68,7 +68,7 @@ func run(log *slog.Logger) error {
 	revoked := fleet.NewRevokedSet()
 	go func() {
 		var kv jetstream.KeyValue
-		if err := svc.Retry(ctx, log, "lista unieważnionych certyfikatów", func() error {
+		if err := svc.Retry(ctx, log, "revoked certificate list", func() error {
 			var err error
 			kv, err = fleet.EnsureRevoked(ctx, js)
 			return err
@@ -77,7 +77,7 @@ func run(log *slog.Logger) error {
 		}
 		for ctx.Err() == nil {
 			if err := revoked.Watch(ctx, kv, log); err != nil {
-				log.Warn("obserwacja unieważnień przerwana – wznawiam", "err", err)
+				log.Warn("watching revocations interrupted – resuming", "err", err)
 				time.Sleep(5 * time.Second)
 			}
 		}
@@ -93,7 +93,7 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	log.Info("zaufane urzędy dla certyfikatów agentów", "files", caFiles)
+	log.Info("trusted authorities for agent certificates", "files", caFiles)
 
 	adm := ingest.NewAdmission(maxInFlight, highWater)
 	go adm.WatchFill(ctx, log, 2*time.Second, func(ctx context.Context) (float64, error) {
@@ -128,7 +128,7 @@ func run(log *slog.Logger) error {
 		for {
 			select {
 			case <-t.C:
-				log.Info("statystyki", "batches", h.Batches.Load(), "events", h.Events.Load(),
+				log.Info("stats", "batches", h.Batches.Load(), "events", h.Events.Load(),
 					"duplicates", h.Duplicates.Load(), "rejected", h.Rejected.Load(),
 					"throttled", h.Throttled.Load(), "in_flight", adm.InFlight(), "queue_fill", adm.Fill(),
 					"heartbeats", hb.Accepted.Load(), "heartbeats_rejected", hb.Rejected.Load())
@@ -144,7 +144,7 @@ func run(log *slog.Logger) error {
 		_ = srv.Shutdown(sh)
 	}()
 
-	log.Info("nasłuchuję", "addr", srv.Addr, "raw_queue_max_bytes", limits.RawMaxBytes,
+	log.Info("listening", "addr", srv.Addr, "raw_queue_max_bytes", limits.RawMaxBytes,
 		"max_in_flight", maxInFlight, "queue_high_water", highWater)
 	if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -160,7 +160,7 @@ func serverTLS(caFiles []string, certFile, keyFile string, revoked *fleet.Revoke
 			return nil, err
 		}
 		if !pool.AppendCertsFromPEM(caPEM) {
-			return nil, errors.New("niepoprawny plik CA: " + f)
+			return nil, errors.New("invalid CA file: " + f)
 		}
 	}
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
@@ -174,7 +174,7 @@ func serverTLS(caFiles []string, certFile, keyFile string, revoked *fleet.Revoke
 		ClientCAs:    pool,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) > 0 && revoked.Has(cs.PeerCertificates[0].SerialNumber.Text(16)) {
-				return errors.New("certyfikat agenta został unieważniony")
+				return errors.New("the agent certificate has been revoked")
 			}
 			return nil
 		},

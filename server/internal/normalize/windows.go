@@ -37,7 +37,7 @@ var (
 )
 
 // ErrUnsupportedSource oznacza źródło, dla którego nie ma dekodera.
-var ErrUnsupportedSource = errors.New("brak dekodera dla źródła")
+var ErrUnsupportedSource = errors.New("no decoder for source")
 
 // Event normalizuje pojedyncze zdarzenie z paczki agenta.
 func Event(ev contract.Event, agentID string, ingested time.Time) (model.Event, error) {
@@ -58,13 +58,13 @@ func event(ev contract.Event, agentID string, ingested time.Time) (model.Event, 
 	w, err := parseWinEvent(ev.Raw)
 	if err != nil {
 		if ev.Truncated {
-			return model.Event{}, fmt.Errorf("przycięte zdarzenie nie jest poprawnym XML: %w", err)
+			return model.Event{}, fmt.Errorf("truncated event is not valid XML: %w", err)
 		}
-		return model.Event{}, fmt.Errorf("niepoprawny XML zdarzenia: %w", err)
+		return model.Event{}, fmt.Errorf("invalid event XML: %w", err)
 	}
 	code, err := strconv.ParseUint(strings.TrimSpace(w.EventID), 10, 32)
 	if err != nil {
-		return model.Event{}, fmt.Errorf("brak lub niepoprawny EventID %q", w.EventID)
+		return model.Event{}, fmt.Errorf("missing or invalid EventID %q", w.EventID)
 	}
 	channel := w.Channel
 	if channel == "" {

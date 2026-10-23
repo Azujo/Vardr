@@ -166,7 +166,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 	// Zmiana roli lub wyłączenie konta działa od razu: kończymy jego sesje.
 	if _, roleChanged := details["role"]; roleChanged || (req.Disabled != nil && *req.Disabled) {
 		if err := s.Store.DeleteUserSessions(r.Context(), id, ""); err != nil {
-			s.Log.Error("usunięcie sesji konta nieudane", "user_id", id, "err", err)
+			s.Log.Error("removing the account sessions failed", "user_id", id, "err", err)
 		}
 	}
 	s.audit(r, &a.user, "user_updated", u.Username, details)
@@ -204,7 +204,7 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.DeleteUserSessions(r.Context(), id, ""); err != nil {
-		s.Log.Error("usunięcie sesji konta nieudane", "user_id", id, "err", err)
+		s.Log.Error("removing the account sessions failed", "user_id", id, "err", err)
 	}
 	s.audit(r, &a.user, "password_reset", target.Username, nil)
 	target.MustChangePassword = true

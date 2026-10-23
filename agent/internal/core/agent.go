@@ -21,6 +21,7 @@ import (
 	"siem/agent/internal/state"
 	"siem/agent/internal/status"
 	"siem/internal/contract"
+	"siem/internal/lang"
 	"siem/internal/throttle"
 )
 
@@ -116,7 +117,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.log.Info("agent uruchomiony", "sources", len(a.sources), "resumed_channels", len(st.Channels), "state_origin", origin.String())
+	a.log.Info("agent started", "sources", len(a.sources), "resumed_channels", len(st.Channels), "state_origin", origin.String())
 
 	// Brak stanu u agenta, który już działał, NIE jest pierwszym
 	// uruchomieniem: czytamy od najstarszych zdarzeń (duplikaty usunie
@@ -124,19 +125,19 @@ func (a *Agent) Run(ctx context.Context) error {
 	forceOldest := false
 	switch origin {
 	case state.OriginBackup:
-		msg := "plik stanu agenta zniknął lub jest uszkodzony – odtworzono pozycje z kopii zapasowej (możliwa manipulacja)"
-		a.log.Error(msg)
-		a.opts.Status.Warn(msg)
+		a.log.Error("the agent state file is gone or damaged – positions restored from the backup (possible tampering)")
+		a.opts.Status.Warn(lang.L("plik stanu agenta zniknął lub jest uszkodzony – odtworzono pozycje z kopii zapasowej (możliwa manipulacja)",
+			"the agent state file is gone or damaged – positions restored from the backup (possible tampering)"))
 	case state.OriginLost:
 		forceOldest = true
-		msg := "UTRACONO STAN AGENTA (plik i pozycje w kopii) – odczyt od najstarszych zdarzeń; możliwa manipulacja"
-		a.log.Error(msg)
-		a.opts.Status.Warn(msg)
+		a.log.Error("AGENT STATE LOST (file and positions in the backup) – reading from the oldest events; possible tampering")
+		a.opts.Status.Warn(lang.L("UTRACONO STAN AGENTA (plik i pozycje w kopii) – odczyt od najstarszych zdarzeń; możliwa manipulacja",
+			"AGENT STATE LOST (file and positions in the backup) – reading from the oldest events; possible tampering"))
 	}
 	if origin != state.OriginFile {
 		// Utrwal stan (i znacznik) od razu, a nie dopiero po pierwszej paczce.
 		if err := a.store.Save(st); err != nil {
-			a.log.Error("nie udało się zapisać stanu", "err", err)
+			a.log.Error("saving state failed", "err", err)
 		}
 	}
 
@@ -181,7 +182,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			if len(b.pending) > 0 {
 				fctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				if err := b.flush(fctx); err != nil {
-					a.log.Warn("niewysłana paczka przy zatrzymaniu", "events", len(b.pending), "err", err)
+					a.log.Warn("unsent batch at stop", "events", len(b.pending), "err", err)
 				}
 				cancel()
 			}
@@ -215,7 +216,7 @@ func (a *Agent) runSource(ctx context.Context, src source.Source, start source.P
 		}
 		a.opts.Status.ChannelState(src.Channel(), a.opts.ClassifyError(err), err.Error())
 		delay := a.opts.RetryDelay(err)
-		a.log.Warn("źródło zatrzymane, ponowię", "channel", src.Channel(), "err", err, "retry_in", delay)
+		a.log.Warn("source stopped, will retry", "channel", src.Channel(), "err", err, "retry_in", delay)
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
@@ -230,9 +231,9 @@ func (b *batcher) logStats() {
 	attrs := []any{"read", a.read.Load(), "filtered", a.filtered.Load(), "sent_accepted", a.sent.Load(),
 		"lag_max", b.maxLag.Round(time.Millisecond), "eps_throttled", a.eps.Waited().Round(time.Millisecond)}
 	if b.maxLag > a.opts.LagWarn {
-		a.log.Warn("agent nie nadąża za dziennikiem – sprawdź limity", attrs...)
+		a.log.Warn("the agent cannot keep up with the log – check the limits", attrs...)
 	} else {
-		a.log.Info("statystyki", attrs...)
+		a.log.Info("stats", attrs...)
 	}
 	b.maxLag = 0
 }
@@ -276,7 +277,7 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	if cs.RecordID != 0 && rec.RecordID < cs.RecordID {
 		// Numeracja spadła: dziennik został wyczyszczony lub odtworzony.
 		cs.Generation++
-		a.log.Warn("wykryto reset numeracji dziennika, nowa generacja",
+		a.log.Warn("log record numbering reset detected, new generation",
 			"channel", rec.Channel, "previous_record", cs.RecordID, "record", rec.RecordID, "generation", cs.Generation)
 	}
 	cs.RecordID = rec.RecordID
@@ -307,7 +308,7 @@ func (b *batcher) add(ctx context.Context, rec source.Record) error {
 	if limit := a.opts.MaxEventBytes; limit > 0 && len(ev.Raw) > limit {
 		ev.Raw, ev.Truncated, ev.OriginalSize = truncateUTF8(ev.Raw, limit), true, len(rec.Raw)
 		a.truncated.Add(1)
-		a.log.Warn("zdarzenie przekracza limit rozmiaru – przycięte", "channel", rec.Channel,
+		a.log.Warn("event exceeds the size limit – truncated", "channel", rec.Channel,
 			"record", rec.RecordID, "size", len(rec.Raw), "limit", limit)
 	}
 	size := len(ev.Raw) + eventOverhead
@@ -366,7 +367,7 @@ func (b *batcher) flush(ctx context.Context) error {
 	if err := a.store.Save(b.st); err != nil {
 		// Paczka jest już na serwerze; brak zapisu oznacza tylko ponowną
 		// wysyłkę po restarcie (duplikaty, nie luki).
-		a.log.Error("nie udało się zapisać stanu", "err", err)
+		a.log.Error("saving state failed", "err", err)
 	}
 	b.pending = nil
 	b.bytes = 0
@@ -381,11 +382,11 @@ func (b *batcher) checkStateFile() {
 	if !a.store.Missing() {
 		return
 	}
-	msg := "plik stanu agenta został usunięty w trakcie pracy – zapisano ponownie z pamięci (możliwa manipulacja)"
-	a.log.Error(msg)
-	a.opts.Status.Warn(msg)
+	a.log.Error("the agent state file was deleted while running – written again from memory (possible tampering)")
+	a.opts.Status.Warn(lang.L("plik stanu agenta został usunięty w trakcie pracy – zapisano ponownie z pamięci (możliwa manipulacja)",
+		"the agent state file was deleted while running – written again from memory (possible tampering)"))
 	if err := a.store.Save(b.st); err != nil {
-		a.log.Error("nie udało się odtworzyć pliku stanu", "err", err)
+		a.log.Error("recreating the state file failed", "err", err)
 	}
 }
 

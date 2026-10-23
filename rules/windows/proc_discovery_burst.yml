@@ -41,6 +41,20 @@ falsepositives:
   - Skrypty inwentaryzacji i logowania uruchamiane przy starcie sesji
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Series of system reconnaissance commands on one computer"
+      description: |
+        At least 4 different reconnaissance tools (whoami, net, nltest, systeminfo,
+        ipconfig, tasklist, quser, arp, netstat…) run on one computer within
+        10 minutes. A single command is ordinary, but a series in a short time is a
+        typical first step of an attacker after taking over an account or computer.
+      instructions: |
+        On computer {{host.name}}, {{count}} different reconnaissance tools were run
+        in {{window}}: {{values}}. Check the account and the parent process in the alert
+        events. If it is not an administrator at work – treat the computer as compromised:
+        isolate it, check the logons of this account and the processes started earlier
+        (where the command came from).
   group_by: [host.name]
   threshold:
     count: 4

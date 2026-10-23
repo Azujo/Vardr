@@ -15,14 +15,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"net"
 	"regexp"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/nacl/box"
+
+	"siem/internal/lang"
 )
 
 // Config to ustawienia kopii (JSON w Sadze, tabela backup_config).
@@ -145,44 +145,45 @@ func (c *Config) Validate() error {
 	switch s.Kind {
 	case "hours":
 		if !oneOf(s.EveryHours, 1, 2, 3, 4, 6, 8, 12) {
-			return errors.New("harmonogram: co 1, 2, 3, 4, 6, 8 albo 12 godzin")
+			return lang.Errorf("harmonogram: co 1, 2, 3, 4, 6, 8 albo 12 godzin", "schedule: every 1, 2, 3, 4, 6, 8 or 12 hours")
 		}
 	case "daily":
 	case "weekly":
 		if s.Weekday < 1 || s.Weekday > 7 {
-			return errors.New("harmonogram: dzień tygodnia 1–7")
+			return lang.Errorf("harmonogram: dzień tygodnia 1–7", "schedule: day of the week 1–7")
 		}
 	default:
-		return errors.New("harmonogram: co kilka godzin, codziennie albo co tydzień")
+		return lang.Errorf("harmonogram: co kilka godzin, codziennie albo co tydzień", "schedule: every few hours, daily or weekly")
 	}
 	if s.Hour < 0 || s.Hour > 23 || s.Minute < 0 || s.Minute > 59 {
-		return errors.New("harmonogram: godzina 0–23, minuta 0–59")
+		return lang.Errorf("harmonogram: godzina 0–23, minuta 0–59", "schedule: hour 0–23, minute 0–59")
 	}
 	if !c.Include.Saga && !c.Include.Config && !c.Include.Archive && !c.Include.Grafana {
-		return errors.New("zawartość: wybierz co najmniej jeden element")
+		return lang.Errorf("zawartość: wybierz co najmniej jeden element", "contents: choose at least one item")
 	}
 	for _, r := range []struct {
-		name string
-		r    Retention
-	}{{"lokalnie", c.Local}, {"w miejscu docelowym", c.Remote}} {
+		pl, en string
+		r      Retention
+	}{{"lokalnie", "local", c.Local}, {"w miejscu docelowym", "at the destination", c.Remote}} {
 		if r.r.KeepDays < 1 || r.r.KeepDays > 3650 || r.r.KeepCount < 0 || r.r.KeepCount > 1000 {
-			return fmt.Errorf("retencja %s: 1–3650 dni, 0–1000 kopii (0 – bez limitu liczby)", r.name)
+			return lang.Errorf("retencja "+r.pl+": 1–3650 dni, 0–1000 kopii (0 – bez limitu liczby)",
+				"retention "+r.en+": 1–3650 days, 0–1000 backups (0 – no count limit)")
 		}
 	}
 	t := &c.Target
 	t.Host, t.User, t.Path = strings.TrimSpace(t.Host), strings.TrimSpace(t.User), strings.TrimRight(strings.TrimSpace(t.Path), "/")
 	if strings.Contains(t.Path, "..") || strings.ContainsAny(t.Path, "\x00\n\r:") {
-		return errors.New("miejsce docelowe: niepoprawny katalog")
+		return lang.Errorf("miejsce docelowe: niepoprawny katalog", "destination: invalid directory")
 	}
 	host := func() error {
 		if net.ParseIP(t.Host) == nil && !hostRe.MatchString(t.Host) {
-			return errors.New("miejsce docelowe: podaj adres serwera (nazwa albo IP)")
+			return lang.Errorf("miejsce docelowe: podaj adres serwera (nazwa albo IP)", "destination: enter the server address (name or IP)")
 		}
 		if t.Port < 0 || t.Port > 65535 {
-			return errors.New("miejsce docelowe: port 1–65535")
+			return lang.Errorf("miejsce docelowe: port 1–65535", "destination: port 1–65535")
 		}
 		if !userRe.MatchString(t.User) {
-			return errors.New("miejsce docelowe: podaj użytkownika")
+			return lang.Errorf("miejsce docelowe: podaj użytkownika", "destination: enter the user")
 		}
 		return nil
 	}
@@ -194,10 +195,10 @@ func (c *Config) Validate() error {
 			return err
 		}
 		if t.Auth != AuthServerKey && t.Auth != AuthPrivateKey && t.Auth != AuthPassword {
-			return errors.New("SFTP: wybierz sposób logowania")
+			return lang.Errorf("SFTP: wybierz sposób logowania", "SFTP: choose the sign-in method")
 		}
 		if t.Path == "" {
-			return errors.New("SFTP: podaj katalog na serwerze kopii")
+			return lang.Errorf("SFTP: podaj katalog na serwerze kopii", "SFTP: enter the directory on the backup server")
 		}
 		t.Share, t.Domain, t.Endpoint, t.Region, t.Bucket, t.AccessKey = "", "", "", "", "", ""
 	case MethodSMB:
@@ -205,33 +206,33 @@ func (c *Config) Validate() error {
 			return err
 		}
 		if !shareRe.MatchString(t.Share) {
-			return errors.New("SMB: podaj nazwę udziału")
+			return lang.Errorf("SMB: podaj nazwę udziału", "SMB: enter the share name")
 		}
 		if t.Domain != "" && !userRe.MatchString(t.Domain) {
-			return errors.New("SMB: niepoprawna domena")
+			return lang.Errorf("SMB: niepoprawna domena", "SMB: invalid domain")
 		}
 		t.Auth, t.Endpoint, t.Region, t.Bucket, t.AccessKey = "", "", "", "", ""
 		t.Path = strings.TrimLeft(t.Path, "/") // katalog w udziale
 	case MethodS3:
 		if t.Endpoint != "" && !strings.HasPrefix(t.Endpoint, "https://") && !strings.HasPrefix(t.Endpoint, "http://") {
-			return errors.New("S3: adres zaczyna się od https:// (pusty – AWS)")
+			return lang.Errorf("S3: adres zaczyna się od https:// (pusty – AWS)", "S3: the address starts with https:// (empty – AWS)")
 		}
 		if !bucketRe.MatchString(t.Bucket) {
-			return errors.New("S3: niepoprawna nazwa kubełka")
+			return lang.Errorf("S3: niepoprawna nazwa kubełka", "S3: invalid bucket name")
 		}
 		if !regionRe.MatchString(t.Region) {
-			return errors.New("S3: niepoprawny region")
+			return lang.Errorf("S3: niepoprawny region", "S3: invalid region")
 		}
 		if !keyIDRe.MatchString(t.AccessKey) {
-			return errors.New("S3: podaj identyfikator klucza dostępu")
+			return lang.Errorf("S3: podaj identyfikator klucza dostępu", "S3: enter the access key ID")
 		}
 		t.Host, t.Port, t.User, t.Auth, t.Share, t.Domain = "", 0, "", "", "", ""
 		t.Path = strings.TrimLeft(t.Path, "/") // prefiks w kubełku
 	default:
-		return errors.New("miejsce docelowe: tylko lokalnie, SFTP, SMB albo S3")
+		return lang.Errorf("miejsce docelowe: tylko lokalnie, SFTP, SMB albo S3", "destination: local only, SFTP, SMB or S3")
 	}
 	if c.Include.Archive && t.Method == MethodNone && !c.Include.Saga && !c.Include.Config && !c.Include.Grafana {
-		return errors.New("zawartość: archiwum NIS2 jest wysyłane tylko do miejsca docelowego – ustaw je albo wybierz coś jeszcze")
+		return lang.Errorf("zawartość: archiwum NIS2 jest wysyłane tylko do miejsca docelowego – ustaw je albo wybierz coś jeszcze", "contents: the NIS2 archive is only uploaded to a destination – set one or choose something else")
 	}
 	return nil
 }
@@ -298,7 +299,7 @@ func EncodeKey(k *[32]byte) string { return base64.StdEncoding.EncodeToString(k[
 func DecodeKey(s string) (*[32]byte, error) {
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil || len(b) != 32 {
-		return nil, errors.New("niepoprawny klucz usługi kopii")
+		return nil, lang.Errorf("niepoprawny klucz usługi kopii", "invalid backup service key")
 	}
 	var k [32]byte
 	copy(k[:], b)
@@ -314,7 +315,7 @@ func Seal(secret string, public *[32]byte) ([]byte, error) {
 func Open(sealed []byte, public, private *[32]byte) (string, error) {
 	b, ok := box.OpenAnonymous(nil, sealed, public, private)
 	if !ok {
-		return "", errors.New("sekret zaszyfrowany innym kluczem – wpisz go ponownie w panelu")
+		return "", lang.Errorf("sekret zaszyfrowany innym kluczem – wpisz go ponownie w panelu", "secret encrypted with another key – enter it again in the panel")
 	}
 	return string(b), nil
 }

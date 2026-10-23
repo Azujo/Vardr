@@ -49,6 +49,17 @@ falsepositives:
   - Instalatory niektórych programów rozpakowujące usługi do ProgramData
 level: high
 vardr:
+  i18n:
+    en:
+      title: "New service started from a suspicious location"
+      description: |
+        A Windows service was installed whose program is in a user folder, a temporary
+        folder, or is a PowerShell/cmd invocation. This is how malware and remote
+        execution tools (e.g. PsExec-like) persist.
+      instructions: |
+        Service {{ServiceName}} on {{Computer}} runs {{ImagePath}} (account
+        {{AccountName}}). If the service is not known – stop it, secure the file for
+        analysis and check how it got onto the computer.
   instructions: |
     Usługa {{ServiceName}} na {{Computer}} uruchamia {{ImagePath}} (konto
     {{AccountName}}). Jeśli usługa nie jest znana – zatrzymaj ją, zabezpiecz

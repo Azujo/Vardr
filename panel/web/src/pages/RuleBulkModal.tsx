@@ -6,27 +6,19 @@
 import { useState } from "react";
 import { Alert as MAlert, Button, Group, Modal, PasswordInput, Stack, Text, Textarea } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { rulesApi, type BulkRuleAction } from "../api";
 
-export const bulkLabels: Record<BulkRuleAction, string> = {
-  trial: "Tryb próbny",
-  enable: "Włącz",
-  disable: "Wyłącz",
-  file: "Ustawienie z pliku",
-};
+// Nazwy akcji tłumaczone przy odczycie (rules: bulk.<akcja>).
+export const bulkLabels = Object.defineProperties({} as Record<BulkRuleAction, string>, {
+  trial: { enumerable: true, get: () => i18n.t("rules:bulk.trial") },
+  enable: { enumerable: true, get: () => i18n.t("rules:bulk.enable") },
+  disable: { enumerable: true, get: () => i18n.t("rules:bulk.disable") },
+  file: { enumerable: true, get: () => i18n.t("rules:bulk.file") },
+});
 
-const bulkInfo: Record<BulkRuleAction, { color: string; text: string }> = {
-  trial: {
-    color: "yellow",
-    text: "Reguły będą liczyć trafienia bez alertów i powiadomień (strona „Próby reguł”). Włączone reguły z zaznaczenia przestaną alarmować na czas próby.",
-  },
-  enable: {
-    color: "orange",
-    text: "Reguły zaczną tworzyć alerty i powiadomienia. Włączenie wielu reguł bez próby może zalać analityków fałszywymi alarmami.",
-  },
-  disable: { color: "red", text: "Wyłączone reguły nie wywołają alertów – także przy prawdziwym ataku." },
-  file: { color: "gray", text: "Reguły wrócą do ustawienia z pliku (enabled w treści reguły); ustawienia z panelu znikną." },
-};
+const bulkColors: Record<BulkRuleAction, string> = { trial: "yellow", enable: "orange", disable: "red", file: "gray" };
 
 export default function RuleBulkModal({
   ids,
@@ -39,6 +31,7 @@ export default function RuleBulkModal({
   onClose: () => void;
   onDone: () => void;
 }) {
+  const { t } = useTranslation("rules");
   const [reason, setReason] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -47,7 +40,7 @@ export default function RuleBulkModal({
     setBusy(true);
     try {
       const r = await rulesApi.bulk(ids, action, reason, password);
-      notifications.show({ color: "green", message: r.message });
+      notifications.show({ color: "green", message: t("bulk.done", { changed: r.changed, skipped: r.skipped }) });
       setReason("");
       setPassword("");
       onDone();
@@ -58,23 +51,22 @@ export default function RuleBulkModal({
     }
   };
   return (
-    <Modal opened={!!action} onClose={onClose} title={action ? `${bulkLabels[action]} – zaznaczone reguły: ${ids.length}` : ""} centered>
+    <Modal opened={!!action} onClose={onClose} title={action ? t("bulk.title", { action: bulkLabels[action], count: ids.length }) : ""} centered>
       {action && (
         <Stack>
-          <MAlert color={bulkInfo[action].color}>{bulkInfo[action].text}</MAlert>
+          <MAlert color={bulkColors[action]}>{t(`bulk.info.${action}`)}</MAlert>
           <Text size="sm" c="dimmed">
-            Reguły, których zmiana nie dotyczy (np. już w tym stanie albo wbudowane), zostaną pominięte. Zmiana trafi do audytu,
-            detektor zastosuje ją w ciągu 30 s.
+            {t("bulk.skipInfo")}
           </Text>
           <Textarea
-            label="Powód"
-            description="np. ocena reguł SigmaHQ dla Windows przed włączeniem"
+            label={t("reason")}
+            description={t("bulk.reasonHint")}
             autosize
             minRows={2}
             value={reason}
             onChange={(e) => setReason(e.currentTarget.value)}
           />
-          <PasswordInput label="Twoje hasło" value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+          <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
           <Group justify="flex-end">
             <Button
               color={action === "disable" ? "red" : undefined}

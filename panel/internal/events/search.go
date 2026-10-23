@@ -17,7 +17,7 @@ import (
 const dupSlack = 20
 
 // ErrNotFound: brak zdarzenia (np. usunięte przez retencję).
-var ErrNotFound = errors.New("nie znaleziono zdarzenia")
+var ErrNotFound = errors.New("event not found")
 
 // Searcher wykonuje zapytania do ClickHouse (konto tylko do odczytu).
 type Searcher struct {

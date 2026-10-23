@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/windows"
+
+	"siem/internal/lang"
 )
 
 const (
@@ -47,7 +49,7 @@ func setDACL(path, sddl string) error {
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil, nil, dacl, nil)
 	if err != nil {
-		return fmt.Errorf("ustawienie uprawnień %s: %w", path, err)
+		return lang.Errorf("ustawienie uprawnień %s: %w", "setting permissions on %s: %w", path, err)
 	}
 	return nil
 }
@@ -65,7 +67,7 @@ func IsRestricted(path string) (bool, string, error) {
 	sddl := sd.String()
 	i := strings.Index(sddl, "D:")
 	if i < 0 || strings.Contains(sddl, "NO_ACCESS_CONTROL") {
-		return false, "brak listy DACL (dostęp dla wszystkich)", nil
+		return false, lang.L("brak listy DACL (dostęp dla wszystkich)", "no DACL (access for everyone)"), nil
 	}
 	var extra []string
 	for _, m := range aceTrustee.FindAllStringSubmatch(sddl[i:], -1) {
@@ -78,15 +80,15 @@ func IsRestricted(path string) (bool, string, error) {
 		}
 	}
 	if len(extra) > 0 {
-		return false, "dostęp mają również: " + strings.Join(extra, ", "), nil
+		return false, lang.L("dostęp mają również: ", "access also for: ") + strings.Join(extra, ", "), nil
 	}
 	return true, "", nil
 }
 
 func accountName(sddlTrustee string) string {
 	aliases := map[string]string{
-		"BU": "Użytkownicy", "AU": "Uwierzytelnieni użytkownicy", "WD": "Wszyscy",
-		"IU": "Interaktywni", "CO": "Właściciel twórca", "OW": "Prawa właściciela",
+		"BU": lang.L("Użytkownicy", "Users"), "AU": lang.L("Uwierzytelnieni użytkownicy", "Authenticated Users"), "WD": lang.L("Wszyscy", "Everyone"),
+		"IU": lang.L("Interaktywni", "Interactive"), "CO": lang.L("Właściciel twórca", "Creator Owner"), "OW": lang.L("Prawa właściciela", "Owner Rights"),
 	}
 	if n, ok := aliases[sddlTrustee]; ok {
 		return n
@@ -144,11 +146,11 @@ var (
 func writeRisks(sddl string) []string {
 	var risks []string
 	if m := sddlOwner.FindStringSubmatch(sddl); m != nil && !adminTrustees[m[1]] {
-		risks = append(risks, m[1]+" (właściciel)")
+		risks = append(risks, m[1]+lang.L(" (właściciel)", " (owner)"))
 	}
 	i := strings.Index(sddl, "D:")
 	if i < 0 {
-		return append(risks, "brak listy DACL")
+		return append(risks, lang.L("brak listy DACL", "no DACL"))
 	}
 	for _, m := range sddlACE.FindAllStringSubmatch(sddl[i:], -1) {
 		typ, flags, rights, who := m[1], m[2], m[3], m[4]
@@ -202,10 +204,10 @@ func ServiceBinarySafe(exe string) (bool, string) {
 	for _, p := range []string{exe, filepath.Dir(exe)} {
 		w, who, err := WritableByNonAdmins(p)
 		if err != nil {
-			return false, fmt.Sprintf("%s: nie można sprawdzić uprawnień: %v", p, err)
+			return false, fmt.Sprintf(lang.L("%s: nie można sprawdzić uprawnień: %v", "%s: cannot check permissions: %v"), p, err)
 		}
 		if w {
-			return false, fmt.Sprintf("%s: zapis mogą wykonać: %s", p, who)
+			return false, fmt.Sprintf(lang.L("%s: zapis mogą wykonać: %s", "%s: can be written by: %s"), p, who)
 		}
 	}
 	return true, ""

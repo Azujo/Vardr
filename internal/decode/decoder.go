@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/netip"
@@ -17,6 +16,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"siem/internal/lang"
 )
 
 // Def to definicja dekodera (YAML: wbudowane w internal/decode/builtin,
@@ -134,15 +135,15 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 	dec := &Decoder{Def: d, loc: defaultLoc}
 	switch {
 	case !idRe.MatchString(d.ID):
-		return nil, errors.New("id: 2–64 znaki: małe litery, cyfry, . _ -")
+		return nil, lang.Errorf("id: 2–64 znaki: małe litery, cyfry, . _ -", "id: 2–64 characters: lowercase letters, digits, . _ -")
 	case d.Title == "":
-		return nil, errors.New("brak title")
+		return nil, lang.Errorf("brak title", "missing title")
 	case !datasetRe.MatchString(d.Dataset):
-		return nil, errors.New("dataset: małe litery, cyfry, . _ - (np. fortinet.fortigate)")
+		return nil, lang.Errorf("dataset: małe litery, cyfry, . _ - (np. fortinet.fortigate)", "dataset: lowercase letters, digits, . _ - (e.g. fortinet.fortigate)")
 	case strings.HasPrefix(d.Dataset, "windows.") || d.Dataset == "syslog.generic":
 		// Reguły Windows działają na windows.*; zdarzenia z syslog nie mogą
 		// się pod nie podszyć (ani pod zdarzenia bez dekodera).
-		return nil, errors.New("dataset: windows.* i syslog.generic są zarezerwowane")
+		return nil, lang.Errorf("dataset: windows.* i syslog.generic są zarezerwowane", "dataset: windows.* and syslog.generic are reserved")
 	}
 	m, err := compileMatch(d.Match, "match")
 	if err != nil {
@@ -151,32 +152,32 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 	dec.match = m
 	for i, alt := range d.Match.Any {
 		if len(alt.Any) > 0 {
-			return nil, fmt.Errorf("match.any[%d]: bez zagnieżdżonego any", i)
+			return nil, lang.Errorf("match.any[%d]: bez zagnieżdżonego any", "match.any[%d]: no nested any", i)
 		}
 		am, err := compileMatch(alt, fmt.Sprintf("match.any[%d]", i))
 		if err != nil {
 			return nil, err
 		}
 		if am.empty() {
-			return nil, fmt.Errorf("match.any[%d]: pusta alternatywa", i)
+			return nil, lang.Errorf("match.any[%d]: pusta alternatywa", "match.any[%d]: empty alternative", i)
 		}
 		dec.any = append(dec.any, am)
 	}
 	if m.empty() && len(dec.any) == 0 {
-		return nil, errors.New("match: podaj co najmniej jeden warunek (peer, host, app, contains, regex, any)")
+		return nil, lang.Errorf("match: podaj co najmniej jeden warunek (peer, host, app, contains, regex, any)", "match: specify at least one condition (peer, host, app, contains, regex, any)")
 	}
 	switch d.Parser.Type {
 	case "kv", "json", "none":
 	case "csv":
 		if len(d.Parser.Columns) == 0 {
-			return nil, errors.New("parser csv: podaj columns")
+			return nil, lang.Errorf("parser csv: podaj columns", "parser csv: specify columns")
 		}
 		if len([]rune(d.Parser.Separator)) > 1 {
-			return nil, errors.New("parser csv: separator to jeden znak")
+			return nil, lang.Errorf("parser csv: separator to jeden znak", "parser csv: the separator is a single character")
 		}
 	case "regex":
 		if len(d.Parser.Patterns) == 0 {
-			return nil, errors.New("parser regex: podaj patterns")
+			return nil, lang.Errorf("parser regex: podaj patterns", "parser regex: specify patterns")
 		}
 		for i, p := range d.Parser.Patterns {
 			re, err := regexp.Compile(p.Regex)
@@ -186,11 +187,11 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 			dec.patterns = append(dec.patterns, re)
 		}
 	default:
-		return nil, errors.New("parser.type: kv, json, csv, regex albo none")
+		return nil, lang.Errorf("parser.type: kv, json, csv, regex albo none", "parser.type: kv, json, csv, regex or none")
 	}
 	if d.Time != nil {
 		if len(d.Time.Fields) == 0 || d.Time.Layout == "" {
-			return nil, errors.New("time: podaj fields i layout")
+			return nil, lang.Errorf("time: podaj fields i layout", "time: specify fields and layout")
 		}
 		if d.Time.Timezone != "" {
 			loc, err := time.LoadLocation(d.Time.Timezone)
@@ -201,10 +202,10 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 		}
 	}
 	if d.Outcome != nil && len(d.Outcome.Field) == 0 {
-		return nil, errors.New("outcome.field: podaj pole")
+		return nil, lang.Errorf("outcome.field: podaj pole", "outcome.field: specify the field")
 	}
 	if d.Outcome != nil && d.Outcome.Otherwise != "" && d.Outcome.Otherwise != "success" && d.Outcome.Otherwise != "failure" {
-		return nil, errors.New("outcome.otherwise: success albo failure")
+		return nil, lang.Errorf("outcome.otherwise: success albo failure", "outcome.otherwise: success or failure")
 	}
 	return dec, nil
 }
@@ -320,7 +321,7 @@ func (d *Decoder) Decode(h Header) (Result, error) {
 	case "json":
 		var v any
 		if err := json.Unmarshal([]byte(h.Message), &v); err != nil {
-			return res, fmt.Errorf("niepoprawny JSON: %w", err)
+			return res, lang.Errorf("niepoprawny JSON: %w", "invalid JSON: %w", err)
 		}
 		flatten("", v, res.Fields)
 	case "csv":
@@ -331,7 +332,7 @@ func (d *Decoder) Decode(h Header) (Result, error) {
 		r.LazyQuotes, r.FieldsPerRecord = true, -1
 		rec, err := r.Read()
 		if err != nil {
-			return res, fmt.Errorf("niepoprawny CSV: %w", err)
+			return res, lang.Errorf("niepoprawny CSV: %w", "invalid CSV: %w", err)
 		}
 		for i, c := range d.Parser.Columns {
 			if i < len(rec) && c != "" && c != "-" {
@@ -557,7 +558,7 @@ func LoadFS(fsys fs.FS, loc *time.Location) ([]*Decoder, error) {
 			return fmt.Errorf("%s: %w", p, err)
 		}
 		if seen[d.ID] {
-			return fmt.Errorf("%s: id %s użyte dwa razy", p, d.ID)
+			return lang.Errorf("%s: id %s użyte dwa razy", "%s: id %s used twice", p, d.ID)
 		}
 		seen[d.ID] = true
 		out = append(out, d)

@@ -21,6 +21,20 @@ falsepositives:
   - Skrypt albo system monitoringu ze starym hasłem (stały adres, równe odstępy)
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "MikroTik – series of failed router logins"
+      description: |
+        At least 5 failed RouterOS logins (Winbox, SSH, WebFig, API, Telnet) from
+        one address within 5 minutes. Typical of administrator password guessing,
+        especially when management services are reachable from the internet.
+      instructions: |
+        {{count}} failed logins to router {{host.name}} from address {{source.ip}}
+        in {{window}} (last account {{user.name}} via {{process.name}}). Address from
+        the internet – restrict access to management services (/ip service: address,
+        firewall rule on the input chain) and disable unused ones (telnet, ftp, www,
+        api). Address from the local network – find out whose computer it is. Check
+        whether a successful login from this address followed the series ("logged in from").
   group_by: [host.name, source.ip]
   threshold:
     count: 5

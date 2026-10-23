@@ -28,7 +28,7 @@ import (
 func main() {
 	log := svc.Logger("writer")
 	if err := run(log); err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -57,7 +57,7 @@ func run(log *slog.Logger) error {
 	}
 
 	var w *chwriter.Writer
-	if err := svc.Retry(ctx, log, "połączenie z ClickHouse", func() error {
+	if err := svc.Retry(ctx, log, "connecting to ClickHouse", func() error {
 		var err error
 		w, err = chwriter.Open(ctx, svc.Env("SIEM_CLICKHOUSE_ADDR", "clickhouse:9000"),
 			svc.MustEnv(log, "SIEM_CLICKHOUSE_USER"), svc.MustEnv(log, "SIEM_CLICKHOUSE_PASSWORD"))
@@ -87,7 +87,7 @@ func run(log *slog.Logger) error {
 	p := &pipeline{w: w, log: log, seen: chwriter.NewSeen(500_000), m: metrics.NewWriter()}
 	go metrics.Serve(ctx, log, svc.Env("SIEM_METRICS_ADDR", ":9100"))
 	go queue.Watch(ctx, log, js, pl.EventsStream, pl.Writer, 0.5, 0.8, metrics.NewQueue())
-	log.Info("zapis do ClickHouse uruchomiony", "pipeline", pl.Name, "table", pl.Table, "max_rows", maxRows, "flush_every", flushEvery)
+	log.Info("ClickHouse writer started", "pipeline", pl.Name, "table", pl.Table, "max_rows", maxRows, "flush_every", flushEvery)
 	statsTick := time.NewTicker(time.Minute)
 	defer statsTick.Stop()
 
@@ -110,13 +110,13 @@ func run(log *slog.Logger) error {
 	for ctx.Err() == nil {
 		select {
 		case <-statsTick.C:
-			log.Info("statystyki", "rows", p.rows.Load(), "quarantine", p.quarantined.Load(), "rejected_by_db", p.rejected.Load(),
+			log.Info("stats", "rows", p.rows.Load(), "quarantine", p.quarantined.Load(), "rejected_by_db", p.rejected.Load(),
 				"duplicates_skipped", p.dups.Load(), "insert_errors", p.errors.Load())
 		default:
 		}
 		msgs, err := cons.Fetch(64, jetstream.FetchMaxWait(flushEvery/2))
 		if err != nil {
-			log.Warn("pobranie z kolejki nieudane", "err", err)
+			log.Warn("fetching from the queue failed", "err", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -174,7 +174,7 @@ func (p *pipeline) add(cur *pending, msg jetstream.Msg) {
 		err = json.Unmarshal(data, &b)
 	}
 	if err != nil {
-		p.log.Error("nieczytelna wiadomość w SIEM_EVENTS – pominięta", "subject", msg.Subject(), "err", err)
+		p.log.Error("unreadable message in SIEM_EVENTS – skipped", "subject", msg.Subject(), "err", err)
 		_ = msg.Term()
 		return
 	}
@@ -217,7 +217,7 @@ func (p *pipeline) flush(ctx context.Context, r *pending) {
 	for _, rj := range rejected {
 		p.rejected.Add(1)
 		p.m.Rejected.Inc()
-		p.log.Error("ClickHouse odrzucił zdarzenie – przenoszę do kwarantanny", "event_id", rj.Event.ID, "err", rj.Err)
+		p.log.Error("ClickHouse rejected an event – moving it to quarantine", "event_id", rj.Event.ID, "err", rj.Err)
 		quarantine = append(quarantine, rj.Quarantined())
 	}
 	if err == nil {
@@ -226,7 +226,7 @@ func (p *pipeline) flush(ctx context.Context, r *pending) {
 	if err != nil {
 		p.errors.Add(1)
 		p.m.InsertErrors.Inc()
-		p.log.Error("zapis do ClickHouse nieudany – ponowię", "rows", len(r.events), "err", err)
+		p.log.Error("writing to ClickHouse failed – will retry", "rows", len(r.events), "err", err)
 		for _, m := range r.msgs {
 			_ = m.NakWithDelay(5 * time.Second)
 		}

@@ -38,7 +38,8 @@ func TestPostgresAlerts(t *testing.T) {
 	t0 := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
 	single := func(ev string, at time.Time) Hit {
 		return Hit{RuleID: "r-log", RuleTitle: "Wyczyszczenie dziennika", Level: "high", Engine: "stream",
-			GroupKey: ev, EventID: ev, EventTime: at, HostName: "dc01"}
+			GroupKey: ev, EventID: ev, EventTime: at, HostName: "dc01", Summary: "komputer dc01",
+			I18n: map[string]AlertText{"en": {Title: "Log cleared", Summary: "computer dc01"}}}
 	}
 	grouped := func(ev string, at time.Time) Hit {
 		return Hit{RuleID: "r-ps", RuleTitle: "PowerShell", Level: "medium", Engine: "stream",
@@ -71,6 +72,13 @@ func TestPostgresAlerts(t *testing.T) {
 	}
 	if ps.ID == 0 || !ps.LastSeen.Equal(t0.Add(10*time.Minute)) || ps.GroupFields["Computer"] != "pc1" {
 		t.Fatalf("połączony alert: %+v", ps)
+	}
+	for _, a := range list {
+		if a.RuleID == "r-log" {
+			if en := a.Text("en"); en.Title != "Log cleared" || en.Summary != "computer dc01" || a.Text("de").Title != "Wyczyszczenie dziennika" {
+				t.Fatalf("tłumaczenie alertu: %+v", a.I18n)
+			}
+		}
 	}
 	if evs, _ := db.AlertEvents(ctx, ps.ID, 10); len(evs) != 2 {
 		t.Fatalf("zdarzenia alertu: %+v", evs)

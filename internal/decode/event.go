@@ -4,7 +4,6 @@ package decode
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"net/netip"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	_ "time/tzdata" // strefy czasowe dekoderów (obrazy usług bez tzdata)
 
 	"siem/internal/contract"
+	"siem/internal/lang"
 	"siem/internal/model"
 )
 
@@ -89,7 +89,7 @@ func Event(ev contract.Event, agentID string, ingested time.Time, set *Set, loc 
 	var evTime time.Time
 	d := set.Find(h, peer)
 	if d == nil && IsAPI(ev.Source) {
-		return model.Event{}, fmt.Errorf("brak dekodera dla źródła %s", ev.Source)
+		return model.Event{}, lang.Errorf("brak dekodera dla źródła %s", "no decoder for source %s", ev.Source)
 	}
 	if d == nil {
 		e.Dataset = "syslog.generic"

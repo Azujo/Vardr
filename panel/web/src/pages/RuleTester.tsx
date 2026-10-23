@@ -3,7 +3,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Alert as MAlert, Button, Code, Group, Select, Stack, Table, Text, Textarea } from "@mantine/core";
 import { IconFlask } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import { formatDate, rulesApi, type RuleTestResult } from "../api";
+import { locale, serverText } from "../i18n";
 
 // Test reguły na zdarzeniach z ostatnich godzin (bez wdrażania).
 export default function RuleTester({
@@ -15,6 +17,7 @@ export default function RuleTester({
   onChange?: (source: string) => void;
   note?: ReactNode;
 }) {
+  const { t } = useTranslation("rules");
   const [source, setSourceState] = useState(initial);
   const setSource = (v: string) => {
     setSourceState(v);
@@ -34,12 +37,12 @@ export default function RuleTester({
     setRes(null);
     try {
       const r = await rulesApi.test(source, Number(hours));
-      if (!r.ok) setErr(r.error ?? "błąd");
+      if (!r.ok) setErr(r.error ? serverText(r.error, r.error_en) : t("tester.error"));
       else {
         // Puste listy mogą przyjść jako null (starszy serwer) – bez tego strona się wywracała.
         setRes(r.result ? { ...r.result, events: r.result.events ?? [], alerts: r.result.alerts ?? [] } : null);
         setSql(r.sql ?? "");
-        setWarnings(r.attack_warnings ?? []);
+        setWarnings((locale() !== "pl" && r.attack_warnings_en) || r.attack_warnings || []);
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -52,9 +55,7 @@ export default function RuleTester({
     <Stack gap="xs">
       {note ?? (
         <Text size="xs" c="dimmed">
-          Reguła (YAML) jest sprawdzana i wykonywana na zdarzeniach z ClickHouse – nic nie jest wdrażane ani zapisywane. Alerty
-          liczone tak jak w detektorze (łączenie, progi). Zmienioną regułę wdraża się plikiem w repozytorium (
-          <Code>deploy.sh rules</Code>).
+          {t("tester.intro")} (<Code>deploy.sh rules</Code>).
         </Text>
       )}
       <Textarea
@@ -73,25 +74,25 @@ export default function RuleTester({
           value={hours}
           onChange={(v) => setHours(v ?? "24")}
           data={[
-            { value: "1", label: "ostatnia godzina" },
-            { value: "24", label: "ostatnie 24 h" },
-            { value: "72", label: "ostatnie 3 dni" },
-            { value: "168", label: "ostatnie 7 dni" },
+            { value: "1", label: t("tester.range.1") },
+            { value: "24", label: t("tester.range.24") },
+            { value: "72", label: t("tester.range.72") },
+            { value: "168", label: t("tester.range.168") },
           ]}
         />
         <Button leftSection={<IconFlask size={16} />} loading={busy} onClick={() => void run()}>
-          Przetestuj
+          {t("tester.run")}
         </Button>
       </Group>
       {err && (
-        <MAlert color="red" title="Reguła nie przeszła">
+        <MAlert color="red" title={t("tester.failed")}>
           <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
             {err}
           </Text>
         </MAlert>
       )}
       {res && warnings.length > 0 && (
-        <MAlert color="orange" title="Tagi MITRE ATT&CK do poprawy">
+        <MAlert color="orange" title={t("tester.attackTags")}>
           {warnings.map((w) => (
             <Text size="sm" key={w}>
               {w}
@@ -103,18 +104,18 @@ export default function RuleTester({
         <Stack gap="xs">
           <MAlert color={res.alerts_total > 0 ? "orange" : "green"}>
             <Text size="sm">
-              Pasujących zdarzeń: <b>{res.matched}</b> · alertów, które by powstały: <b>{res.alerts_total}</b>
-              {res.truncated ? " (z pierwszych 20 000 zdarzeń)" : ""} · {res.took_ms} ms
+              {t("tester.matched")} <b>{res.matched}</b> · {t("tester.alerts")} <b>{res.alerts_total}</b>
+              {res.truncated ? t("tester.truncated") : ""} · {res.took_ms} ms
             </Text>
           </MAlert>
           {res.alerts.length > 0 && (
             <Table fz="xs" verticalSpacing={2} withTableBorder>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Klucz / komputer</Table.Th>
-                  <Table.Th>Zdarzenia</Table.Th>
-                  <Table.Th>Od</Table.Th>
-                  <Table.Th>Do</Table.Th>
+                  <Table.Th>{t("tester.colKey")}</Table.Th>
+                  <Table.Th>{t("tester.colEvents")}</Table.Th>
+                  <Table.Th>{t("tester.colFrom")}</Table.Th>
+                  <Table.Th>{t("tester.colTo")}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -138,7 +139,7 @@ export default function RuleTester({
           {res.events.length > 0 && (
             <>
               <Text size="sm" fw={500}>
-                Ostatnie pasujące zdarzenia
+                {t("tester.lastEvents")}
               </Text>
               <Table fz="xs" verticalSpacing={2} withTableBorder>
                 <Table.Tbody>
@@ -159,7 +160,7 @@ export default function RuleTester({
             <details>
               <summary>
                 <Text span size="xs" c="dimmed">
-                  warunek SQL (silnik zapytań)
+                  {t("tester.sql")}
                 </Text>
               </summary>
               <Code block fz="xs">

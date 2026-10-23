@@ -36,6 +36,16 @@ falsepositives:
   - Skrypty administracyjne i narzędzia bezpieczeństwa używające tych funkcji
 level: medium
 vardr:
+  i18n:
+    en:
+      title: "Suspicious functions in a PowerShell script"
+      description: |
+        A PowerShell script block (event 4104) contains functions typical of attack
+        tools: downloading and running code from the network, injecting code into memory,
+        disabling protections (AMSI), known offensive modules.
+      instructions: |
+        Review the full block content (ScriptBlockText) and the account that ran it.
+        Several blocks with the same ScriptBlockId are fragments of one large script.
   group_by: [Computer]
   suppress: 1h
   instructions: |

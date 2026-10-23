@@ -22,6 +22,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // DefaultValidity to ważność certyfikatu agenta; agent odnawia go sam,
@@ -51,7 +53,7 @@ func LoadSigner(certFile, keyFile string) (*Signer, error) {
 	cb, _ := pem.Decode(certPEM)
 	kb, _ := pem.Decode(keyPEM)
 	if cb == nil || kb == nil {
-		return nil, errors.New("niepoprawne pliki CA agentów (PEM)")
+		return nil, errors.New("invalid agent CA files (PEM)")
 	}
 	ca, err := x509.ParseCertificate(cb.Bytes)
 	if err != nil {
@@ -59,10 +61,10 @@ func LoadSigner(certFile, keyFile string) (*Signer, error) {
 	}
 	key, err := x509.ParseECPrivateKey(kb.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("klucz CA agentów: %w", err)
+		return nil, fmt.Errorf("agent CA key: %w", err)
 	}
 	if !ca.IsCA {
-		return nil, errors.New("certyfikat CA agentów nie jest urzędem certyfikacji")
+		return nil, errors.New("the agent CA certificate is not a certificate authority")
 	}
 	return &Signer{CA: ca, Key: key, Validity: DefaultValidity}, nil
 }
@@ -88,10 +90,10 @@ func ParseCSR(pemData string) (*x509.CertificateRequest, error) {
 		}
 	case *rsa.PublicKey:
 		if k.N.BitLen() < 2048 {
-			return nil, errors.New("klucz RSA musi mieć co najmniej 2048 bitów")
+			return nil, lang.Errorf("klucz RSA musi mieć co najmniej 2048 bitów", "an RSA key must have at least 2048 bits")
 		}
 	default:
-		return nil, errors.New("nieobsługiwany typ klucza (dozwolone ECDSA P-256/P-384 i RSA ≥ 2048)")
+		return nil, lang.Errorf("nieobsługiwany typ klucza (dozwolone ECDSA P-256/P-384 i RSA ≥ 2048)", "unsupported key type (ECDSA P-256/P-384 and RSA ≥ 2048 are allowed)")
 	}
 	return csr, nil
 }

@@ -21,7 +21,8 @@ import {
 } from "@mantine/core";
 import { IconArrowLeft } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
-import { alertsApi, formatDate, levelLabels, rulesApi, type BulkRuleAction, type RuleInfo, type TrialStat } from "../api";
+import { alertsApi, formatDate, levelLabels, ruleText, rulesApi, type BulkRuleAction, type RuleInfo, type TrialStat } from "../api";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import RuleBulkModal, { bulkLabels } from "./RuleBulkModal";
 
@@ -29,13 +30,8 @@ type Verdict = "short" | "quiet" | "rare" | "moderate" | "noisy";
 
 // Rekomendacja: po co najmniej dobie – cicha (0 trafień), rzadka (< 1/dzień),
 // umiarkowana (< 20/dzień) albo głośna.
-const verdicts: Record<Verdict, { label: string; color: string; help: string }> = {
-  short: { label: "za krótko", color: "gray", help: "próba trwa krócej niż dobę – poczekaj na wynik" },
-  quiet: { label: "cicha – można włączyć", color: "green", help: "brak trafień – reguła nie hałasuje na tych danych" },
-  rare: { label: "rzadka", color: "teal", help: "mniej niż 1 trafienie dziennie – przejrzyj przykłady i włącz" },
-  moderate: { label: "umiarkowana", color: "yellow", help: "1–20 trafień dziennie – sprawdź, czy to prawdziwe zdarzenia, rozważ wyjątki" },
-  noisy: { label: "głośna", color: "red", help: "ponad 20 trafień dziennie – bez dostrojenia zaleje alertami" },
-};
+// Nazwy i opisy ocen: rules: trialsPage.verdict.<ocena>.
+const verdictColors: Record<Verdict, string> = { short: "gray", quiet: "green", rare: "teal", moderate: "yellow", noisy: "red" };
 
 function verdictOf(t: TrialStat, now: number): { v: Verdict; days: number; perDay: number } {
   const days = (now - new Date(t.since).getTime()) / 86400000;
@@ -62,6 +58,7 @@ function aroundLink(t: TrialStat): string {
 }
 
 export default function RuleTrialsPage() {
+  const { t: tr } = useTranslation("rules");
   const { can } = useAuth();
   const admin = can("rules", "write");
   const [trials, setTrials] = useState<TrialStat[]>([]);
@@ -105,22 +102,23 @@ export default function RuleTrialsPage() {
     <Stack>
       <Anchor component={Link} to="/rules" size="sm">
         <Group gap={4}>
-          <IconArrowLeft size={14} /> reguły detekcji
+          <IconArrowLeft size={14} /> {tr("trialsPage.back")}
         </Group>
       </Anchor>
       <div>
-        <Title order={2}>Próby reguł</Title>
+        <Title order={2}>{tr("trials")}</Title>
         <Text c="dimmed" size="sm" maw={860}>
-          Reguła w trybie próbnym jest oceniana na bieżących zdarzeniach (silnik w locie), ale nie tworzy alertów ani
-          powiadomień – liczy tylko trafienia od początku próby. Tryb próbny ustawisz na stronie reguł (pojedynczo albo dla
-          zaznaczonych, np. wszystkich reguł SigmaHQ wysokiego poziomu). Reguły progowe liczą trafienia warunku, bez progu.
+          {tr("trialsPage.intro")}
         </Text>
       </div>
       {error && <MAlert color="red">{error}</MAlert>}
       {trials.length === 0 && !error && (
         <MAlert color="gray">
-          Żadna reguła nie jest w trybie próbnym. Na stronie <Anchor component={Link} to="/rules">reguł</Anchor> zaznacz reguły
-          (np. filtr SigmaHQ, poziom wysoki i krytyczny) i wybierz „Tryb próbny”.
+          {tr("trialsPage.empty.0")}
+          <Anchor component={Link} to="/rules">
+            {tr("trialsPage.empty.1")}
+          </Anchor>
+          {tr("trialsPage.empty.2")}
         </MAlert>
       )}
       {trials.length > 0 && (
@@ -129,10 +127,10 @@ export default function RuleTrialsPage() {
             value={filter}
             onChange={setFilter}
             data={[
-              { value: "all", label: `Wszystkie (${trials.length})` },
+              { value: "all", label: tr("trialsPage.all", { count: trials.length }) },
               ...(["noisy", "moderate", "rare", "quiet", "short"] as Verdict[]).map((v) => ({
                 value: v,
-                label: `${verdicts[v].label.split(" –")[0]} (${counts[v] ?? 0})`,
+                label: `${tr(`trialsPage.verdict.${v}.short`)} (${counts[v] ?? 0})`,
               })),
             ]}
           />
@@ -141,15 +139,15 @@ export default function RuleTrialsPage() {
       {admin && selected.size > 0 && (
         <Group gap="xs">
           <Text size="sm" fw={500}>
-            Zaznaczone: {selected.size}
+            {tr("selected", { count: selected.size })}
           </Text>
           {(["enable", "disable", "file"] as BulkRuleAction[]).map((a) => (
             <Button key={a} size="xs" variant="light" color={a === "disable" ? "red" : undefined} onClick={() => setBulk(a)}>
-              {a === "enable" ? "Włącz (z alertami)" : a === "disable" ? "Wyłącz (koniec próby)" : bulkLabels[a]}
+              {a === "enable" ? tr("trialsPage.enable") : a === "disable" ? tr("trialsPage.disable") : bulkLabels[a]}
             </Button>
           ))}
           <Button size="xs" variant="subtle" onClick={() => setSelected(new Set())}>
-            wyczyść zaznaczenie
+            {tr("clearSelection")}
           </Button>
         </Group>
       )}
@@ -174,16 +172,16 @@ export default function RuleTrialsPage() {
                           return n;
                         });
                       }}
-                      aria-label="zaznacz wszystkie"
+                      aria-label={tr("selectFiltered")}
                     />
                   </Table.Th>
                 )}
-                <Table.Th>Ocena</Table.Th>
-                <Table.Th>Reguła</Table.Th>
-                <Table.Th>Próba</Table.Th>
-                <Table.Th>Trafienia</Table.Th>
-                <Table.Th>Komputery</Table.Th>
-                <Table.Th>Ostatnie trafienie</Table.Th>
+                <Table.Th>{tr("trialsPage.col.verdict")}</Table.Th>
+                <Table.Th>{tr("col.rule")}</Table.Th>
+                <Table.Th>{tr("trialsPage.col.trial")}</Table.Th>
+                <Table.Th>{tr("trialsPage.col.hits")}</Table.Th>
+                <Table.Th>{tr("trialsPage.col.hosts")}</Table.Th>
+                <Table.Th>{tr("trialsPage.col.last")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -203,14 +201,14 @@ export default function RuleTrialsPage() {
                             return n;
                           });
                         }}
-                        aria-label="zaznacz regułę"
+                        aria-label={tr("selectRule")}
                       />
                     </Table.Td>
                   )}
                   <Table.Td>
-                    <Tooltip label={verdicts[v].help} multiline w={260}>
-                      <Badge color={verdicts[v].color} variant="light">
-                        {verdicts[v].label}
+                    <Tooltip label={tr(`trialsPage.verdict.${v}.help`)} multiline w={260}>
+                      <Badge color={verdictColors[v]} variant="light">
+                        {tr(`trialsPage.verdict.${v}.label`)}
                       </Badge>
                     </Tooltip>
                   </Table.Td>
@@ -218,17 +216,17 @@ export default function RuleTrialsPage() {
                     <Group gap={6} wrap="nowrap">
                       {r && <Badge size="xs" color={levelLabels[r.level].color}>{levelLabels[r.level].label}</Badge>}
                       <Text size="sm" fw={500} lineClamp={1}>
-                        {r?.title ?? t.rule_id}
+                        {r ? ruleText(r).title : t.rule_id}
                       </Text>
                     </Group>
                     <Text size="xs" c="dimmed" ff="monospace" lineClamp={1}>
-                      {r?.file ?? "(reguły nie ma już w katalogu)"}
+                      {r?.file ?? tr("trialsPage.gone")}
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <Text size="xs">od {formatDate(t.since)}</Text>
+                    <Text size="xs">{tr("trialsPage.since", { date: formatDate(t.since) })}</Text>
                     <Text size="xs" c="dimmed">
-                      {days < 1 ? `${Math.max(0, Math.round(days * 24))} h` : `${days.toFixed(1)} dni`} · {t.changed_by}
+                      {days < 1 ? `${Math.max(0, Math.round(days * 24))} h` : tr("trialsPage.days", { n: days.toFixed(1) })} · {t.changed_by}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -236,13 +234,13 @@ export default function RuleTrialsPage() {
                       {t.hits}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      {perDay < 10 ? perDay.toFixed(1) : Math.round(perDay)}/dzień
+                      {tr("trialsPage.perDay", { n: perDay < 10 ? perDay.toFixed(1) : Math.round(perDay) })}
                     </Text>
                   </Table.Td>
                   <Table.Td maw={220}>
                     <Text size="xs">{t.hosts}</Text>
                     <Text size="xs" c="dimmed" lineClamp={2}>
-                      {t.top_hosts.map((h) => `${h.host || "(brak)"} ${h.hits}`).join(", ")}
+                      {t.top_hosts.map((h) => `${h.host || tr("trialsPage.noHost")} ${h.hits}`).join(", ")}
                     </Text>
                   </Table.Td>
                   <Table.Td maw={340}>
@@ -268,8 +266,9 @@ export default function RuleTrialsPage() {
         </Table.ScrollContainer>
       )}
       <Text size="xs" c="dimmed">
-        Próby działają w silniku w locie (<Code>SIEM_DETECTION_MODE</Code> stream albo both). Trafienia są przechowywane 35 dni;
-        ponowne rozpoczęcie próby liczy od zera.
+        {tr("trialsPage.footer.0")}
+        <Code>SIEM_DETECTION_MODE</Code>
+        {tr("trialsPage.footer.1")}
       </Text>
       <RuleBulkModal
         ids={[...selected]}

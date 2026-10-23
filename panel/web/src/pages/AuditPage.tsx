@@ -2,21 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Code, Group, Stack, Table, Text, Title } from "@mantine/core";
+import { useTranslation } from "react-i18next";
 import { api, formatDate, type AuditEntry } from "../api";
 
-// Czytelne nazwy akcji z dziennika.
-const actionLabels: Record<string, { label: string; color: string }> = {
-  login: { label: "logowanie", color: "green" },
-  login_failed: { label: "nieudane logowanie", color: "orange" },
-  logout: { label: "wylogowanie", color: "gray" },
-  password_changed: { label: "zmiana hasła", color: "blue" },
-  password_change_failed: { label: "nieudana zmiana hasła", color: "orange" },
-  password_reset: { label: "nowe hasło startowe", color: "violet" },
-  user_created: { label: "nowe konto", color: "teal" },
-  user_updated: { label: "zmiana konta", color: "indigo" },
+// Kolory akcji z dziennika; czytelne nazwy – admin: audit.action.<akcja>
+// (pozostałe akcje pokazywane kodem).
+const actionColors: Record<string, string> = {
+  login: "green",
+  login_failed: "orange",
+  logout: "gray",
+  password_changed: "blue",
+  password_change_failed: "orange",
+  password_reset: "violet",
+  user_created: "teal",
+  user_updated: "indigo",
 };
 
 export default function AuditPage() {
+  const { t } = useTranslation("admin");
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [more, setMore] = useState(true);
   const [error, setError] = useState("");
@@ -35,9 +38,9 @@ export default function AuditPage() {
   return (
     <Stack>
       <div>
-        <Title order={2}>Dziennik audytu</Title>
+        <Title order={2}>{t("audit.title")}</Title>
         <Text c="dimmed" size="sm">
-          Logowania i zmiany w panelu – kto, kiedy, skąd i co zmienił.
+          {t("audit.intro")}
         </Text>
       </div>
       {error && <Alert color="red">{error}</Alert>}
@@ -45,17 +48,17 @@ export default function AuditPage() {
         <Table striped verticalSpacing="xs">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Czas</Table.Th>
-              <Table.Th>Użytkownik</Table.Th>
-              <Table.Th>Akcja</Table.Th>
-              <Table.Th>Dotyczy</Table.Th>
-              <Table.Th>Adres IP</Table.Th>
-              <Table.Th>Szczegóły</Table.Th>
+              <Table.Th>{t("audit.col.time")}</Table.Th>
+              <Table.Th>{t("audit.col.user")}</Table.Th>
+              <Table.Th>{t("audit.col.action")}</Table.Th>
+              <Table.Th>{t("audit.col.target")}</Table.Th>
+              <Table.Th>{t("audit.col.ip")}</Table.Th>
+              <Table.Th>{t("audit.col.details")}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {entries.map((e) => {
-              const a = actionLabels[e.action] ?? { label: e.action, color: "gray" };
+              const a = { label: t(`audit.action.${e.action}`, { defaultValue: e.action }), color: actionColors[e.action] ?? "gray" };
               return (
                 <Table.Tr key={e.id}>
                   <Table.Td style={{ whiteSpace: "nowrap" }}>
@@ -83,7 +86,7 @@ export default function AuditPage() {
       {more && entries.length > 0 && (
         <Group>
           <Button variant="default" onClick={() => load(entries[entries.length - 1].id)}>
-            Starsze wpisy
+            {t("audit.older")}
           </Button>
         </Group>
       )}

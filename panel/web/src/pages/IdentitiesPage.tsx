@@ -6,7 +6,6 @@ import {
   Anchor,
   Badge,
   Button,
-  Code,
   Group,
   Select,
   Stack,
@@ -21,10 +20,20 @@ import { notifications } from "@mantine/notifications";
 import { IconLink, IconTrash } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { formatDate, formatNumber, identitiesApi, type IdentityAlias, type Person } from "../api";
+import { useTranslation } from "react-i18next";
+import i18n from "../i18n";
 import { useAuth } from "../auth";
 
 function err(e: unknown) {
   notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+}
+
+// Wynik zapisu: dostarczenie zmiany do normalizatorów (ok, no_nats, failed).
+function saved(r: { delivery: string }) {
+  notifications.show({
+    color: r.delivery === "ok" ? "green" : "orange",
+    message: i18n.t(`identities:saved.${r.delivery}`, { defaultValue: i18n.t("identities:saved.ok") }),
+  });
 }
 
 function eventsLink(identity: string) {
@@ -33,6 +42,7 @@ function eventsLink(identity: string) {
 }
 
 export default function IdentitiesPage() {
+  const { t } = useTranslation("identities");
   const { can } = useAuth();
   const admin = can("identities", "write");
   const [tab, setTab] = useState<string | null>("people");
@@ -92,8 +102,7 @@ export default function IdentitiesPage() {
   const saveDomains = async () => {
     setBusy(true);
     try {
-      const r = await identitiesApi.setDomains(domains);
-      notifications.show({ color: "green", message: r.message });
+      saved(await identitiesApi.setDomains(domains));
       loadConfig();
     } catch (e) {
       err(e);
@@ -104,8 +113,7 @@ export default function IdentitiesPage() {
   const saveShared = async () => {
     setBusy(true);
     try {
-      const r = await identitiesApi.setShared(shared);
-      notifications.show({ color: "green", message: r.message });
+      saved(await identitiesApi.setShared(shared));
       loadConfig();
     } catch (e) {
       err(e);
@@ -116,8 +124,7 @@ export default function IdentitiesPage() {
   const addAlias = async (a: string, id: string, n: string) => {
     setBusy(true);
     try {
-      const r = await identitiesApi.setAlias(a, id, n);
-      notifications.show({ color: "green", message: r.message });
+      saved(await identitiesApi.setAlias(a, id, n));
       setAlias("");
       setTarget("");
       setNote("");
@@ -130,8 +137,7 @@ export default function IdentitiesPage() {
   };
   const removeAlias = async (a: string) => {
     try {
-      const r = await identitiesApi.deleteAlias(a);
-      notifications.show({ color: "green", message: r.message });
+      saved(await identitiesApi.deleteAlias(a));
       loadConfig();
     } catch (e) {
       err(e);
@@ -150,66 +156,61 @@ export default function IdentitiesPage() {
   return (
     <Stack>
       <div>
-        <Title order={2}>Tożsamości</Title>
+        <Title order={2}>{t("title")}</Title>
         <Text c="dimmed" size="sm" maw={900}>
-          Każde zdarzenie z kontem dostaje <b>osobę</b> (<Code>user.identity</Code>): nazwę konta bez domeny, małymi literami – to samo konto
-          w AD (<Code>AZUJO\jkowalski</Code>), w Entra ID (<Code>jkowalski@azujo.pl</Code>) i na VPN (<Code>jkowalski</Code>) to jedna osoba.
-          Dzięki temu reguły i wyszukiwarka łączą zdarzenia z różnych źródeł. Konta techniczne (komputery, usługi systemowe) osoby nie mają.
-          Zmiany działają dla nowych zdarzeń w ciągu kilku sekund; zapisanych nie zmieniają.
+          {t("intro")}
         </Text>
       </div>
       {error && <MAlert color="red">{error}</MAlert>}
       {uncovered.length > 0 && (
-        <MAlert color="orange" title="Domeny kont spoza listy domen organizacji">
-          W zdarzeniach z ostatnich 7 dni są konta z domen spoza listy: {uncovered.map((d) => `${d.domain} (${formatNumber(d.events)})`).join(", ")}.
-          Ich osoby dostają nazwę z domeną (np. <Code>azujo\jan</Code>) i nie łączą się z tą samą osobą z innych źródeł. Jeśli to domeny
-          organizacji – dodaj je w zakładce „Domeny organizacji” (konta lokalne komputerów zostaw poza listą).
+        <MAlert color="orange" title={t("uncovered.title")}>
+          {t("uncovered.text", { list: uncovered.map((d) => `${d.domain} (${formatNumber(d.events)})`).join(", ") })}
         </MAlert>
       )}
       {!delivery && (
-        <MAlert color="orange">Panel nie jest połączony z NATS – zmiany trafią do normalizatorów po przywróceniu połączenia.</MAlert>
+        <MAlert color="orange">{t("noNats")}</MAlert>
       )}
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
-          <Tabs.Tab value="people">Osoby</Tabs.Tab>
+          <Tabs.Tab value="people">{t("tab.people")}</Tabs.Tab>
           <Tabs.Tab value="suggestions">
-            Podpowiedzi {suggestions.length > 0 && <Badge size="xs">{suggestions.length}</Badge>}
+            {t("tab.suggestions")} {suggestions.length > 0 && <Badge size="xs">{suggestions.length}</Badge>}
           </Tabs.Tab>
-          <Tabs.Tab value="aliases">Aliasy kont ({aliases.length})</Tabs.Tab>
-          <Tabs.Tab value="domains">Domeny i konta wspólne</Tabs.Tab>
+          <Tabs.Tab value="aliases">{t("tab.aliases", { count: aliases.length })}</Tabs.Tab>
+          <Tabs.Tab value="domains">{t("tab.domains")}</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="people" pt="sm">
           <Stack gap="xs">
             <Group align="flex-end" gap="xs">
               <Select
-                label="Okres"
+                label={t("people.period")}
                 w={160}
                 allowDeselect={false}
                 value={hours}
                 onChange={(v) => setHours(v ?? "168")}
                 data={[
-                  { value: "24", label: "ostatnie 24 h" },
-                  { value: "168", label: "ostatnie 7 dni" },
-                  { value: "720", label: "ostatnie 30 dni" },
+                  { value: "24", label: t("people.h24") },
+                  { value: "168", label: t("people.d7") },
+                  { value: "720", label: t("people.d30") },
                 ]}
               />
-              <TextInput label="Szukaj" placeholder="osoba albo konto" w={240} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
+              <TextInput label={t("people.search")} placeholder={t("people.searchPlaceholder")} w={240} value={q} onChange={(e) => setQ(e.currentTarget.value)} />
             </Group>
             <Text size="xs" c="dimmed">
-              Najaktywniejsze osoby (do 500) – z jakich źródeł i kont. Kliknij osobę, aby zobaczyć jej zdarzenia w Mímirze.
+              {t("people.hint")}
             </Text>
             <Table.ScrollContainer minWidth={900}>
               <Table striped verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Osoba</Table.Th>
-                    <Table.Th>Źródła</Table.Th>
-                    <Table.Th>Konta</Table.Th>
-                    <Table.Th>Zdarzenia</Table.Th>
-                    <Table.Th>Nieudane</Table.Th>
-                    <Table.Th>Komputery</Table.Th>
-                    <Table.Th>Ostatnio</Table.Th>
+                    <Table.Th>{t("col.person")}</Table.Th>
+                    <Table.Th>{t("col.sources")}</Table.Th>
+                    <Table.Th>{t("col.accounts")}</Table.Th>
+                    <Table.Th>{t("col.events")}</Table.Th>
+                    <Table.Th>{t("col.failures")}</Table.Th>
+                    <Table.Th>{t("col.hosts")}</Table.Th>
+                    <Table.Th>{t("col.last")}</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -251,10 +252,9 @@ export default function IdentitiesPage() {
         <Tabs.Panel value="suggestions" pt="sm">
           <Stack gap="xs">
             <Text size="sm" c="dimmed">
-              Osoby, których nazwy różnią się tylko kropkami, podkreśleniami albo myślnikami (np. <Code>j.kowalski</Code> na VPN
-              i <Code>jkowalski</Code> w AD) – prawdopodobnie ta sama osoba. „Połącz” dodaje alias do wybranej nazwy.
+              {t("suggestions.hint")}
             </Text>
-            {suggestions.length === 0 && <Text size="sm">Brak podpowiedzi w wybranym okresie.</Text>}
+            {suggestions.length === 0 && <Text size="sm">{t("suggestions.none")}</Text>}
             {suggestions.map((s) => (
               <Group key={s.identities.join("|")} gap="xs">
                 {s.identities.map((id) => (
@@ -271,11 +271,11 @@ export default function IdentitiesPage() {
                       leftSection={<IconLink size={12} />}
                       loading={busy}
                       onClick={async () => {
-                        for (const other of s.identities.filter((x) => x !== id)) await addAlias(other, id, "połączone z podpowiedzi");
+                        for (const other of s.identities.filter((x) => x !== id)) await addAlias(other, id, t("suggestions.note"));
                         loadPeople();
                       }}
                     >
-                      połącz jako {id}
+                      {t("suggestions.merge", { id })}
                     </Button>
                   ))}
               </Group>
@@ -286,26 +286,25 @@ export default function IdentitiesPage() {
         <Tabs.Panel value="aliases" pt="sm">
           <Stack gap="xs">
             <Text size="sm" c="dimmed">
-              Alias przypisuje konto do osoby, gdy nazwy się różnią – np. login VPN <Code>j.kowalski</Code> → <Code>jkowalski</Code>.
-              Alias może być nazwą konta, pełną nazwą <Code>DOMENA\konto</Code> albo adresem <Code>konto@domena</Code>.
+              {t("aliases.hint")}
             </Text>
             {admin && (
               <Group align="flex-end" gap="xs">
-                <TextInput label="Konto" placeholder="j.kowalski" w={220} value={alias} onChange={(e) => setAlias(e.currentTarget.value)} />
-                <TextInput label="Osoba" placeholder="jkowalski" w={200} value={target} onChange={(e) => setTarget(e.currentTarget.value)} />
-                <TextInput label="Opis" placeholder="login VPN" w={240} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+                <TextInput label={t("col.account")} placeholder="j.kowalski" w={220} value={alias} onChange={(e) => setAlias(e.currentTarget.value)} />
+                <TextInput label={t("col.person")} placeholder="jkowalski" w={200} value={target} onChange={(e) => setTarget(e.currentTarget.value)} />
+                <TextInput label={t("col.note")} placeholder={t("aliases.notePlaceholder")} w={240} value={note} onChange={(e) => setNote(e.currentTarget.value)} />
                 <Button loading={busy} disabled={!alias.trim() || !target.trim()} onClick={() => void addAlias(alias, target, note)}>
-                  Dodaj alias
+                  {t("aliases.add")}
                 </Button>
               </Group>
             )}
             <Table verticalSpacing={4}>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Konto</Table.Th>
-                  <Table.Th>Osoba</Table.Th>
-                  <Table.Th>Opis</Table.Th>
-                  <Table.Th>Dodany</Table.Th>
+                  <Table.Th>{t("col.account")}</Table.Th>
+                  <Table.Th>{t("col.person")}</Table.Th>
+                  <Table.Th>{t("col.note")}</Table.Th>
+                  <Table.Th>{t("col.added")}</Table.Th>
                   <Table.Th />
                 </Table.Tr>
               </Table.Thead>
@@ -327,7 +326,7 @@ export default function IdentitiesPage() {
                     <Table.Td>
                       {admin && (
                         <Button size="compact-xs" variant="subtle" color="red" leftSection={<IconTrash size={12} />} onClick={() => void removeAlias(a.alias)}>
-                          usuń
+                          {t("aliases.remove")}
                         </Button>
                       )}
                     </Table.Td>
@@ -341,15 +340,12 @@ export default function IdentitiesPage() {
         <Tabs.Panel value="domains" pt="sm">
           <Stack gap="xs" maw={760}>
             <Text size="sm" c="dimmed">
-              Domeny, których konta należą do osób z organizacji – nazwy NetBIOS i DNS (np. <Code>azujo</Code>, <Code>azujo.centrala</Code>,{" "}
-              <Code>azujo.pl</Code>). Konta z innych domen – lokalne konta komputerów (<Code>DESKTOP-1\admin</Code>) i goście z innych
-              firm – zostają osobnymi tożsamościami z domeną. Pusta lista: każda domena należy do organizacji (konto lokalne „admin” i
-              domenowe „admin” to wtedy ta sama osoba).
+              {t("domains.hint")}
             </Text>
             {seen.length > 0 && (
               <div>
                 <Text size="sm" fw={500}>
-                  Domeny kont w zdarzeniach (7 dni)
+                  {t("domains.seen")}
                 </Text>
                 <Group gap={6} mt={4}>
                   {seen.map((d) => (
@@ -359,7 +355,7 @@ export default function IdentitiesPage() {
                       color={d.covered ? "green" : "orange"}
                       tt="none"
                       style={{ cursor: admin && !domains.includes(d.domain) ? "pointer" : undefined }}
-                      title={admin && !domains.includes(d.domain) ? "kliknij, aby dodać do listy (potem Zapisz)" : undefined}
+                      title={admin && !domains.includes(d.domain) ? t("domains.clickToAdd") : undefined}
                       onClick={() => admin && !domains.includes(d.domain) && setDomains([...domains, d.domain])}
                     >
                       {d.domain} · {formatNumber(d.events)}
@@ -367,13 +363,13 @@ export default function IdentitiesPage() {
                   ))}
                 </Group>
                 <Text size="xs" c="dimmed" mt={4}>
-                  Zielone – na liście; pomarańczowe – poza listą (kliknij, aby dodać). Nazwy komputerów (konta lokalne) zostaw poza listą.
+                  {t("domains.legend")}
                 </Text>
               </div>
             )}
             <TagsInput
-              label="Domeny organizacji"
-              placeholder="wpisz i naciśnij Enter"
+              label={t("domains.label")}
+              placeholder={t("domains.enter")}
               value={domains}
               onChange={setDomains}
               disabled={!admin}
@@ -382,22 +378,19 @@ export default function IdentitiesPage() {
             {admin && (
               <Group>
                 <Button loading={busy} disabled={!domainsChanged} onClick={() => void saveDomains()}>
-                  Zapisz domeny
+                  {t("domains.save")}
                 </Button>
               </Group>
             )}
             <Text fw={600} size="sm" mt="md">
-              Konta wspólne urządzeń
+              {t("shared.title")}
             </Text>
             <Text size="sm" c="dimmed">
-              Konta bez domeny, które nie należą do jednej osoby – np. <Code>admin</Code> na routerze MikroTik i na FortiGate,{" "}
-              <Code>root</Code> na urządzeniu. Takie konto dostaje tożsamość z nazwą urządzenia (<Code>mikrotik\admin</Code>), więc
-              korelacje nie łączą prób na różnych urządzeniach ani z domenowym kontem „admin”. Konto z domeną (<Code>AZUJO\admin</Code>)
-              liczy się jak dotąd. Jeśli konto na urządzeniu ma właściciela, dodaj alias (np. <Code>mikrotik\admin</Code> → osoba).
+              {t("shared.hint")}
             </Text>
             <TagsInput
-              label="Konta wspólne"
-              placeholder="wpisz i naciśnij Enter"
+              label={t("shared.label")}
+              placeholder={t("domains.enter")}
               value={shared}
               onChange={setShared}
               disabled={!admin}
@@ -406,23 +399,23 @@ export default function IdentitiesPage() {
             {admin && (
               <Group>
                 <Button loading={busy} disabled={!sharedChanged} onClick={() => void saveShared()}>
-                  Zapisz konta wspólne
+                  {t("shared.save")}
                 </Button>
               </Group>
             )}
             <Text fw={600} size="sm" mt="md">
-              Sprawdź konto
+              {t("check.title")}
             </Text>
             <Group align="flex-end" gap="xs">
-              <TextInput label="Konto" placeholder="jkowalski, AZUJO\jan, jan@azujo.pl" w={260} value={testUser} onChange={(e) => setTestUser(e.currentTarget.value)} />
-              <TextInput label="Domena (opcjonalnie)" placeholder="AZUJO" w={160} value={testDomain} onChange={(e) => setTestDomain(e.currentTarget.value)} />
-              <TextInput label="Urządzenie (opcjonalnie)" placeholder="MikroTik" w={160} value={testHost} onChange={(e) => setTestHost(e.currentTarget.value)} />
+              <TextInput label={t("col.account")} placeholder="jkowalski, AZUJO\jan, jan@azujo.pl" w={260} value={testUser} onChange={(e) => setTestUser(e.currentTarget.value)} />
+              <TextInput label={t("check.domain")} placeholder="AZUJO" w={160} value={testDomain} onChange={(e) => setTestDomain(e.currentTarget.value)} />
+              <TextInput label={t("check.device")} placeholder="MikroTik" w={160} value={testHost} onChange={(e) => setTestHost(e.currentTarget.value)} />
               <Button variant="default" onClick={() => void test()} disabled={!testUser.trim()}>
-                Sprawdź
+                {t("check.run")}
               </Button>
               {testResult !== null && (
                 <Text size="sm">
-                  osoba: <b>{testResult || "brak (konto techniczne)"}</b>
+                  {t("check.result")} <b>{testResult || t("check.technical")}</b>
                 </Text>
               )}
             </Group>

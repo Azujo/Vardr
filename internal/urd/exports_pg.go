@@ -22,7 +22,7 @@ func scanExport(r pgx.Row) (ExportJob, error) {
 }
 
 // ErrExportNotFound: nie ma takiego zlecenia eksportu.
-var ErrExportNotFound = errors.New("nie ma takiego eksportu")
+var ErrExportNotFound = errors.New("no such export")
 
 // CreateExport składa zlecenie eksportu (panel); agents puste = wszyscy agenci.
 func (p *PG) CreateExport(ctx context.Context, by, reason string, from, to time.Time, agents []string) (ExportJob, error) {

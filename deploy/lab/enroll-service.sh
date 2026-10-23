@@ -7,7 +7,7 @@
 # jest wyłącznie jego skrót, tworzenie trafia do audytu panelu, a sam token
 # nie jest nigdzie wypisywany.
 #
-#   ./enroll-service.sh collector|connector [grupa agentów]
+#   ./enroll-service.sh collector|connector [agent group]
 #
 # Usługa zostaje dopisana do COMPOSE_PROFILES w .env (start ze stosem).
 # VARDR_LAB_ENTRASIM=1 (laboratorium): konektor łączy się z symulatorem
@@ -15,20 +15,22 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 SVC="${1:-}"
+# Nazwa tokenu w panelu – w języku systemu (ustawienie w panelu).
+syslang=$(docker compose exec -T saga psql -U saga_admin -d saga -At -c "SELECT language FROM system_language" </dev/null 2>/dev/null || true)
 case "$SVC" in
-  collector) NAME="Kolektor syslog" ;;
-  connector) NAME="Konektor API" ;;
-  *) echo "użycie: $0 collector|connector [grupa]" >&2; exit 2 ;;
+  collector) NAME="Kolektor syslog"; [ "$syslang" = en ] && NAME="Syslog collector" ;;
+  connector) NAME="Konektor API"; [ "$syslang" = en ] && NAME="API connector" ;;
+  *) echo "usage: $0 collector|connector [group]" >&2; exit 2 ;;
 esac
 GROUP="${2:-}"
 
 if [ -f "$SVC/$SVC.yaml" ]; then
-  echo "$SVC jest już zarejestrowany ($SVC/$SVC.yaml) – nic nie robię" >&2
+  echo "$SVC is already enrolled ($SVC/$SVC.yaml) – doing nothing" >&2
   exit 1
 fi
 env_get() { sed -n "s/^$1=//p" .env | tail -1; }
 server=$(env_get SIEM_PUBLIC_SERVER)
-[ -n "$server" ] || { echo "brak SIEM_PUBLIC_SERVER w .env" >&2; exit 1; }
+[ -n "$server" ] || { echo "no SIEM_PUBLIC_SERVER in .env" >&2; exit 1; }
 port=$(env_get VARDR_INGEST_PORT)
 mkdir -p "$SVC"
 cp certs/ca.crt "$SVC/ca.crt"
@@ -47,7 +49,7 @@ SELECT :'name', :'hash', 'server', 1, now() + interval '15 minutes', 'enroll-ser
        (SELECT id FROM agent_groups WHERE lower(name) = lower(:'grp'));
 INSERT INTO audit_log (username, action, target, details)
 VALUES ('enroll-service.sh', 'enroll_token_created', :'name',
-        '{"profile": "server", "max_uses": 1, "valid": "15 min", "note": "token wygenerowany na serwerze dla agenta serwerowego"}');
+        '{"profile": "server", "max_uses": 1, "valid": "15 min", "note": "token generated on the server for a server agent"}');
 COMMIT;
 SQL
 
@@ -73,9 +75,9 @@ if [ "$SVC" = connector ]; then
       -e 's|^  # login_url / graph_url.*|  login_url: http://entrasim:8080\n  graph_url: http://entrasim:8080|' connector/connector.yaml
     docker compose up -d entrasim 2>&1 | grep -E 'Started|Error' || true
   else
-    echo "Konektor zarejestrowany. Uzupełnij tenant_id i client_id aplikacji Entra ID"
-    echo "w $PWD/connector/connector.yaml, sekret aplikacji zapisz w $PWD/connector/entra.secret"
-    echo "(tylko dla właściciela: chmod 600), potem: docker compose up -d connector"
+    echo "Connector enrolled. Fill in tenant_id and client_id of the Entra ID application"
+    echo "in $PWD/connector/connector.yaml, save the application secret in $PWD/connector/entra.secret"
+    echo "(owner only: chmod 600), then: docker compose up -d connector"
     exit 0
   fi
 fi

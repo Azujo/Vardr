@@ -28,6 +28,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"siem/internal/backupcfg"
+	"siem/internal/lang"
+	"siem/internal/lang/langdb"
 )
 
 // Runner to usługa kopii.
@@ -52,6 +54,8 @@ type Runner struct {
 	LegacyKeepDay int
 	// Owner: właściciel plików kopii na serwerze (użytkownik stosu).
 	OwnerUID, OwnerGID int
+	// Lang: język systemu – w nim powstają komunikaty widoczne w panelu.
+	Lang *langdb.System
 
 	pub, priv *[32]byte
 	started   time.Time
@@ -67,13 +71,13 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.loadBoxKey(); err != nil {
 		return err
 	}
-	r.Log.Info("usługa kopii gotowa", "key_id", backupcfg.KeyID(r.pub), "backup_dir", r.BackupDir)
+	r.Log.Info("backup service ready", "key_id", backupcfg.KeyID(r.pub), "backup_dir", r.BackupDir)
 	if err := svcRetry(ctx, func() error { return r.closeOrphans(ctx) }); err != nil {
 		return err
 	}
 	for {
 		if err := r.tick(ctx); err != nil && ctx.Err() == nil {
-			r.Log.Warn("przebieg usługi kopii nieudany", "err", err)
+			r.Log.Warn("backup service cycle failed", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -85,7 +89,7 @@ func (r *Runner) Run(ctx context.Context) error {
 
 func (r *Runner) tick(ctx context.Context) error {
 	if err := r.heartbeat(ctx); err != nil {
-		return fmt.Errorf("stan usługi: %w", err)
+		return fmt.Errorf("service state: %w", err)
 	}
 	cfg, since, err := r.config(ctx)
 	if err != nil {
@@ -108,7 +112,7 @@ func (r *Runner) tick(ctx context.Context) error {
 	// Lista kopii do przywracania – co 15 min i po każdej kopii.
 	if time.Since(r.listed) > 15*time.Minute {
 		if _, err := r.listFiles(ctx, cfg); err != nil {
-			r.Log.Warn("lista kopii nieudana", "err", err)
+			r.Log.Warn("listing backups failed", "err", err)
 		}
 	}
 	return nil
@@ -137,7 +141,7 @@ func (r *Runner) loadBoxKey() error {
 		return err
 	}
 	r.pub, r.priv = pub, priv
-	r.Log.Info("nowy klucz usługi kopii – sekrety zapisane wcześniej trzeba wpisać ponownie w panelu", "key_id", backupcfg.KeyID(pub))
+	r.Log.Info("new backup service key – secrets stored earlier must be entered again in the panel", "key_id", backupcfg.KeyID(pub))
 	return nil
 }
 
@@ -154,7 +158,7 @@ func (r *Runner) heartbeat(ctx context.Context) error {
 
 func (r *Runner) setHostKey(ctx context.Context, fp string) {
 	if _, err := r.DB.Exec(ctx, `UPDATE backup_runner SET host_key = $1 WHERE id = 1`, fp); err != nil {
-		r.Log.Warn("zapis klucza serwera kopii nieudany", "err", err)
+		r.Log.Warn("saving the backup server host key failed", "err", err)
 	}
 }
 
@@ -171,7 +175,7 @@ func (r *Runner) config(ctx context.Context) (backupcfg.Config, time.Time, error
 			ON CONFLICT (id) DO NOTHING`, b); err != nil {
 			return cfg, time.Now(), err
 		}
-		r.Log.Info("ustawienia kopii przeniesione do panelu", "target", cfg.Target.Method)
+		r.Log.Info("backup settings moved to the panel", "target", cfg.Target.Method)
 		return cfg, time.Now(), nil
 	}
 	if err != nil {
@@ -194,7 +198,7 @@ func (r *Runner) legacyConfig() backupcfg.Config {
 	if ok && ok2 && dir != "" {
 		cfg.Target = backupcfg.Target{Method: backupcfg.MethodSFTP, Host: host, User: user, Auth: backupcfg.AuthServerKey, Path: dir}
 		if err := cfg.Validate(); err != nil {
-			r.Log.Warn("ustawienie SIEM_BACKUP_REMOTE nieczytelne – wysyłka do ustawienia w panelu", "err", err)
+			r.Log.Warn("SIEM_BACKUP_REMOTE is unreadable – set up the upload in the panel", "err", err)
 			cfg.Target = backupcfg.Target{Method: backupcfg.MethodNone}
 		}
 	}
@@ -217,7 +221,7 @@ func (r *Runner) secrets(ctx context.Context, t backupcfg.Target) (map[string]st
 		var sealed []byte
 		err := r.DB.QueryRow(ctx, `SELECT sealed FROM backup_secrets WHERE name = $1`, name).Scan(&sealed)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("brak sekretu %s – wpisz go w panelu", name)
+			return nil, r.errf(ctx, "brak sekretu %s – wpisz go w panelu", "secret %s is missing – enter it in the panel", name)
 		}
 		if err != nil {
 			return nil, err
@@ -277,7 +281,7 @@ func (r *Runner) requests(ctx context.Context, cfg backupcfg.Config) error {
 			msg, aerr = r.prepareRestore(ctx, cfg, id, str("location"), str("name"), parts, safety)
 			handedOver = aerr == nil
 		default:
-			aerr = fmt.Errorf("nieznane zlecenie %q", action)
+			aerr = fmt.Errorf("unknown request %q", action)
 		}
 		if handedOver {
 			if _, err := r.DB.Exec(ctx, `UPDATE backup_requests SET message = $2 WHERE id = $1`, id, truncate(msg, 2000)); err != nil {
@@ -302,7 +306,8 @@ func (r *Runner) requests(ctx context.Context, cfg backupcfg.Config) error {
 // przywróceniu bazy, której zrzut zrobiono w trakcie kopii. Przywracanie
 // czekające na restore.sh (plik zlecenia) zostaje.
 func (r *Runner) closeOrphans(ctx context.Context) error {
-	const why = "przerwane – usługa kopii została uruchomiona ponownie (restart albo przywrócenie bazy z kopii zrobionej w trakcie)"
+	why := r.tr(ctx, "przerwane – usługa kopii została uruchomiona ponownie (restart albo przywrócenie bazy z kopii zrobionej w trakcie)",
+		"interrupted – the backup service was restarted (restart or database restore from a backup taken in the meantime)")
 	tag, err := r.DB.Exec(ctx, `UPDATE backup_runs SET status = 'error', finished_at = now(), message = $1 WHERE status = 'running'`, why)
 	if err != nil {
 		return err
@@ -319,7 +324,7 @@ func (r *Runner) closeOrphans(ctx context.Context) error {
 		return err
 	}
 	if n := tag.RowsAffected() + tag2.RowsAffected(); n > 0 {
-		r.Log.Warn("zamknięto wpisy przerwane przez restart", "runs", tag.RowsAffected(), "requests", tag2.RowsAffected())
+		r.Log.Warn("closed entries interrupted by a restart", "runs", tag.RowsAffected(), "requests", tag2.RowsAffected())
 	}
 	return nil
 }
@@ -360,4 +365,13 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// tr: tekst widoczny w panelu (wyniki kopii, zleceń) w języku systemu.
+func (r *Runner) tr(ctx context.Context, pl, en string) string {
+	return lang.Pick(r.Lang.Get(ctx), pl, en)
+}
+
+func (r *Runner) errf(ctx context.Context, pl, en string, args ...any) error {
+	return fmt.Errorf(r.tr(ctx, pl, en), args...)
 }

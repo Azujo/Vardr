@@ -20,7 +20,6 @@ package detect
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -33,6 +32,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"siem/internal/lang"
 )
 
 // Poziomy ważności (Sigma level).
@@ -81,6 +82,45 @@ type Extensions struct {
 	// (albo Count różnych wartości pola Distinct) z tym samym kluczem
 	// GroupBy w dowolnym oknie Window (czas zdarzenia).
 	Threshold *Threshold `json:"threshold,omitempty" yaml:"threshold"`
+	// I18n: tytuł, opis i instrukcja w innych językach (kod języka →
+	// teksty). Bez tłumaczenia panel i powiadomienia pokazują oryginał.
+	I18n map[string]RuleText `json:"i18n,omitempty" yaml:"i18n"`
+}
+
+// RuleText to teksty reguły w jednym języku.
+type RuleText struct {
+	Title        string `json:"title,omitempty" yaml:"title"`
+	Description  string `json:"description,omitempty" yaml:"description"`
+	Instructions string `json:"instructions,omitempty" yaml:"instructions"`
+}
+
+// Languages: języki tłumaczeń (poza polskim, językiem źródłowym reguł
+// Vardra), w których detektor zapisuje teksty alertów.
+var Languages = []string{"en"}
+
+// normalizeI18n sprawdza języki tłumaczeń i łączy linie akapitów.
+func normalizeI18n(e *Extensions) error {
+	for code, t := range e.I18n {
+		if !slices.Contains(Languages, code) {
+			return lang.Errorf("vardr.i18n: nieobsługiwany język %q (dostępne: %s)", "vardr.i18n: unsupported language %q (available: %s)", code, strings.Join(Languages, ", "))
+		}
+		t.Description, t.Instructions = Unwrap(t.Description), Unwrap(t.Instructions)
+		e.I18n[code] = t
+	}
+	return nil
+}
+
+// Text: teksty reguły w języku lang z uzupełnieniem brakujących oryginałem
+// (tytuł i opis) – instrukcja bez tłumaczenia zostaje pusta.
+func (e Extensions) Text(lang, title, description string) RuleText {
+	t := e.I18n[lang]
+	if t.Title == "" {
+		t.Title = title
+	}
+	if t.Description == "" {
+		t.Description = description
+	}
+	return t
 }
 
 // Threshold to próg reguły (count / count distinct w oknie czasowym).
@@ -103,7 +143,7 @@ type Duration time.Duration
 func (d *Duration) UnmarshalYAML(n *yaml.Node) error {
 	v, err := time.ParseDuration(n.Value)
 	if err != nil {
-		return fmt.Errorf("niepoprawny czas %q", n.Value)
+		return lang.Errorf("niepoprawny czas %q", "invalid duration %q", n.Value)
 	}
 	*d = Duration(v)
 	return nil
@@ -166,13 +206,13 @@ func Parse(data []byte, file string) (*Rule, error) {
 	}
 	switch {
 	case r.Title == "":
-		return nil, errors.New("brak title")
+		return nil, lang.Errorf("brak title", "missing title")
 	case !idRe.MatchString(r.ID):
-		return nil, errors.New("id: 3–64 znaki: litery, cyfry, . _ - (np. UUID)")
+		return nil, lang.Errorf("id: 3–64 znaki: litery, cyfry, . _ - (np. UUID)", "id: 3–64 characters: letters, digits, . _ - (e.g. a UUID)")
 	case !slices.Contains(Levels, r.Level):
-		return nil, fmt.Errorf("level: jedno z %s", strings.Join(Levels, ", "))
+		return nil, lang.Errorf("level: jedno z %s", "level: one of %s", strings.Join(Levels, ", "))
 	case len(r.Detection) == 0:
-		return nil, errors.New("brak detection")
+		return nil, lang.Errorf("brak detection", "missing detection")
 	}
 	if err := useLegacy(&r.Vardr, r.Legacy); err != nil {
 		return nil, err
@@ -182,14 +222,14 @@ func Parse(data []byte, file string) (*Rule, error) {
 		r.Vardr.Mode = "both"
 	case "stream", "index_query", "both":
 	default:
-		return nil, errors.New("vardr.mode: stream, index_query albo both")
+		return nil, lang.Errorf("vardr.mode: stream, index_query albo both", "vardr.mode: stream, index_query or both")
 	}
 	if t := r.Vardr.Threshold; t != nil {
 		switch w := time.Duration(t.Window); {
 		case t.Count < 2 || t.Count > MaxThresholdCount:
-			return nil, fmt.Errorf("vardr.threshold.count: od 2 do %d", MaxThresholdCount)
+			return nil, lang.Errorf("vardr.threshold.count: od 2 do %d", "vardr.threshold.count: from 2 to %d", MaxThresholdCount)
 		case w < MinThresholdWindow || w > MaxThresholdWindow:
-			return nil, errors.New("vardr.threshold.window: od 10s do 24h")
+			return nil, lang.Errorf("vardr.threshold.window: od 10s do 24h", "vardr.threshold.window: from 10s to 24h")
 		}
 		// Łączenie trafień w alert co najmniej na długość okna progu.
 		if r.Vardr.Suppress == 0 {
@@ -204,7 +244,7 @@ func Parse(data []byte, file string) (*Rule, error) {
 	}
 	for _, f := range r.Vardr.GroupBy {
 		if f == "" {
-			return nil, errors.New("vardr.group_by: puste pole")
+			return nil, lang.Errorf("vardr.group_by: puste pole", "vardr.group_by: empty field")
 		}
 	}
 	ls, err := compileLogsource(r.Logsource)
@@ -216,6 +256,9 @@ func Parse(data []byte, file string) (*Rule, error) {
 		return nil, fmt.Errorf("detection: %w", err)
 	}
 	r.Vardr.Instructions = Unwrap(r.Vardr.Instructions)
+	if err := normalizeI18n(&r.Vardr); err != nil {
+		return nil, err
+	}
 	return &Rule{
 		ID: r.ID, Title: r.Title, Description: Unwrap(r.Description), Level: r.Level, Status: r.Status,
 		Tags: r.Tags, Author: r.Author, References: r.References, False: r.FalsePositives, File: file,
@@ -247,6 +290,13 @@ func Unwrap(text string) string {
 type LoadError struct {
 	File string `json:"file"`
 	Err  string `json:"error"`
+	// ErrEn: opis po angielsku (panel w innym języku niż polski).
+	ErrEn string `json:"error_en,omitempty"`
+}
+
+// loadError: błąd reguły w obu językach.
+func loadError(file string, err error) LoadError {
+	return LoadError{File: file, Err: err.Error(), ErrEn: lang.English(err)}
 }
 
 // Set to reguły z katalogu: zwykłe (Sigma) i korelacyjne.
@@ -298,7 +348,7 @@ func LoadSetWith(dir string, extra []Source) (*Set, []LoadError, error) {
 		rel = filepath.ToSlash(rel)
 		data, err := os.ReadFile(p)
 		if err != nil {
-			errs = append(errs, LoadError{rel, err.Error()})
+			errs = append(errs, loadError(rel, err))
 			return nil
 		}
 		srcs = append(srcs, Source{rel, data})
@@ -320,30 +370,30 @@ func LoadSources(srcs []Source) (*Set, []LoadError) {
 		for i, doc := range docs {
 			where := rel
 			if len(docs) > 1 {
-				where = fmt.Sprintf("%s (dokument %d)", rel, i+1)
+				where = fmt.Sprintf("%s #%d", rel, i+1)
 			}
 			var id string
 			if IsCorrelation(doc) {
 				c, err := ParseCorrelation(doc, rel)
 				if err != nil {
-					errs = append(errs, LoadError{where, err.Error()})
+					errs = append(errs, loadError(where, err))
 					continue
 				}
 				id = c.ID
 				if prev, dup := seen[id]; dup {
-					errs = append(errs, LoadError{where, fmt.Sprintf("id %s użyte już w %s", id, prev)})
+					errs = append(errs, loadError(where, lang.Errorf("id %s użyte już w %s", "id %s is already used in %s", id, prev)))
 					continue
 				}
 				set.Correlations = append(set.Correlations, c)
 			} else {
 				r, err := Parse(doc, rel)
 				if err != nil {
-					errs = append(errs, LoadError{where, err.Error()})
+					errs = append(errs, loadError(where, err))
 					continue
 				}
 				id = r.ID
 				if prev, dup := seen[id]; dup {
-					errs = append(errs, LoadError{where, fmt.Sprintf("id %s użyte już w %s", id, prev)})
+					errs = append(errs, loadError(where, lang.Errorf("id %s użyte już w %s", "id %s is already used in %s", id, prev)))
 					continue
 				}
 				set.Rules = append(set.Rules, r)
@@ -359,7 +409,7 @@ func LoadSources(srcs []Source) (*Set, []LoadError) {
 	var ok []*Correlation
 	for _, c := range set.Correlations {
 		if err := c.Resolve(set.Rules); err != nil {
-			errs = append(errs, LoadError{c.File, err.Error()})
+			errs = append(errs, loadError(c.File, err))
 			continue
 		}
 		for _, r := range c.Rules {
@@ -417,7 +467,7 @@ func useLegacy(ext *Extensions, legacy *Extensions) error {
 		return nil
 	}
 	if !reflect.DeepEqual(*ext, Extensions{}) {
-		return errors.New("vardr i heimdall naraz – zostaw tylko vardr (heimdall to dawna nazwa klucza)")
+		return lang.Errorf("vardr i heimdall naraz – zostaw tylko vardr (heimdall to dawna nazwa klucza)", "vardr and heimdall at the same time – keep only vardr (heimdall is the old key name)")
 	}
 	*ext = *legacy
 	return nil

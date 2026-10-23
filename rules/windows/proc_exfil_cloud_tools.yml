@@ -38,6 +38,20 @@ falsepositives:
   - Kopie zapasowe do chmury robione przez rclone na serwerze (wyklucz konto usługi)
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Sending data with a cloud tool (rclone, MEGA, curl --upload-file)"
+      description: |
+        rclone with copy, sync or move, the MEGA client (mega-put,
+        MEGAcmd) or curl uploading a file (--upload-file, -T, -F with @). Ransomware
+        groups exfiltrate data to the cloud this way before encryption, to blackmail
+        victims with its disclosure.
+      instructions: |
+        Data upload was started on {{host.name}}: {{CommandLine}}. Find out the
+        destination (cloud account, address) and the amount of data – the firewall will
+        show outbound traffic from this computer. If it is not a known backup: cut the
+        computer off from the internet, preserve the rclone configuration (it contains
+        credentials to the attacker's account) and start the data breach incident procedure.
   group_by: [host.name]
   suppress: 1h
   instructions: |

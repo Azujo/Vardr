@@ -38,6 +38,7 @@ import (
 	"siem/internal/decodekv"
 	"siem/internal/fleet"
 	"siem/internal/identity"
+	"siem/internal/lang"
 	"siem/internal/reprocess"
 	"siem/internal/svc"
 	"siem/internal/urd"
@@ -49,6 +50,7 @@ import (
 	"siem/panel/internal/fleetsync"
 	"siem/panel/internal/notify"
 	"siem/panel/internal/status"
+	"siem/panel/internal/syslang"
 	"siem/panel/web"
 )
 
@@ -69,11 +71,11 @@ func main() {
 	case "reset-mfa":
 		err = resetMFA(os.Args[2:])
 	default:
-		fmt.Fprintf(os.Stderr, "nieznane polecenie %q (dostępne: serve, bootstrap-admin, reset-password, reset-mfa)\n", cmd)
+		fmt.Fprintf(os.Stderr, "unknown command %q (available: serve, bootstrap-admin, reset-password, reset-mfa)\n", cmd)
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -81,10 +83,10 @@ func main() {
 func openStore(ctx context.Context, log *slog.Logger) (*store.PG, error) {
 	url := os.Getenv("SIEM_API_DB_URL")
 	if url == "" {
-		return nil, errors.New("brak SIEM_API_DB_URL (adres bazy Saga, postgres://…)")
+		return nil, errors.New("SIEM_API_DB_URL is missing (Saga database address, postgres://…)")
 	}
 	var db *store.PG
-	if err := svc.Retry(ctx, log, "połączenie z bazą Saga", func() error {
+	if err := svc.Retry(ctx, log, "connecting to the Saga database", func() error {
 		var err error
 		db, err = store.Open(ctx, url)
 		return err
@@ -97,7 +99,7 @@ func openStore(ctx context.Context, log *slog.Logger) (*store.PG, error) {
 		return nil, err
 	}
 	for _, m := range applied {
-		log.Info("zastosowano migrację bazy", "migration", m)
+		log.Info("database migration applied", "migration", m)
 	}
 	return db, nil
 }
@@ -118,7 +120,7 @@ func serve(log *slog.Logger) error {
 	}
 	ui := web.FS()
 	if ui == nil {
-		log.Warn("frontend nie został zbudowany – panel pokaże stronę zastępczą (cd panel/web && npm ci && npm run build)")
+		log.Warn("the frontend is not built – the panel will show a placeholder page (cd panel/web && npm ci && npm run build)")
 	}
 
 	// Bifröst: rejestracja agentów tokenem (wymaga CA agentów z siem-pki agents-ca).
@@ -130,12 +132,12 @@ func serve(log *slog.Logger) error {
 	agentsCA := svc.Env("SIEM_AGENTS_CA_CERT", "/certs/agents-ca.crt")
 	if signer, err := enroll.LoadSigner(agentsCA, svc.Env("SIEM_AGENTS_CA_KEY", "/certs/agents-ca.key")); err == nil {
 		enrollment.Signer = signer
-		log.Info("rejestracja agentów tokenem włączona", "agents_ca", signer.CA.Subject.CommonName, "public_server", enrollment.PublicServer)
+		log.Info("agent token enrollment enabled", "agents_ca", signer.CA.Subject.CommonName, "public_server", enrollment.PublicServer)
 	} else {
-		log.Warn("rejestracja agentów tokenem wyłączona – brak CA agentów", "err", err)
+		log.Warn("agent token enrollment disabled – no agent CA", "err", err)
 	}
 	if enrollment.PublicServer == "" {
-		log.Warn("brak SIEM_PUBLIC_SERVER – paczki instalacyjne nie będą zawierały adresu serwera")
+		log.Warn("SIEM_PUBLIC_SERVER is missing – installation packages will not contain the server address")
 	}
 
 	// Certyfikat klienta jest opcjonalny: wymaga go tylko odnowienie
@@ -167,7 +169,7 @@ func serve(log *slog.Logger) error {
 	// (deploy.sh tworzy certs/mfa.key); bez klucza – logowanie samym hasłem.
 	if keyFile := svc.Env("SIEM_MFA_KEY_FILE", "/certs/mfa.key"); keyFile != "" {
 		if data, err := os.ReadFile(keyFile); err != nil {
-			log.Warn("brak klucza MFA – drugi składnik logowania wyłączony", "file", keyFile, "err", err)
+			log.Warn("no MFA key – the second sign-in factor is disabled", "file", keyFile, "err", err)
 		} else if key, err := auth.ParseMFAKey(string(data)); err != nil {
 			return err
 		} else {
@@ -183,7 +185,7 @@ func serve(log *slog.Logger) error {
 	// Mímir: wyszukiwarka zdarzeń (ClickHouse, konto tylko do odczytu).
 	if chUser := os.Getenv("SIEM_CLICKHOUSE_USER"); chUser != "" {
 		var searcher *events.Searcher
-		if err := svc.Retry(ctx, log, "połączenie z ClickHouse (wyszukiwarka)", func() error {
+		if err := svc.Retry(ctx, log, "connecting to ClickHouse (event search)", func() error {
 			var err error
 			searcher, err = events.Open(ctx, svc.Env("SIEM_CLICKHOUSE_ADDR", "clickhouse:9000"), chUser, os.Getenv("SIEM_CLICKHOUSE_PASSWORD"))
 			return err
@@ -195,9 +197,9 @@ func serve(log *slog.Logger) error {
 		decoders.Samples = searcher
 		quarantine.Source = searcher
 		identities.People = searcher
-		log.Info("wyszukiwarka zdarzeń włączona", "user", chUser)
+		log.Info("event search enabled", "user", chUser)
 	} else {
-		log.Warn("brak SIEM_CLICKHOUSE_USER – wyszukiwarka zdarzeń wyłączona")
+		log.Warn("SIEM_CLICKHOUSE_USER is missing – event search disabled")
 	}
 
 	// Urd: stan archiwum NIS2 (schemat urd w Sadze zakłada archiwizator;
@@ -212,11 +214,13 @@ func serve(log *slog.Logger) error {
 
 	// Powiadomienia: kanały z panelu, kotwica archiwum raz na dobę i przekaźnik
 	// alertów Grafany (wewnętrzny adres, tylko w sieci stosu, z tokenem).
-	notifySvc := &notify.Service{Store: db, Log: log}
+	apiServer.Settings = db
+	apiServer.SysLang = &syslang.Cache{Store: db, Log: log}
+	notifySvc := &notify.Service{Store: db, Log: log, Lang: apiServer.SysLang.Get}
 	relayToken := os.Getenv("SIEM_ALERT_RELAY_TOKEN")
 	anchorHour, err := svc.EnvInt("SIEM_ANCHOR_HOUR", 7)
 	if err != nil || anchorHour < 0 || anchorHour > 23 {
-		return fmt.Errorf("SIEM_ANCHOR_HOUR: godzina 0–23")
+		return fmt.Errorf("SIEM_ANCHOR_HOUR: hour 0–23")
 	}
 	loc, err := time.LoadLocation(svc.Env("SIEM_ANCHOR_TZ", "Europe/Warsaw"))
 	if err != nil {
@@ -271,9 +275,9 @@ func serve(log *slog.Logger) error {
 		defer t.Stop()
 		for {
 			if n, err := db.PruneNotifyLog(ctx, time.Now().Add(-90*24*time.Hour)); err != nil && ctx.Err() == nil {
-				log.Warn("sprzątanie dziennika wysyłek nieudane", "err", err)
+				log.Warn("notification log cleanup failed", "err", err)
 			} else if n > 0 {
-				log.Info("usunięto stare wpisy dziennika wysyłek", "count", n)
+				log.Info("old notification log entries removed", "count", n)
 			}
 			select {
 			case <-ctx.Done():
@@ -286,9 +290,9 @@ func serve(log *slog.Logger) error {
 		relay := &http.Server{Addr: svc.Env("SIEM_API_INTERNAL_LISTEN", ":8081"), ReadHeaderTimeout: 10 * time.Second,
 			Handler: notifySvc.GrafanaHandler(relayToken)}
 		go func() {
-			log.Info("przekaźnik alertów Grafany nasłuchuje (tylko sieć stosu)", "addr", relay.Addr)
+			log.Info("Grafana alert relay listening (stack network only)", "addr", relay.Addr)
 			if err := relay.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Error("przekaźnik alertów zatrzymany", "err", err)
+				log.Error("alert relay stopped", "err", err)
 			}
 		}()
 		go func() {
@@ -296,7 +300,7 @@ func serve(log *slog.Logger) error {
 			_ = relay.Close()
 		}()
 	} else {
-		log.Warn("brak SIEM_ALERT_RELAY_TOKEN – alerty Grafany nie będą przekazywane na kanały powiadomień")
+		log.Warn("SIEM_ALERT_RELAY_TOKEN is missing – Grafana alerts will not be relayed to notification channels")
 	}
 	srv := &http.Server{
 		Addr:    svc.Env("SIEM_API_LISTEN", ":8444"),
@@ -355,7 +359,7 @@ func serve(log *slog.Logger) error {
 				}
 				return identities.Publish(ctx, c)
 			}
-			if svc.Retry(ctx, log, "synchronizacja tożsamości", sync) != nil {
+			if svc.Retry(ctx, log, "identity sync", sync) != nil {
 				return
 			}
 			t := time.NewTicker(5 * time.Minute)
@@ -366,7 +370,7 @@ func serve(log *slog.Logger) error {
 					return
 				case <-t.C:
 					if err := sync(); err != nil {
-						log.Warn("synchronizacja tożsamości z NATS nieudana", "err", err)
+						log.Warn("identity sync with NATS failed", "err", err)
 					}
 				}
 			}
@@ -406,7 +410,7 @@ func serve(log *slog.Logger) error {
 				}
 				return decodekv.Sync(ctx, kv, all)
 			}
-			if svc.Retry(ctx, log, "synchronizacja dekoderów", sync) != nil {
+			if svc.Retry(ctx, log, "decoder sync", sync) != nil {
 				return
 			}
 			t := time.NewTicker(5 * time.Minute)
@@ -417,34 +421,34 @@ func serve(log *slog.Logger) error {
 					return
 				case <-t.C:
 					if err := sync(); err != nil {
-						log.Warn("synchronizacja dekoderów z NATS nieudana", "err", err)
+						log.Warn("decoder sync with NATS failed", "err", err)
 					}
 				}
 			}
 		}()
 		go func() {
-			_ = svc.Retry(ctx, log, "synchronizacja unieważnień", func() error {
+			_ = svc.Retry(ctx, log, "revocation sync", func() error {
 				serials, err := db.RevokedSerials(ctx, time.Now())
 				if err != nil {
 					return err
 				}
-				return enrollment.Revoke(ctx, serials, "unieważniony (synchronizacja z bazą)")
+				return enrollment.Revoke(ctx, serials, "revoked (database sync)")
 			})
 		}()
 		go func() {
 			var cons jetstream.Consumer
-			if err := svc.Retry(ctx, log, "strumień heartbeatów", func() error {
+			if err := svc.Retry(ctx, log, "heartbeat stream", func() error {
 				var err error
 				cons, err = fleet.Ensure(ctx, js)
 				return err
 			}); err != nil {
 				return
 			}
-			log.Info("odbiór heartbeatów agentów uruchomiony")
+			log.Info("agent heartbeat receiver started")
 			// Deinstalacja tokenem z panelu: certyfikaty agenta unieważnione
 			// (klucz zostaje na dysku – bez certyfikatu jest bezużyteczny).
 			retire := func(ctx context.Context, u store.TokenUse) error {
-				reason := "deinstalacja tokenem " + u.TokenID
+				reason := lang.Pick(apiServer.SysLang.Get(ctx), "deinstalacja tokenem ", "uninstalled with token ") + u.TokenID
 				serials, err := db.RevokeAgentCerts(ctx, u.AgentID, reason)
 				if err != nil {
 					return err
@@ -460,7 +464,7 @@ func serve(log *slog.Logger) error {
 			fleetsync.Run(ctx, log, cons, db, retire)
 		}()
 	} else {
-		log.Warn("brak SIEM_NATS_URL – lista agentów nie będzie aktualizowana")
+		log.Warn("SIEM_NATS_URL is missing – the agent list will not be updated")
 	}
 
 	// Sprzątanie wygasłych sesji.
@@ -471,9 +475,9 @@ func serve(log *slog.Logger) error {
 			select {
 			case <-t.C:
 				if n, err := db.DeleteExpiredSessions(ctx, time.Now()); err != nil {
-					log.Warn("sprzątanie sesji nieudane", "err", err)
+					log.Warn("session cleanup failed", "err", err)
 				} else if n > 0 {
-					log.Info("usunięto wygasłe sesje", "count", n)
+					log.Info("expired sessions removed", "count", n)
 				}
 			case <-ctx.Done():
 				return
@@ -487,7 +491,7 @@ func serve(log *slog.Logger) error {
 		_ = srv.Shutdown(sh)
 	}()
 
-	log.Info("panel Hliðskjálf nasłuchuje", "addr", srv.Addr, "ui", ui != nil)
+	log.Info("Hliðskjálf panel listening", "addr", srv.Addr, "ui", ui != nil)
 	if err := srv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -498,7 +502,7 @@ func serve(log *slog.Logger) error {
 // nie ma jeszcze żadnego aktywnego administratora.
 func bootstrapAdmin(args []string) error {
 	fs := flag.NewFlagSet("bootstrap-admin", flag.ExitOnError)
-	username := fs.String("username", "admin", "login administratora")
+	username := fs.String("username", "admin", "administrator username")
 	_ = fs.Parse(args)
 
 	ctx := context.Background()
@@ -510,7 +514,7 @@ func bootstrapAdmin(args []string) error {
 	if n, err := db.CountActiveAdmins(ctx); err != nil {
 		return err
 	} else if n > 0 {
-		return errors.New("w bazie jest już aktywny administrator – dodawaj konta w panelu albo użyj reset-password")
+		return errors.New("there is already an active administrator in the database – add accounts in the panel or use reset-password")
 	}
 	temp := auth.TempPassword()
 	hash, err := auth.HashPassword(temp)
@@ -522,7 +526,7 @@ func bootstrapAdmin(args []string) error {
 	if err != nil {
 		return err
 	}
-	_ = db.Audit(ctx, store.AuditEntry{Username: "(konsola)", Action: "user_created", Target: u.Username,
+	_ = db.Audit(ctx, store.AuditEntry{Username: "(console)", Action: "user_created", Target: u.Username,
 		Details: map[string]any{"role": u.Role, "via": "bootstrap-admin"}})
 	printTemp(u.Username, temp)
 	return nil
@@ -532,10 +536,10 @@ func bootstrapAdmin(args []string) error {
 // hasła) i zamyka sesje konta.
 func resetPassword(args []string) error {
 	fs := flag.NewFlagSet("reset-password", flag.ExitOnError)
-	username := fs.String("username", "", "login konta")
+	username := fs.String("username", "", "account username")
 	_ = fs.Parse(args)
 	if *username == "" {
-		return errors.New("podaj -username")
+		return errors.New("specify -username")
 	}
 	ctx := context.Background()
 	db, err := openStore(ctx, slog.New(slog.DiscardHandler))
@@ -545,7 +549,7 @@ func resetPassword(args []string) error {
 	defer db.Close()
 	u, err := db.UserByUsername(ctx, *username)
 	if err != nil {
-		return fmt.Errorf("konto %s: %w", *username, err)
+		return fmt.Errorf("account %s: %w", *username, err)
 	}
 	temp := auth.TempPassword()
 	hash, err := auth.HashPassword(temp)
@@ -558,7 +562,7 @@ func resetPassword(args []string) error {
 	if err := db.DeleteUserSessions(ctx, u.ID, ""); err != nil {
 		return err
 	}
-	_ = db.Audit(ctx, store.AuditEntry{Username: "(konsola)", Action: "password_reset", Target: u.Username,
+	_ = db.Audit(ctx, store.AuditEntry{Username: "(console)", Action: "password_reset", Target: u.Username,
 		Details: map[string]any{"via": "reset-password"}})
 	printTemp(u.Username, temp)
 	return nil
@@ -570,10 +574,10 @@ func resetPassword(args []string) error {
 // przy najbliższym logowaniu.
 func resetMFA(args []string) error {
 	fs := flag.NewFlagSet("reset-mfa", flag.ExitOnError)
-	username := fs.String("username", "", "login konta")
+	username := fs.String("username", "", "account username")
 	_ = fs.Parse(args)
 	if *username == "" {
-		return errors.New("podaj -username")
+		return errors.New("specify -username")
 	}
 	ctx := context.Background()
 	db, err := openStore(ctx, slog.New(slog.DiscardHandler))
@@ -583,7 +587,7 @@ func resetMFA(args []string) error {
 	defer db.Close()
 	u, err := db.UserByUsername(ctx, *username)
 	if err != nil {
-		return fmt.Errorf("konto %s: %w", *username, err)
+		return fmt.Errorf("account %s: %w", *username, err)
 	}
 	if err := db.DisableMFA(ctx, u.ID); err != nil {
 		return err
@@ -591,13 +595,13 @@ func resetMFA(args []string) error {
 	if err := db.DeleteUserSessions(ctx, u.ID, ""); err != nil {
 		return err
 	}
-	_ = db.Audit(ctx, store.AuditEntry{Username: "(konsola)", Action: "mfa_reset", Target: u.Username,
+	_ = db.Audit(ctx, store.AuditEntry{Username: "(console)", Action: "mfa_reset", Target: u.Username,
 		Details: map[string]any{"via": "reset-mfa"}})
-	fmt.Printf("\nKonto %s: drugi składnik usunięty, sesje zakończone. Przy logowaniu skonfiguruj aplikację od nowa.\n\n", u.Username)
+	fmt.Printf("\nAccount %s: second factor removed, sessions ended. Set up the authenticator app again at sign-in.\n\n", u.Username)
 	return nil
 }
 
 func printTemp(username, temp string) {
-	fmt.Printf("\nKonto: %s\nHasło startowe: %s\n\nZaloguj się w panelu i ustaw własne hasło (wymagane przy pierwszym logowaniu).\n"+
-		"To hasło nie jest nigdzie zapisane – nie da się go odczytać ponownie.\n\n", username, temp)
+	fmt.Printf("\nAccount: %s\nInitial password: %s\n\nSign in to the panel and set your own password (required at first sign-in).\n"+
+		"This password is not stored anywhere – it cannot be read again.\n\n", username, temp)
 }

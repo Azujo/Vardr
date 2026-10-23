@@ -21,6 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"siem/internal/lang/langdb"
 	"siem/internal/svc"
 	"siem/server/internal/backup"
 )
@@ -40,7 +41,7 @@ func main() {
 	dbURL := svc.MustEnv(log, "SIEM_BACKUP_DB_URL")
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		log.Error("połączenie z Sagą nieudane", "err", err)
+		log.Error("connecting to Saga failed", "err", err)
 		os.Exit(1)
 	}
 	defer pool.Close()
@@ -50,11 +51,11 @@ func main() {
 	case "run":
 		err = runNow(ctx, pool)
 	default:
-		fmt.Fprintln(os.Stderr, "użycie: siem-backup [serve|run]")
+		fmt.Fprintln(os.Stderr, "usage: siem-backup [serve|run]")
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Error("zakończono z błędem", "err", err)
+		log.Error("exited with an error", "err", err)
 		os.Exit(1)
 	}
 }
@@ -68,7 +69,7 @@ func serve(ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, dbURL stri
 	uid, _ := strconv.Atoi(svc.Env("SIEM_BACKUP_UID", "1000"))
 	gid, _ := strconv.Atoi(svc.Env("SIEM_BACKUP_GID", "1000"))
 	// Saga może jeszcze startować – usługa czeka, zamiast się restartować.
-	if err := svc.Retry(ctx, log, "połączenie z Sagą", func() error { return pool.Ping(ctx) }); err != nil {
+	if err := svc.Retry(ctx, log, "connecting to Saga", func() error { return pool.Ping(ctx) }); err != nil {
 		return err
 	}
 	r := &backup.Runner{
@@ -82,6 +83,7 @@ func serve(ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, dbURL stri
 		MetricsDir: svc.Env("SIEM_BACKUP_METRICS_DIR", "/metrics"),
 		Legacy:     os.Getenv("SIEM_BACKUP_REMOTE"), LegacyKeepDay: keep,
 		OwnerUID: uid, OwnerGID: gid,
+		Lang: &langdb.System{DB: pool},
 	}
 	return r.Run(ctx)
 }
@@ -90,11 +92,11 @@ func serve(ctx context.Context, log *slog.Logger, pool *pgxpool.Pool, dbURL stri
 // argumentów) – dwie kopie naraz nie powstaną.
 func runNow(ctx context.Context, pool *pgxpool.Pool) error {
 	var id int64
-	if err := pool.QueryRow(ctx, `INSERT INTO backup_requests (action, requested_by) VALUES ('run', 'serwer (backup.sh)') RETURNING id`).
+	if err := pool.QueryRow(ctx, `INSERT INTO backup_requests (action, requested_by) VALUES ('run', 'server (backup.sh)') RETURNING id`).
 		Scan(&id); err != nil {
 		return err
 	}
-	fmt.Printf("zlecono kopię (#%d) – czekam na usługę kopii…\n", id)
+	fmt.Printf("backup requested (#%d) – waiting for the backup service…\n", id)
 	deadline := time.Now().Add(6 * time.Hour)
 	for time.Now().Before(deadline) {
 		var ok *bool
@@ -105,7 +107,7 @@ func runNow(ctx context.Context, pool *pgxpool.Pool) error {
 		if ok != nil {
 			fmt.Println(msg)
 			if !*ok {
-				return fmt.Errorf("kopia nieudana")
+				return fmt.Errorf("backup failed")
 			}
 			return nil
 		}
@@ -115,5 +117,5 @@ func runNow(ctx context.Context, pool *pgxpool.Pool) error {
 		case <-time.After(3 * time.Second):
 		}
 	}
-	return fmt.Errorf("usługa kopii nie wykonała zlecenia w 6 h")
+	return fmt.Errorf("the backup service did not complete the request within 6 h")
 }

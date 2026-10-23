@@ -44,11 +44,11 @@ func chain(table []uint32, start uint32, limit int) ([]uint32, error) {
 	var out []uint32
 	for s := start; s != endOfChain; {
 		if s > maxSect || int(s) >= len(table) {
-			return nil, fmt.Errorf("uszkodzony łańcuch sektorów (%d)", s)
+			return nil, fmt.Errorf("damaged sector chain (%d)", s)
 		}
 		out = append(out, s)
 		if len(out) > limit {
-			return nil, errors.New("pętla w łańcuchu sektorów")
+			return nil, errors.New("loop in the sector chain")
 		}
 		s = table[s]
 	}
@@ -57,13 +57,13 @@ func chain(table []uint32, start uint32, limit int) ([]uint32, error) {
 
 func parse(data []byte) (*cfb, error) {
 	if len(data) < 512 || !bytes.Equal(data[:8], signature) {
-		return nil, errors.New("to nie jest plik MSI (Compound File)")
+		return nil, errors.New("not an MSI file (Compound File)")
 	}
 	c := &cfb{data: data}
 	c.sectorSize = 1 << binary.LittleEndian.Uint16(data[0x1E:])
 	c.miniSize = 1 << binary.LittleEndian.Uint16(data[0x20:])
 	if c.sectorSize != 512 && c.sectorSize != 4096 || c.miniSize != 64 {
-		return nil, errors.New("nieobsługiwany rozmiar sektora")
+		return nil, errors.New("unsupported sector size")
 	}
 	c.miniCutoff = uint64(c.u32(0x38))
 	nSectors := len(data)/c.sectorSize - 1
@@ -122,7 +122,7 @@ func (c *cfb) entries() ([]entry, error) {
 	nSectors := len(c.data)/c.sectorSize - 1
 	ch, err := chain(c.fat, c.u32(0x30), nSectors)
 	if err != nil {
-		return nil, fmt.Errorf("katalog: %w", err)
+		return nil, fmt.Errorf("directory: %w", err)
 	}
 	var out []entry
 	for _, s := range ch {
@@ -137,12 +137,12 @@ func (c *cfb) entries() ([]entry, error) {
 		}
 	}
 	if len(out) == 0 || out[0].typ != 5 {
-		return nil, errors.New("brak katalogu głównego")
+		return nil, errors.New("missing root directory")
 	}
 	if out[0].start <= maxSect {
 		c.rootChain, err = chain(c.fat, out[0].start, nSectors)
 		if err != nil {
-			return nil, fmt.Errorf("ministrumień: %w", err)
+			return nil, fmt.Errorf("ministream: %w", err)
 		}
 	}
 	return out, nil
@@ -179,11 +179,11 @@ func (c *cfb) offsets(e entry) ([]int, error) {
 		}
 	}
 	if uint64(len(out)) != e.size {
-		return nil, errors.New("strumień krótszy niż jego rozmiar")
+		return nil, errors.New("stream shorter than its size")
 	}
 	for _, o := range out {
 		if o >= len(c.data) {
-			return nil, errors.New("strumień poza plikiem")
+			return nil, errors.New("stream outside the file")
 		}
 	}
 	return out, nil
@@ -194,7 +194,7 @@ func (c *cfb) offsets(e entry) ([]int, error) {
 // brak napisu albo za długa wartość to błąd.
 func Replace(msi []byte, old, repl string) ([]byte, int, error) {
 	if len(repl) > len(old) {
-		return nil, 0, fmt.Errorf("wartość dłuższa niż %d znaków", len(old))
+		return nil, 0, fmt.Errorf("value longer than %d characters", len(old))
 	}
 	newb := []byte(repl + string(bytes.Repeat([]byte(" "), len(old)-len(repl))))
 	c, err := parse(msi)
@@ -232,7 +232,7 @@ func Replace(msi []byte, old, repl string) ([]byte, int, error) {
 		}
 	}
 	if n == 0 {
-		return nil, 0, fmt.Errorf("w pliku MSI nie ma napisu %.24q… – instalator zbudowany bez wypełniaczy?", old)
+		return nil, 0, fmt.Errorf("the MSI file has no string %.24q… – installer built without placeholders?", old)
 	}
 	return out, n, nil
 }

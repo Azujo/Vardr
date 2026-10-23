@@ -73,7 +73,7 @@ func Enterprise() *Dict {
 	once.Do(func() {
 		d := &Dict{}
 		if err := json.Unmarshal(enterpriseJSON, d); err != nil {
-			panic("attack: słownik nieczytelny: " + err.Error())
+			panic("attack: unreadable dictionary: " + err.Error())
 		}
 		d.index()
 		dict = d
@@ -112,8 +112,8 @@ func (d *Dict) Tactic(short string) (Tactic, bool) {
 
 // Taktyki z wersji sprzed podziału Defense Evasion (ATT&CK 20) – tag
 // rozpoznawany, ale z ostrzeżeniem.
-var legacyTactics = map[string]string{
-	"defense-evasion": "podzielona w ATT&CK 20 na stealth i defense_impairment",
+var legacyTactics = map[string][2]string{
+	"defense-evasion": {"podzielona w ATT&CK 20 na stealth i defense_impairment", "split in ATT&CK 20 into stealth and defense_impairment"},
 }
 
 var (
@@ -126,6 +126,13 @@ type Mapping struct {
 	Techniques []Technique `json:"techniques"`
 	Tactics    []string    `json:"tactics"` // z tagów (attack.credential_access) i z technik
 	Warnings   []string    `json:"warnings,omitempty"`
+	// WarningsEn: te same ostrzeżenia po angielsku (panel w innym języku).
+	WarningsEn []string `json:"warnings_en,omitempty"`
+}
+
+func (m *Mapping) warn(pl, en string) {
+	m.Warnings = append(m.Warnings, pl)
+	m.WarningsEn = append(m.WarningsEn, en)
 }
 
 // Map odczytuje tagi reguły. Taktyki to suma taktyk z tagów i taktyk
@@ -146,15 +153,17 @@ func (d *Dict) Map(tags []string) Mapping {
 		if g := techTag.FindStringSubmatch(tag); g != nil {
 			t, ok := d.Technique(g[1])
 			if !ok {
-				m.Warnings = append(m.Warnings, fmt.Sprintf("%s: nieznana technika ATT&CK %s", raw, d.Version))
+				m.warn(fmt.Sprintf("%s: nieznana technika ATT&CK %s", raw, d.Version), fmt.Sprintf("%s: unknown ATT&CK technique %s", raw, d.Version))
 				continue
 			}
 			if t.Deprecated {
 				w := fmt.Sprintf("%s: technika %s (%s) wycofana w ATT&CK %s", raw, t.ID, t.Name, d.Version)
+				en := fmt.Sprintf("%s: technique %s (%s) deprecated in ATT&CK %s", raw, t.ID, t.Name, d.Version)
 				if t.ReplacedBy != "" {
 					w += " – zastąpiona przez " + t.ReplacedBy
+					en += " – replaced by " + t.ReplacedBy
 				}
-				m.Warnings = append(m.Warnings, w)
+				m.warn(w, en)
 			}
 			if !slices.ContainsFunc(m.Techniques, func(x Technique) bool { return x.ID == t.ID }) {
 				m.Techniques = append(m.Techniques, t)
@@ -173,10 +182,10 @@ func (d *Dict) Map(tags []string) Mapping {
 			continue
 		}
 		if why, ok := legacyTactics[short]; ok {
-			m.Warnings = append(m.Warnings, fmt.Sprintf("%s: taktyka %s", raw, why))
+			m.warn(fmt.Sprintf("%s: taktyka %s", raw, why[0]), fmt.Sprintf("%s: tactic %s", raw, why[1]))
 			continue
 		}
-		m.Warnings = append(m.Warnings, fmt.Sprintf("%s: nieznany tag ATT&CK", raw))
+		m.warn(fmt.Sprintf("%s: nieznany tag ATT&CK", raw), fmt.Sprintf("%s: unknown ATT&CK tag", raw))
 	}
 	// Kolejność taktyk jak w macierzy.
 	slices.SortStableFunc(m.Tactics, func(a, b string) int { return d.tacticIndex(a) - d.tacticIndex(b) })

@@ -4,12 +4,14 @@ import { useState } from "react";
 import { Alert, Button, Center, Paper, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle } from "@tabler/icons-react";
+import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
 
 const MIN = 12;
 
 export default function ChangePasswordPage({ forced = false }: { forced?: boolean }) {
+  const { t } = useTranslation("account");
   const { applySession, logout } = useAuth();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -27,7 +29,7 @@ export default function ChangePasswordPage({ forced = false }: { forced?: boolea
     setError("");
     try {
       applySession(await api.changePassword(current, next));
-      notifications.show({ color: "green", message: "Hasło zmienione. Inne sesje tego konta zostały zakończone." });
+      notifications.show({ color: "green", message: t("password.changed") });
       setCurrent("");
       setNext("");
       setRepeat("");
@@ -42,11 +44,9 @@ export default function ChangePasswordPage({ forced = false }: { forced?: boolea
     <form onSubmit={submit}>
       <Stack>
         <div>
-          <Title order={3}>{forced ? "Ustaw własne hasło" : "Zmiana hasła"}</Title>
+          <Title order={3}>{forced ? t("password.titleForced") : t("password.title")}</Title>
           <Text c="dimmed" size="sm">
-            {forced
-              ? "Logujesz się hasłem startowym – przed dalszą pracą ustaw własne."
-              : `Co najmniej ${MIN} znaków; najlepiej kilka słów, które łatwo zapamiętać.`}
+            {forced ? t("password.introForced") : t("password.intro", { min: MIN })}
           </Text>
         </div>
         {error && (
@@ -55,35 +55,35 @@ export default function ChangePasswordPage({ forced = false }: { forced?: boolea
           </Alert>
         )}
         <PasswordInput
-          label="Obecne hasło"
+          label={t("password.current")}
           autoComplete="current-password"
           required
           value={current}
           onChange={(e) => setCurrent(e.currentTarget.value)}
         />
         <PasswordInput
-          label="Nowe hasło"
-          description={`minimum ${MIN} znaków, bez nazwy użytkownika`}
+          label={t("password.new")}
+          description={t("password.newHint", { min: MIN })}
           autoComplete="new-password"
           required
           value={next}
-          error={tooShort ? `za krótkie (${[...next].length}/${MIN})` : undefined}
+          error={tooShort ? t("password.tooShort", { len: [...next].length, min: MIN }) : undefined}
           onChange={(e) => setNext(e.currentTarget.value)}
         />
         <PasswordInput
-          label="Powtórz nowe hasło"
+          label={t("password.repeat")}
           autoComplete="new-password"
           required
           value={repeat}
-          error={mismatch ? "hasła się różnią" : undefined}
+          error={mismatch ? t("password.mismatch") : undefined}
           onChange={(e) => setRepeat(e.currentTarget.value)}
         />
         <Button type="submit" loading={busy} disabled={mismatch || tooShort}>
-          Zmień hasło
+          {t("password.submit")}
         </Button>
         {forced && (
           <Button variant="subtle" color="gray" onClick={() => void logout()}>
-            Wyloguj
+            {t("common:header.logout")}
           </Button>
         )}
       </Stack>

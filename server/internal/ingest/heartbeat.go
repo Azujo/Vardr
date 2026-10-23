@@ -59,21 +59,21 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(resp)
 	}
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		reply(http.StatusUnauthorized, "brak certyfikatu klienta")
+		reply(http.StatusUnauthorized, "missing client certificate")
 		return
 	}
 	if n := h.inFlight.Add(1); h.MaxInFlight > 0 && n > int64(h.MaxInFlight) {
 		h.inFlight.Add(-1)
 		h.Throttled.Add(1)
 		w.Header().Set("Retry-After", "60")
-		reply(http.StatusTooManyRequests, "serwer zajęty – kolejny heartbeat za minutę")
+		reply(http.StatusTooManyRequests, "server busy – next heartbeat in a minute")
 		return
 	}
 	defer h.inFlight.Add(-1)
 	cert := r.TLS.PeerCertificates[0]
 	agentID := cert.Subject.CommonName
 	if !agentIDPattern.MatchString(agentID) {
-		reply(http.StatusForbidden, "niepoprawny identyfikator agenta w certyfikacie")
+		reply(http.StatusForbidden, "invalid agent identifier in the certificate")
 		return
 	}
 
@@ -81,7 +81,7 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Encoding") == "gzip" {
 		zr, err := gzip.NewReader(body)
 		if err != nil {
-			reply(http.StatusBadRequest, "niepoprawny gzip")
+			reply(http.StatusBadRequest, "invalid gzip")
 			return
 		}
 		body = io.LimitReader(zr, contract.MaxHeartbeatBytes+1)
@@ -90,20 +90,20 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var mbe *http.MaxBytesError
 	switch {
 	case errors.As(err, &mbe) || len(data) > contract.MaxHeartbeatBytes:
-		reply(http.StatusRequestEntityTooLarge, "heartbeat za duży")
+		reply(http.StatusRequestEntityTooLarge, "heartbeat too large")
 		return
 	case err != nil:
-		reply(http.StatusBadRequest, "błąd odczytu")
+		reply(http.StatusBadRequest, "read error")
 		return
 	}
 	var hb contract.Heartbeat
 	if err := json.Unmarshal(data, &hb); err != nil {
-		reply(http.StatusBadRequest, "niepoprawny JSON")
+		reply(http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if hb.AgentID != agentID {
-		h.Log.Warn("niezgodna tożsamość agenta w heartbeacie", "cert_cn", agentID, "agent_id", hb.AgentID, "remote", r.RemoteAddr)
-		reply(http.StatusForbidden, "agent_id niezgodny z certyfikatem")
+		h.Log.Warn("agent identity mismatch in the heartbeat", "cert_cn", agentID, "agent_id", hb.AgentID, "remote", r.RemoteAddr)
+		reply(http.StatusForbidden, "agent_id does not match the certificate")
 		return
 	}
 	if err := hb.Validate(); err != nil {
@@ -119,9 +119,9 @@ func (h *HeartbeatHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	if err := h.Pub.PublishHeartbeat(ctx, shb); err != nil {
-		h.Log.Warn("publikacja heartbeatu nieudana", "agent_id", agentID, "err", err)
+		h.Log.Warn("publishing the heartbeat failed", "agent_id", agentID, "err", err)
 		w.Header().Set("Retry-After", "60")
-		reply(http.StatusServiceUnavailable, "kolejka chwilowo niedostępna")
+		reply(http.StatusServiceUnavailable, "queue temporarily unavailable")
 		return
 	}
 	h.Accepted.Add(1)

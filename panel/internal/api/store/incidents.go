@@ -285,10 +285,10 @@ func (s *PG) IncidentReports(ctx context.Context, id int64) ([]IncidentReport, e
 }
 
 // ErrSubmitted: zgłoszenie już wysłane – treść zamrożona.
-var ErrSubmitted = errors.New("zgłoszenie już wysłane")
+var ErrSubmitted = errors.New("the report has already been submitted")
 
 // ErrClosed: incydent zamknięty – tylko do odczytu (zamknięcia nie da się cofnąć).
-var ErrClosed = errors.New("incydent zamknięty")
+var ErrClosed = errors.New("the incident is closed")
 
 // closedOrMissing: po zapisie, który nic nie zmienił – zamknięty albo brak.
 func closedOrMissing(ctx context.Context, tx pgx.Tx, id int64) error {

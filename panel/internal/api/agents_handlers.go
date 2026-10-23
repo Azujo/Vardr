@@ -114,6 +114,20 @@ type agentView struct {
 	Stopping string `json:"stopping,omitempty"`
 	// Problems to czytelne opisy problemów (pusta lista = wszystko w porządku).
 	Problems []string `json:"problems"`
+	// Issues: te same problemy jako kod z parametrami – panel pokazuje je
+	// w języku użytkownika (Problems – po polsku, zapasowo).
+	Issues []agentIssue `json:"issues"`
+}
+
+type agentIssue struct {
+	Code string         `json:"code"`
+	Args map[string]any `json:"args,omitempty"`
+}
+
+// problem dopisuje problem agenta: kod z parametrami i polski opis.
+func (v *agentView) problem(code, text string, args map[string]any) {
+	v.Problems = append(v.Problems, text)
+	v.Issues = append(v.Issues, agentIssue{Code: code, Args: args})
 }
 
 func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
@@ -121,7 +135,7 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		GroupID: g.ID, Group: g.Name, ConfigExpected: g.Config().Version,
 		ID: a.ID, Hostname: a.Hostname, OS: a.OS, Version: a.Version, RemoteIP: a.RemoteIP,
 		FirstSeen: a.FirstSeen, LastSeen: a.LastSeen, StartedAt: a.StartedAt, CertNotAfter: a.CertNotAfter,
-		State: "online", Problems: []string{},
+		State: "online", Problems: []string{}, Issues: []agentIssue{},
 	}
 	v.SysmonRequired = g.Limits.RequireSysmon != nil && *g.Limits.RequireSysmon
 
@@ -131,19 +145,21 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	if now.Sub(a.LastSeen) > offlineAfter {
 		v.State = "offline"
 		v.Stopping = st.Stopping
+		since := map[string]any{"s": int(now.Sub(a.LastSeen).Seconds())}
 		switch st.Stopping {
 		case "":
-			v.Problems = append(v.Problems, "brak heartbeatu od "+humanAgo(now.Sub(a.LastSeen)))
+			v.problem("no_heartbeat", "brak heartbeatu od "+humanAgo(now.Sub(a.LastSeen)), since)
 		case "shutdown":
-			v.Problems = append(v.Problems, "komputer wyłączony "+humanAgo(now.Sub(a.LastSeen))+" temu")
+			v.problem("shutdown", "komputer wyłączony "+humanAgo(now.Sub(a.LastSeen))+" temu", since)
 		default:
-			v.Problems = append(v.Problems, "agent zatrzymany ("+stoppingLabel(st.Stopping)+") "+humanAgo(now.Sub(a.LastSeen))+" temu")
+			since["how"] = st.Stopping
+			v.problem("stopped", "agent zatrzymany ("+stoppingLabel(st.Stopping)+") "+humanAgo(now.Sub(a.LastSeen))+" temu", since)
 		}
 	}
 	// Wycofany: certyfikat unieważniony (deinstalacja tokenem albo panel) –
 	// agent nie może już nic wysłać; to nie problem, tylko stan.
 	if a.CertRevoked {
-		v.State, v.Problems = "retired", []string{}
+		v.State, v.Problems, v.Issues = "retired", []string{}, []agentIssue{}
 		return v
 	}
 	if a.CertNotAfter != nil {
@@ -151,14 +167,14 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 		v.CertDaysLeft = &days
 		switch {
 		case days < 0:
-			v.Problems = append(v.Problems, "certyfikat agenta wygasł")
+			v.problem("cert_expired", "certyfikat agenta wygasł", nil)
 		case days < certWarnDays:
-			v.Problems = append(v.Problems, fmt.Sprintf("certyfikat wygasa za %d dni", days))
+			v.problem("cert_expiring", fmt.Sprintf("certyfikat wygasa za %d dni", days), map[string]any{"days": days})
 		}
 	}
 
 	if stErr != nil {
-		v.Problems = append(v.Problems, "nieczytelny status agenta")
+		v.problem("bad_status", "nieczytelny status agenta", nil)
 		return v
 	}
 	v.Protection = "unknown"
@@ -172,7 +188,7 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 			if p.Error != "" {
 				msg += ": " + truncate(p.Error, 120)
 			}
-			v.Problems = append(v.Problems, msg)
+			v.problem("protection_down", msg, map[string]any{"error": truncate(p.Error, 120)})
 		}
 		for _, e := range p.Events {
 			if contract.TamperKinds[e.Kind].Level != "" && now.Sub(e.At) < 24*time.Hour {
@@ -180,7 +196,7 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 			}
 		}
 		if v.Tamper > 0 {
-			v.Problems = append(v.Problems, fmt.Sprintf("próby sabotażu agenta w ostatniej dobie: %d (szczegóły agenta)", v.Tamper))
+			v.problem("tamper", fmt.Sprintf("próby sabotażu agenta w ostatniej dobie: %d (szczegóły agenta)", v.Tamper), map[string]any{"n": v.Tamper})
 		}
 	}
 	v.ServerHealthy, v.LastAcceptedAt = st.Server.Healthy, st.Server.LastAcceptedAt
@@ -196,25 +212,26 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 			v.ChannelsOK++
 		case "not_found": // np. Sysmon niezainstalowany – informacja, nie awaria
 		default:
-			v.Problems = append(v.Problems, fmt.Sprintf("kanał %s: %s", c.Name, channelStateLabel(c.State)))
+			v.problem("channel", fmt.Sprintf("kanał %s: %s", c.Name, channelStateLabel(c.State)), map[string]any{"channel": c.Name, "state": c.State})
 		}
 	}
 	if v.State == "online" && !st.Server.Healthy && st.Server.LastError != "" {
-		v.Problems = append(v.Problems, "wysyłka zdarzeń nieudana: "+truncate(st.Server.LastError, 120))
+		v.problem("send_failed", "wysyłka zdarzeń nieudana: "+truncate(st.Server.LastError, 120), map[string]any{"error": truncate(st.Server.LastError, 120)})
 	}
 	if st.Counters.Quarantined > 0 {
-		v.Problems = append(v.Problems, fmt.Sprintf("%d zdarzeń w kwarantannie agenta", st.Counters.Quarantined))
+		v.problem("quarantined", fmt.Sprintf("%d zdarzeń w kwarantannie agenta", st.Counters.Quarantined), map[string]any{"n": st.Counters.Quarantined})
 	}
 	if b := st.Buffer; b != nil {
 		if b.Batches > 0 && !b.OldestAt.IsZero() && now.Sub(b.OldestAt) > 5*time.Minute {
-			v.Problems = append(v.Problems, fmt.Sprintf("bufor dyskowy: %d paczek (%.1f MB) czeka na wysyłkę od %s",
-				b.Batches, float64(b.Bytes)/(1<<20), humanAgo(now.Sub(b.OldestAt))))
+			v.problem("buffer_backlog", fmt.Sprintf("bufor dyskowy: %d paczek (%.1f MB) czeka na wysyłkę od %s",
+				b.Batches, float64(b.Bytes)/(1<<20), humanAgo(now.Sub(b.OldestAt))),
+				map[string]any{"batches": b.Batches, "bytes": b.Bytes, "s": int(now.Sub(b.OldestAt).Seconds())})
 		}
 		if b.Full {
-			v.Problems = append(v.Problems, "bufor dyskowy agenta pełny")
+			v.problem("buffer_full", "bufor dyskowy agenta pełny", nil)
 		}
 		if b.Dropped > 0 {
-			v.Problems = append(v.Problems, fmt.Sprintf("utracono %d zdarzeń z pełnego bufora dyskowego", b.Dropped))
+			v.problem("buffer_dropped", fmt.Sprintf("utracono %d zdarzeń z pełnego bufora dyskowego", b.Dropped), map[string]any{"n": b.Dropped})
 		}
 	}
 	v.Sysmon = "unknown"
@@ -232,11 +249,11 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	if v.SysmonRequired {
 		switch v.Sysmon {
 		case "missing":
-			v.Problems = append(v.Problems, "Sysmon wymagany w grupie – nie jest zainstalowany")
+			v.problem("sysmon_missing", "Sysmon wymagany w grupie – nie jest zainstalowany", nil)
 		case "stopped":
-			v.Problems = append(v.Problems, "Sysmon zainstalowany, ale zatrzymany")
+			v.problem("sysmon_stopped", "Sysmon zainstalowany, ale zatrzymany", nil)
 		case "unknown":
-			v.Problems = append(v.Problems, "Sysmon wymagany w grupie – agent nie raportuje jego stanu (zaktualizuj do 0.6.2+)")
+			v.problem("sysmon_unknown", "Sysmon wymagany w grupie – agent nie raportuje jego stanu (zaktualizuj do 0.6.2+)", nil)
 		}
 	}
 	c := st.Clock
@@ -250,7 +267,8 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 			if c.OffsetMs < 0 {
 				dir = "spóźnia się"
 			}
-			v.Problems = append(v.Problems, fmt.Sprintf("zegar komputera %s o %s względem serwera", dir, off.Round(time.Second)))
+			v.problem("clock", fmt.Sprintf("zegar komputera %s o %s względem serwera", dir, off.Round(time.Second)),
+				map[string]any{"ahead": c.OffsetMs > 0, "s": int(off.Round(time.Second).Seconds())})
 		}
 	}
 	// „stopped” to zwykły stan na komputerach spoza domeny: Windows
@@ -258,7 +276,7 @@ func viewAgent(a store.Agent, g store.AgentGroup, now time.Time) agentView {
 	// usługi (o rozjechanym zegarze i tak mówi pomiar odchylenia).
 	switch c.TimeService {
 	case "disabled", "missing":
-		v.Problems = append(v.Problems, "usługa czasu Windows (W32Time) wyłączona – zegar nie jest synchronizowany")
+		v.problem("w32time", "usługa czasu Windows (W32Time) wyłączona – zegar nie jest synchronizowany", nil)
 	}
 	return v
 }
@@ -414,7 +432,7 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	// ważny certyfikat (i klucz, który mógł zostać na dysku) byłby
 	// niewidocznym dostępem do serwera. Agent, który nadal działa, nie
 	// wróci już na listę – potrzebna nowa rejestracja tokenem.
-	const reason = "agent usunięty w panelu"
+	reason := pick(s.systemLanguage(r.Context()), "agent usunięty w panelu", "agent deleted in the panel")
 	serials, err := s.Store.RevokeAgentCerts(r.Context(), id, reason)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -422,7 +440,7 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(serials) > 0 && s.Enroll != nil && s.Enroll.Revoke != nil {
 		if err := s.Enroll.Revoke(r.Context(), serials, reason); err != nil {
-			s.internalError(w, r, fmt.Errorf("rozesłanie unieważnienia: %w", err))
+			s.internalError(w, r, fmt.Errorf("broadcasting the revocation: %w", err))
 			return
 		}
 	}
@@ -491,7 +509,8 @@ func applySysmonBaseline(views []agentView) {
 			}
 		}
 		if v.SysmonConfig != best {
-			v.Problems = append(v.Problems, fmt.Sprintf("konfiguracja Sysmona (%s) inna niż u większości grupy (%s)", v.SysmonConfig, best))
+			v.problem("sysmon_config", fmt.Sprintf("konfiguracja Sysmona (%s) inna niż u większości grupy (%s)", v.SysmonConfig, best),
+				map[string]any{"config": v.SysmonConfig, "common": best})
 		}
 	}
 }

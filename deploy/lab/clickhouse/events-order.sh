@@ -19,14 +19,14 @@ ch() { docker compose exec -T clickhouse bash -c 'clickhouse client --user "$CLI
 
 key=$(ch -q "SELECT sorting_key FROM system.tables WHERE database = 'siem' AND name = 'events'")
 if [[ $key == *"toStartOfHour(ingested)"* ]]; then
-  echo "siem.events ma już nowy klucz: $key"
+  echo "siem.events already has the new key: $key"
   exit 0
 fi
 if [[ -n $(ch -q "EXISTS TABLE siem.events_old" | grep 1 || true) ]]; then
-  echo "BŁĄD: istnieje siem.events_old z poprzedniej migracji – usuń ją najpierw" >&2
+  echo "ERROR: siem.events_old from a previous migration exists – remove it first" >&2
   exit 1
 fi
-echo "klucz teraz: $key"
+echo "current key: $key"
 
 ddl=$(ch -q "SHOW CREATE TABLE siem.events FORMAT TSVRaw")
 ddl=${ddl/CREATE TABLE siem.events/CREATE TABLE siem.events_new}
@@ -34,9 +34,9 @@ ddl=$(sed -E 's/^ORDER BY .*/ORDER BY (event_dataset, toStartOfHour(ingested), h
 ch -q "DROP TABLE IF EXISTS siem.events_new"
 ch -q "$ddl"
 
-echo "zatrzymuję writer (zdarzenia czekają w NATS)"
+echo "stopping writer (events wait in NATS)"
 docker compose stop writer >/dev/null
-trap 'echo "uruchamiam writer"; docker compose start writer >/dev/null' EXIT
+trap 'echo "starting writer"; docker compose start writer >/dev/null' EXIT
 
 # Wiersze po terminie retencji nowa tabela odrzuca od razu (TTL) – nie liczą się.
 ttl=$(grep -E '^SIEM_EVENTS_TTL_DAYS=' .env 2>/dev/null | cut -d= -f2 || true)
@@ -47,14 +47,14 @@ for p in $(ch -q "SELECT DISTINCT partition_id FROM system.parts WHERE database 
   ch --max_memory_usage=4000000000 -q "INSERT INTO siem.events_new SELECT * FROM siem.events WHERE _partition_id = '$p' AND $filter"
   want=$(ch -q "SELECT count() FROM siem.events WHERE _partition_id = '$p' AND $filter")
   got=$(ch -q "SELECT count() FROM siem.events_new WHERE _partition_id = '$p'")
-  echo "partycja $p: $got / $want"
+  echo "partition $p: $got / $want"
   if [[ $got != "$want" ]]; then
-    echo "BŁĄD: liczba wierszy się nie zgadza – tabela bez zmian (siem.events_new do sprawdzenia)" >&2
+    echo "ERROR: the row count does not match – table unchanged (check siem.events_new)" >&2
     exit 1
   fi
 done
 
 ch -q "EXCHANGE TABLES siem.events AND siem.events_new"
 ch -q "RENAME TABLE siem.events_new TO siem.events_old"
-echo "gotowe: $(ch -q "SELECT sorting_key FROM system.tables WHERE database = 'siem' AND name = 'events'")"
-echo "stara tabela: siem.events_old (DROP TABLE po sprawdzeniu)"
+echo "done: $(ch -q "SELECT sorting_key FROM system.tables WHERE database = 'siem' AND name = 'events'")"
+echo "old table: siem.events_old (DROP TABLE after checking)"

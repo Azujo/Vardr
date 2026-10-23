@@ -49,6 +49,19 @@ falsepositives:
   - Audyt bezpieczeństwa z użyciem BloodHound (uzgodniony termin)
 level: high
 vardr:
+  i18n:
+    en:
+      title: "Active Directory reconnaissance (trusts, domain admins, BloodHound)"
+      description: |
+        Commands and tools mapping the domain: nltest with /domain_trusts or
+        /dclist, listing the domain admins group with net, AdFind, dsquery and the
+        BloodHound collector (SharpHound). This is how an attacker looks for privileged
+        accounts and a path to the domain controller.
+      instructions: |
+        Domain reconnaissance was run on computer {{host.name}}:
+        {{CommandLine}}. Find out whether it is agreed work of an administrator or
+        auditor. If not – isolate the computer, block the account that ran the command
+        and check its logons on other computers.
   # Jedna czynność to kilka zdarzeń (Sysmon 1 i Security 4688, net → net1) –
   # jeden alert na komputer, kolejne trafienia dołączają do niego.
   group_by: [host.name]

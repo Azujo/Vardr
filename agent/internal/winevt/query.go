@@ -66,7 +66,7 @@ func parseMeta(xml string) (eventMeta, error) {
 	var m eventMeta
 	r := reRecordID.FindStringSubmatch(xml)
 	if r == nil {
-		return m, fmt.Errorf("brak EventRecordID w zdarzeniu")
+		return m, fmt.Errorf("no EventRecordID in the event")
 	}
 	id, err := strconv.ParseUint(r[1], 10, 64)
 	if err != nil {

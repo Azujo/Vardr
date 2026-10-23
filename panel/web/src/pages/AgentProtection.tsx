@@ -29,32 +29,14 @@ import {
   type AgentView,
   type UninstallToken,
 } from "../api";
+import { useTranslation } from "react-i18next";
 
-const protectionLabels: Record<string, { label: string; color: string; hint: string }> = {
-  protected: {
-    label: "chroniony",
-    color: "green",
-    hint: "Administrator komputera nie zatrzyma ani nie odinstaluje agenta bez tokenu z panelu.",
-  },
-  open: { label: "bez ochrony", color: "red", hint: "Usługa ma zwykłe uprawnienia – agent przywróci ochronę w ciągu 30 s." },
-  other: { label: "zmienione uprawnienia", color: "red", hint: "Uprawnienia usługi zmieniono z zewnątrz." },
-  error: { label: "błąd", color: "red", hint: "Agent nie może sprawdzić albo ustawić uprawnień usługi." },
-  off: { label: "wyłączona", color: "gray", hint: "Ochrona wyłączona w grupie agenta (Grupy agentów)." },
-  unknown: {
-    label: "nieobsługiwana",
-    color: "gray",
-    hint: "Agent starszy niż 0.7.0, kolektor albo konektor (bez usługi Windows).",
-  },
-};
-
-const tokenStates: Record<string, { label: string; color: string }> = {
-  active: { label: "ważny", color: "green" },
-  used: { label: "użyty", color: "blue" },
-  revoked: { label: "unieważniony", color: "gray" },
-  expired: { label: "wygasł", color: "gray" },
-};
+// Kolory stanów; nazwy i opisy – agents: protection.<stan>, token.<stan>.
+const protectionColors: Record<string, string> = { protected: "green", open: "red", other: "red", error: "red", off: "gray", unknown: "gray" };
+const tokenColors: Record<string, string> = { active: "green", used: "blue", revoked: "gray", expired: "gray" };
 
 export function AgentProtection({ agent, status, admin }: { agent: AgentView; status: AgentStatusDoc; admin: boolean }) {
+  const { t } = useTranslation("agents");
   const [tokens, setTokens] = useState<UninstallToken[]>([]);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -87,10 +69,10 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
     }
   };
 
-  const revoke = async (t: UninstallToken) => {
-    if (!window.confirm(`Unieważnić token ${t.token_id}?`)) return;
+  const revoke = async (tok: UninstallToken) => {
+    if (!window.confirm(t("protection.revokeConfirm", { id: tok.token_id }))) return;
     try {
-      await agentsApi.revokeUninstallToken(agent.id, t.id);
+      await agentsApi.revokeUninstallToken(agent.id, tok.id);
       load();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -103,28 +85,29 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
     setPassword("");
   };
 
-  const state = protectionLabels[agent.protection ?? "unknown"] ?? protectionLabels.unknown;
+  const pk = (agent.protection ?? "unknown") in protectionColors ? (agent.protection ?? "unknown") : "unknown";
+  const state = { label: t(`protection.${pk}.label`), color: protectionColors[pk], hint: t(`protection.${pk}.hint`) };
   const events = [...(status.protection?.events ?? [])].reverse();
   return (
     <Card withBorder>
       <Group justify="space-between" mb="sm">
         <Group gap="xs">
           <IconShieldCheck size={20} />
-          <Title order={4}>Ochrona agenta</Title>
+          <Title order={4}>{t("protection.title")}</Title>
           <Badge color={state.color} variant="light">
             {state.label}
           </Badge>
         </Group>
         {admin && (
           <Button size="xs" variant="light" leftSection={<IconKey size={14} />} onClick={() => setOpen(true)}>
-            Token deinstalacji
+            {t("protection.token")}
           </Button>
         )}
       </Group>
       <Text size="sm" c="dimmed">
         {state.hint}
         {agent.protection_error ? ` ${agent.protection_error}` : ""}
-        {status.protection?.enabled ? ` Ważne tokeny znane agentowi: ${status.protection.tokens}.` : ""}
+        {status.protection?.enabled ? ` ${t("protection.known", { n: status.protection.tokens })}` : ""}
       </Text>
 
       {events.length > 0 && (
@@ -132,10 +115,10 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
           <Table verticalSpacing={4}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Kiedy</Table.Th>
-                <Table.Th>Zdarzenie</Table.Th>
-                <Table.Th>Konto</Table.Th>
-                <Table.Th>Szczegóły</Table.Th>
+                <Table.Th>{t("protection.when")}</Table.Th>
+                <Table.Th>{t("protection.event")}</Table.Th>
+                <Table.Th>{t("protection.account")}</Table.Th>
+                <Table.Th>{t("protection.details")}</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -177,48 +160,52 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Token</Table.Th>
-                <Table.Th>Stan</Table.Th>
-                <Table.Th>Wygenerował</Table.Th>
-                <Table.Th>Powód</Table.Th>
+                <Table.Th>{t("col.state")}</Table.Th>
+                <Table.Th>{t("protection.createdBy")}</Table.Th>
+                <Table.Th>{t("protection.reason")}</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {tokens.map((t) => (
-                <Table.Tr key={t.id}>
+              {tokens.map((tok) => (
+                <Table.Tr key={tok.id}>
                   <Table.Td>
                     <Text size="sm" ff="monospace">
-                      {t.token_id}
+                      {tok.token_id}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      ważny do {formatDate(t.expires_at)}
+                      {t("protection.validUntil", { date: formatDate(tok.expires_at) })}
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <Badge color={tokenStates[t.state]?.color} variant="light">
-                      {tokenStates[t.state]?.label}
+                    <Badge color={tokenColors[tok.state]} variant="light">
+                      {t(`token.${tok.state}`, { defaultValue: tok.state })}
                     </Badge>
-                    {t.used_at && (
+                    {tok.used_at && (
                       <Text size="xs" c="dimmed">
-                        {t.used_action === "uninstall_token" ? "deinstalacja" : t.used_action === "upgrade" ? "aktualizacja" : "zatrzymanie"}{" "}
-                        {formatDate(t.used_at)}
-                        {t.used_by ? ` (${t.used_by})` : ""}
+                        {tok.used_action === "uninstall_token"
+                          ? t("protection.usedUninstall")
+                          : tok.used_action === "upgrade"
+                            ? t("protection.usedUpgrade")
+                            : t("protection.usedStop")}{" "}
+                        {formatDate(tok.used_at)}
+                        {tok.used_by ? ` (${tok.used_by})` : ""}
                       </Text>
                     )}
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm">{t.created_by}</Text>
+                    <Text size="sm">{tok.created_by}</Text>
                     <Text size="xs" c="dimmed">
-                      {formatDate(t.created_at)}
+                      {formatDate(tok.created_at)}
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm">{t.reason}</Text>
+                    <Text size="sm">{tok.reason}</Text>
                   </Table.Td>
                   <Table.Td>
-                    {t.state === "active" && (
-                      <Button size="compact-xs" variant="subtle" color="red" onClick={() => void revoke(t)}>
-                        Unieważnij
+                    {tok.state === "active" && (
+                      <Button size="compact-xs" variant="subtle" color="red" onClick={() => void revoke(tok)}>
+                        {t("revoke")}
                       </Button>
                     )}
                   </Table.Td>
@@ -229,12 +216,11 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
         </Table.ScrollContainer>
       )}
 
-      <Modal opened={open} onClose={close} title={`Token deinstalacji – ${agent.hostname || agent.id}`} size="lg">
+      <Modal opened={open} onClose={close} title={t("protection.modalTitle", { host: agent.hostname || agent.id })} size="lg">
         {issued ? (
           <Stack>
-            <Alert color="yellow" title="Token widać tylko teraz">
-              Zapisz go albo przekaż osobie, która wykona prace na komputerze. Panel przechowuje tylko skrót. Token jest
-              jednorazowy i działa wyłącznie na tym komputerze do {formatDate(issued.item.expires_at)}.
+            <Alert color="yellow" title={t("protection.onlyNow")}>
+              {t("protection.onlyNowText", { date: formatDate(issued.item.expires_at) })}
             </Alert>
             <Group>
               <Code fz="lg" fw={700}>
@@ -243,45 +229,44 @@ export function AgentProtection({ agent, status, admin }: { agent: AgentView; st
               <CopyButton value={issued.token}>
                 {({ copied, copy }) => (
                   <Button size="xs" variant="light" onClick={copy}>
-                    {copied ? "Skopiowano" : "Kopiuj"}
+                    {copied ? t("copied") : t("copy")}
                   </Button>
                 )}
               </CopyButton>
             </Group>
-            <Text size="sm">Na komputerze (PowerShell jako administrator):</Text>
+            <Text size="sm">{t("protection.onComputer")}</Text>
             <Code block>
-              {`vardr-agent stop -token ${issued.token}        # prace serwisowe (start: vardr-agent start)
-vardr-agent uninstall -token ${issued.token}   # deinstalacja
+              {`vardr-agent stop -token ${issued.token}        # ${t("protection.cmdStop")}
+vardr-agent uninstall -token ${issued.token}   # ${t("protection.cmdUninstall")}
 msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=${issued.token}`}
             </Code>
             <Text size="xs" c="dimmed">
-              Agent pobiera skrót tokenu z panelu – polecenie z tokenem samo odświeża konfigurację, więc działa od razu.
+              {t("protection.refreshNote")}
             </Text>
-            <Button onClick={close}>Zamknij</Button>
+            <Button onClick={close}>{t("close")}</Button>
           </Stack>
         ) : (
           <Stack>
             <Text size="sm">
-              Jednorazowy token pozwala zatrzymać albo odinstalować agenta na tym jednym komputerze. Nowy token unieważnia
-              poprzedni niewykorzystany. Wygenerowanie trafia do audytu.
+              {t("protection.intro")}
             </Text>
             <TextInput
-              label="Powód"
-              placeholder="np. ZGL-123 reinstalacja systemu"
+              label={t("protection.reason")}
+              placeholder={t("protection.reasonPlaceholder")}
               value={reason}
               onChange={(e) => setReason(e.currentTarget.value)}
               required
             />
-            <NumberInput label="Ważność (godziny)" min={1} max={168} value={hours} onChange={setHours} w={200} />
+            <NumberInput label={t("protection.hours")} min={1} max={168} value={hours} onChange={setHours} w={200} />
             <PasswordInput
-              label="Twoje hasło"
-              description="Token osłabia ochronę komputera – potwierdź hasłem."
+              label={t("yourPassword")}
+              description={t("protection.passwordHint")}
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
               required
             />
             <Button loading={busy} disabled={reason.trim().length < 3 || !password} onClick={() => void create()}>
-              Wygeneruj token
+              {t("protection.generate")}
             </Button>
           </Stack>
         )}

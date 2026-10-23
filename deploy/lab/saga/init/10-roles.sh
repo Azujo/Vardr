@@ -30,7 +30,7 @@ db="${POSTGRES_DB:-saga}"
 boot=$(psql --no-psqlrc -tA --username "$admin" --dbname "$db" -c "SELECT rolname FROM pg_roles WHERE oid = 10" 2>/dev/null ||
   psql --no-psqlrc -tA --username siem_api --dbname "$db" -c "SELECT rolname FROM pg_roles WHERE oid = 10")
 if [ "$boot" != "$admin" ]; then
-  echo "przemianowanie superużytkownika $boot -> $admin"
+  echo "renaming the superuser $boot -> $admin"
   psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username "$boot" --dbname "$db" \
     -c "DROP ROLE IF EXISTS vardr_rename" -c "CREATE ROLE vardr_rename LOGIN SUPERUSER"
   psql --no-psqlrc -q -v ON_ERROR_STOP=1 --username vardr_rename --dbname "$db" \
@@ -94,4 +94,4 @@ SELECT 'GRANT SELECT (id, is_default) ON public.agent_groups TO siem_archiver'
 SELECT 'GRANT SELECT (agent_id, group_id) ON public.agent_assignments TO siem_archiver'
   WHERE to_regclass('public.agent_assignments') IS NOT NULL \gexec
 SQL
-echo "role bazy Saga gotowe: $admin (administracja), siem_api (panel), siem_archiver (archiwum)"
+echo "Saga database roles ready: $admin (administration), siem_api (panel), siem_archiver (archive)"

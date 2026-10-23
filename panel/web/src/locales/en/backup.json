@@ -1,0 +1,215 @@
+{
+  "title": "Backups",
+  "intro": "Backups are made by the siem-backup service on the server. Every backup is encrypted with the backup password, known only to the server administrator – the panel does not store it. Passwords and keys for the destination are encrypted by the panel with the backup service key; once saved they cannot be read, only replaced.",
+  "loading": "Loading…",
+  "done": "done",
+  "failed": "failed",
+  "copy": "copy",
+  "copied": "copied",
+  "yourPassword": "Your password",
+  "back": "Back",
+  "save": "Save",
+  "secret": {
+    "stale": "saved with an old service key – enter it again",
+    "saved": "saved – type to change"
+  },
+  "requested": "requested – the backup service performs it within a few seconds",
+  "saved": "Saved – the backup service applies the settings within a minute.",
+  "offline": {
+    "title": "The backup service is not responding",
+    "lastSeen": "Last contact: {{date}}. Scheduled backups are not being made.",
+    "never": "The siem-backup service has not reported yet (the backup container on the server)."
+  },
+  "noPass": {
+    "title": "No backup password",
+    "text": [
+      "Without a password no backups are made. The server administrator sets it once with ",
+      " in the stack directory and stores it off the server (the installer does this automatically)."
+    ],
+    "cmd": "./backup.sh password init"
+  },
+  "last": "Last backup",
+  "lastOk": "last successful: {{date}}",
+  "none": "none yet",
+  "scheduleIs": "schedule: {{s}}",
+  "service": "Backup service",
+  "running": "running",
+  "notResponding": "not responding",
+  "passIdTip": "A hash of the password that encrypts the backups – not the password itself. The same identifier is in the name of every backup, so you can see which password opens it. Only the server administrator knows the password (./backup.sh password show).",
+  "passId": "backup password identifier:",
+  "noPassShort": "no password",
+  "local": "local: {{dir}} ({{free}} free)",
+  "actions": "Actions",
+  "runNow": "Back up now",
+  "saveFirst": "save the changes first",
+  "testTip": "write and read at the destination",
+  "test": "Test connection",
+  "tab": {
+    "settings": "Settings",
+    "history": "History ({{n}})",
+    "restore": "Restore"
+  },
+  "status": {
+    "running": "running",
+    "ok": "successful",
+    "partial": "not uploaded",
+    "error": "failed"
+  },
+  "method": {
+    "none": "Local only",
+    "sftp": "SFTP (SSH)",
+    "smb": "SMB (Windows share / NAS)",
+    "s3": "S3 (MinIO, AWS, Backblaze…)"
+  },
+  "schedule": {
+    "off": "disabled",
+    "hours": "every {{n}} h (minute {{m}})",
+    "weekly": "weekly: {{day}} {{at}}",
+    "daily": "daily at {{at}}",
+    "title": "Schedule",
+    "enabled": "Scheduled backups enabled",
+    "kind": {
+      "hours": "every few hours",
+      "daily": "daily",
+      "weekly": "weekly"
+    },
+    "everyHours": "Every how many hours",
+    "day": "Day",
+    "hour": "Hour",
+    "minute": "Minute",
+    "hint": "Server time. A backup whose time passed while the server was off runs after it starts."
+  },
+  "include": {
+    "title": "Content",
+    "saga": "Saga database",
+    "sagaHint": "accounts and roles, agents and their certificates, groups, alerts, panel rules, the NIS2 archive catalog, policies, notification channels",
+    "config": "Server configuration",
+    "configHint": "certificates (with the agents CA key) and the .env file with service passwords",
+    "archive": "NIS2 archive (increments)",
+    "archiveHint": "new segments and manifests since the previous backup – sent only to the destination (the archive is already on the server disk)",
+    "grafana": "Grafana data",
+    "grafanaHint": "dashboards and settings changed in the Grafana UI (dashboards from the repository are restored without a backup)",
+    "warning": "Without the Saga database and the server configuration the system cannot be restored after losing the server: agents would not trust the new server, and accounts and settings would have to be recreated.",
+    "events": "Events in ClickHouse are not backed up – after restoring a server the last days are replayed from the NIS2 archive (Urd → Replay)."
+  },
+  "retention": {
+    "title": "Retention",
+    "local": "On the server",
+    "remote": "At the destination",
+    "days": "Days",
+    "count": "At most backups",
+    "unlimited": "0 – unlimited",
+    "hint": "A backup is removed when it is older than the given number of days or when there are more backups than the limit. The newest backup is always kept. NIS2 archive batches at the destination expire only by days."
+  },
+  "target": {
+    "title": "Destination",
+    "localOnly": "Backups stay only on this server's disk – a failure of the server or its disk takes them along with the system.",
+    "host": "Server",
+    "user": "User",
+    "share": "Share",
+    "sharePlaceholder": "backups",
+    "domain": "Domain (optional)",
+    "endpoint": "Service address",
+    "endpointHint": "empty – Amazon S3",
+    "bucket": "Bucket",
+    "accessKey": "Access key ID",
+    "path": "Directory",
+    "pathHint": {
+      "sftp": "starting with / – an absolute path, otherwise relative to the user's home directory",
+      "smb": "directory in the share (empty – the share root)",
+      "s3": "prefix in the bucket (empty – the root)",
+      "none": ""
+    },
+    "auth": "Authentication",
+    "authServerKey": "SSH key generated by the backup service (recommended – the private key never leaves the server)",
+    "authPrivateKey": "Your own SSH private key",
+    "authPassword": "Password",
+    "addKey": [
+      "Add this public key to ",
+      " of the user on the backup server (in TrueNAS: user account → SSH public key):"
+    ],
+    "noKey": "The backup service has no SSH key yet – generate one.",
+    "newKeyConfirm": "The new key replaces the current one – the old one stops working. Continue?",
+    "newKey": "Generate a new key",
+    "genKey": "Generate key",
+    "privateKey": "SSH private key",
+    "privateKeyHint": "OpenSSH or PEM format, without a passphrase",
+    "secretKey": "Secret access key",
+    "hostKey": [
+      "Remembered backup server key: ",
+      " – if it changes, uploads stop (protection against impersonation)."
+    ]
+  },
+  "saveSettings": "Save settings",
+  "undo": "Undo changes",
+  "lastChange": "last change: {{by}}, {{date}}",
+  "history": {
+    "title": "Backup history",
+    "none": "No backups.",
+    "col": {
+      "time": "Time",
+      "kind": "Kind",
+      "result": "Result",
+      "size": "Size",
+      "upload": "Upload",
+      "details": "Details"
+    },
+    "manual": "on demand",
+    "scheduled": "scheduled",
+    "yes": "yes",
+    "error": "error",
+    "restoreHint": [
+      "Restore on a clean server: ",
+      " and the backup password."
+    ],
+    "restoreCmd": "./restore.sh <backup> [directory with archive batches]"
+  },
+  "confirm": {
+    "title": "Save backup settings",
+    "text": "Backup settings decide where the data of the whole system goes – confirm the change with your password."
+  },
+  "restore": {
+    "word": "RESTORE",
+    "how": "How restoring works",
+    "how1": "You choose a backup and the parts to restore; first inspect its content (decryption with the backup password).",
+    "how2": "The backup service backs up the current state (you can go back to it) and fetches the chosen backup from the destination.",
+    "how3": "Within a minute the server stops the services using the database, restores the chosen parts and starts the stack – the panel is briefly unavailable, and after a database restore you have to sign in again.",
+    "how4": "The NIS2 archive is restored on a clean server with restore.sh (docs/en/operations.md).",
+    "inProgress": "Restore in progress",
+    "preparing": "The backup service is preparing the restore…",
+    "requestedBy": "Requested by {{by}}, {{date}}.",
+    "last": "Last restore",
+    "lastFailed": "Last restore failed",
+    "refresh": "Refresh backup list",
+    "refreshHint": "The list refreshes itself every 15 minutes and after every backup.",
+    "empty": "No backups on the list.",
+    "col": {
+      "from": "Backup from",
+      "where": "Where"
+    },
+    "server": "server",
+    "target": "destination",
+    "part": {
+      "saga": "Saga database",
+      "config": "configuration",
+      "grafana": "Grafana"
+    },
+    "unchecked": "not inspected",
+    "inspect": "inspect",
+    "restoreEllipsis": "restore…",
+    "title": "Restore from the backup of {{when}}",
+    "onServer": "on the server",
+    "atTarget": "at the destination",
+    "both": "Saga database and server configuration",
+    "bothHint": "restored together – .env holds the database role passwords; accounts, agents, certificates, alerts, policies, backup settings, certs/ and .env",
+    "safety": "Back up the current state first (recommended)",
+    "safetyHint": "lets you go back to the state before the restore",
+    "warn1": "The database returns to its state from {{when}}: alerts, settings changes, accounts and agents registered later will disappear.",
+    "warn2": "Agents registered after this date must enrol again.",
+    "warn3": "The panel will be briefly unavailable; after the restore sign in again (with the password valid on the backup date).",
+    "warn4": "Events in ClickHouse and the NIS2 archive are not changed.",
+    "typeWord": "Type {{word}} to confirm",
+    "requested": "Restore requested – the backup service prepares the backup and the server restores it within a few minutes.",
+    "restore": "Restore"
+  }
+}

@@ -23,6 +23,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"siem/internal/lang"
 )
 
 // Stany zlecenia eksportu.
@@ -94,7 +96,8 @@ type ExportPlan struct {
 }
 
 // ErrExportEmpty: w zakresie nie ma zamkniętych godzin z danymi w retencji.
-var ErrExportEmpty = errors.New("w wybranym zakresie nie ma zamkniętych godzin archiwum z danymi w retencji")
+var ErrExportEmpty = lang.Errorf("w wybranym zakresie nie ma zamkniętych godzin archiwum z danymi w retencji",
+	"the selected range has no closed archive hours with data within retention")
 
 // PlanExport wybiera manifesty z zakresu i ogon łańcucha do najnowszego.
 func (a *Archive) PlanExport(ctx context.Context, from, to time.Time) (ExportPlan, error) {
@@ -121,7 +124,7 @@ func (a *Archive) PlanExport(ctx context.Context, from, to time.Time) (ExportPla
 	for _, m := range p.Chain {
 		var body Manifest
 		if m.Body == nil || json.Unmarshal(m.Body, &body) != nil {
-			return p, fmt.Errorf("manifest %d: brak lub nieczytelna treść w spisie", m.Seq)
+			return p, lang.Errorf("manifest %d: brak lub nieczytelna treść w spisie", "manifest %d: content missing or unreadable in the catalog", m.Seq)
 		}
 		p.Bodies[m.Seq] = body
 	}
@@ -218,8 +221,9 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	info := exportInfo{Format: ExportFormat, ExportID: j.ID, RequestedBy: j.RequestedBy, Reason: j.Reason,
 		RequestedAt: j.RequestedAt, CreatedAt: now, ServerVersion: opt.Version, From: j.From.UTC(), To: j.To.UTC(),
 		Agents: j.Agents,
-		Note:   "Zakres dotyczy godzin archiwizacji (czasu przyjęcia paczek przez serwer), nie czasu zdarzeń.",
-		Chain:  exportChainSpan{FromSeq: p.Chain[0].Seq, ToSeq: p.Chain[len(p.Chain)-1].Seq}}
+		Note: a.tr("Zakres dotyczy godzin archiwizacji (czasu przyjęcia paczek przez serwer), nie czasu zdarzeń.",
+			"The range refers to archiving hours (when the server accepted the batches), not event time."),
+		Chain: exportChainSpan{FromSeq: p.Chain[0].Seq, ToSeq: p.Chain[len(p.Chain)-1].Seq}}
 	for _, m := range p.InRange {
 		info.Manifests = append(info.Manifests, exportRef{m.Seq, m.Hour.UTC(), m.SHA256})
 		info.Totals.Segments += m.Segments
@@ -268,7 +272,7 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	}
 	defer os.Remove(csvFile.Name())
 	defer csvFile.Close()
-	sink, err := newCSVSink(csvFile)
+	sink, err := newCSVSink(csvFile, a.lang())
 	if err != nil {
 		return j, err
 	}
@@ -292,7 +296,7 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 	for _, name := range names {
 		f, err := os.Open(opt.Tools[name])
 		if err != nil {
-			return j, fmt.Errorf("narzędzie %s: %w", name, err)
+			return j, lang.Errorf("narzędzie %s: %w", "tool %s: %w", name, err)
 		}
 		err = addFile(tw, &sums, name, f, now)
 		f.Close()
@@ -312,6 +316,9 @@ func (a *Archive) WriteExport(ctx context.Context, j ExportJob, p ExportPlan, w 
 		return j, err
 	}
 	if err := add("README.txt", []byte(exportReadme)); err != nil {
+		return j, err
+	}
+	if err := add("README-EN.txt", []byte(exportReadmeEn)); err != nil {
 		return j, err
 	}
 	if err := tw.WriteHeader(&tar.Header{Name: "SHA256SUMS", Mode: 0o444, Size: int64(sums.Len()), ModTime: now, Format: tar.FormatPAX}); err != nil {
@@ -433,7 +440,8 @@ func (a *Archive) addSegment(tw *tar.Writer, sums *bytes.Buffer, s Segment, now 
 		return err
 	}
 	if st.Size() != s.Bytes {
-		return fmt.Errorf("segment %s: rozmiar %d B zamiast %d B – archiwum niezgodne, uruchom weryfikację", s.Path, st.Size(), s.Bytes)
+		return lang.Errorf("segment %s: rozmiar %d B zamiast %d B – archiwum niezgodne, uruchom weryfikację",
+			"segment %s: size %d B instead of %d B – archive inconsistent, run verification", s.Path, st.Size(), s.Bytes)
 	}
 	if err := tw.WriteHeader(&tar.Header{Name: s.Path, Mode: 0o444, Size: s.Bytes, ModTime: now, Format: tar.FormatPAX}); err != nil {
 		return err
@@ -444,7 +452,8 @@ func (a *Archive) addSegment(tw *tar.Writer, sums *bytes.Buffer, s Segment, now 
 	}
 	sum := hex.EncodeToString(h.Sum(nil))
 	if sum != s.SHA256 {
-		return fmt.Errorf("segment %s: SHA-256 niezgodny z manifestem – archiwum niezgodne, uruchom weryfikację", s.Path)
+		return lang.Errorf("segment %s: SHA-256 niezgodny z manifestem – archiwum niezgodne, uruchom weryfikację",
+			"segment %s: SHA-256 does not match the manifest – archive inconsistent, run verification", s.Path)
 	}
 	fmt.Fprintf(sums, "%s  %s\n", sum, s.Path)
 	return nil
@@ -474,9 +483,10 @@ type ExportCheck struct {
 //
 // Kotwicę (hash najnowszego manifestu) warto porównać z wartością
 // zapisaną niezależnie, np. w protokole przekazania.
-func CheckExport(r io.Reader) ExportCheck {
+// lang: język opisów problemów (pl, en).
+func CheckExport(r io.Reader, lang string) ExportCheck {
 	tr := tar.NewReader(r)
-	return checkEntries(func() (string, io.Reader, error) {
+	return checkEntries(lang, func() (string, io.Reader, error) {
 		for {
 			hdr, err := tr.Next()
 			if err != nil {
@@ -499,7 +509,7 @@ const ReadOutputDir = "ODCZYT"
 
 // CheckExportDir sprawdza rozpakowaną paczkę (folder) tak samo jak CheckExport.
 // Podfolder ODCZYT (wyniki czytnika) jest pomijany.
-func CheckExportDir(dir string) ExportCheck {
+func CheckExportDir(dir, l string) ExportCheck {
 	var files []string
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -517,12 +527,12 @@ func CheckExportDir(dir string) ExportCheck {
 		return nil
 	})
 	if err != nil {
-		return ExportCheck{Problems: []string{"odczyt folderu: " + err.Error()}}
+		return ExportCheck{Problems: []string{lang.Pick(l, "odczyt folderu: ", "reading the folder: ") + err.Error()}}
 	}
 	sort.Strings(files)
 	var cur *os.File
 	i := 0
-	c := checkEntries(func() (string, io.Reader, error) {
+	c := checkEntries(l, func() (string, io.Reader, error) {
 		if cur != nil {
 			cur.Close()
 			cur = nil
@@ -546,9 +556,9 @@ func CheckExportDir(dir string) ExportCheck {
 }
 
 // checkEntries sprawdza kolejne pliki paczki (z tar albo z folderu).
-func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
+func checkEntries(l string, next func() (string, io.Reader, error)) ExportCheck {
 	var c ExportCheck
-	var p problems
+	p := problems{lang: l}
 	type segInfo struct {
 		sum             string
 		size            int64
@@ -569,11 +579,11 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 			break
 		}
 		if err != nil {
-			p.add("paczka nieczytelna: %v", err)
+			p.add("paczka nieczytelna: %v", "unreadable package: %v", err)
 			break
 		}
 		if rd == nil {
-			p.add("nieoczekiwany wpis %s", name)
+			p.add("nieoczekiwany wpis %s", "unexpected entry %s", name)
 			continue
 		}
 		h := sha256.New()
@@ -619,7 +629,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 			sums[name] = si.sum
 		case strings.HasPrefix(name, "zdarzenia/") && strings.HasSuffix(name, ".ndjson.gz"):
 			if err := readableDigestOf(body, &readDigest); err != nil {
-				p.add("%s: %v", name, err)
+				p.add("%s: %v", "%s: %v", name, err)
 			}
 			_, _ = io.Copy(io.Discard, body)
 			sums[name] = hex.EncodeToString(h.Sum(nil))
@@ -629,7 +639,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 		default:
 			data, err := io.ReadAll(body)
 			if err != nil {
-				p.add("%s: %v", name, err)
+				p.add("%s: %v", "%s: %v", name, err)
 				continue
 			}
 			if name == "SHA256SUMS" {
@@ -640,12 +650,12 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 			switch {
 			case name == "export.json":
 				if err := json.Unmarshal(data, &info); err != nil {
-					p.add("export.json nieczytelny: %v", err)
+					p.add("export.json nieczytelny: %v", "export.json is unreadable: %v", err)
 				}
 			case strings.HasPrefix(name, "chain/"):
 				var seq int64
 				if _, err := fmt.Sscanf(path.Base(name), "%08d.json", &seq); err != nil {
-					p.add("nieoczekiwany plik %s", name)
+					p.add("nieoczekiwany plik %s", "unexpected file %s", name)
 				}
 				chain[seq] = data
 			}
@@ -654,7 +664,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 
 	// SHA256SUMS: każdy plik na liście i z właściwą sumą, nic spoza listy.
 	if sumsFile == nil {
-		p.add("brak pliku SHA256SUMS")
+		p.add("brak pliku SHA256SUMS", "SHA256SUMS file missing")
 	}
 	listed := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(sumsFile)), "\n") {
@@ -664,19 +674,19 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 		}
 		listed[name] = true
 		if got, ok := sums[name]; !ok {
-			p.add("brak pliku %s wymienionego w SHA256SUMS", name)
+			p.add("brak pliku %s wymienionego w SHA256SUMS", "file %s listed in SHA256SUMS is missing", name)
 		} else if got != sum {
-			p.add("plik %s: SHA-256 niezgodny z SHA256SUMS – zmieniony", name)
+			p.add("plik %s: SHA-256 niezgodny z SHA256SUMS – zmieniony", "file %s: SHA-256 does not match SHA256SUMS – modified", name)
 		}
 	}
 	for name := range sums {
 		if !listed[name] {
-			p.add("plik %s spoza SHA256SUMS – dodany", name)
+			p.add("plik %s spoza SHA256SUMS – dodany", "file %s not in SHA256SUMS – added", name)
 		}
 	}
 
 	if info.Format != ExportFormat && info.Format != exportFormatV2 && info.Format != exportFormatV1 {
-		p.add("nieznany format paczki: %q", info.Format)
+		p.add("nieznany format paczki: %q", "unknown package format: %q", info.Format)
 	}
 	c.ExportID, c.From, c.To = info.ExportID, info.From.Format(time.RFC3339), info.To.Format(time.RFC3339)
 	c.Latest = info.Latest.SHA256
@@ -687,27 +697,27 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	for seq := info.Chain.FromSeq; seq <= info.Chain.ToSeq && seq > 0; seq++ {
 		data, ok := chain[seq]
 		if !ok {
-			p.add("brak manifestu %d w łańcuchu", seq)
+			p.add("brak manifestu %d w łańcuchu", "manifest %d missing from the chain", seq)
 			prev = ""
 			continue
 		}
 		var m Manifest
 		if err := json.Unmarshal(data, &m); err != nil || m.Seq != seq {
-			p.add("manifest %d nieczytelny", seq)
+			p.add("manifest %d nieczytelny", "manifest %d is unreadable", seq)
 			prev = ""
 			continue
 		}
 		if prev != "" && m.PrevSHA256 != prev {
-			p.add("manifest %d: hash poprzednika nie zgadza się – łańcuch przerwany", seq)
+			p.add("manifest %d: hash poprzednika nie zgadza się – łańcuch przerwany", "manifest %d: previous hash does not match – chain broken", seq)
 		}
 		prev = SumHex(data)
 		bodies[seq] = m
 		if seq == info.Chain.ToSeq && prev != info.Latest.SHA256 {
-			p.add("najnowszy manifest nie zgadza się z kotwicą w export.json")
+			p.add("najnowszy manifest nie zgadza się z kotwicą w export.json", "the latest manifest does not match the anchor in export.json")
 		}
 	}
 	if len(chain) != len(bodies) && len(bodies) > 0 {
-		p.add("w paczce są manifesty spoza zakresu łańcucha")
+		p.add("w paczce są manifesty spoza zakresu łańcucha", "the package contains manifests outside the chain range")
 	}
 
 	// Segmenty manifestów z zakresu.
@@ -718,7 +728,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 			continue
 		}
 		if SumHex(chain[ref.Seq]) != ref.SHA256 {
-			p.add("manifest %d: hash niezgodny z export.json", ref.Seq)
+			p.add("manifest %d: hash niezgodny z export.json", "manifest %d: hash does not match export.json", ref.Seq)
 		}
 		c.Manifests++
 		for _, s := range m.Segments {
@@ -726,17 +736,17 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 			si, ok := segs[s.Path]
 			switch {
 			case !ok:
-				p.add("brak segmentu %s", s.Path)
+				p.add("brak segmentu %s", "segment %s missing", s.Path)
 				continue
 			case si.err != nil:
-				p.add("segment %s: %v", s.Path, si.err)
+				p.add("segment %s: %v", "segment %s: %v", s.Path, si.err)
 			case si.sum != s.SHA256 || si.size != s.Bytes:
-				p.add("segment %s: SHA-256 lub rozmiar niezgodny z manifestem – zmieniony", s.Path)
+				p.add("segment %s: SHA-256 lub rozmiar niezgodny z manifestem – zmieniony", "segment %s: SHA-256 or size does not match the manifest – modified", s.Path)
 			case si.records != s.Records:
-				p.add("segment %s: %d paczek zamiast %d", s.Path, si.records, s.Records)
+				p.add("segment %s: %d paczek zamiast %d", "segment %s: %d batches instead of %d", s.Path, si.records, s.Records)
 			}
 			if si.broken > 0 {
-				p.add("segment %s: %d paczek niezgodnych z ich sumą SHA-256", s.Path, si.broken)
+				p.add("segment %s: %d paczek niezgodnych z ich sumą SHA-256", "segment %s: %d batches do not match their SHA-256", s.Path, si.broken)
 			}
 			c.Segments++
 			c.Records += int64(si.records)
@@ -750,7 +760,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	}
 	sort.Strings(extra)
 	for _, name := range extra {
-		p.add("segment %s nie należy do żadnego manifestu z zakresu", name)
+		p.add("segment %s nie należy do żadnego manifestu z zakresu", "segment %s does not belong to any manifest in the range", name)
 	}
 
 	// Czytelne zdarzenia (format 2) muszą odpowiadać oryginałom (wybranych agentów).
@@ -763,7 +773,7 @@ func checkEntries(next func() (string, io.Reader, error)) ExportCheck {
 	c.Agents = info.Agents
 	c.Events = origDigest.n
 	if info.Format != exportFormatV1 && !readDigest.same(origDigest) {
-		p.add("czytelne zdarzenia (%d) nie odpowiadają oryginałom (%d) – zdarzenia/ zmienione albo niekompletne", readDigest.n, origDigest.n)
+		p.add("czytelne zdarzenia (%d) nie odpowiadają oryginałom (%d) – zdarzenia/ zmienione albo niekompletne", "readable events (%d) do not match the originals (%d) – zdarzenia/ modified or incomplete", readDigest.n, origDigest.n)
 	}
 
 	c.Problems = p.result()
@@ -783,7 +793,8 @@ Program sprawdzi integralność paczki i zapisze w podfolderze ODCZYT:
   RAPORT.txt              wynik sprawdzenia, opis eksportu, zdarzenia
                           wymagające uwagi, statystyki
   zdarzenia\RRRR-MM-DD.txt  wszystkie zdarzenia dnia po kolei, opisane
-                          po polsku, z danymi zdarzenia
+                          w języku Windows (po polsku albo po angielsku),
+                          z danymi zdarzenia
 Program nie zmienia paczki. Nie jest podpisany cyfrowo – Windows może
 wyświetlić ostrzeżenie („Więcej informacji” → „Uruchom mimo to”). Jeśli
 nie uruchamiasz programów z zewnątrz, użyj skryptu w Pythonie (punkt 3).
@@ -857,4 +868,102 @@ z oryginałami wybranych agentów.
 Zakres eksportu dotyczy godzin archiwizacji (czasu przyjęcia paczek przez
 serwer), nie czasu zdarzeń. Pola znormalizowane (host.name, user.name itd.)
 wylicza Vardr; rozstrzygający jest zawsze oryginał w event.original.
+`
+
+// exportReadmeEn: opis paczki po angielsku (README-EN.txt).
+const exportReadmeEn = `Vardr – NIS2 archive export (Urd)
+=================================
+
+The package contains the logs in two forms: READABLE (for analysis in any
+tool) and ORIGINAL (evidence – byte for byte what came from the agents),
+plus a way to check that one matches the other. Directory and file names
+are in Polish (they are part of the package format): zdarzenia = events,
+narzedzia = tools, obsluga-niezgodnosci = inconsistency handling.
+
+SIMPLEST (Windows): run odczytaj.exe in this folder (double-click).
+The program checks the integrity of the package and writes to the ODCZYT
+subfolder:
+  RAPORT.txt              check result, export description, events that
+                          need attention, statistics
+  zdarzenia\YYYY-MM-DD.txt  all events of the day in order, described in
+                          the language of Windows (Polish or English),
+                          with the event data
+The program does not modify the package. It is not digitally signed –
+Windows may show a warning ("More info" → "Run anyway"). If you do not run
+programs from outside, use the Python script (point 3).
+
+1. Events to read – the zdarzenia/ directory
+--------------------------------------------
+  zdarzenia/YYYY-MM-DD_HH.ndjson.gz
+      One line = one event (JSON), one file per archiving hour (UTC),
+      gzip-compressed. Fields follow the Elastic Common Schema, including:
+        @timestamp          event time (UTC)
+        host.name           computer
+        event.code          Windows Event ID (e.g. 4625 – failed logon)
+        event.action        action description, event.outcome – success/failure
+        user.name, user.domain, source.ip, process.name, winlog.channel
+        agent.id, event.ingested   agent and time the server accepted it
+        event.original      FULL original event record (Windows XML
+                            or the syslog message from the device)
+        log.source.address  address of the device that sent syslog (collector)
+        vardr.batch_sha256  hash of the agent batch the event comes from
+      Reading: zcat file.ndjson.gz | less, jq, 7-Zip; import into Elastic,
+      Splunk, OpenSearch, Sentinel etc. as NDJSON/JSON lines.
+
+  zdarzenia/zdarzenia.csv
+      The most important fields as a table for a spreadsheet (UTF-8,
+      semicolon separator; at most 1,000,000 rows – the count is in
+      export.json). Column names in the system language at export time.
+      The full event XML is in the NDJSON files (event id column).
+
+2. Evidence – originals and the chain
+-------------------------------------
+  segments/   original archive segments – agent batches as they arrived
+              at the server, before any processing
+  chain/      hourly manifests from the first hour of the range to the
+              latest; each holds SHA-256 hashes of its segments and the
+              SHA-256 of the previous manifest (a chain – removing or
+              changing data breaks it)
+  obsluga-niezgodnosci/
+              a record of every archive inconsistency handling (e.g. after
+              restoring a database backup): who, when, why, which files were
+              accepted into the catalog after checking hashes, which were
+              moved to quarantine
+  export.json who requested the export, when and why, the range, counts,
+              the anchor (SHA-256 of the latest manifest)
+  SHA256SUMS  SHA-256 hashes of all files in the package
+
+3. Checking – without Vardr
+---------------------------
+  python3 narzedzia/odczytaj_segmenty.py <this_package.tar>
+      (Python 3.8+, standard library only) checks:
+        - hashes of all files (SHA256SUMS),
+        - continuity of the manifest chain and the anchor,
+        - every segment against its manifest and every batch against its hash,
+        - that zdarzenia/*.ndjson.gz contain EXACTLY the same events
+          (identifiers and original XML) as the original segments.
+  python3 narzedzia/odczytaj_segmenty.py <this_package.tar> --print
+      prints the events read directly from the originals (without the
+      readable part). Script messages follow the system language
+      (VARDR_LANG=en forces English).
+
+  Manually: sha256sum -c SHA256SUMS; further steps as above.
+  It is worth comparing the SHA-256 of the latest manifest (the anchor)
+  with a value recorded independently, e.g. in a handover protocol or
+  a printout from the panel.
+
+Segment format: header "HEIMURD1", then records: uint32 BE metadata
+length, JSON metadata (agent, batch identifier, time accepted, SHA-256 of
+the content), uint32 BE content length, content – the agent batch (gzip,
+JSON: {"events": [{"id", "source" (channel), "raw" (event XML)}]}).
+
+An export limited to selected agents (export.json, field "agents"): the
+readable part (zdarzenia/, ODCZYT) contains only their events, while the
+segments (evidence) contain all batches from the selected hours, because
+only a whole segment can be checked against its manifest. The check
+compares the readable part with the originals of the selected agents.
+
+The export range refers to archiving hours (when the server accepted the
+batches), not event time. Normalized fields (host.name, user.name etc.)
+are computed by Vardr; the original in event.original is always decisive.
 `

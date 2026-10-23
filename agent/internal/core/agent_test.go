@@ -307,7 +307,7 @@ func TestWarnsWhenLagExceedsThreshold(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 	_ = a.Run(ctx)
-	if out := logBuf.String(); !strings.Contains(out, "nie nadąża") || !strings.Contains(out, "lag_max=10m") {
+	if out := logBuf.String(); !strings.Contains(out, "cannot keep up") || !strings.Contains(out, "lag_max=10m") {
 		t.Fatalf("brak ostrzeżenia o opóźnieniu w logu:\n%s", out)
 	}
 }

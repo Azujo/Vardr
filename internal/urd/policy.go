@@ -5,11 +5,12 @@ package urd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"siem/internal/lang"
 )
 
 // Policy to polityka archiwum ustawiana w panelu.
@@ -76,10 +77,10 @@ type PolicyBounds struct {
 // Check sprawdza retencję względem granic.
 func (b PolicyBounds) Check(days int) error {
 	if b.MinRetentionDays > 0 && days < b.MinRetentionDays {
-		return fmt.Errorf("retencja %d dni jest krótsza niż minimum %d dni z konfiguracji serwera", days, b.MinRetentionDays)
+		return lang.Errorf("retencja %d dni jest krótsza niż minimum %d dni z konfiguracji serwera", "retention of %d days is shorter than the minimum of %d days in the server configuration", days, b.MinRetentionDays)
 	}
 	if b.MaxRetentionDays > 0 && days > b.MaxRetentionDays {
-		return fmt.Errorf("retencja %d dni jest dłuższa niż maksimum %d dni z konfiguracji serwera", days, b.MaxRetentionDays)
+		return lang.Errorf("retencja %d dni jest dłuższa niż maksimum %d dni z konfiguracji serwera", "retention of %d days is longer than the maximum of %d days in the server configuration", days, b.MaxRetentionDays)
 	}
 	return nil
 }
@@ -110,10 +111,10 @@ func Weakening(cur, next Policy) []string {
 }
 
 // ErrNoPolicy: polityka jeszcze nie istnieje (archiwizator jej nie założył).
-var ErrNoPolicy = errors.New("polityka archiwum nie jest jeszcze zapisana – archiwizator zakłada ją przy starcie")
+var ErrNoPolicy = errors.New("the archive policy is not saved yet – the archiver creates it at startup")
 
 // ErrPolicyChangeClosed: zlecenia nie można już anulować.
-var ErrPolicyChangeClosed = errors.New("zlecenie już weszło w życie albo zostało zamknięte")
+var ErrPolicyChangeClosed = errors.New("the request has already taken effect or was closed")
 
 func nonNil[T any](s []T) []T {
 	if s == nil {

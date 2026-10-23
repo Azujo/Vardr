@@ -92,8 +92,8 @@ func TestReconcileAfterRestore(t *testing.T) {
 		res.Rejected[0].Path != foreign || !strings.Contains(res.Rejected[0].Reason, "poza oknem") {
 		t.Fatalf("wynik: %+v", res)
 	}
-	if !strings.Contains(res.Summary(), "przywrócone manifesty: 1") {
-		t.Fatal(res.Summary())
+	if !strings.Contains(res.Summary("pl"), "przywrócone manifesty: 1") {
+		t.Fatal(res.Summary("pl"))
 	}
 	// Ponowne uzgodnienie niczego nie dubluje.
 	if again, err := a.Run(ctx, Recovery{Kind: "restore", WindowFrom: &from, WindowTo: &to}); err != nil ||

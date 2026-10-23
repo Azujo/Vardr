@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"siem/internal/lang"
 	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/enroll"
@@ -170,7 +171,7 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	exe, err := os.Open(s.Enroll.AgentExe)
 	if err != nil {
-		s.Log.Error("brak programu agenta do paczki", "path", s.Enroll.AgentExe, "err", err)
+		s.Log.Error("agent program for the package is missing", "path", s.Enroll.AgentExe, "err", err)
 		writeError(w, http.StatusServiceUnavailable, "no_agent_exe", "na serwerze brak programu agenta (SIEM_AGENT_EXE) – skopiuj vardr-agent.exe")
 		return
 	}
@@ -232,7 +233,7 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 		return zw.Close()
 	}()
 	if err != nil {
-		s.Log.Error("budowanie paczki nieudane", "err", err)
+		s.Log.Error("building the package failed", "err", err)
 		return
 	}
 	s.audit(r, &a.user, "enroll_package_downloaded", t.Name, nil)
@@ -327,7 +328,7 @@ func (s *Server) revokeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(serials) > 0 && s.Enroll != nil && s.Enroll.Revoke != nil {
 		if err := s.Enroll.Revoke(r.Context(), serials, req.Reason); err != nil {
-			s.internalError(w, r, fmt.Errorf("rozesłanie unieważnienia: %w", err))
+			s.internalError(w, r, fmt.Errorf("broadcasting the revocation: %w", err))
 			return
 		}
 	}
@@ -369,7 +370,7 @@ func (s *Server) enrollRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	csr, err := enroll.ParseCSR(req.CSR) // przed zużyciem tokenu
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_csr", "niepoprawna prośba o certyfikat: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_csr", lang.Errorf("niepoprawna prośba o certyfikat: %w", "invalid certificate request: %w", err))
 		return
 	}
 	if !tokenPattern.MatchString(strings.TrimSpace(req.Token)) {
@@ -404,7 +405,7 @@ func (s *Server) enrollRegister(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if i == 5 {
-			s.internalError(w, r, errors.New("nie udało się nadać unikalnego identyfikatora"))
+			s.internalError(w, r, errors.New("could not assign a unique identifier"))
 			return
 		}
 		agentID = truncate(base, 50) + "-" + enroll.RandomSuffix()
@@ -433,7 +434,7 @@ func (s *Server) enrollRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, nil, "agent_enrolled", agentID, map[string]any{"token": t.Name, "hostname": truncate(req.Hostname, 255),
 		"version": truncate(req.Version, 64), "serial": iss.Serial})
-	s.Log.Info("zarejestrowano agenta", "agent_id", agentID, "token", t.Name, "ip", ip)
+	s.Log.Info("agent enrolled", "agent_id", agentID, "token", t.Name, "ip", ip)
 	writeJSON(w, http.StatusOK, enrollResponse{AgentID: agentID, Certificate: iss.PEM, NotAfter: iss.NotAfter, Profile: profile,
 		RenewBeforeS: int(enroll.RenewBefore.Seconds()), ServerAddress: s.Enroll.PublicServer})
 }
@@ -476,7 +477,7 @@ func (s *Server) enrollRenew(w http.ResponseWriter, r *http.Request) {
 	}
 	csr, err := enroll.ParseCSR(req.CSR)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_csr", "niepoprawna prośba o certyfikat: "+err.Error())
+		writeErr(w, http.StatusBadRequest, "bad_csr", lang.Errorf("niepoprawna prośba o certyfikat: %w", "invalid certificate request: %w", err))
 		return
 	}
 	now := s.now()

@@ -33,19 +33,36 @@ const (
 // Komputer w takim zdarzeniu to urządzenie użytkownika, nie źródło.
 const apiSourceSQL = `startsWith(event_provider, 'entra:')`
 
+// silenceText: tytuł, opis i instrukcja reguły w języku.
+func silenceText(lang string) alerts.RuleText {
+	return alerts.RuleText{
+		Title: pick(lang, sourceSilentTitle, "Event source silent"),
+		Description: pick(lang, "Urządzenie wysyłające syslog (router, zapora) albo połączenie z chmurą (Entra ID) nie przysłało "+
+			"zdarzeń dłużej niż zwykle: próg to najdłuższa przerwa z ostatnich 7 dni + 1 h. Wyłączone logowanie na "+
+			"urządzeniu, zmieniony adres serwera syslog, awaria urządzenia albo wygasłe uprawnienia aplikacji w chmurze. "+
+			"Alert zamyka się sam, gdy zdarzenia wrócą.",
+			"A device sending syslog (router, firewall) or a cloud connection (Entra ID) has sent no events for longer "+
+				"than usual: the threshold is the longest gap of the last 7 days + 1 h. Logging disabled on the device, a changed "+
+				"syslog server address, a device failure or expired cloud application permissions. The alert closes itself when "+
+				"events return."),
+		Instructions: pick(lang, "Sprawdź, czy urządzenie działa i nadal ma ustawiony serwer syslog Vardra (kolektor), albo – dla "+
+			"chmury – stan konektora i uprawnień aplikacji. Wyłączenie logowania bez zgłoszenia traktuj jak próbę ukrycia "+
+			"działań: przejrzyj ostatnie zdarzenia źródła (logowania administratorów, zmiany konfiguracji).",
+			"Check whether the device is running and still has the Vardr syslog server (collector) configured, or – for the "+
+				"cloud – the state of the connector and the application permissions. Treat logging disabled without a ticket as an "+
+				"attempt to hide activity: review the source's latest events (administrator sign-ins, configuration changes)."),
+	}
+}
+
 // SilenceRule opisuje regułę dla panelu (wyłączana jak korelacje).
 func SilenceRule() alerts.RuleInfo {
+	pl := silenceText("pl")
 	return alerts.RuleInfo{ID: SourceSilentID, Title: sourceSilentTitle, Level: "medium", Mode: "correlation",
 		Enabled: true, FileEnabled: true, File: "(wbudowana)", Tags: []string{"attack.defense_impairment", "attack.t1685"},
-		Description: "Urządzenie wysyłające syslog (router, zapora) albo połączenie z chmurą (Entra ID) nie przysłało " +
-			"zdarzeń dłużej niż zwykle: próg to najdłuższa przerwa z ostatnich 7 dni + 1 h. Wyłączone logowanie na " +
-			"urządzeniu, zmieniony adres serwera syslog, awaria urządzenia albo wygasłe uprawnienia aplikacji w chmurze. " +
-			"Alert zamyka się sam, gdy zdarzenia wrócą.",
+		Description: pl.Description,
 		Source: "# Reguła wbudowana w siem-detector (server/internal/detector/silence.go),\n" +
 			"# oceniana co 5 minut w ClickHouse na zdarzeniach spoza Windows.\n",
-		Instructions: "Sprawdź, czy urządzenie działa i nadal ma ustawiony serwer syslog Vardra (kolektor), albo – dla " +
-			"chmury – stan konektora i uprawnień aplikacji. Wyłączenie logowania bez zgłoszenia traktuj jak próbę ukrycia " +
-			"działań: przejrzyj ostatnie zdarzenia źródła (logowania administratorów, zmiany konfiguracji)."}
+		Instructions: pl.Instructions, I18n: ruleTexts(silenceText)}
 }
 
 // Source to źródło zdarzeń spoza Windows: urządzenie syslog (Host) albo
@@ -113,31 +130,43 @@ func SilenceCheck(srcs []Source, now time.Time, minSilence time.Duration) (hits 
 			back = append(back, s.Key())
 			continue
 		}
-		what := "urządzenie " + s.Host
-		if s.Host == "" {
-			what = "źródło " + s.Dataset
-		}
 		last := s.Last.UTC().Format("2006-01-02 15:04")
+		text := func(lang string) alerts.AlertText {
+			what := pick(lang, "urządzenie ", "device ") + s.Host
+			if s.Host == "" {
+				what = pick(lang, "źródło ", "source ") + s.Dataset
+			}
+			return alerts.AlertText{
+				Title: silenceText(lang).Title,
+				Summary: fmt.Sprintf(pick(lang, "%s (przez %s): brak zdarzeń od %s UTC – %s; najdłuższa przerwa w ostatnich 7 dniach %s",
+					"%s (via %s): no events since %s UTC – %s; longest gap in the last 7 days %s"),
+					what, s.Agent, last, fmtSpanIn(lang, silence), fmtSpanIn(lang, longest)),
+				Instructions: fmt.Sprintf(pick(lang, "Źródło %s (agent %s) nie przysyła zdarzeń od %s UTC – dłużej niż zwykle (próg %s). ",
+					"Source %s (agent %s) has sent no events since %s UTC – longer than usual (threshold %s). "),
+					s.name(), s.Agent, last, fmtSpanIn(lang, limit)) + silenceText(lang).Instructions,
+			}
+		}
+		pl := text("pl")
 		hits = append(hits, alerts.Hit{
 			RuleID: SourceSilentID, RuleTitle: sourceSilentTitle, Level: "medium", Engine: "system",
 			EventID:   fmt.Sprintf("%s%d", s.Key(), s.Last.UnixMilli()),
 			EventTime: s.Last, AgentID: s.Agent, HostName: s.Host,
 			GroupKey: s.Key() + fmt.Sprint(s.Last.UnixMilli()),
-			Summary: fmt.Sprintf("%s (przez %s): brak zdarzeń od %s UTC – %s; najdłuższa przerwa w ostatnich 7 dniach %s",
-				what, s.Agent, last, fmtSpan(silence), fmtSpan(longest)),
-			Instructions: fmt.Sprintf("Źródło %s (agent %s) nie przysyła zdarzeń od %s UTC – dłużej niż zwykle (próg %s). ",
-				s.name(), s.Agent, last, fmtSpan(limit)) + SilenceRule().Instructions,
+			Summary:  pl.Summary, Instructions: pl.Instructions, I18n: texts(text),
 		})
 	}
 	return hits, back
 }
 
 // fmtSpan: czas przerwy po ludzku (min, h i min, dni i h).
-func fmtSpan(d time.Duration) string {
+func fmtSpan(d time.Duration) string { return fmtSpanIn("pl", d) }
+
+// fmtSpanIn: jak fmtSpan, w języku lang.
+func fmtSpanIn(lang string, d time.Duration) string {
 	d = d.Truncate(time.Minute)
 	switch {
 	case d >= 48*time.Hour:
-		return fmt.Sprintf("%d dni %d h", d/(24*time.Hour), d%(24*time.Hour)/time.Hour)
+		return fmt.Sprintf(pick(lang, "%d dni %d h", "%d days %d h"), d/(24*time.Hour), d%(24*time.Hour)/time.Hour)
 	case d >= time.Hour && d%time.Hour == 0:
 		return fmt.Sprintf("%d h", d/time.Hour)
 	case d >= time.Hour:

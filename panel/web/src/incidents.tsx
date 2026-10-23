@@ -2,6 +2,8 @@
 
 // Wspólne dla incydentów: odliczanie terminów zgłoszeń NIS2.
 import { Badge, Tooltip } from "@mantine/core";
+import { useTranslation } from "react-i18next";
+import i18n from "./i18n";
 import { formatDate, type IncidentDeadline } from "./api";
 
 export function fmtLeft(ms: number): string {
@@ -9,9 +11,9 @@ export function fmtLeft(ms: number): string {
   const d = Math.floor(abs / 86400000);
   const h = Math.floor((abs % 86400000) / 3600000);
   const m = Math.floor((abs % 3600000) / 60000);
-  if (d > 0) return `${d} d ${h} h`;
-  if (h > 0) return `${h} h ${m} min`;
-  return `${m} min`;
+  if (d > 0) return i18n.t("duration.days", { d, h });
+  if (h > 0) return i18n.t("duration.hours", { h, m });
+  return i18n.t("duration.minutes", { m });
 }
 
 // Najbliższy niewysłany termin (do listy incydentów).
@@ -20,11 +22,13 @@ export function nextDeadline(ds: IncidentDeadline[]): IncidentDeadline | undefin
 }
 
 export function DeadlineBadge({ d, now }: { d: IncidentDeadline; now: number }) {
+  const { t } = useTranslation("incidents");
+  const label = t(`reportShort.${d.kind}`);
   if (d.submitted_at) {
     return (
-      <Tooltip label={`wysłane ${formatDate(d.submitted_at)}`}>
+      <Tooltip label={t("deadline.sentAt", { date: formatDate(d.submitted_at) })}>
         <Badge color="green" variant="light">
-          {d.label}: wysłane
+          {t("deadline.sent", { label })}
         </Badge>
       </Tooltip>
     );
@@ -32,9 +36,9 @@ export function DeadlineBadge({ d, now }: { d: IncidentDeadline; now: number }) 
   const left = new Date(d.due).getTime() - now;
   const color = left < 0 ? "red" : left < 6 * 3600000 ? "orange" : "blue";
   return (
-    <Tooltip label={`termin ${formatDate(d.due)}`}>
+    <Tooltip label={t("deadline.due", { date: formatDate(d.due) })}>
       <Badge color={color} variant={left < 0 ? "filled" : "light"}>
-        {d.label}: {left < 0 ? `po terminie ${fmtLeft(left)}` : `zostało ${fmtLeft(left)}`}
+        {t(left < 0 ? "deadline.overdue" : "deadline.left", { label, left: fmtLeft(left) })}
       </Badge>
     </Tooltip>
   );

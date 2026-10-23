@@ -45,9 +45,9 @@ type Replayer struct {
 // Run sprawdza zlecenia co 15 s.
 func (r *Replayer) Run(ctx context.Context) {
 	if n, err := r.Store.FailInterruptedReplays(ctx); err != nil {
-		r.Log.Warn("oznaczanie przerwanych odtworzeń nieudane", "err", err)
+		r.Log.Warn("marking interrupted replays failed", "err", err)
 	} else if n > 0 {
-		r.Log.Warn("odtworzenia przerwane restartem oznaczone jako nieudane", "count", n)
+		r.Log.Warn("replays interrupted by a restart marked as failed", "count", n)
 	}
 	tick := time.NewTicker(15 * time.Second)
 	defer tick.Stop()
@@ -55,22 +55,22 @@ func (r *Replayer) Run(ctx context.Context) {
 		for ctx.Err() == nil {
 			j, ok, err := r.Store.ClaimReplay(ctx)
 			if err != nil {
-				r.Log.Warn("odczyt zleceń odtworzenia nieudany", "err", err)
+				r.Log.Warn("reading replay requests failed", "err", err)
 				break
 			}
 			if !ok {
 				break
 			}
-			r.Log.Info("odtworzenie z archiwum: start", "id", j.ID, "by", j.RequestedBy, "agents", j.Agents,
+			r.Log.Info("archive replay: start", "id", j.ID, "by", j.RequestedBy, "agents", j.Agents,
 				"from", j.From.UTC().Format(time.RFC3339), "to", j.To.UTC().Format(time.RFC3339))
 			j = r.runJob(ctx, j)
 			if err := r.Store.FinishReplay(context.WithoutCancel(ctx), j); err != nil {
-				r.Log.Error("zapis wyniku odtworzenia nieudany", "id", j.ID, "err", err)
+				r.Log.Error("recording the replay result failed", "id", j.ID, "err", err)
 			}
 			if j.Status == urd.ReplayDone {
-				r.Log.Info("odtworzenie z archiwum: gotowe", "id", j.ID, "batches", j.Batches, "skipped", j.Skipped)
+				r.Log.Info("archive replay: done", "id", j.ID, "batches", j.Batches, "skipped", j.Skipped)
 			} else {
-				r.Log.Error("odtworzenie z archiwum nieudane", "id", j.ID, "err", j.Error)
+				r.Log.Error("archive replay failed", "id", j.ID, "err", j.Error)
 			}
 		}
 		select {
@@ -102,7 +102,7 @@ func (r *Replayer) runJob(ctx context.Context, j urd.ReplayJob) urd.ReplayJob {
 		if time.Since(lastProgress) >= 5*time.Second {
 			lastProgress = time.Now()
 			if err := r.Store.ReplayProgress(ctx, j.ID, st); err != nil {
-				r.Log.Warn("zapis postępu odtworzenia nieudany", "id", j.ID, "err", err)
+				r.Log.Warn("recording replay progress failed", "id", j.ID, "err", err)
 			}
 		}
 	})
@@ -128,7 +128,7 @@ func (r *Replayer) publish(ctx context.Context, msg *nats.Msg, msgID string) err
 			return nil
 		}
 		if !bus.IsQueueFull(err) && attempt >= 10 {
-			return fmt.Errorf("publikacja do ścieżki odtwarzania: %w", err)
+			return fmt.Errorf("publishing to the replay path: %w", err)
 		}
 		select {
 		case <-ctx.Done():

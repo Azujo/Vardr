@@ -37,17 +37,17 @@ type sim struct {
 }
 
 func main() {
-	target := flag.String("target", "192.168.88.98:514", "kolektor syslog (host:port)")
-	proto := flag.String("proto", "udp", "udp albo tcp (ramki zakończone znakiem nowej linii)")
+	target := flag.String("target", "192.168.88.98:514", "syslog collector (host:port)")
+	proto := flag.String("proto", "udp", "udp or tcp (newline-terminated frames)")
 	scenario := flag.String("scenario", "mix", "traffic | portscan | sweep | vpn-ok | vpn-brute | vpn-spray | admin-brute | utm | mix")
-	count := flag.Int("count", 0, "liczba wiadomości (0 – domyślna dla scenariusza)")
-	rate := flag.Duration("every", 100*time.Millisecond, "odstęp między wiadomościami")
-	dev := flag.String("devname", "FGT-HQ", "nazwa urządzenia (devname)")
-	attacker := flag.String("attacker", "", "adres atakującego (domyślnie losowy z 203.0.113.0/24)")
+	count := flag.Int("count", 0, "number of messages (0 – scenario default)")
+	rate := flag.Duration("every", 100*time.Millisecond, "interval between messages")
+	dev := flag.String("devname", "FGT-HQ", "device name (devname)")
+	attacker := flag.String("attacker", "", "attacker address (random from 203.0.113.0/24 by default)")
 	user := flag.String("user", "jkowalski", "konto w scenariuszu vpn-brute")
-	header := flag.String("header", "bare", "nagłówek: bare (<PRI>date=…, domyślny FortiOS), rfc5424 albo rfc3164")
-	tz := flag.String("tz", "Europe/Warsaw", "strefa czasowa urządzenia")
-	dry := flag.Bool("dry", false, "tylko wypisz wiadomości, nie wysyłaj")
+	header := flag.String("header", "bare", "header: bare (<PRI>date=…, FortiOS default), rfc5424 or rfc3164")
+	tz := flag.String("tz", "Europe/Warsaw", "device time zone")
+	dry := flag.Bool("dry", false, "only print the messages, do not send")
 	flag.Parse()
 
 	loc, err := time.LoadLocation(*tz)
@@ -60,7 +60,7 @@ func main() {
 		s.attacker = fmt.Sprintf("203.0.113.%d", 2+rand.IntN(250))
 	}
 	if s.tz = time.Now().In(loc).Format("-0700"); *header != "bare" && *header != "rfc5424" && *header != "rfc3164" {
-		fail(fmt.Errorf("nieznany nagłówek %q", *header))
+		fail(fmt.Errorf("unknown header %q", *header))
 	}
 
 	var lines []string
@@ -96,7 +96,7 @@ func main() {
 		lines = append(lines, s.repeat(6, s.adminFail)...)
 		lines = append(lines, s.repeat(3, s.utm)...)
 	default:
-		fail(fmt.Errorf("nieznany scenariusz %q", *scenario))
+		fail(fmt.Errorf("unknown scenario %q", *scenario))
 	}
 
 	if *dry {
@@ -116,11 +116,11 @@ func main() {
 			msg += "\n"
 		}
 		if _, err := conn.Write([]byte(msg)); err != nil {
-			fail(fmt.Errorf("wiadomość %d: %w", i+1, err))
+			fail(fmt.Errorf("message %d: %w", i+1, err))
 		}
 		time.Sleep(*rate)
 	}
-	fmt.Printf("wysłano %d wiadomości (%s) do %s/%s, atakujący %s\n", len(lines), *scenario, *target, *proto, s.attacker)
+	fmt.Printf("sent %d messages (%s) to %s/%s, attacker %s\n", len(lines), *scenario, *target, *proto, s.attacker)
 }
 
 var users = []string{"jkowalski", "anowak", "pwisniewski", "kwojcik", "mkaminska", "admin", "test", "backup", "biuro", "ksiegowosc"}

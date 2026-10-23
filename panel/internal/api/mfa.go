@@ -80,7 +80,7 @@ func (s *Server) mfaPolicy(ctx context.Context) string {
 	case errors.Is(err, store.ErrNotFound):
 		v = mfaAll
 	case err != nil:
-		s.Log.Warn("odczyt polityki MFA nieudany", "err", err)
+		s.Log.Warn("reading the MFA policy failed", "err", err)
 		if st.policy != "" {
 			return st.policy
 		}
@@ -402,11 +402,11 @@ func (s *Server) accountMFAConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dropChallenge(key)
 	if err := s.MFA.MarkSessionMFA(r.Context(), a.session.ID); err != nil {
-		s.Log.Warn("oznaczenie sesji MFA nieudane", "err", err)
+		s.Log.Warn("marking the MFA session failed", "err", err)
 	}
 	// Inne sesje konta powstały bez drugiego składnika – koniec z nimi.
 	if err := s.Store.DeleteUserSessions(r.Context(), a.user.ID, a.session.ID); err != nil {
-		s.Log.Error("usunięcie innych sesji nieudane", "err", err)
+		s.Log.Error("removing other sessions failed", "err", err)
 	}
 	s.audit(r, &a.user, "mfa_enabled", a.user.Username, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
@@ -515,7 +515,7 @@ func (s *Server) resetUserMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Store.DeleteUserSessions(r.Context(), id, ""); err != nil {
-		s.Log.Error("usunięcie sesji konta nieudane", "user_id", id, "err", err)
+		s.Log.Error("removing the account sessions failed", "user_id", id, "err", err)
 	}
 	s.audit(r, &a.user, "mfa_reset", target.Username, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})

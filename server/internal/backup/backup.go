@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"siem/internal/backupcfg"
+	"siem/internal/lang"
 )
 
 // passIDOf: identyfikator hasła kopii jak w backup.sh (k + 8 znaków
@@ -57,7 +58,7 @@ func (s status) state() string {
 func (r *Runner) backup(ctx context.Context, cfg backupcfg.Config, kind string) status {
 	var id int64
 	if err := r.DB.QueryRow(ctx, `INSERT INTO backup_runs (kind, status) VALUES ($1, 'running') RETURNING id`, kind).Scan(&id); err != nil {
-		r.Log.Error("zapis kopii w Sadze nieudany", "err", err)
+		r.Log.Error("recording the backup in Saga failed", "err", err)
 		return status{failed: true, message: err.Error()}
 	}
 	t0 := time.Now()
@@ -65,13 +66,13 @@ func (r *Runner) backup(ctx context.Context, cfg backupcfg.Config, kind string) 
 	r.listed = time.Time{} // nowa kopia na liście do przywracania
 	if _, err := r.DB.Exec(context.WithoutCancel(ctx), `UPDATE backup_runs SET finished_at = now(), status = $2, file = $3,
 		size_bytes = $4, remote = $5, message = $6 WHERE id = $1`, id, st.state(), st.file, st.size, st.remote, truncate(st.message, 4000)); err != nil {
-		r.Log.Error("zapis wyniku kopii nieudany", "err", err)
+		r.Log.Error("recording the backup result failed", "err", err)
 	}
 	log := r.Log.Info
 	if st.state() != "ok" {
 		log = r.Log.Error
 	}
-	log("kopia zapasowa", "kind", kind, "status", st.state(), "file", st.file, "size", st.size, "remote", st.remote,
+	log("backup", "kind", kind, "status", st.state(), "file", st.file, "size", st.size, "remote", st.remote,
 		"took", time.Since(t0).Round(time.Second).String(), "message", st.message)
 	return st
 }
@@ -79,7 +80,8 @@ func (r *Runner) backup(ctx context.Context, cfg backupcfg.Config, kind string) 
 func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 	pass, err := os.ReadFile(r.PassFile)
 	if err != nil || len(bytes.TrimSpace(pass)) == 0 {
-		return status{failed: true, message: "brak hasła kopii – administrator musi na serwerze uruchomić ./backup.sh haslo init"}
+		return status{failed: true, message: r.tr(ctx, "brak hasła kopii – administrator musi na serwerze uruchomić ./backup.sh haslo init",
+			"no backup password – an administrator must run ./backup.sh password init on the server")}
 	}
 	kid := passIDOf(pass)
 	if err := os.MkdirAll(r.BackupDir, 0o755); err != nil {
@@ -99,17 +101,17 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 	if cfg.Include.Saga {
 		dump := filepath.Join(work, "saga.dump")
 		if out, err := r.cmd(ctx, 30*time.Minute, nil, "pg_dump", "--dbname", r.DumpURL, "--format=custom", "--file", dump); err != nil {
-			return status{failed: true, message: "zrzut bazy Saga nieudany: " + out}
+			return status{failed: true, message: r.tr(ctx, "zrzut bazy Saga nieudany: ", "Saga database dump failed: ") + out}
 		}
 		// Kopia, której nie da się odczytać, nie jest kopią.
 		if out, err := r.cmd(ctx, 5*time.Minute, nil, "pg_restore", "--list", dump); err != nil {
-			return status{failed: true, message: "zrzut bazy Saga nieczytelny: " + out}
+			return status{failed: true, message: r.tr(ctx, "zrzut bazy Saga nieczytelny: ", "Saga database dump is unreadable: ") + out}
 		}
 		parts = append(parts, "saga.dump")
 	}
 	if cfg.Include.Config {
 		if out, err := r.cmd(ctx, time.Minute, nil, "cp", "-r", filepath.Join(r.StackDir, "certs"), filepath.Join(r.StackDir, ".env"), work); err != nil {
-			return status{failed: true, message: "kopia certs/ i .env nieudana: " + out}
+			return status{failed: true, message: r.tr(ctx, "kopia certs/ i .env nieudana: ", "copying certs/ and .env failed: ") + out}
 		}
 		parts = append(parts, "certs", ".env")
 	}
@@ -121,7 +123,7 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 			"-cf", filepath.Join(work, "grafana.tar"), ".")
 		var ee *exec.ExitError
 		if err != nil && !(errors.As(err, &ee) && ee.ExitCode() == 1) {
-			return status{failed: true, message: "kopia danych Grafany nieudana: " + out}
+			return status{failed: true, message: r.tr(ctx, "kopia danych Grafany nieudana: ", "copying Grafana data failed: ") + out}
 		}
 		parts = append(parts, "grafana.tar")
 	}
@@ -130,9 +132,13 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 		if host == "" {
 			host, _ = os.Hostname()
 		}
+		// Opis w obu językach – kopię może odtwarzać ktoś inny niż ten, kto ją zrobił.
+		at := time.Now().UTC().Format(time.RFC3339)
 		about := fmt.Sprintf("Kopia Vardra z %s, serwer %s, identyfikator hasła %s.\nZawartość: %s.\n"+
-			"Odtworzenie: ./restore.sh (docs/operacje.md, „Kopie zapasowe”).\n",
-			time.Now().UTC().Format(time.RFC3339), host, kid, describe(parts))
+			"Odtworzenie: ./restore.sh (docs/operacje.md, „Kopie zapasowe”).\n\n"+
+			"Vardr backup from %s, server %s, password identifier %s.\nContents: %s.\n"+
+			"Restore: ./restore.sh (docs/en/operations.md, \"Backups\").\n",
+			at, host, kid, describe(parts, "pl"), at, host, kid, describe(parts, "en"))
 		if err := os.WriteFile(filepath.Join(work, "KOPIA.txt"), []byte(about), 0o600); err != nil {
 			return status{failed: true, message: err.Error()}
 		}
@@ -140,7 +146,7 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 		name := "vardr-" + stamp + "-" + kid + ".tar.gpg"
 		out := filepath.Join(r.BackupDir, name)
 		if err := r.encryptTar(ctx, work, parts, nil, out+".tmp"); err != nil {
-			return status{failed: true, message: "szyfrowanie kopii nieudane: " + err.Error()}
+			return status{failed: true, message: r.tr(ctx, "szyfrowanie kopii nieudane: ", "encrypting the backup failed: ") + err.Error()}
 		}
 		if err := os.Rename(out+".tmp", out); err != nil {
 			return status{failed: true, message: err.Error()}
@@ -148,9 +154,9 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 		r.own(out)
 		fi, _ := os.Stat(out)
 		st.file, st.size = name, fi.Size()
-		notes = append(notes, fmt.Sprintf("kopia %s (%s)", name, human(st.size)))
+		notes = append(notes, fmt.Sprintf(r.tr(ctx, "kopia %s (%s)", "backup %s (%s)"), name, human(st.size)))
 		if n := r.localRetention(cfg.Local); n > 0 {
-			notes = append(notes, fmt.Sprintf("usunięte stare kopie lokalne: %d", n))
+			notes = append(notes, fmt.Sprintf(r.tr(ctx, "usunięte stare kopie lokalne: %d", "old local backups removed: %d"), n))
 		}
 		r.metrics(st.size, false)
 	}
@@ -160,7 +166,7 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 		msg, err := r.upload(ctx, cfg, work, st.file, stamp, kid, pass)
 		if err != nil {
 			st.remote = "error"
-			notes = append(notes, "wysyłka nieudana: "+err.Error())
+			notes = append(notes, r.tr(ctx, "wysyłka nieudana: ", "upload failed: ")+err.Error())
 		} else {
 			st.remote = "ok"
 			notes = append(notes, msg)
@@ -171,9 +177,9 @@ func (r *Runner) doBackup(ctx context.Context, cfg backupcfg.Config) status {
 	return st
 }
 
-func describe(parts []string) string {
+func describe(parts []string, l string) string {
 	labels := map[string]string{"saga.dump": "saga.dump (pg_dump --format=custom)", "certs": "certs/", ".env": ".env",
-		"grafana.tar": "grafana.tar (dane Grafany)"}
+		"grafana.tar": lang.Pick(l, "grafana.tar (dane Grafany)", "grafana.tar (Grafana data)")}
 	var out []string
 	for _, p := range parts {
 		out = append(out, labels[p])
@@ -288,20 +294,20 @@ func (r *Runner) metrics(size int64, remote bool) {
 		_ = os.WriteFile(lastRemote, []byte(fmt.Sprint(now)), 0o644)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# HELP vardr_backup_last_success_timestamp_seconds Czas ostatniej udanej kopii zapasowej.\n")
+	fmt.Fprintf(&b, "# HELP vardr_backup_last_success_timestamp_seconds Time of the last successful backup.\n")
 	fmt.Fprintf(&b, "# TYPE vardr_backup_last_success_timestamp_seconds gauge\n")
 	fmt.Fprintf(&b, "vardr_backup_last_success_timestamp_seconds %d\n", now)
-	fmt.Fprintf(&b, "# HELP vardr_backup_size_bytes Rozmiar ostatniej kopii (zaszyfrowanej).\n")
+	fmt.Fprintf(&b, "# HELP vardr_backup_size_bytes Size of the last (encrypted) backup.\n")
 	fmt.Fprintf(&b, "# TYPE vardr_backup_size_bytes gauge\n")
 	fmt.Fprintf(&b, "vardr_backup_size_bytes %d\n", size)
 	if v, err := os.ReadFile(lastRemote); err == nil {
-		fmt.Fprintf(&b, "# HELP vardr_backup_remote_last_success_timestamp_seconds Czas ostatniej udanej wysyłki kopii poza VM.\n")
+		fmt.Fprintf(&b, "# HELP vardr_backup_remote_last_success_timestamp_seconds Time of the last successful backup upload off the VM.\n")
 		fmt.Fprintf(&b, "# TYPE vardr_backup_remote_last_success_timestamp_seconds gauge\n")
 		fmt.Fprintf(&b, "vardr_backup_remote_last_success_timestamp_seconds %s\n", strings.TrimSpace(string(v)))
 	}
 	path := filepath.Join(r.MetricsDir, "backup.prom")
 	if err := writeFileAtomic(path, []byte(b.String()), 0o644); err != nil {
-		r.Log.Warn("zapis metryk kopii nieudany", "err", err)
+		r.Log.Warn("writing backup metrics failed", "err", err)
 	}
 	r.own(path)
 	r.own(lastRemote)

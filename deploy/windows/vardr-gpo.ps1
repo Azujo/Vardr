@@ -27,16 +27,16 @@ function Ensure-Gpo($name, $target, $comment, $legacy) {
         if ($g) {
             $g.DisplayName = $name
             $g.Description = $comment
-            Write-Host "zmieniono nazwę GPO: $legacy -> $name"
+            Write-Host "renamed GPO: $legacy -> $name"
         }
     }
     if (-not $g) {
         $g = New-GPO -Name $name -Comment $comment
-        Write-Host "utworzono GPO: $name"
+        Write-Host "created GPO: $name"
     }
     if (-not ((Get-GPInheritance -Target $target).GpoLinks.DisplayName -contains $name)) {
         New-GPLink -Guid $g.Id -Target $target -LinkEnabled Yes | Out-Null
-        Write-Host "  podłączono do $target"
+        Write-Host "  linked to $target"
     }
     return $g
 }
@@ -92,10 +92,10 @@ $version = [int]$obj.versionNumber + 1
 Set-ADObject $gpoDN -Replace @{gPCMachineExtensionNames = $ext; versionNumber = $version}
 $ini = Join-Path $sysvol "{$($gpo.Id)}\GPT.INI"
 "[General]`r`nVersion=$version`r`n" | Set-Content -Path $ini -Encoding ASCII
-Write-Host "  audit.csv: $($audit.Count) podkategorii, wersja GPO $version"
+Write-Host "  audit.csv: $($audit.Count) subcategories, GPO version $version"
 
 # ---- Kontrolery domeny: większy dziennik Security ----
 $dc = Ensure-Gpo "Vardr - dzienniki DC" $domain.DomainControllersContainer "Dziennik Security 1 GB na kontrolerach domeny (Vardr)" "Heimdall - dzienniki DC"
 Set-GPRegistryValue -Guid $dc.Id -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows\EventLog\Security" -ValueName MaxSize -Type DWord -Value 1048576 | Out-Null
 # Link OU Domain Controllers ma pierwszeństwo przed linkiem domeny.
-Write-Host "gotowe – uruchom gpupdate /force na komputerach"
+Write-Host "done – run gpupdate /force on the computers"

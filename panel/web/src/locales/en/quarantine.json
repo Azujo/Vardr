@@ -1,0 +1,65 @@
+{
+  "title": "Quarantine",
+  "intro": [
+    "Events that could not be normalized (e.g. content not matching the decoder, corrupted XML) or written – with the original and the reason. After fixing the decoder (",
+    "Decoders",
+    ") or the program you can reprocess them: recovered events go to the database and detection like new ones (with the siem.quarantined_at field), and entries that still fail get the current reason. The NIS2 archive has the originals from the start – nothing is archived twice."
+  ],
+  "noNats": "The panel is not connected to NATS – reprocessing is unavailable (preview works).",
+  "filter": {
+    "period": "Period",
+    "h24": "last 24 h",
+    "d7": "last 7 days",
+    "d30": "last 30 days",
+    "d90": "last 90 days",
+    "source": "Source (prefix)",
+    "reason": "Reason contains",
+    "agent": "Agent",
+    "show": "Show"
+  },
+  "reprocessFilter": "Reprocess (filter)",
+  "reprocessShort": "reprocess",
+  "jobs": "Jobs",
+  "jobStatus": {
+    "running": "running",
+    "done": "finished",
+    "failed": "error"
+  },
+  "job": "recovered {{recovered}} · still failing {{failed}} · total {{total}} — {{by}}, {{date}}",
+  "jobSource": "source {{source}}",
+  "jobReason": "reason “{{reason}}”",
+  "jobStarted": "Job #{{id}}: {{count}} entries",
+  "jobLimited": " (first 10,000 – request again for the rest)",
+  "groups": "Groups ({{count}} entries)",
+  "empty": "The quarantine is empty in the selected period.",
+  "col": {
+    "source": "Source",
+    "reasonSample": "Reason (sample)",
+    "count": "Entries (incl. recovered)",
+    "agents": "Agents",
+    "last": "Last",
+    "ingested": "Ingested",
+    "sourceAgent": "Source / agent",
+    "reason": "Reason",
+    "reprocess": "Reprocessing"
+  },
+  "decoderWizard": "decoder wizard",
+  "entries": "Latest entries ({{count}}) – click to see the original",
+  "entry": {
+    "recovered": "recovered (#{{id}})",
+    "stillFailed": "still failing (#{{id}})",
+    "unsupportedTip": "Entry rejected when writing to ClickHouse or from the replay path – it cannot be reprocessed",
+    "unsupported": "cannot be reprocessed",
+    "truncated": "content truncated by the agent",
+    "preview": "preview: first 4000 characters"
+  },
+  "confirm": {
+    "title": "Reprocess quarantine",
+    "allFiltered": "all entries matching the filter",
+    "group": "group: {{source}} – {{reason}}",
+    "text": "Entries: {{what}}. The normalizer processes them with the current code and decoders. Recovered events go to the database and detection (they may raise alerts); already recovered entries are skipped. At most 10,000 entries per job.",
+    "run": "Reprocess"
+  },
+  "wizardTitle": "Decoder wizard – mark the fields in the quarantined messages",
+  "decoderSaved": "Decoder saved – now reprocess the group"
+}

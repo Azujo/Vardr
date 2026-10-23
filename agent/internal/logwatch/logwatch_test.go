@@ -116,7 +116,7 @@ func TestStuckAgentWarnsThenAlarmsThenLoses(t *testing.T) {
 	s.drained = s.now.Add(time.Second)
 	s.now = s.now.Add(time.Minute)
 	w.Check()
-	if !strings.Contains(buf.String(), "odrobiona") {
+	if !strings.Contains(buf.String(), "backlog cleared") {
 		t.Errorf("brak informacji o odrobieniu zaległości:\n%s", buf.String())
 	}
 }
@@ -129,7 +129,7 @@ func TestAdviceForSmallSecurityLog(t *testing.T) {
 	w.Check()
 	w.Check()
 	out := buf.String()
-	if strings.Count(out, "dziennik Security jest mały") != 1 || strings.Count(out, "nie nadpisuj") != 1 {
+	if strings.Count(out, "the Security log is small") != 1 || strings.Count(out, "do not overwrite") != 1 {
 		t.Fatalf("podpowiedź powinna pojawić się raz:\n%s", out)
 	}
 }

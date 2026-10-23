@@ -41,13 +41,13 @@ type Heartbeat struct {
 func (h *Heartbeat) Validate() error {
 	switch {
 	case h.Schema != SchemaHeartbeatV1:
-		return errors.New("nieobsługiwany schemat heartbeatu")
+		return errors.New("unsupported heartbeat schema")
 	case h.AgentID == "":
-		return errors.New("brak agent_id")
+		return errors.New("missing agent_id")
 	case len(h.Hostname) > 255 || len(h.Version) > 64 || len(h.OS) > 255:
-		return errors.New("za długie pole tekstowe")
+		return errors.New("text field too long")
 	case len(h.Status) == 0 || !json.Valid(h.Status) || h.Status[0] != '{':
-		return errors.New("status musi być obiektem JSON")
+		return errors.New("status must be a JSON object")
 	}
 	return nil
 }
