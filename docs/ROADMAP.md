@@ -462,7 +462,7 @@ MVP zamknięte 17.10.2026 (etapy 0–8), wydane wersje 1.0.1 (English update) i 
 |---|---|---|---|
 | **1.1** | API dla integracji – ✅ wydane w 1.2.0 (26.10.2026) | 30–40 | – |
 | **1.2** | Powiadomienia Power Automate / Microsoft Teams – ✅ wydane w 1.2.0 (26.10.2026) | 15–20 | – (podpis HMAC wspólny z webhookiem) |
-| **1.3** | Scoring ryzyka osób i stacji | 40–60 | mapowanie tożsamości (etap 7) |
+| **1.3** | Scoring ryzyka osób i stacji – ✅ wydane w 1.3.0 (26.10.2026) | 40–60 | mapowanie tożsamości (etap 7) |
 | **1.4** | Serwer MCP (AI tylko do odczytu) | 30–40 | 1.1 |
 | **1.5** | Asystent AI w panelu (eksperymentalny) | 60–80 | 1.1, 1.4; korzysta z 1.3 |
 

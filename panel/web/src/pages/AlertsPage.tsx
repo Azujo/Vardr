@@ -32,10 +32,12 @@ import {
   type AlertListFilter,
   type AlertStatus,
   type RuleAttack,
+  type Resolution,
 } from "../api";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { AttackBadges } from "../attack";
+import { ResolutionPicker } from "../risk";
 import AddToIncident from "./AddToIncident";
 
 const engines = ["stream", "index_query", "system", "correlation"];
@@ -72,6 +74,7 @@ export default function AlertsPage() {
   const [toIncident, setToIncident] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reason, setReason] = useState("");
+  const [resolution, setResolution] = useState<Resolution | "">("");
   const [search, setSearch] = useState(get("q"));
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const navigate = useNavigate();
@@ -130,7 +133,8 @@ export default function AlertsPage() {
 
   const bulk = async (s: AlertStatus, why?: string) => {
     try {
-      const r = await alertsApi.bulkStatus([...selected], s, why);
+      const r = await alertsApi.bulkStatus([...selected], s, why, s === "closed" ? resolution : "");
+      setResolution("");
       notifications.show({ color: "green", message: t("list.bulkDone", { changed: r.changed, count: selected.size }) });
       setSelected(new Set());
       setClosing(false);
@@ -406,6 +410,7 @@ export default function AlertsPage() {
       />
       <Modal opened={closing} onClose={() => setClosing(false)} title={t("list.closeTitle", { count: selected.size })} centered>
         <Stack>
+          <ResolutionPicker value={resolution} onChange={setResolution} />
           <Textarea
             label={t("reason")}
             description={t("list.reasonHint")}

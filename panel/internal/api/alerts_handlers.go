@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"siem/internal/alerts"
+	"siem/internal/risk"
 )
 
 // AlertStore to alerty i reguły Gjallarhorna (implementuje alerts.PG).
@@ -22,8 +23,8 @@ type AlertStore interface {
 	Summarize(ctx context.Context, now time.Time) (alerts.Summary, error)
 	Rules(ctx context.Context) ([]alerts.RuleInfo, []alerts.RuleError, error)
 	Rule(ctx context.Context, id string) (alerts.RuleInfo, error)
-	SetStatus(ctx context.Context, id int64, status, by, reason string, now time.Time) (alerts.Alert, error)
-	SetStatusMany(ctx context.Context, ids []int64, status, by, reason string, now time.Time) ([]alerts.Alert, error)
+	SetStatus(ctx context.Context, id int64, status, by, reason, resolution string, now time.Time) (alerts.Alert, error)
+	SetStatusMany(ctx context.Context, ids []int64, status, by, reason, resolution string, now time.Time) ([]alerts.Alert, error)
 	Assign(ctx context.Context, id int64, assignee, by string, now time.Time) (alerts.Alert, error)
 	AddNote(ctx context.Context, id int64, by, text string, now time.Time) error
 	Activity(ctx context.Context, id int64) ([]alerts.Activity, error)
@@ -196,8 +197,11 @@ func nonNilSlice[T any](s []T) []T {
 }
 
 // checkStatus sprawdza stan i powód (zamknięcie wymaga powodu).
-func checkStatus(w http.ResponseWriter, status, reason string) bool {
+func checkStatus(w http.ResponseWriter, status, reason, resolution string) bool {
 	switch {
+	case resolution != "" && (status != "closed" || !slices.Contains(risk.Resolutions, resolution)):
+		writeError(w, http.StatusBadRequest, "bad_resolution", "rozstrzygnięcie (przy zamknięciu): true_positive, benign albo false_positive")
+		return false
 	case !slices.Contains(alertStatuses, status):
 		writeError(w, http.StatusBadRequest, "bad_status", "status: open, acknowledged albo closed")
 		return false
@@ -223,23 +227,24 @@ func (s *Server) setAlertStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Status string `json:"status"`
-		Reason string `json:"reason"`
+		Status     string `json:"status"`
+		Reason     string `json:"reason"`
+		Resolution string `json:"resolution"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	req.Reason = strings.TrimSpace(req.Reason)
-	if !checkStatus(w, req.Status, req.Reason) {
+	if !checkStatus(w, req.Status, req.Reason, req.Resolution) {
 		return
 	}
-	upd, err := s.Alerts.SetStatus(r.Context(), id, req.Status, a.user.Username, req.Reason, s.now())
+	upd, err := s.Alerts.SetStatus(r.Context(), id, req.Status, a.user.Username, req.Reason, req.Resolution, s.now())
 	if err != nil {
 		s.alertsError(w, r, err)
 		return
 	}
 	s.audit(r, &a.user, "alert_status_changed", strconv.FormatInt(id, 10), map[string]any{
-		"status": req.Status, "reason": req.Reason, "rule": upd.RuleID})
+		"status": req.Status, "reason": req.Reason, "resolution": req.Resolution, "rule": upd.RuleID})
 	writeJSON(w, http.StatusOK, map[string]any{"alert": upd})
 }
 
@@ -251,9 +256,10 @@ func (s *Server) bulkAlertStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	a := current(r)
 	var req struct {
-		IDs    []int64 `json:"ids"`
-		Status string  `json:"status"`
-		Reason string  `json:"reason"`
+		IDs        []int64 `json:"ids"`
+		Status     string  `json:"status"`
+		Reason     string  `json:"reason"`
+		Resolution string  `json:"resolution"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -263,12 +269,12 @@ func (s *Server) bulkAlertStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_ids", "zaznacz od 1 do 500 alertów")
 		return
 	}
-	if !checkStatus(w, req.Status, req.Reason) {
+	if !checkStatus(w, req.Status, req.Reason, req.Resolution) {
 		return
 	}
 	slices.Sort(req.IDs)
 	req.IDs = slices.Compact(req.IDs)
-	changed, err := s.Alerts.SetStatusMany(r.Context(), req.IDs, req.Status, a.user.Username, req.Reason, s.now())
+	changed, err := s.Alerts.SetStatusMany(r.Context(), req.IDs, req.Status, a.user.Username, req.Reason, req.Resolution, s.now())
 	if err != nil {
 		s.alertsError(w, r, err)
 		return
@@ -278,7 +284,7 @@ func (s *Server) bulkAlertStatus(w http.ResponseWriter, r *http.Request) {
 		ids = append(ids, c.ID)
 	}
 	s.audit(r, &a.user, "alert_status_changed_bulk", strconv.Itoa(len(ids))+" alertów", map[string]any{
-		"status": req.Status, "reason": req.Reason, "ids": ids})
+		"status": req.Status, "reason": req.Reason, "resolution": req.Resolution, "ids": ids})
 	writeJSON(w, http.StatusOK, map[string]any{"changed": len(changed), "ids": ids})
 }
 

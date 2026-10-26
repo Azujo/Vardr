@@ -37,7 +37,11 @@ type Alert struct {
 	ClosedAt     *time.Time        `json:"closed_at,omitempty"`
 	ClosedBy     string            `json:"closed_by,omitempty"`
 	CloseReason  string            `json:"close_reason,omitempty"`
-	Assignee     string            `json:"assignee,omitempty"`
+	// Resolution: rozstrzygnięcie zamkniętego alertu (risk.Resolutions;
+	// puste – bez rozstrzygnięcia). Fałszywy alarm i uzasadnione działanie
+	// nie liczą się do ryzyka.
+	Resolution string `json:"resolution,omitempty"`
+	Assignee   string `json:"assignee,omitempty"`
 	// I18n: tytuł, opis i instrukcja w innych językach (kod języka → teksty).
 	I18n map[string]AlertText `json:"i18n,omitempty"`
 }
@@ -59,13 +63,13 @@ func (a Alert) Text(lang string) AlertText {
 
 const alertCols = `id, rule_id, rule_title, level, engine, group_key, group_fields, status, hits, first_seen, last_seen,
 	created_at, updated_at, agent_id, host_name, user_name, source_ip, first_event_id, summary, instructions, closed_at,
-	coalesce(closed_by, ''), coalesce(close_reason, ''), assignee, user_identity, i18n`
+	coalesce(closed_by, ''), coalesce(close_reason, ''), assignee, user_identity, i18n, resolution`
 
 func scanAlert(r pgx.Row) (Alert, error) {
 	var a Alert
 	err := r.Scan(&a.ID, &a.RuleID, &a.RuleTitle, &a.Level, &a.Engine, &a.GroupKey, &a.GroupFields, &a.Status, &a.Hits,
 		&a.FirstSeen, &a.LastSeen, &a.CreatedAt, &a.UpdatedAt, &a.AgentID, &a.HostName, &a.UserName, &a.SourceIP,
-		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason, &a.Assignee, &a.UserIdentity, &a.I18n)
+		&a.FirstEventID, &a.Summary, &a.Instructions, &a.ClosedAt, &a.ClosedBy, &a.CloseReason, &a.Assignee, &a.UserIdentity, &a.I18n, &a.Resolution)
 	if a.GroupFields == nil {
 		a.GroupFields = map[string]string{}
 	}

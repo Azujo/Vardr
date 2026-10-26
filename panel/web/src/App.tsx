@@ -15,6 +15,7 @@ import AlertsPage from "./pages/AlertsPage";
 import AlertDetailPage from "./pages/AlertDetailPage";
 import CorrelationWizard from "./pages/CorrelationWizard";
 import AttackPage from "./pages/AttackPage";
+import RiskPage from "./pages/RiskPage";
 import RulesPage from "./pages/RulesPage";
 import RuleTrialsPage from "./pages/RuleTrialsPage";
 import AccountSecurityPage from "./pages/AccountSecurityPage";
@@ -65,6 +66,7 @@ export default function App() {
         <Route path="/rules/correlation" element={<CorrelationWizard />} />
         <Route path="/rules/trial" element={<RuleTrialsPage />} />
         <Route path="/attack" element={<AttackPage />} />
+        {can("risk", "read") && <Route path="/risk" element={<RiskPage />} />}
         <Route path="/decoders" element={<DecodersPage />} />
         <Route path="/quarantine" element={<QuarantinePage />} />
         <Route path="/identities" element={<IdentitiesPage />} />

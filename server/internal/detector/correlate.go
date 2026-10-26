@@ -126,7 +126,7 @@ func (c *Correlator) off(id string) bool { return c.Disabled != nil && c.Disable
 
 // CorrelationInfos: opisy korelacji z ustawieniem z panelu (wyłączenie).
 func CorrelationInfos(ov map[string]alerts.Override) ([]alerts.RuleInfo, map[string]bool) {
-	infos := append(CorrelationRules(), SilenceRule())
+	infos := append(CorrelationRules(), SilenceRule(), RiskRule())
 	disabled := map[string]bool{}
 	for i := range infos {
 		if o, ok := ov[infos[i].ID]; ok {

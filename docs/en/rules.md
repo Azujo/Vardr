@@ -282,10 +282,11 @@ They are not Sigma files – they run in the detector code, but are visible in t
 | Successful logon after a series of failures | `heimdall-success-after-failures` | ≥5 failed logons of a person in 30 min (any sources), then a successful one; further successful logons while the alert is open raise the counter | yes |
 | Sign-in from a new country | `heimdall-signin-new-country` | a successful sign-in from a country outside the person's 30-day history (Entra ID) | yes |
 | Silent event source | `heimdall-source-silent` | a syslog device or the cloud is silent longer than the longest gap of the last 7 days + 1 h | yes |
+| Critical risk of a person or computer | `vardr-risk-critical` | the risk score of a person or computer enters the critical level ([Risk](panel.md#risk-of-people-and-computers)) | yes (also in the risk settings) |
 
-The identifiers have the `heimdall-` prefix – the project's former name. They stay unchanged, because they link alert history, notification channel filters and panel overrides. Built-in rules have English texts in the code (`server/internal/detector/lang.go` and the files below).
+Identifiers of rules from before the rename have the `heimdall-` prefix – the project's former name. They stay unchanged, because they link alert history, notification channel filters and panel overrides. Built-in rules have English texts in the code (`server/internal/detector/lang.go` and the files below).
 
-Code: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `silence.go`. Correlations and the silent source read ClickHouse (`siem.auth_events`, `siem.events`), so they require `SIEM_DETECTOR_CH_PASSWORD`.
+Code: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `silence.go`, `riskrule.go` (scoring: `internal/risk`). Correlations and the silent source read ClickHouse (`siem.auth_events`, `siem.events`), so they require `SIEM_DETECTOR_CH_PASSWORD`.
 
 ## Rules in the repository
 

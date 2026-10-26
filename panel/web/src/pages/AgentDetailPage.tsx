@@ -38,6 +38,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { StateBadge, agentProblems } from "./AgentsPage";
 import { AgentProtection } from "./AgentProtection";
+import { RiskBadge } from "../risk";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -160,6 +161,7 @@ export default function AgentDetailPage() {
           <Group gap="sm">
             <Title order={2}>{agent.hostname || agent.id}</Title>
             <StateBadge a={agent} />
+            {agent.hostname && <RiskBadge type="host" entity={agent.hostname} />}
           </Group>
           <Text c="dimmed" size="sm">
             {agent.id} · {agent.os || t("detail.unknownOs")} · {t("detail.agentVersion", { v: agent.version || "?" })}

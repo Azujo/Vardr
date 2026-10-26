@@ -42,11 +42,13 @@ import {
   type IncidentRef,
   type RuleAttribution,
   type RuleInfo,
+  type Resolution,
 } from "../api";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
+import { ResolutionPicker, RiskBadge, resolutionLabel } from "../risk";
 import AddToIncident from "./AddToIncident";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -143,6 +145,7 @@ export default function AlertDetailPage() {
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
   const [reason, setReason] = useState("");
+  const [resolution, setResolution] = useState<Resolution | "">("");
   const [firstEvent, setFirstEvent] = useState<EventDetail | null>(null);
   const [activity, setActivity] = useState<AlertActivity[]>([]);
   const [related, setRelated] = useState<Alert[]>([]);
@@ -212,9 +215,10 @@ export default function AlertDetailPage() {
 
   const setStatus = async (s: AlertStatus, why?: string) => {
     try {
-      await alertsApi.setStatus(Number(id), s, why);
+      await alertsApi.setStatus(Number(id), s, why, s === "closed" ? resolution : "");
       setClosing(false);
       setReason("");
+      setResolution("");
       load();
     } catch (e) {
       notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
@@ -300,11 +304,15 @@ export default function AlertDetailPage() {
 
       <Card withBorder>
         <SimpleGrid cols={{ base: 2, md: 4 }}>
-          <Field label={t("col.host")}>{alert.host_name}</Field>
+          <Field label={t("col.host")}>
+            {alert.host_name}
+            {alert.host_name && <RiskBadge type="host" entity={alert.host_name} />}
+          </Field>
           <Field label={t("col.user")}>
             {alert.user_identity && alert.user_identity !== alert.user_name.toLowerCase()
               ? t("detail.userPerson", { user: alert.user_name || "—", person: alert.user_identity })
               : alert.user_name}
+            {(alert.user_identity || alert.user_name) && <RiskBadge type="user" entity={alert.user_identity || alert.user_name} />}
           </Field>
           <Field label={t("detail.sourceIp")}>{alert.source_ip}</Field>
           <Field label={t("detail.agent")}>{alert.agent_id}</Field>
@@ -330,6 +338,7 @@ export default function AlertDetailPage() {
                   ? t(`autoClose.${alert.rule_id}`)
                   : alert.close_reason,
             })}
+            {alert.resolution && ` (${resolutionLabel(alert.resolution)})`}
           </Text>
         )}
       </Card>
@@ -532,6 +541,7 @@ export default function AlertDetailPage() {
 
       <Modal opened={closing} onClose={() => setClosing(false)} title={t("detail.closeTitle")} centered>
         <Stack>
+          <ResolutionPicker value={resolution} onChange={setResolution} />
           <Textarea
             label={t("reason")}
             description={t("detail.reasonHint")}

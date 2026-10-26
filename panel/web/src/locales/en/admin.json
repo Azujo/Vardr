@@ -146,6 +146,10 @@
       "label": "Identities",
       "help": "organisation domains, account aliases"
     },
+    "risk": {
+      "label": "Risk of people and computers",
+      "help": "risk scores (profiling – access for authorized staff only); change: scoring settings"
+    },
     "system": {
       "label": "System health",
       "help": "service health (Himinbjörg)"

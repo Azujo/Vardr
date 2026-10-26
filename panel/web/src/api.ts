@@ -1228,8 +1228,13 @@ export interface Alert {
   closed_at?: string;
   closed_by?: string;
   close_reason?: string;
+  // Rozstrzygnięcie zamkniętego alertu (fałszywy alarm i uzasadnione
+  // działanie nie liczą się do ryzyka).
+  resolution?: Resolution;
   assignee?: string;
 }
+
+export type Resolution = "true_positive" | "benign" | "false_positive";
 
 export interface AlertActivity {
   id: number;
@@ -1458,10 +1463,15 @@ export const alertsApi = {
       attribution?: RuleAttribution;
       incidents?: IncidentRef[];
     }>("GET", `/api/v1/alerts/${id}`),
-  setStatus: (id: number, status: AlertStatus, reason?: string) =>
-    request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "" }),
-  bulkStatus: (ids: number[], status: AlertStatus, reason?: string) =>
-    request<{ changed: number; ids: number[] }>("POST", "/api/v1/alerts/bulk-status", { ids, status, reason: reason ?? "" }),
+  setStatus: (id: number, status: AlertStatus, reason?: string, resolution?: Resolution | "") =>
+    request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/status`, { status, reason: reason ?? "", resolution: resolution ?? "" }),
+  bulkStatus: (ids: number[], status: AlertStatus, reason?: string, resolution?: Resolution | "") =>
+    request<{ changed: number; ids: number[] }>("POST", "/api/v1/alerts/bulk-status", {
+      ids,
+      status,
+      reason: reason ?? "",
+      resolution: resolution ?? "",
+    }),
   assign: (id: number, assignee: string) => request<{ alert: Alert }>("POST", `/api/v1/alerts/${id}/assign`, { assignee }),
   addNote: (id: number, text: string) =>
     request<{ activity: AlertActivity[] }>("POST", `/api/v1/alerts/${id}/notes`, { text }),
@@ -1827,4 +1837,58 @@ export const backupApi = {
       confirm,
       password,
     }),
+};
+
+// ---- Ryzyko osób i komputerów (wersja 1.3) ----
+
+export type RiskType = "user" | "host";
+export type RiskLevel = "low" | "medium" | "high" | "critical";
+
+export interface RiskContribution {
+  alert_id: number;
+  rule_id: string;
+  rule_title: string;
+  level: AlertLevel;
+  last_seen: string;
+  points: number;
+}
+
+export interface RiskScore {
+  type: RiskType;
+  entity: string;
+  display: string;
+  score: number;
+  level: RiskLevel;
+  alerts: number;
+  elevated: boolean;
+  last_alert_at: string;
+  top: RiskContribution[];
+  level_since: string;
+  updated_at: string;
+}
+
+export interface RiskConfig {
+  enabled: boolean;
+  points: Record<string, number>;
+  half_life_days: number;
+  thresholds: Record<string, number>;
+  privileged_users: string[] | null;
+  critical_groups: number[] | null;
+  multiplier: number;
+  alert_at_critical: boolean;
+}
+
+export const riskApi = {
+  list: (type: RiskType, level?: RiskLevel | "") =>
+    request<{
+      scores: RiskScore[];
+      counts: Record<RiskType, Partial<Record<RiskLevel, number>>>;
+      enabled: boolean;
+      thresholds: Record<string, number>;
+    }>("GET", `/api/v1/risk?${qs({ type, level: level || undefined })}`),
+  get: (type: RiskType, entity: string) =>
+    request<{ score: RiskScore | null }>("GET", `/api/v1/risk/${type}/${encodeURIComponent(entity.toLowerCase())}`),
+  config: () => request<{ config: RiskConfig; default: RiskConfig }>("GET", "/api/v1/risk/config"),
+  setConfig: (config: RiskConfig, password: string) =>
+    request<{ config: RiskConfig }>("PUT", "/api/v1/risk/config", { config, password }),
 };

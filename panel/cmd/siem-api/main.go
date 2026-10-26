@@ -253,6 +253,7 @@ func serve(log *slog.Logger) error {
 		apiServer.Status = &status.Prometheus{URL: u}
 	}
 	apiServer.Alerts = alertStore
+	apiServer.Risk = alertStore
 	apiServer.RuleAdmin = alertStore
 	panelLink := ""
 	if ps := os.Getenv("SIEM_PUBLIC_SERVER"); ps != "" {

@@ -31,9 +31,9 @@ func addActivity(ctx context.Context, tx pgx.Tx, id int64, at time.Time, actor, 
 }
 
 // SetStatus zmienia stan alertu (panel): open, acknowledged albo closed
-// (z powodem); zmiana trafia na oś czasu.
-func (p *PG) SetStatus(ctx context.Context, id int64, status, by, reason string, now time.Time) (Alert, error) {
-	out, err := p.SetStatusMany(ctx, []int64{id}, status, by, reason, now)
+// (z powodem i rozstrzygnięciem); zmiana trafia na oś czasu.
+func (p *PG) SetStatus(ctx context.Context, id int64, status, by, reason, resolution string, now time.Time) (Alert, error) {
+	out, err := p.SetStatusMany(ctx, []int64{id}, status, by, reason, resolution, now)
 	if err != nil {
 		return Alert{}, err
 	}
@@ -44,12 +44,22 @@ func (p *PG) SetStatus(ctx context.Context, id int64, status, by, reason string,
 }
 
 // SetStatusMany zmienia stan wielu alertów w jednej transakcji (pomija
-// alerty, które już mają ten stan). Zwraca zmienione alerty.
-func (p *PG) SetStatusMany(ctx context.Context, ids []int64, status, by, reason string, now time.Time) ([]Alert, error) {
+// alerty, które już mają ten stan). Rozstrzygnięcie zapisuje się tylko przy
+// zamknięciu – ponowne otwarcie je czyści. Zwraca zmienione alerty.
+func (p *PG) SetStatusMany(ctx context.Context, ids []int64, status, by, reason, resolution string, now time.Time) ([]Alert, error) {
 	var closedAt *time.Time
 	var closedBy, closeReason *string
 	if status == "closed" {
 		closedAt, closedBy, closeReason = &now, &by, &reason
+	} else {
+		resolution = ""
+	}
+	details := func(prev string) map[string]any {
+		d := map[string]any{"from": prev, "to": status}
+		if resolution != "" {
+			d["resolution"] = resolution
+		}
+		return d
 	}
 	var out []Alert
 	err := p.retryTx(ctx, func(tx pgx.Tx) error {
@@ -67,11 +77,12 @@ func (p *PG) SetStatusMany(ctx context.Context, ids []int64, status, by, reason 
 				continue
 			}
 			a, err := scanAlert(tx.QueryRow(ctx, `UPDATE gjallarhorn.alerts SET status = $2, closed_at = $3, closed_by = $4,
-				close_reason = $5, updated_at = $6 WHERE id = $1 RETURNING `+alertCols, id, status, closedAt, closedBy, closeReason, now))
+				close_reason = $5, updated_at = $6, resolution = $7 WHERE id = $1 RETURNING `+alertCols,
+				id, status, closedAt, closedBy, closeReason, now, resolution))
 			if err != nil {
 				return err
 			}
-			if err := addActivity(ctx, tx, id, now, by, "status", reason, map[string]any{"from": prev, "to": status}); err != nil {
+			if err := addActivity(ctx, tx, id, now, by, "status", reason, details(prev)); err != nil {
 				return err
 			}
 			out = append(out, a)

@@ -103,6 +103,7 @@ The menu is grouped by the kind of work: **Detection** (Alerts, Incidents, Detec
 | **Mímir** | `/events` | event search with a histogram; event details with a description and source fields |
 | **Identities** | `/identities` | people and their accounts, link suggestions, aliases, organisation domains, shared device accounts, "Check account" |
 | **Gjallarhorn** | `/alerts` | alerts with filters (state, level, rule, computer, account, assignee); an alert page: events (timeline), instructions for the analyst, related alerts (computer, account, person ±24 h), notes, assignment, closing with a reason |
+| **Risk** | `/risk` | a ranking of people and computers by risk score, the alerts that make up the score, scoring settings ([Risk](#risk-of-people-and-computers)) |
 | **MITRE ATT&CK** | `/attack` | the technique coverage matrix (colours: alerts in the period, covered, only disabled rules, none), platform and period filters, technique details with rules, sub-techniques and alerts, layer export for ATT&CK Navigator |
 | **Detection rules** | `/rules` | the list of rules from files and built-in rules, content, version history, load errors, enabling and disabling, rule test (also correlation rules) on ClickHouse events, a correlation wizard from sample events (`/rules/correlation`) and rules saved in the panel |
 | **Decoders** | `/decoders` | syslog and API decoders in checking order, editing with history, tests on samples or on unrecognised messages, a wizard from samples (marking fields in a message) |
@@ -132,13 +133,29 @@ Fields: `host` (`computer`), `agent`, `user`, `domain`, `identity` (`osoba`, `pe
 
 The time range is picked above the results. Search uses a read-only ClickHouse account with time (30 s) and result limits, so an overly broad query ends with a message, not with server load; narrow the time or add a field.
 
+## Risk of people and computers
+
+*Detection → Risk* (the *Risk of people and computers* permission): a ranking of people and computers by **risk score** – the sum of points for their alerts. Many small alerts, none dangerous on its own, together form a signal (e.g. a few failed logons, unusual PowerShell and a sign-in from a new country by the same person within a week).
+
+- **A person**, not an account: alerts from AD, Entra ID and VPN are joined by the identity (`user.identity`, [Identities](#modules)); without an identity – the account. System accounts (`SYSTEM`, `LOCAL SERVICE`…) and computer accounts (`NAME$`) are not people – their alerts count only for the computer.
+- **Points** per alert by level (default: low 1, medium 5, high 15, critical 40; informational 0). An alert counts once, regardless of the number of hits.
+- **Decay:** an alert's points halve every 14 days (from the last hit) – an old incident does not hang around forever.
+- **A multiplier** (×2 by default) for **privileged accounts** (patterns in the settings, e.g. `*-adm`, `administrator`, `adm.*@example.com` – also without the domain) and **critical computers** (selected agent groups, e.g. domain controllers).
+- **Levels:** low, medium (from 20 points), high (from 50), critical (from 100).
+- **Alert resolution** when closing: *true positive*, *legitimate activity* (e.g. announced administrator work) or *false positive*. The last two do not count towards risk – resolve the alerts you close so the score reflects reality.
+- **An alert when entering the critical level** – the built-in rule "Critical risk of a person or computer" (`vardr-risk-critical`, [built-in rules](rules.md#built-in-rules)); its alerts do not count towards the score.
+
+`siem-detector` calculates the scores every 5 minutes from alerts of the last 8 × the decay period. Clicking a row shows the alerts that make up the score (the largest contributions). A level badge (from medium) is also shown next to the person and computer in an alert and on the agent page. The settings (points, decay, thresholds, multiplier, privileged accounts, critical computers, alert) are changed with the module's *change* permission, with a password and an audit entry.
+
+**GDPR.** Ranking employees by risk is profiling: before using it in a company, agree it with your data protection officer (legal basis, information for employees, retention – scores are rebuilt from alerts, so the alert retention `SIEM_ALERT_RETENTION_DAYS` applies). Grant access only to those who need it – the *Analyst* and *Administrator* profiles can read it, *Viewer* cannot. The score is a pointer for analysis, not an assessment of the person; decisions about an employee require human analysis.
+
 ## Working with an alert
 
 1. **Intake.** The alert arrives on a notification channel (Discord) with its level, description and a link.
 2. **Investigating.** The analyst opens the alert and assigns it to themselves; the state changes to "acknowledged".
 3. **Analysis.** The instructions in the alert say what to check. The event timeline shows the alert's events, and each one links to Mímir. Related alerts show what else happened on the computer, account and for the person.
 4. **Notes.** Findings go to notes (the alert timeline).
-5. **Closing.** The alert is closed with a reason, e.g. "false positive – vulnerability scanner" or "incident – password changed". A bulk action closes many alerts at once.
+5. **Closing.** The alert is closed with a reason, e.g. "false positive – vulnerability scanner" or "incident – password changed", and a resolution: true positive, legitimate activity or false positive (the last two do not count towards [risk](#risk-of-people-and-computers)). A bulk action closes many alerts at once.
 
 Lost-contact and silent-source alerts close themselves when the agent or the source comes back. Closed alerts are removed after `SIEM_ALERT_RETENTION_DAYS` (default 365 days).
 

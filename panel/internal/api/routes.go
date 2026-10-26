@@ -148,6 +148,11 @@ func (s *Server) routes() []route {
 		{"POST /api/v1/enroll-tokens/msi", can("deploy", "write"), 0, s.tokenMSI},
 		{"GET /api/v1/agent-update.msi", can("deploy", "write"), 0, s.agentUpdateMSI},
 
+		{"GET /api/v1/risk", can("risk", "read"), 0, s.listRisk},
+		{"GET /api/v1/risk/config", can("risk", "read"), 0, s.getRiskConfig},
+		{"PUT /api/v1/risk/config", can("risk", "write"), 0, s.setRiskConfig},
+		{"GET /api/v1/risk/{type}/{entity}", can("risk", "read"), 0, s.getRisk},
+
 		{"GET /api/v1/api-tokens", can("users", "read"), 0, s.listAPITokens},
 		{"POST /api/v1/api-tokens", can("users", "write"), 0, s.createAPIToken},
 		{"POST /api/v1/api-tokens/{id}/revoke", can("users", "write"), 0, s.revokeAPIToken},

@@ -99,7 +99,7 @@ func TestPostgresAlerts(t *testing.T) {
 		t.Fatalf("ponowienie po terminie: %d", len(retry))
 	}
 	// Zamknięcie alertu: kolejne trafienie z tym kluczem tworzy nowy alert.
-	if _, err := db.SetStatus(ctx, ps.ID, "closed", "adam", "test", now); err != nil {
+	if _, err := db.SetStatus(ctx, ps.ID, "closed", "adam", "test", "false_positive", now); err != nil {
 		t.Fatal(err)
 	}
 	res, _ = db.Record(ctx, []Hit{grouped("p4", t0.Add(15*time.Minute))}, nil)
@@ -163,11 +163,11 @@ func TestPostgresAlerts(t *testing.T) {
 	for _, a := range open {
 		ids = append(ids, a.ID)
 	}
-	changed, err := db.SetStatusMany(ctx, append(ids, 999999), "acknowledged", "adam", "", now)
+	changed, err := db.SetStatusMany(ctx, append(ids, 999999), "acknowledged", "adam", "", "", now)
 	if err != nil || len(changed) == 0 {
 		t.Fatalf("zmiana wielu: %d %v", len(changed), err)
 	}
-	if again, _ := db.SetStatusMany(ctx, ids, "acknowledged", "adam", "", now); len(again) != 0 {
+	if again, _ := db.SetStatusMany(ctx, ids, "acknowledged", "adam", "", "", now); len(again) != 0 {
 		t.Fatalf("ponowna zmiana na ten sam stan: %d", len(again))
 	}
 	act, err := db.Activity(ctx, ps.ID)

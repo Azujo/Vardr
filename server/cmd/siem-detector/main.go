@@ -38,6 +38,7 @@ import (
 	"siem/internal/attack"
 	"siem/internal/detect"
 	"siem/internal/model"
+	"siem/internal/risk"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
 	"siem/server/internal/detector"
@@ -273,6 +274,11 @@ func serve(log *slog.Logger) error {
 	} else {
 		log.Warn("no ClickHouse connection (SIEM_DETECTOR_CH_PASSWORD) – cross-source correlations disabled")
 	}
+	// Scoring ryzyka osób i komputerów (wersja 1.3) – z alertów w Sadze.
+	go runRisk(ctx, log, store, func(id string) bool {
+		off := corrDisabled.Load()
+		return off != nil && (*off)[id]
+	}, m)
 	if !streamOn {
 		// Tylko zapytania: konsument strumienia nie może zostać, bo
 		// zatrzymywałby zdarzenia w kolejce (retencja „interest”).
@@ -798,4 +804,60 @@ func runSilence(ctx context.Context, log *slog.Logger, c *detector.Correlator, s
 			}
 		}
 	}
+}
+
+// runRisk liczy co 5 minut ryzyko osób i komputerów (internal/risk)
+// z alertów w Sadze, zapisuje wyniki dla panelu i zgłasza alert, gdy
+// osoba albo komputer wchodzi w poziom krytyczny (reguła wbudowana,
+// wyłączana w panelu). Scoring wyłączony w panelu – wyniki znikają.
+func runRisk(ctx context.Context, log *slog.Logger, store *alerts.PG, disabled func(string) bool, m *metrics.Detector) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Minute):
+		}
+		now := time.Now().UTC()
+		qctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		err := riskRound(qctx, log, store, disabled, m, now)
+		cancel()
+		if err != nil {
+			m.Errors.WithLabelValues("risk").Inc()
+			log.Warn("risk scoring failed", "err", err)
+		}
+	}
+}
+
+func riskRound(ctx context.Context, log *slog.Logger, store *alerts.PG, disabled func(string) bool, m *metrics.Detector, now time.Time) error {
+	cfg, err := store.RiskConfig(ctx)
+	if err != nil {
+		return err
+	}
+	var scores []risk.Score
+	if cfg.Enabled {
+		inputs, err := store.RiskInputs(ctx, now.Add(-cfg.Lookback()))
+		if err != nil {
+			return err
+		}
+		scores = risk.Compute(inputs, cfg, now)
+	}
+	prev, err := store.SaveRiskScores(ctx, scores, now)
+	if err != nil {
+		return err
+	}
+	if !cfg.Enabled || !cfg.AlertAtCritical || disabled(risk.CriticalRuleID) {
+		return nil
+	}
+	hits := detector.RiskCheck(scores, prev, now)
+	if len(hits) == 0 {
+		return nil
+	}
+	res, err := store.Record(ctx, hits, nil)
+	if err != nil {
+		m.Errors.WithLabelValues("record").Inc()
+		return err
+	}
+	m.Alerts.WithLabelValues("new").Add(float64(res.NewAlerts))
+	log.Info("critical risk – alerts", "entities", len(hits), "new", res.NewAlerts)
+	return nil
 }

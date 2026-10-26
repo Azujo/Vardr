@@ -2,6 +2,21 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.3.0] – 2026-10-26 – Ryzyko osób i komputerów
+
+### Dodane
+- **Scoring ryzyka osób i komputerów** (*Wykrywanie → Ryzyko*, [docs/panel.md](docs/panel.md#ryzyko-osób-i-komputerów)): wynik to suma punktów za alerty według poziomu, wygasających w czasie (połowa co 14 dni), z mnożnikiem dla kont uprzywilejowanych i komputerów krytycznych (grupy agentów). Liczony na osobie (`user.identity` – AD, Entra ID i VPN razem) i na komputerze; poziomy niskie, średnie, wysokie i krytyczne z progami w ustawieniach. Ranking, alerty składające się na wynik, odznaka ryzyka przy osobie i komputerze w alercie i na stronie agenta. Wyniki przelicza siem-detector co 5 minut.
+- **Rozstrzygnięcie przy zamknięciu alertu:** prawdziwy alarm, uzasadnione działanie albo fałszywy alarm (także w zamknięciu zbiorczym i w API: pole `resolution`); dwa ostatnie nie liczą się do ryzyka.
+- **Reguła wbudowana „Ryzyko krytyczne osoby lub komputera”** (`vardr-risk-critical`): alert, gdy osoba albo komputer wchodzi w poziom krytyczny.
+- **Uprawnienie „Ryzyko osób i komputerów”** (odczyt, zmiana ustawień) – ranking pracowników to profilowanie (RODO): profil *Analityk* ma odczyt, *Obserwator* – nie, profile własne – dopiero po nadaniu. Zmiana ustawień z hasłem i wpisem w audycie.
+
+### Bezpieczeństwo
+- Historia zapytań tokenów API zapamiętuje kod odpowiedzi bez opakowywania zapisu treści – treść idzie wprost do odpowiedzi HTTP z typem ustawionym przez handler (CodeQL `go/reflected-xss`; odpowiedzi API były i są JSON-em z `nosniff`, alert bez realnej podatności).
+
+### Aktualizacja
+- Migracja bazy detekcji `014_risk.sql` (rozstrzygnięcie alertu, ustawienia i wyniki ryzyka) – stosuje ją siem-detector przy starcie; zaktualizuj detektor przed panelem.
+- Profile własne nie dostają uprawnienia „Ryzyko osób i komputerów” automatycznie – nadaj je w *Profilach uprawnień*, jeśli trzeba.
+
 ## [1.2.0] – 2026-10-26 – API, Microsoft Teams
 
 ### Dodane

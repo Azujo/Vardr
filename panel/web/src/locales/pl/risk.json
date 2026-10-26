@@ -1,0 +1,80 @@
+{
+  "title": "Ryzyko osób i komputerów",
+  "intro": "Wynik ryzyka to suma punktów za alerty osoby albo komputera: według poziomu alertu, wygasająca w czasie, z mnożnikiem dla kont uprzywilejowanych i komputerów krytycznych. Wiele drobnych alertów, z których żaden osobno nie jest groźny, razem daje sygnał. Alerty rozstrzygnięte jako fałszywy alarm albo uzasadnione działanie się nie liczą. Wyniki przelicza siem-detector co 5 minut.",
+  "disabled": "Scoring ryzyka jest wyłączony w ustawieniach.",
+  "people": "osób",
+  "hosts": "komputerów",
+  "typeUser": "Osoby",
+  "typeHost": "Komputery",
+  "allLevels": "Wszystkie poziomy",
+  "fromLevel": "od: {{level}}",
+  "empty": "Brak wyników – nikt nie ma alertów liczących się do ryzyka.",
+  "points": "{{score}} pkt",
+  "privileged": "uprzywilejowane",
+  "privilegedTip": "Konto uprzywilejowane – punkty z mnożnikiem",
+  "criticalHost": "krytyczny",
+  "criticalHostTip": "Komputer krytyczny – punkty z mnożnikiem",
+  "badge": "ryzyko: {{level}}",
+  "badgeTip": "{{score}} pkt z {{alerts}} alertów – szczegóły w module Ryzyko",
+  "col": {
+    "person": "Osoba / konto",
+    "host": "Komputer",
+    "level": "Poziom",
+    "score": "Wynik",
+    "alerts": "Alerty",
+    "lastAlert": "Ostatni alert",
+    "since": "Poziom od"
+  },
+  "level": {
+    "low": "niskie",
+    "medium": "średnie",
+    "high": "wysokie",
+    "critical": "krytyczne"
+  },
+  "detail": {
+    "summary": "{{alerts}} alertów liczących się do ryzyka; obecny poziom od {{since}}",
+    "intro": "Największe wkłady (punkty po wygaszeniu w czasie i mnożniku). Rozstrzygnięcie alertu jako fałszywy alarm albo uzasadnione działanie usuwa go z wyniku przy następnym przeliczeniu.",
+    "rule": "Reguła",
+    "level": "Poziom alertu",
+    "lastSeen": "Ostatnie trafienie",
+    "points": "Punkty",
+    "open": "alert",
+    "allAlerts": "Wszystkie alerty"
+  },
+  "settings": {
+    "title": "Ustawienia scoringu",
+    "enabled": "Scoring włączony",
+    "enabledHelp": "Wyłączenie usuwa wyniki przy następnym przeliczeniu.",
+    "points": "Punkty za alert według poziomu",
+    "halfLife": "Wygaszanie (dni)",
+    "halfLifeHelp": "Po tylu dniach punkty alertu spadają o połowę.",
+    "multiplier": "Mnożnik",
+    "multiplierHelp": "Dla kont uprzywilejowanych i komputerów krytycznych.",
+    "thresholds": "Progi poziomów (od ilu punktów)",
+    "privileged": "Konta uprzywilejowane",
+    "privilegedHelp": "Wzorce osób i kont (* – dowolny ciąg), także bez domeny: *-adm, administrator, adm.*@firma.pl.",
+    "criticalGroups": "Komputery krytyczne – grupy agentów",
+    "criticalGroupsHelp": "Np. kontrolery domeny, serwery z danymi.",
+    "alertAtCritical": "Alert przy wejściu w poziom krytyczny",
+    "alertAtCriticalHelp": "Reguła wbudowana „Ryzyko krytyczne osoby lub komputera” (wyłączana też w Regułach).",
+    "defaults": "Przywróć domyślne punkty i progi",
+    "password": "Twoje hasło (zmiana ustawień)",
+    "save": "Zapisz ustawienia",
+    "saved": "Zapisano ustawienia scoringu – wyniki przeliczą się w ciągu 5 minut"
+  },
+  "resolution": {
+    "label": "Rozstrzygnięcie",
+    "help": "Fałszywy alarm i uzasadnione działanie nie liczą się do ryzyka osoby i komputera.",
+    "none": "bez rozstrzygnięcia",
+    "true_positive": "prawdziwy alarm",
+    "benign": "uzasadnione działanie",
+    "false_positive": "fałszywy alarm",
+    "hint": {
+      "true_positive": "zagrożenie albo naruszenie zasad – liczy się do ryzyka",
+      "benign": "prawdziwe, ale uprawnione (np. zgłoszona praca administratora) – nie liczy się",
+      "false_positive": "reguła zadziałała błędnie – nie liczy się",
+      "none": "liczy się do ryzyka"
+    }
+  },
+  "gdpr": "Ranking ryzyka pracowników to profilowanie w rozumieniu RODO: uzgodnij jego użycie z inspektorem ochrony danych, dostęp nadawaj tylko osobom, które go potrzebują (uprawnienie „Ryzyko osób i komputerów”), a wynik traktuj jako wskazówkę do analizy, nie jako ocenę osoby."
+}

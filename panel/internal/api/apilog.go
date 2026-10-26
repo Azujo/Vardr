@@ -24,7 +24,11 @@ const (
 	maxLoggedPath       = 500
 )
 
-// statusWriter zapamiętuje kod odpowiedzi (do historii zapytań).
+// statusWriter zapamiętuje kod odpowiedzi (do historii zapytań). Celowo
+// bez własnego Write: treść idzie wprost do oryginalnego ResponseWriter
+// (brak WriteHeader = 200, logTokenRequest przyjmuje 0 jako 200), a analiza
+// CodeQL widzi typ odpowiedzi ustawiony przez handler (alert
+// go/reflected-xss przy opakowanym Write).
 type statusWriter struct {
 	http.ResponseWriter
 	status int
@@ -35,13 +39,6 @@ func (w *statusWriter) WriteHeader(code int) {
 		w.status = code
 	}
 	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	return w.ResponseWriter.Write(b)
 }
 
 // Unwrap: http.ResponseController (np. Flush przy pobieraniu eksportu).

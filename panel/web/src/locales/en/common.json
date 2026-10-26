@@ -9,6 +9,8 @@
     "rulesHint": "Sigma and built-in",
     "attack": "MITRE ATT&CK",
     "attackHint": "technique coverage",
+    "risk": "Risk",
+    "riskHint": "people and computers",
     "events": "Events",
     "search": "Search",
     "identities": "Identities",

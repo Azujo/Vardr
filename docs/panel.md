@@ -103,6 +103,7 @@ Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły det
 | **Mímir** | `/events` | wyszukiwarka zdarzeń z histogramem; szczegóły zdarzenia z opisem i polami źródłowymi |
 | **Tożsamości** | `/identities` | osoby i ich konta, podpowiedzi połączeń, aliasy, domeny organizacji, konta wspólne urządzeń, „Sprawdź konto” |
 | **Gjallarhorn** | `/alerts` | alerty z filtrami (stan, poziom, reguła, komputer, konto, przypisany); strona alertu: zdarzenia (oś czasu), instrukcja dla analityka, powiązane alerty (komputer, konto, osoba ±24 h), notatki, przypisanie, zamknięcie z powodem |
+| **Ryzyko** | `/risk` | ranking osób i komputerów według wyniku ryzyka, alerty składające się na wynik, ustawienia scoringu ([Ryzyko](#ryzyko-osób-i-komputerów)) |
 | **MITRE ATT&CK** | `/attack` | macierz pokrycia technik regułami (kolory: alerty w okresie, pokryta, tylko wyłączone reguły, brak), filtry platformy i okresu, szczegóły techniki z regułami, podtechnikami i alertami, eksport warstwy dla ATT&CK Navigator |
 | **Reguły detekcji** | `/rules` | lista reguł z plików i wbudowanych, treść, historia wersji, błędy wczytania, włączanie i wyłączanie, test reguły (także korelacyjnej) na zdarzeniach z ClickHouse, kreator korelacji z przykładowych zdarzeń (`/rules/correlation`) i reguły zapisane w panelu |
 | **Dekodery** | `/decoders` | dekodery syslog i API w kolejności sprawdzania, edycja z historią, test na próbkach albo na nierozpoznanych wiadomościach, kreator z próbek (zaznaczanie pól w wiadomości) |
@@ -132,13 +133,29 @@ Pola: `host` (`computer`), `agent`, `user`, `domain`, `identity` (`osoba`, `pers
 
 Zakres czasu wybiera się nad wynikami. Wyszukiwanie korzysta z konta ClickHouse tylko do odczytu z limitem czasu (30 s) i wyniku, więc zbyt szerokie zapytanie kończy się komunikatem, a nie obciążeniem serwera; zawęź wtedy czas albo dodaj pole.
 
+## Ryzyko osób i komputerów
+
+*Wykrywanie → Ryzyko* (uprawnienie *Ryzyko osób i komputerów*): ranking osób i komputerów według **wyniku ryzyka** – sumy punktów za ich alerty. Wiele drobnych alertów, z których żaden osobno nie jest groźny, razem daje sygnał (np. kilka nieudanych logowań, nietypowy PowerShell i logowanie z nowego kraju tej samej osoby w ciągu tygodnia).
+
+- **Osoba**, nie konto: alerty z AD, Entra ID i VPN łączy tożsamość (`user.identity`, [Tożsamości](#moduły)); bez tożsamości – konto. Konta systemowe (`SYSTEM`, `LOCAL SERVICE`…) i konta komputerów (`NAZWA$`) nie są osobami – ich alerty liczą się tylko komputerowi.
+- **Punkty** za alert według poziomu (domyślnie: niski 1, średni 5, wysoki 15, krytyczny 40; informacyjny 0). Alert liczy się raz, niezależnie od liczby trafień.
+- **Wygaszanie:** punkty alertu spadają o połowę co 14 dni (od ostatniego trafienia) – stary incydent nie wisi w nieskończoność.
+- **Mnożnik** (domyślnie ×2) dla **kont uprzywilejowanych** (wzorce w ustawieniach, np. `*-adm`, `administrator`, `adm.*@firma.pl` – także bez domeny) i **komputerów krytycznych** (wybrane grupy agentów, np. kontrolery domeny).
+- **Poziomy:** niskie, średnie (od 20 pkt), wysokie (od 50), krytyczne (od 100).
+- **Rozstrzygnięcie alertu** przy zamknięciu: *prawdziwy alarm*, *uzasadnione działanie* (np. zgłoszona praca administratora) albo *fałszywy alarm*. Dwa ostatnie nie liczą się do ryzyka – rozstrzygaj zamykane alerty, żeby wynik odpowiadał rzeczywistości.
+- **Alert przy wejściu w poziom krytyczny** – reguła wbudowana „Ryzyko krytyczne osoby lub komputera” (`vardr-risk-critical`, [reguły wbudowane](reguly.md#reguły-wbudowane)); jej alerty nie liczą się do wyniku.
+
+Wyniki liczy `siem-detector` co 5 minut z alertów z okresu 8 × czas wygaszania. Kliknięcie wiersza pokazuje alerty, które złożyły się na wynik (największe wkłady). Odznaka poziomu (od średniego) jest też przy osobie i komputerze w alercie oraz na stronie agenta. Ustawienia (punkty, wygaszanie, progi, mnożnik, konta uprzywilejowane, komputery krytyczne, alert) zmienia uprawnienie *zmiana* modułu, z hasłem i wpisem w audycie.
+
+**RODO.** Ranking ryzyka pracowników to profilowanie: przed użyciem w firmie uzgodnij je z inspektorem ochrony danych (podstawa, informacja dla pracowników, okres przechowywania – wyniki odtwarzają się z alertów, więc obowiązuje retencja alertów `SIEM_ALERT_RETENTION_DAYS`). Dostęp nadawaj tylko osobom, które go potrzebują – profile *Analityk* i *Administrator* mają odczyt, *Obserwator* – nie. Wynik to wskazówka do analizy, nie ocena osoby; decyzje wobec pracownika wymagają analizy człowieka.
+
 ## Praca z alertem
 
 1. **Przyjęcie.** Alert przychodzi na kanał powiadomień (Discord) z poziomem, opisem i linkiem.
 2. **W analizie.** Analityk otwiera alert i przypisuje go sobie; stan zmienia się na „w analizie” (`acknowledged`).
 3. **Analiza.** Instrukcja w alercie mówi, co sprawdzić. Oś zdarzeń pokazuje zdarzenia alertu, a z każdego można przejść do Mímira. Powiązane alerty pokazują, co jeszcze działo się na tym komputerze, koncie i u tej osoby.
 4. **Notatki.** Ustalenia trafiają do notatek (oś czasu alertu).
-5. **Zamknięcie.** Alert zamyka się z powodem, np. „fałszywy alarm – skaner podatności” albo „incydent – zmienione hasło”. Wiele alertów naraz zamyka akcja zbiorcza.
+5. **Zamknięcie.** Alert zamyka się z powodem, np. „fałszywy alarm – skaner podatności” albo „incydent – zmienione hasło”, i rozstrzygnięciem: prawdziwy alarm, uzasadnione działanie albo fałszywy alarm (dwa ostatnie nie liczą się do [ryzyka](#ryzyko-osób-i-komputerów)). Wiele alertów naraz zamyka akcja zbiorcza.
 
 Alerty utraty łączności i ciszy źródła zamykają się same, gdy agent albo źródło wróci. Zamknięte alerty są usuwane po `SIEM_ALERT_RETENTION_DAYS` (domyślnie 365 dni).
 

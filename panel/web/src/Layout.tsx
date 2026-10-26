@@ -22,6 +22,7 @@ import {
   IconActivityHeartbeat,
   IconApi,
   IconGridDots,
+  IconGauge,
   IconAlertOctagon,
   IconAdjustments,
   IconAlertTriangle,
@@ -86,6 +87,7 @@ const sections: Section[] = [
       { to: "/incidents", label: "nav.incidents", hint: "nav.incidentsHint", icon: <IconFlame size={18} />, perm: ["incidents", "read"] },
       { to: "/rules", label: "nav.rules", hint: "nav.rulesHint", icon: <IconListCheck size={18} />, perm: ["rules", "read"] },
       { to: "/attack", label: "nav.attack", hint: "nav.attackHint", icon: <IconGridDots size={18} />, perm: ["rules", "read"] },
+      { to: "/risk", label: "nav.risk", hint: "nav.riskHint", icon: <IconGauge size={18} />, perm: ["risk", "read"] },
     ],
   },
   {

@@ -146,6 +146,10 @@
       "label": "Tożsamości",
       "help": "domeny organizacji, aliasy kont"
     },
+    "risk": {
+      "label": "Ryzyko osób i komputerów",
+      "help": "wyniki ryzyka (profilowanie – dostęp tylko dla uprawnionych); zmiana: ustawienia scoringu"
+    },
     "system": {
       "label": "Stan systemu",
       "help": "zdrowie usług (Himinbjörg)"

@@ -1,0 +1,80 @@
+{
+  "title": "Risk of people and computers",
+  "intro": "The risk score is the sum of points for a person's or computer's alerts: by alert level, decaying over time, with a multiplier for privileged accounts and critical computers. Many small alerts, none dangerous on its own, together form a signal. Alerts resolved as a false positive or legitimate activity do not count. siem-detector recalculates the scores every 5 minutes.",
+  "disabled": "Risk scoring is disabled in the settings.",
+  "people": "people",
+  "hosts": "computers",
+  "typeUser": "People",
+  "typeHost": "Computers",
+  "allLevels": "All levels",
+  "fromLevel": "from: {{level}}",
+  "empty": "No scores – nobody has alerts that count towards risk.",
+  "points": "{{score}} points",
+  "privileged": "privileged",
+  "privilegedTip": "Privileged account – points multiplied",
+  "criticalHost": "critical",
+  "criticalHostTip": "Critical computer – points multiplied",
+  "badge": "risk: {{level}}",
+  "badgeTip": "{{score}} points from {{alerts}} alerts – details in the Risk module",
+  "col": {
+    "person": "Person / account",
+    "host": "Computer",
+    "level": "Level",
+    "score": "Score",
+    "alerts": "Alerts",
+    "lastAlert": "Last alert",
+    "since": "Level since"
+  },
+  "level": {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "critical": "critical"
+  },
+  "detail": {
+    "summary": "{{alerts}} alerts counting towards risk; current level since {{since}}",
+    "intro": "The largest contributions (points after decay and the multiplier). Resolving an alert as a false positive or legitimate activity removes it from the score at the next recalculation.",
+    "rule": "Rule",
+    "level": "Alert level",
+    "lastSeen": "Last hit",
+    "points": "Points",
+    "open": "alert",
+    "allAlerts": "All alerts"
+  },
+  "settings": {
+    "title": "Scoring settings",
+    "enabled": "Scoring enabled",
+    "enabledHelp": "Disabling removes the scores at the next recalculation.",
+    "points": "Points per alert by level",
+    "halfLife": "Decay (days)",
+    "halfLifeHelp": "After this many days an alert's points drop by half.",
+    "multiplier": "Multiplier",
+    "multiplierHelp": "For privileged accounts and critical computers.",
+    "thresholds": "Level thresholds (from how many points)",
+    "privileged": "Privileged accounts",
+    "privilegedHelp": "Patterns of people and accounts (* – any text), also without the domain: *-adm, administrator, adm.*@example.com.",
+    "criticalGroups": "Critical computers – agent groups",
+    "criticalGroupsHelp": "E.g. domain controllers, data servers.",
+    "alertAtCritical": "Alert when entering the critical level",
+    "alertAtCriticalHelp": "The built-in rule “Critical risk of a person or computer” (can also be disabled in Rules).",
+    "defaults": "Restore default points and thresholds",
+    "password": "Your password (changing settings)",
+    "save": "Save settings",
+    "saved": "Scoring settings saved – scores are recalculated within 5 minutes"
+  },
+  "resolution": {
+    "label": "Resolution",
+    "help": "False positives and legitimate activity do not count towards the risk of a person or computer.",
+    "none": "no resolution",
+    "true_positive": "true positive",
+    "benign": "legitimate activity",
+    "false_positive": "false positive",
+    "hint": {
+      "true_positive": "a threat or a policy violation – counts towards risk",
+      "benign": "real but authorized (e.g. announced administrator work) – does not count",
+      "false_positive": "the rule fired incorrectly – does not count",
+      "none": "counts towards risk"
+    }
+  },
+  "gdpr": "Ranking employees by risk is profiling under the GDPR: agree its use with your data protection officer, grant access only to those who need it (the “Risk of people and computers” permission), and treat the score as a pointer for analysis, not an assessment of the person."
+}

@@ -125,6 +125,8 @@ type Server struct {
 	TokenLogDays    int
 	tokenLog        chan store.APIRequest
 	tokenLogDropped atomic.Int64
+	// Risk (opcjonalne): scoring ryzyka osób i komputerów (wyniki z detektora).
+	Risk RiskStore
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore
 	ldap      ldapState

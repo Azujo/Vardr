@@ -46,6 +46,7 @@ var Modules = []Module{
 	{"decoders", "Dekodery syslog", "test: próbki i test dekodera; zmiana: edycja", []Level{read, test, write}},
 	{"quarantine", "Kwarantanna", "zmiana: ponowne przetwarzanie", []Level{read, {"write", "ponowne przetwarzanie"}}},
 	{"identities", "Tożsamości", "domeny organizacji, aliasy kont", []Level{read, write}},
+	{"risk", "Ryzyko osób i komputerów", "wyniki ryzyka (profilowanie – dostęp tylko dla uprawnionych); zmiana: ustawienia scoringu", []Level{read, write}},
 	{"system", "Stan systemu", "zdrowie usług (Himinbjörg)", []Level{read}},
 	{"notify", "Powiadomienia", "kanały (Discord, Teams, webhook)", []Level{read, write}},
 	{"backup", "Kopie zapasowe", "ustawienia, zlecenia i przywracanie", []Level{read, write}},
@@ -125,7 +126,7 @@ var Builtin = []struct {
 	{Admin, "Administrator", "pełny dostęp, także do kont, profili i ustawień bezpieczeństwa", all},
 	{Analyst, "Analityk", "praca z alertami i danymi: obsługa alertów, testy reguł i dekoderów, bez administracji", func() Set {
 		return Set{"alerts": "write", "incidents": "write", "events": "read", "rules": "test", "agents": "read", "archive": "read",
-			"decoders": "test", "quarantine": "read", "identities": "read", "system": "read"}
+			"decoders": "test", "quarantine": "read", "identities": "read", "risk": "read", "system": "read"}
 	}},
 	{Viewer, "Obserwator", "tylko odczyt alertów, zdarzeń, reguł i stanu systemu", func() Set {
 		return Set{"alerts": "read", "incidents": "read", "events": "read", "rules": "read", "agents": "read", "archive": "read",
