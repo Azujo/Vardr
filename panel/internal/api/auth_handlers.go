@@ -18,7 +18,12 @@ import (
 )
 
 // Flagi dla authed.
-const allowPasswordChange = 1 // dostępne także przed wymaganą zmianą hasła
+const (
+	allowPasswordChange = 1 << iota // dostępne także przed wymaganą zmianą hasła
+	// allowToken: trasa „tylko zalogowanie” (loggedIn) dostępna też dla
+	// tokenu API. Trasy z uprawnieniem modułu są dla tokenów zawsze.
+	allowToken
+)
 
 type ctxKey struct{}
 
@@ -26,6 +31,8 @@ type authCtx struct {
 	session store.Session
 	user    store.User
 	perms   perm.Set // uprawnienia profilu konta
+	// token: żądanie z tokenem API (wtedy bez sesji; user – aktor api:<nazwa>).
+	token *store.APIToken
 }
 
 func current(r *http.Request) authCtx {
@@ -34,9 +41,14 @@ func current(r *http.Request) authCtx {
 }
 
 // authed wymaga ważnej sesji, uprawnienia profilu konta (moduł, poziom;
-// loggedIn – samo zalogowanie) i – dla zmian – tokenu CSRF.
+// loggedIn – samo zalogowanie) i – dla zmian – tokenu CSRF. Żądanie
+// z nagłówkiem Authorization to program z tokenem API (tokenAuthed).
 func (s *Server) authed(req need, flags int, h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hdr := r.Header.Get("Authorization"); hdr != "" {
+			s.tokenAuthed(w, r, req, flags, hdr, h)
+			return
+		}
 		c, err := r.Cookie(cookieName)
 		if err != nil || c.Value == "" {
 			writeError(w, http.StatusUnauthorized, "unauthenticated", "zaloguj się")

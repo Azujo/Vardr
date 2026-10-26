@@ -12,19 +12,23 @@ import (
 
 // Channel to kanał powiadomień. URL jest sekretem – nie trafia do JSON.
 type Channel struct {
-	ID          int64       `json:"id"`
-	Name        string      `json:"name"`
-	Kind        string      `json:"kind"`
-	URL         string      `json:"-"`
-	Events      []string    `json:"events"`
-	AlertFilter AlertFilter `json:"alert_filter"`
-	Enabled     bool        `json:"enabled"`
-	CreatedAt   time.Time   `json:"created_at"`
-	CreatedBy   string      `json:"created_by"`
-	UpdatedAt   time.Time   `json:"updated_at"`
-	LastOKAt    *time.Time  `json:"last_ok_at,omitempty"`
-	LastError   string      `json:"last_error,omitempty"`
-	LastErrorAt *time.Time  `json:"last_error_at,omitempty"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	URL  string `json:"-"`
+	// SigningSecret: sekret podpisu HMAC wiadomości (pusty – bez podpisu);
+	// jak URL – nie trafia do JSON. Signed mówi panelowi, że podpis jest.
+	SigningSecret string      `json:"-"`
+	Signed        bool        `json:"signed"`
+	Events        []string    `json:"events"`
+	AlertFilter   AlertFilter `json:"alert_filter"`
+	Enabled       bool        `json:"enabled"`
+	CreatedAt     time.Time   `json:"created_at"`
+	CreatedBy     string      `json:"created_by"`
+	UpdatedAt     time.Time   `json:"updated_at"`
+	LastOKAt      *time.Time  `json:"last_ok_at,omitempty"`
+	LastError     string      `json:"last_error,omitempty"`
+	LastErrorAt   *time.Time  `json:"last_error_at,omitempty"`
 }
 
 // AlertFilter wybiera alerty detekcji wysyłane na kanał.
@@ -51,15 +55,16 @@ type NotifyLogEntry struct {
 }
 
 const channelCols = `id, name, kind, url, events, alert_filter, enabled, created_at, created_by, updated_at, last_ok_at,
-	last_error, last_error_at`
+	last_error, last_error_at, signing_secret`
 
 func scanChannel(r pgx.Row) (Channel, error) {
 	var c Channel
 	err := r.Scan(&c.ID, &c.Name, &c.Kind, &c.URL, &c.Events, &c.AlertFilter, &c.Enabled, &c.CreatedAt, &c.CreatedBy, &c.UpdatedAt,
-		&c.LastOKAt, &c.LastError, &c.LastErrorAt)
+		&c.LastOKAt, &c.LastError, &c.LastErrorAt, &c.SigningSecret)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}
+	c.Signed = c.SigningSecret != ""
 	if c.Events == nil {
 		c.Events = []string{}
 	}
@@ -83,8 +88,8 @@ func (s *PG) ChannelByID(ctx context.Context, id int64) (Channel, error) {
 // CreateChannel dodaje kanał.
 func (s *PG) CreateChannel(ctx context.Context, c Channel) (Channel, error) {
 	out, err := scanChannel(s.pool.QueryRow(ctx, `INSERT INTO notify_channels (name, kind, url, events, alert_filter, enabled,
-		created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+channelCols, c.Name, c.Kind, c.URL, c.Events, c.AlertFilter,
-		c.Enabled, c.CreatedBy))
+		created_by, signing_secret) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+channelCols, c.Name, c.Kind, c.URL, c.Events,
+		c.AlertFilter, c.Enabled, c.CreatedBy, c.SigningSecret))
 	if isUniqueViolation(err) {
 		return out, ErrConflict
 	}
@@ -100,6 +105,12 @@ func (s *PG) UpdateChannel(ctx context.Context, c Channel) (Channel, error) {
 		return out, ErrConflict
 	}
 	return out, err
+}
+
+// SetChannelSecret ustawia sekret podpisu wiadomości ("" – bez podpisu).
+func (s *PG) SetChannelSecret(ctx context.Context, id int64, secret string) (Channel, error) {
+	return scanChannel(s.pool.QueryRow(ctx, `UPDATE notify_channels SET signing_secret = $2, updated_at = now()
+		WHERE id = $1 RETURNING `+channelCols, id, secret))
 }
 
 // DeleteChannel usuwa kanał (wpisy dziennika zostają).

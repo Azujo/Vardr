@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package notify wysyła wiadomości Vardra poza system – na kanały
-// ustawione w panelu (Discord, webhook): alerty zdrowia z Grafany, codzienną
-// kotwicę archiwum Urd, a później alerty detekcji (Gjallarhorn).
+// ustawione w panelu (Discord, Power Automate / Microsoft Teams, webhook):
+// alerty detekcji, incydenty, alerty zdrowia z Grafany i codzienną
+// kotwicę archiwum Urd.
 package notify
 
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,7 +44,35 @@ var Events = []string{EventAlert, EventIncident, EventHealth, EventAnchor}
 const (
 	KindDiscord = "discord"
 	KindWebhook = "webhook"
+	// KindTeams: przepływ Power Automate (Workflows) z wyzwalaczem HTTP –
+	// np. szablon „Post to a channel when a webhook request is received”
+	// w Microsoft Teams. Wiadomość to karta Adaptive Card.
+	KindTeams = "teams"
 )
+
+// Kinds: rodzaje kanałów do wyboru w panelu.
+var Kinds = []string{KindDiscord, KindTeams, KindWebhook}
+
+// Signable: rodzaje kanałów z podpisem HMAC (Discord nie sprawdza podpisów).
+func Signable(kind string) bool { return kind == KindWebhook || kind == KindTeams }
+
+// Nagłówki podpisu wiadomości (kanały z sekretem).
+const (
+	HeaderTimestamp = "X-Vardr-Timestamp"
+	HeaderSignature = "X-Vardr-Signature"
+)
+
+// Sign: podpis wiadomości – HMAC-SHA256 z sekretu kanału nad
+// „<znacznik czasu>.<treść>” (znacznik – sekundy Unix z nagłówka
+// X-Vardr-Timestamp; odbiorca odrzuca stare, np. > 5 min – ochrona przed
+// powtórzeniem). Wartość nagłówka: „sha256=<hex>”.
+func Sign(secret, timestamp string, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
 
 // Ważność wiadomości (kolor na Discordzie).
 const (
@@ -212,6 +244,8 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 		body, err = json.Marshal(discordPayload(m))
 	case KindWebhook:
 		body, err = json.Marshal(webhookPayload(m))
+	case KindTeams:
+		body, err = json.Marshal(teamsPayload(m))
 	default:
 		return fmt.Errorf("unknown channel kind %q", c.Kind)
 	}
@@ -225,6 +259,11 @@ func (s *Service) deliver(ctx context.Context, c store.Channel, m Message) error
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "Vardr-SIEM")
+		if c.SigningSecret != "" && Signable(c.Kind) {
+			ts := strconv.FormatInt(s.now().Unix(), 10)
+			req.Header.Set(HeaderTimestamp, ts)
+			req.Header.Set(HeaderSignature, Sign(c.SigningSecret, ts, body))
+		}
 		resp, err := s.client().Do(req)
 		if err != nil {
 			return safeErr(err)
@@ -365,6 +404,10 @@ func ValidateURL(kind, raw string) error {
 	if len(raw) > 2000 {
 		return lang.Errorf("adres jest za długi", "the address is too long")
 	}
+	if kind == KindTeams && !powerAutomateHost(u.Hostname()) {
+		return lang.Errorf("adres przepływu Power Automate ma postać https://….logic.azure.com/workflows/… albo https://….api.powerplatform.com/… (skopiuj go z wyzwalacza HTTP przepływu)",
+			"a Power Automate flow address looks like https://….logic.azure.com/workflows/… or https://….api.powerplatform.com/… (copy it from the flow's HTTP trigger)")
+	}
 	if kind == KindDiscord {
 		host := strings.ToLower(u.Hostname())
 		if host != "discord.com" && host != "discordapp.com" && host != "ptb.discord.com" && host != "canary.discord.com" {
@@ -375,6 +418,19 @@ func ValidateURL(kind, raw string) error {
 		}
 	}
 	return nil
+}
+
+// powerAutomateHost: adresy wyzwalaczy HTTP przepływów (Logic Apps, na
+// których działa Power Automate, i nowe adresy Power Platform; także
+// chmury rządowe USA).
+func powerAutomateHost(host string) bool {
+	host = strings.ToLower(host)
+	for _, suffix := range []string{".logic.azure.com", ".logic.azure.us", ".api.powerplatform.com", ".api.powerplatform.us"} {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Hint to bezpieczny opis adresu do pokazania w panelu (bez sekretu).

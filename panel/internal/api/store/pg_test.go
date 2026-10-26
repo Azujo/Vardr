@@ -27,7 +27,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"api_token_requests", "api_tokens", "incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "profiles", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
@@ -584,5 +584,103 @@ func testMFA(ctx context.Context, t *testing.T, db *PG) {
 	_ = db.SetSetting(ctx, "mfa_policy", "all", "ewa", now)
 	if v, err := db.Setting(ctx, "mfa_policy"); v != "all" || err != nil {
 		t.Fatalf("ustawienie: %q %v", v, err)
+	}
+
+	// Tokeny API: ważny po skrócie, unikalna nazwa wśród aktywnych,
+	// wygaśnięcie i unieważnienie; profil z ważnym tokenem nie do usunięcia
+	// (DeleteProfile liczy ważność według zegara bazy – czas bieżący).
+	now = time.Now()
+	if err := db.SaveProfile(ctx, Profile{ID: "integracje", Name: "Integracje", Permissions: map[string]string{"alerts": "read"}}, "adam", now); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := db.CreateAPIToken(ctx, APIToken{Name: "grafana", TokenHash: "hash-1", Prefix: "vardr_abc", Profile: "integracje",
+		CreatedBy: "adam", CreatedAt: now, ExpiresAt: now.Add(24 * time.Hour)})
+	if err != nil || tok.ID == 0 {
+		t.Fatalf("token: %+v %v", tok, err)
+	}
+	if _, err := db.CreateAPIToken(ctx, APIToken{Name: "Grafana", TokenHash: "hash-2", Prefix: "vardr_def", Profile: "viewer",
+		CreatedBy: "adam", CreatedAt: now, ExpiresAt: now.Add(time.Hour)}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("druga aktywna nazwa: %v", err)
+	}
+	if got, err := db.APITokenByHash(ctx, "hash-1", now); err != nil || got.ID != tok.ID {
+		t.Fatalf("po skrócie: %+v %v", got, err)
+	}
+	if _, err := db.APITokenByHash(ctx, "hash-1", now.Add(25*time.Hour)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("wygasły: %v", err)
+	}
+	if err := db.TouchAPIToken(ctx, tok.ID, now, "10.0.0.5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteProfile(ctx, "integracje"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("profil z ważnym tokenem: %v", err)
+	}
+	if counts, err := db.ProfileTokens(ctx, now); err != nil || counts["integracje"] != 1 {
+		t.Fatalf("tokeny profili: %v %v", counts, err)
+	}
+	if r, err := db.RevokeAPIToken(ctx, tok.ID, "ewa", now); err != nil || r.RevokedBy != "ewa" {
+		t.Fatalf("unieważnienie: %+v %v", r, err)
+	}
+	if _, err := db.RevokeAPIToken(ctx, tok.ID, "ewa", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("drugie unieważnienie: %v", err)
+	}
+	if _, err := db.APITokenByHash(ctx, "hash-1", now); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unieważniony: %v", err)
+	}
+	list, err := db.ListAPITokens(ctx, now)
+	if err != nil || len(list) != 1 || list[0].LastUsedIP != "10.0.0.5" || list[0].RevokedAt == nil {
+		t.Fatalf("lista: %+v %v", list, err)
+	}
+	third, err := db.CreateAPIToken(ctx, APIToken{Name: "grafana", TokenHash: "hash-3", Prefix: "vardr_ghi", Profile: "integracje",
+		CreatedBy: "adam", CreatedAt: now, ExpiresAt: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatalf("nazwa po unieważnieniu: %v", err)
+	}
+	// Historia zapytań tokenu: zapis paczką, odczyt od najnowszych ze
+	// stronicowaniem, licznik i retencja.
+	if err := db.RecordAPIRequests(ctx, []APIRequest{
+		{TokenID: third.ID, At: now.Add(-48 * time.Hour), Method: "GET", Path: "/api/v1/alerts?status=open", Status: 200, DurationMS: 12, IP: "10.0.0.5"},
+		{TokenID: third.ID, At: now, Method: "POST", Path: "/api/v1/groups", Status: 403, DurationMS: 1, IP: "10.0.0.5"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reqs, err := db.APIRequests(ctx, third.ID, 1, 0)
+	if err != nil || len(reqs) != 1 || reqs[0].Status != 403 {
+		t.Fatalf("historia: %+v %v", reqs, err)
+	}
+	if older, err := db.APIRequests(ctx, third.ID, 10, reqs[0].ID); err != nil || len(older) != 1 || older[0].Path != "/api/v1/alerts?status=open" {
+		t.Fatalf("starsze: %+v %v", older, err)
+	}
+	if counts, err := db.APIRequestCounts(ctx, now.Add(-24*time.Hour)); err != nil || counts[third.ID] != 1 {
+		t.Fatalf("licznik 24 h: %v %v", counts, err)
+	}
+	if n, err := db.DeleteOldAPIRequests(ctx, now.Add(-24*time.Hour)); err != nil || n != 1 {
+		t.Fatalf("retencja: %d %v", n, err)
+	}
+	// Sprzątanie: inne testy (profile) zakładają tylko profile wbudowane.
+	if _, err := db.RevokeAPIToken(ctx, third.ID, "adam", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteProfile(ctx, "integracje"); err != nil {
+		t.Fatalf("profil bez ważnych tokenów: %v", err)
+	}
+
+	// Kanał Power Automate / Teams z podpisem: sekret zapisany przy
+	// utworzeniu, zostaje przy zmianie kanału, wyłączany i zmieniany osobno.
+	ch, err := db.CreateChannel(ctx, Channel{Name: "Teams SOC", Kind: "teams", URL: "https://x.logic.azure.com/workflows/a",
+		Events: []string{"alert"}, Enabled: true, CreatedBy: "adam", SigningSecret: "vardrsig_1"})
+	if err != nil || !ch.Signed || ch.SigningSecret != "vardrsig_1" {
+		t.Fatalf("kanał Teams: %+v %v", ch, err)
+	}
+	if _, err := db.CreateChannel(ctx, Channel{Name: "zły", Kind: "slack", URL: "https://x", CreatedBy: "adam"}); err == nil {
+		t.Fatal("baza powinna odrzucić nieznany rodzaj kanału")
+	}
+	if upd, err := db.UpdateChannel(ctx, Channel{ID: ch.ID, Name: "Teams", Events: []string{"alert", "incident"}, Enabled: true}); err != nil || upd.SigningSecret != "vardrsig_1" {
+		t.Fatalf("zmiana kanału a sekret: %+v %v", upd, err)
+	}
+	if upd, err := db.SetChannelSecret(ctx, ch.ID, ""); err != nil || upd.Signed {
+		t.Fatalf("wyłączenie podpisu: %+v %v", upd, err)
+	}
+	if err := db.DeleteChannel(ctx, ch.ID); err != nil {
+		t.Fatal(err)
 	}
 }

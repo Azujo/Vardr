@@ -235,6 +235,8 @@ The command messages are in English. On the server: `docker compose run --rm api
 | `SIEM_ANCHOR_HOUR`, `SIEM_ANCHOR_TZ` | 7, `Europe/Warsaw` | daily archive anchor to a channel |
 | `SIEM_API_INTERNAL_LISTEN`, `SIEM_ALERT_RELAY_TOKEN` | `:8081`, – | relay of Grafana alerts to panel channels |
 | `SIEM_SYSLOG_TZ` | `Europe/Warsaw` | decoder tests in the panel |
+| `SIEM_API_TOKEN_RATE` | 600 | limit of requests per minute for one API token (a short burst above it is allowed; above the limit – 429) |
+| `SIEM_API_TOKEN_LOG_DAYS` | 30 | how long the panel keeps the request history of API tokens |
 
 ## siem-loadgen
 

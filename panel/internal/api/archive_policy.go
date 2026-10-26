@@ -277,6 +277,13 @@ func (s *Server) cancelArchivePolicyChange(w http.ResponseWriter, r *http.Reques
 // logowaniu (ochrona przed zgadywaniem na przejętej sesji).
 func (s *Server) reauth(w http.ResponseWriter, r *http.Request, password, op string) bool {
 	a := current(r)
+	if a.token != nil {
+		// Token nie ma hasła do potwierdzenia: operacje chronione hasłem
+		// zostają dla ludzi w panelu.
+		s.tokenDenied(r, a, "reauth:"+op)
+		writeError(w, http.StatusForbidden, "token_not_allowed", "ta operacja wymaga potwierdzenia hasłem – tylko po zalogowaniu w panelu")
+		return false
+	}
 	if password == "" {
 		writeError(w, http.StatusForbidden, "reauth_required", "ta zmiana osłabia ochronę – potwierdź ją swoim hasłem")
 		return false

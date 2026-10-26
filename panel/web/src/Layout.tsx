@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import { useDisclosure } from "@mantine/hooks";
 import {
   IconActivityHeartbeat,
+  IconApi,
   IconGridDots,
   IconAlertOctagon,
   IconAdjustments,
@@ -117,7 +118,8 @@ const sections: Section[] = [
       { to: "/admin/users", label: "nav.users", icon: <IconUsers size={18} />, perm: ["users", "read"] },
       { to: "/admin/profiles", label: "nav.profiles", hint: "nav.profilesHint", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
       { to: "/admin/ldap", label: "nav.ldap", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
-      { to: "/admin/notifications", label: "nav.notifications", hint: "Discord, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
+      { to: "/admin/api-tokens", label: "nav.apiTokens", hint: "nav.apiTokensHint", icon: <IconApi size={18} />, perm: ["users", "read"] },
+      { to: "/admin/notifications", label: "nav.notifications", hint: "Discord, Teams, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
       { to: "/admin/backup", label: "nav.backup", hint: "nav.backupHint", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
       { to: "/admin/audit", label: "nav.audit", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },
     ],

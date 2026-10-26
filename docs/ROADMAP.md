@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.6.0 • 07.10.2026
+Wersja planistyczna 1.7.0 • 26.10.2026 (plan wersji po 1.0: sekcja 17a)
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -446,13 +446,87 @@ Szacunki w godzinach pracy. Przy ok. 12 h tygodniowo: **40 h ≈ 1 miesiąc**. T
 - po etapie 4 (ok. 9–14 miesięcy): działająca detekcja w obu profilach i archiwum NIS2. To pierwsza wersja, którą da się sensownie pokazać;
 - po etapie 5: używalny produkt z własnym panelem.
 
-**Po MVP (v1/v2):** agent Linux, SentinelOne, F5, Forcepoint, GreyCortex, Kentico, sekwencje i korelacje zaawansowane, edytor regex/grok, SMS i eskalacje, MFA przez dostawcę tożsamości, polityki per `event.dataset`, aktualizacje agentów, HA.
+**Po MVP (v1/v2)** – zaktualizowane w sekcji 17a: agent Linux, SentinelOne, F5, Forcepoint, GreyCortex, Kentico, sekwencje i korelacje zaawansowane, edytor regex/grok, SMS i eskalacje, MFA przez dostawcę tożsamości, polityki per `event.dataset`, aktualizacje agentów, HA.
 
 **Sposoby skrócenia ścieżki, jeśli zajdzie potrzeba:**
 
 - w etapie 1 jako tymczasowy agent użyć gotowego kolektora (Vector, Fluent Bit) z tym samym kontraktem endpointu;
 - etap 5 ograniczyć do alertów i agentów, a reguły edytować jako pliki w repozytorium;
 - etap 8 (test skali) przesunąć za etap 4, jeśli wyniki etapu 0 sugerują problemy wydajnościowe.
+
+## 17a. Plan wersji po 1.0 (26.10.2026)
+
+MVP zamknięte 17.10.2026 (etapy 0–8), wydane wersje 1.0.1 (English update) i 1.0.2 (poprawki CodeQL). Kolejne funkcje wychodzą jako osobne wydania, w tej kolejności. Szacunki w godzinach pracy, jak w sekcji 17.
+
+| Wersja | Funkcja | Godziny | Zależy od |
+|---|---|---|---|
+| **1.1** | API dla integracji – ✅ wydane w 1.2.0 (26.10.2026) | 30–40 | – |
+| **1.2** | Powiadomienia Power Automate / Microsoft Teams – ✅ wydane w 1.2.0 (26.10.2026) | 15–20 | – (podpis HMAC wspólny z webhookiem) |
+| **1.3** | Scoring ryzyka osób i stacji | 40–60 | mapowanie tożsamości (etap 7) |
+| **1.4** | Serwer MCP (AI tylko do odczytu) | 30–40 | 1.1 |
+| **1.5** | Asystent AI w panelu (eksperymentalny) | 60–80 | 1.1, 1.4; korzysta z 1.3 |
+
+### 1.1 – API dla integracji
+
+Panel już korzysta z `/api/v1`; brakuje dostępu dla programów.
+
+- **Konta serwisowe z tokenami:** token przypisany do profilu uprawnień (`panel/internal/perm`), z datą wygaśnięcia, unieważnianiem i datą ostatniego użycia; w bazie tylko skrót tokenu, pełny token pokazany raz przy utworzeniu.
+- **Bezpieczeństwo:** limit zapytań na token, każda zmiana wykonana tokenem w audycie (z nazwą konta serwisowego), operacje wymagające ponownego podania hasła niedostępne dla tokenów.
+- **Dokumentacja OpenAPI** generowana z kodu lub utrzymywana obok, publikowana z panelem.
+- **Warunek ukończenia:** skrypt z tokenem tylko do odczytu pobiera alerty i zdarzenia; próba zmiany kończy się 403 i wpisem w audycie.
+
+### 1.2 – Power Automate i Microsoft Teams
+
+Microsoft wycofuje webhooki Teams oparte na connectorach Office 365; następcą są przepływy *Workflows* (Power Automate) z wyzwalaczem HTTP. Jeden kanał obsługuje oba przypadki.
+
+- Nowy typ kanału powiadomień: **Power Automate / Teams** – wiadomość jako *Adaptive Card* (waga, reguła, komputer, osoba, przycisk „Otwórz w panelu”), te same zdarzenia i filtry co Discord (alerty, rozwiązania, podsumowania, incydenty, terminy NIS2, kotwica archiwum), w języku systemu.
+- **Podpis HMAC** wiadomości (także dla ogólnego webhooka) – odbiorca może sprawdzić, że wiadomość wysłał Vardr. *Uwaga z realizacji (26.10.2026): Power Automate nie ma wbudowanej funkcji HMAC – przy Teams nadawcę uwierzytelnia tajny adres przepływu (`sig=…`), a podpis sprawdza usługa, do której przepływ przekazuje wiadomość (np. Azure Function), albo odbiorca webhooka.*
+- Dokumentacja: gotowy przepływ „wiadomość na kanale Teams” i przykład automatyzacji (np. zgłoszenie w systemie ticketów).
+- **Warunek ukończenia:** alert z laboratorium widoczny jako karta na kanale Teams; wiadomość z błędnym podpisem odrzucona przez odbiorcę sprawdzającego podpis (test jednostkowy podpisu; Power Automate – patrz uwaga wyżej).
+
+### 1.3 – Scoring ryzyka osób i stacji
+
+Ryzyko oparte na alertach: wiele drobnych alertów, z których żaden osobno nie jest groźny, razem daje sygnał.
+
+- **Na osobie** (`user.identity` – AD, Entra ID i VPN razem), nie na koncie, oraz na stacji (`host.name`).
+- **Punkty** za alert według wagi (domyślnie: niski 1, średni 5, wysoki 15, krytyczny 40), **wygaszanie w czasie** (np. połowa po 14 dniach), **mnożniki** dla kont uprzywilejowanych i stacji krytycznych (np. grupa DC). Alerty zamknięte jako fałszywy alarm się nie liczą.
+- **Poziomy:** niski, średni, wysoki, krytyczny – progi ustawiane w panelu. Wejście osoby lub stacji w poziom krytyczny tworzy alert.
+- **Panel:** ranking osób i stacji, wynik i jego składniki (które alerty, ile punktów) w alercie, incydencie, Huginnie i Tożsamościach.
+- Później: reguły „tylko punkty” (dodają ryzyko bez alertu).
+- **RODO:** ranking ryzyka pracowników to profilowanie – w dokumentacji zalecenie uzgodnienia z IOD; wgląd w wyniki jako osobne uprawnienie w profilach.
+- **Warunek ukończenia:** seria alertów niskich i średnich jednej osoby z AD i Entra ID podnosi ją do poziomu krytycznego i tworzy alert; po zamknięciu alertów jako FP wynik spada.
+
+### 1.4 – Serwer MCP
+
+Serwer [Model Context Protocol](https://modelcontextprotocol.io) pozwala podłączyć do Vardra dowolnego klienta AI – lokalny model (Ollama, LM Studio) albo zewnętrzny (np. Claude Desktop).
+
+- Narzędzia **tylko do odczytu**: wyszukiwanie zdarzeń (język Mímira, obowiązkowy zakres czasu i limit wierszy), alerty, oś czasu incydentu, reguły, pokrycie ATT&CK, stan agentów i źródeł, scoring ryzyka (1.3).
+- Dostęp tokenem z 1.1 z własnym profilem uprawnień; każde wywołanie narzędzia w audycie (kto, co, ile danych).
+- **Zastosowania:** czego brakuje (luki ATT&CK zestawione z posiadanymi źródłami), wgląd w incydent, kolejne zapytania, powtarzalne fałszywe alarmy jako kandydaci na wyjątki.
+- **Warunek ukończenia:** lokalny model odpowiada na pytanie „co się działo na koncie X w ostatnich 24 h” danymi z Vardra; token bez uprawnienia do zdarzeń dostaje odmowę.
+
+### 1.5 – Asystent AI w panelu (eksperymentalny)
+
+- Przycisk „Analiza AI” przy alercie i incydencie: streszczenie, możliwe wyjaśnienia, proponowane zapytania (do uruchomienia jednym kliknięciem), mapowanie na ATT&CK, szkic zgłoszenia NIS2.
+- Wsparcie wykrywania wzorców: grupowanie podobnych alertów, propozycje wyjątków dla powtarzalnych FP, propozycje reguł dla luk w pokryciu – zawsze do zatwierdzenia przez człowieka.
+- Połączenie z endpointem zgodnym z OpenAI (lokalnym albo zewnętrznym), ustawiane przez administratora; domyślnie wyłączone.
+- **Zasady (obowiązują też 1.4):**
+  - **AI tylko podpowiada** – nie zamyka alertów, nie zmienia reguł ani ustawień. Pola zdarzeń (nazwy kont, linie poleceń, treść sysloga) kontroluje atakujący, więc mogą zawierać instrukcje dla modelu (prompt injection); dane z logów są przekazywane modelowi jako dane, a odpowiedź jest wyraźnie oznaczona jako sugestia.
+  - **Dane osobowe:** domyślnie tylko model lokalny; zewnętrzny – świadome włączenie przez administratora (wpis w audycie), z opcją maskowania kont, adresów i nazw komputerów.
+  - **Audyt** każdego zapytania: kto pytał, o co, jakie dane wysłano i do jakiego modelu; limit zapytań.
+
+### Backlog (bez ustalonej kolejności)
+
+- **Źródła:** agent Linux; SentinelOne, F5, Forcepoint, GreyCortex, Kentico; pliki IIS/W3C; syslog po TLS z uwierzytelnieniem; logowania nieinteraktywne Entra ID (API beta, przy prawdziwym tenancie).
+- **Detekcja:** sekwencje i korelacje zaawansowane; edytor dekoderów regex/grok.
+- **Powiadomienia:** SMS i eskalacje (częściowo możliwe już przez Power Automate z 1.2).
+- **Logowanie:** SSO / MFA przez dostawcę tożsamości (Entra ID), WebAuthn.
+- **Archiwum:** S3 z Object Lock (compliance); retencja i polityki per `event.dataset`.
+- **Agenci:** automatyczne aktualizacje.
+- **Skala i dostępność:** HA i replikacja (W6), wydajność writera (W7), częste pola z `fields` w osobnych kolumnach (M4).
+- **Porządki z przeglądu:** kwarantanna nieczytelnych wiadomości w normalizatorze (M2), zapora na serwerze i ograniczenie dostępu do Grafany i ingest (M5), raport synchronizacji czasu agenta (M6) – do sprawdzenia, które są nadal aktualne.
+- **Publikacja:** automatyczne wydania na GitHubie (Actions na tagu: paczka serwera, MSI agenta, `odczytaj.exe`), szybki start w README.
+- **Laboratorium:** krótsza retencja surowego XML w ClickHouse (np. 1 dzień zamiast 5 – archiwum Urd przechowuje oryginały).
 
 ## 18. Pierwsze kroki (etap 0)
 

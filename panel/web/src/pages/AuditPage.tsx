@@ -16,6 +16,9 @@ const actionColors: Record<string, string> = {
   password_reset: "violet",
   user_created: "teal",
   user_updated: "indigo",
+  api_token_created: "teal",
+  api_token_revoked: "gray",
+  api_token_denied: "red",
 };
 
 export default function AuditPage() {

@@ -10,10 +10,12 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"siem/internal/contract"
@@ -114,6 +116,15 @@ type Server struct {
 	profileCache profileCache
 	// LDAP (opcjonalne, wymaga MFAKey): logowanie kontem domenowym (LDAPS).
 	LDAP LDAPStore
+	// APITokens (opcjonalne): tokeny API dla programów; TokenRatePerMin –
+	// limit zapytań jednego tokenu na minutę (0 – domyślny).
+	APITokens       APITokenStore
+	TokenRatePerMin int
+	// TokenLogDays: retencja historii zapytań tokenów (0 – 30 dni; sprząta
+	// siem-api). Kolejka historii – RunTokenLog.
+	TokenLogDays    int
+	tokenLog        chan store.APIRequest
+	tokenLogDropped atomic.Int64
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore
 	ldap      ldapState
@@ -162,146 +173,18 @@ func (s *Server) Handler() http.Handler {
 		s.LockFor = defaultLockFor
 	}
 	s.limits = map[string]*throttle.Limiter{}
+	if s.APITokens != nil && s.tokenLog == nil {
+		s.tokenLog = make(chan store.APIRequest, tokenLogBuffer)
+	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/health", s.health)
-	mux.HandleFunc("POST /api/v1/auth/login", s.login)
-	mux.HandleFunc("POST /api/v1/auth/mfa", s.loginMFA)
-	mux.HandleFunc("POST /api/v1/auth/mfa/enroll", s.loginEnroll)
-	mux.HandleFunc("POST /api/v1/auth/mfa/enroll/confirm", s.loginEnrollConfirm)
-	mux.Handle("GET /api/v1/account/mfa", s.authed(loggedIn, 0, s.accountMFA))
-	mux.Handle("PUT /api/v1/account/language", s.authed(loggedIn, allowPasswordChange, s.accountLanguage))
-	mux.Handle("POST /api/v1/account/mfa/setup", s.authed(loggedIn, 0, s.accountMFASetup))
-	mux.Handle("POST /api/v1/account/mfa/confirm", s.authed(loggedIn, 0, s.accountMFAConfirm))
-	mux.Handle("POST /api/v1/account/mfa/disable", s.authed(loggedIn, 0, s.accountMFADisable))
-	mux.Handle("POST /api/v1/account/mfa/recovery", s.authed(loggedIn, 0, s.accountMFARecovery))
-	mux.Handle("POST /api/v1/users/{id}/mfa/reset", s.authed(can("users", "write"), 0, s.resetUserMFA))
-	mux.Handle("GET /api/v1/permissions", s.authed(loggedIn, 0, s.listPermissions))
-	mux.Handle("GET /api/v1/profiles", s.authed(can("users", "read"), 0, s.listProfiles))
-	mux.Handle("PUT /api/v1/profiles/{id}", s.authed(can("users", "write"), 0, s.saveProfile))
-	mux.Handle("POST /api/v1/profiles/{id}/delete", s.authed(can("users", "write"), 0, s.deleteProfile))
-	mux.Handle("GET /api/v1/incidents", s.authed(can("incidents", "read"), 0, s.listIncidents))
-	mux.Handle("POST /api/v1/incidents", s.authed(can("incidents", "write"), 0, s.createIncident))
-	mux.Handle("GET /api/v1/incidents/{id}", s.authed(can("incidents", "read"), 0, s.getIncident))
-	mux.Handle("PATCH /api/v1/incidents/{id}", s.authed(can("incidents", "write"), 0, s.updateIncident))
-	mux.Handle("POST /api/v1/incidents/{id}/notes", s.authed(can("incidents", "write"), 0, s.addIncidentNote))
-	mux.Handle("POST /api/v1/incidents/{id}/evidence", s.authed(can("archive", "export"), 0, s.addIncidentEvidence))
-	mux.Handle("POST /api/v1/incidents/{id}/alerts", s.authed(can("incidents", "write"), 0, s.addIncidentAlerts))
-	mux.Handle("POST /api/v1/incidents/{id}/alerts/{aid}/remove", s.authed(can("incidents", "write"), 0, s.removeIncidentAlert))
-	mux.Handle("GET /api/v1/incidents/{id}/reports/{kind}/draft", s.authed(can("incidents", "read"), 0, s.draftReport))
-	mux.Handle("PUT /api/v1/incidents/{id}/reports/{kind}", s.authed(can("incidents", "write"), 0, s.saveReport))
-	mux.Handle("POST /api/v1/incidents/{id}/reports/{kind}/submit", s.authed(can("incidents", "write"), 0, s.submitReport))
-	mux.Handle("GET /api/v1/settings/ldap", s.authed(can("users", "read"), 0, s.getLDAPSettings))
-	mux.Handle("PUT /api/v1/settings/ldap", s.authed(can("users", "write"), 0, s.saveLDAPSettings))
-	mux.Handle("POST /api/v1/settings/ldap/test", s.authed(can("users", "write"), 0, s.testLDAP))
-	mux.Handle("POST /api/v1/settings/ldap/groups", s.authed(can("users", "write"), 0, s.ldapGroups))
-	mux.Handle("POST /api/v1/settings/ldap/check", s.authed(can("users", "write"), 0, s.checkLDAPAccount))
-	mux.Handle("GET /api/v1/settings/security", s.authed(can("users", "read"), 0, s.securitySettings))
-	mux.Handle("GET /api/v1/settings/language", s.authed(loggedIn, 0, s.languageSettings))
-	mux.Handle("PUT /api/v1/settings/language", s.authed(can("users", "write"), 0, s.setLanguageSettings))
-	mux.Handle("PUT /api/v1/settings/security", s.authed(can("users", "write"), 0, s.setSecuritySettings))
-	mux.Handle("GET /api/v1/auth/session", s.authed(loggedIn, allowPasswordChange, s.session))
-	mux.Handle("POST /api/v1/auth/logout", s.authed(loggedIn, allowPasswordChange, s.logout))
-	mux.Handle("POST /api/v1/auth/password", s.authed(loggedIn, allowPasswordChange, s.changePassword))
-
-	mux.Handle("GET /api/v1/users", s.authed(can("users", "read"), 0, s.listUsers))
-	mux.Handle("POST /api/v1/users", s.authed(can("users", "write"), 0, s.createUser))
-	mux.Handle("PATCH /api/v1/users/{id}", s.authed(can("users", "write"), 0, s.updateUser))
-	mux.Handle("POST /api/v1/users/{id}/reset-password", s.authed(can("users", "write"), 0, s.resetPassword))
-	mux.Handle("GET /api/v1/audit", s.authed(can("audit", "read"), 0, s.listAudit))
-
-	mux.Handle("GET /api/v1/agents", s.authed(can("agents", "read"), 0, s.listAgents))
-	mux.Handle("GET /api/v1/agents/orphan-certs", s.authed(can("agents", "write"), 0, s.orphanCerts))
-	mux.Handle("GET /api/v1/agents/{id}", s.authed(can("agents", "read"), 0, s.getAgent))
-	mux.Handle("DELETE /api/v1/agents/{id}", s.authed(can("agents", "write"), 0, s.deleteAgent))
-	mux.Handle("POST /api/v1/agents/{id}/revoke", s.authed(can("agents", "write"), 0, s.revokeAgent))
-	mux.Handle("PUT /api/v1/agents/{id}/group", s.authed(can("agents", "write"), 0, s.setAgentGroup))
-	mux.Handle("GET /api/v1/agents/{id}/uninstall-tokens", s.authed(can("agents", "write"), 0, s.listUninstallTokens))
-	mux.Handle("POST /api/v1/agents/{id}/uninstall-tokens", s.authed(can("agents", "write"), 0, s.createUninstallToken))
-	mux.Handle("POST /api/v1/agents/{id}/uninstall-tokens/{tid}/revoke", s.authed(can("agents", "write"), 0, s.revokeUninstallToken))
-
-	mux.Handle("GET /api/v1/groups", s.authed(can("agents", "read"), 0, s.listGroups))
-	mux.Handle("POST /api/v1/groups", s.authed(can("agents", "write"), 0, s.createGroup))
-	mux.Handle("PATCH /api/v1/groups/{id}", s.authed(can("agents", "write"), 0, s.updateGroup))
-	mux.Handle("DELETE /api/v1/groups/{id}", s.authed(can("agents", "write"), 0, s.deleteGroup))
-
-	mux.Handle("GET /api/v1/events", s.authed(can("events", "read"), 0, s.searchEvents))
-	mux.Handle("GET /api/v1/events/histogram", s.authed(can("events", "read"), 0, s.eventsHistogram))
-	mux.Handle("GET /api/v1/events/fields", s.authed(can("events", "read"), 0, s.eventFields))
-	mux.Handle("GET /api/v1/events/{id}", s.authed(can("events", "read"), 0, s.getEvent))
-
-	mux.Handle("GET /api/v1/archive", s.authed(can("archive", "read"), 0, s.archiveOverview))
-	mux.Handle("POST /api/v1/archive/verify", s.authed(can("archive", "write"), 0, s.archiveVerify))
-	mux.Handle("POST /api/v1/archive/recoveries", s.authed(can("archive", "write"), 0, s.requestRecovery))
-	mux.Handle("GET /api/v1/archive/exports", s.authed(can("archive", "export"), 0, s.listExports))
-	mux.Handle("POST /api/v1/archive/exports", s.authed(can("archive", "export"), 0, s.createExport))
-	mux.Handle("GET /api/v1/archive/exports/{id}/download", s.authed(can("archive", "export"), 0, s.downloadExport))
-	mux.Handle("GET /api/v1/archive/policy", s.authed(can("archive", "read"), 0, s.archivePolicy))
-	mux.Handle("POST /api/v1/archive/policy", s.authed(can("archive", "write"), 0, s.changeArchivePolicy))
-	mux.Handle("POST /api/v1/archive/policy/changes/{id}/cancel", s.authed(can("archive", "write"), 0, s.cancelArchivePolicyChange))
-	mux.Handle("GET /api/v1/archive/replays", s.authed(can("archive", "write"), 0, s.listReplays))
-	mux.Handle("POST /api/v1/archive/replays", s.authed(can("archive", "write"), 0, s.createReplay))
-
-	mux.Handle("GET /api/v1/alerts", s.authed(can("alerts", "read"), 0, s.listAlerts))
-	mux.Handle("GET /api/v1/alerts/summary", s.authed(can("alerts", "read"), 0, s.alertsSummary))
-	mux.Handle("GET /api/v1/alerts/{id}", s.authed(can("alerts", "read"), 0, s.getAlert))
-	mux.Handle("POST /api/v1/alerts/{id}/status", s.authed(can("alerts", "write"), 0, s.setAlertStatus))
-	mux.Handle("POST /api/v1/alerts/bulk-status", s.authed(can("alerts", "write"), 0, s.bulkAlertStatus))
-	mux.Handle("POST /api/v1/alerts/{id}/assign", s.authed(can("alerts", "write"), 0, s.assignAlert))
-	mux.Handle("POST /api/v1/alerts/{id}/notes", s.authed(can("alerts", "write"), 0, s.addAlertNote))
-	mux.Handle("GET /api/v1/alert-assignees", s.authed(can("alerts", "read"), 0, s.listAssignees))
-	mux.Handle("GET /api/v1/rules", s.authed(can("rules", "read"), 0, s.listRules))
-	mux.Handle("GET /api/v1/attack/dictionary", s.authed(can("rules", "read"), 0, s.attackDictionary))
-	mux.Handle("GET /api/v1/attack/coverage", s.authed(can("rules", "read"), 0, s.attackCoverage))
-	mux.Handle("GET /api/v1/attack/navigator", s.authed(can("rules", "read"), 0, s.attackNavigator))
-	mux.Handle("GET /api/v1/system", s.authed(can("system", "read"), 0, s.systemStatus))
-	mux.Handle("POST /api/v1/rules/test", s.authed(can("rules", "test"), 0, s.testRule))
-	mux.Handle("GET /api/v1/rules/{id}/versions", s.authed(can("rules", "read"), 0, s.ruleVersions))
-	mux.Handle("POST /api/v1/rules/{id}/enabled", s.authed(can("rules", "write"), 0, s.setRuleEnabled))
-	mux.Handle("POST /api/v1/rules/bulk", s.authed(can("rules", "write"), 0, s.bulkRules))
-	mux.Handle("GET /api/v1/rules/trial", s.authed(can("rules", "read"), 0, s.trialRules))
-	mux.Handle("POST /api/v1/rules/wizard/events", s.authed(can("rules", "test"), 0, s.wizardEvents))
-	mux.Handle("GET /api/v1/panel-rules/{id}", s.authed(can("rules", "read"), 0, s.getPanelRule))
-	mux.Handle("PUT /api/v1/panel-rules/{id}", s.authed(can("rules", "write"), 0, s.savePanelRule))
-	mux.Handle("POST /api/v1/panel-rules/{id}/delete", s.authed(can("rules", "write"), 0, s.deletePanelRule))
-
-	mux.Handle("GET /api/v1/decoders", s.authed(can("decoders", "read"), 0, s.listDecoders))
-	mux.Handle("GET /api/v1/decoders/samples", s.authed(can("decoders", "test"), 0, s.decoderSamples))
-	mux.Handle("POST /api/v1/decoders/test", s.authed(can("decoders", "test"), 0, s.testDecoder))
-	mux.Handle("GET /api/v1/decoders/{id}/versions", s.authed(can("decoders", "read"), 0, s.decoderVersions))
-	mux.Handle("PUT /api/v1/decoders/{id}", s.authed(can("decoders", "write"), 0, s.saveDecoder))
-	mux.Handle("POST /api/v1/decoders/{id}/enabled", s.authed(can("decoders", "write"), 0, s.setDecoderEnabled))
-	mux.Handle("POST /api/v1/decoders/{id}/revert", s.authed(can("decoders", "write"), 0, s.revertDecoder))
-
-	mux.Handle("GET /api/v1/identities", s.authed(can("identities", "read"), 0, s.getIdentities))
-	mux.Handle("GET /api/v1/identities/people", s.authed(can("identities", "read"), 0, s.listPeople))
-	mux.Handle("GET /api/v1/identities/resolve", s.authed(can("identities", "read"), 0, s.resolveIdentity))
-	mux.Handle("GET /api/v1/identities/domains-seen", s.authed(can("identities", "read"), 0, s.domainsSeen))
-	mux.Handle("PUT /api/v1/identities/domains", s.authed(can("identities", "write"), 0, s.setIdentityDomains))
-	mux.Handle("PUT /api/v1/identities/shared", s.authed(can("identities", "write"), 0, s.setIdentityShared))
-	mux.Handle("GET /api/v1/backup", s.authed(can("backup", "read"), 0, s.getBackup))
-	mux.Handle("PUT /api/v1/backup", s.authed(can("backup", "write"), 0, s.saveBackup))
-	mux.Handle("POST /api/v1/backup/requests", s.authed(can("backup", "write"), 0, s.addBackupRequest))
-	mux.Handle("POST /api/v1/backup/restore", s.authed(can("backup", "write"), 0, s.restoreBackup))
-	mux.Handle("POST /api/v1/identities/aliases", s.authed(can("identities", "write"), 0, s.setIdentityAlias))
-	mux.Handle("POST /api/v1/identities/aliases/delete", s.authed(can("identities", "write"), 0, s.deleteIdentityAlias))
-
-	mux.Handle("GET /api/v1/quarantine", s.authed(can("quarantine", "read"), 0, s.listQuarantine))
-	mux.Handle("POST /api/v1/quarantine/reprocess", s.authed(can("quarantine", "write"), 0, s.reprocessQuarantine))
-
-	mux.Handle("GET /api/v1/notify/channels", s.authed(can("notify", "read"), 0, s.listChannels))
-	mux.Handle("POST /api/v1/notify/channels", s.authed(can("notify", "write"), 0, s.createChannel))
-	mux.Handle("PATCH /api/v1/notify/channels/{id}", s.authed(can("notify", "write"), 0, s.updateChannel))
-	mux.Handle("POST /api/v1/notify/channels/{id}/delete", s.authed(can("notify", "write"), 0, s.deleteChannel))
-	mux.Handle("POST /api/v1/notify/channels/{id}/test", s.authed(can("notify", "write"), 0, s.testChannel))
-	mux.Handle("POST /api/v1/notify/anchor", s.authed(can("notify", "write"), 0, s.sendAnchor))
-
-	mux.Handle("GET /api/v1/enroll-tokens", s.authed(can("deploy", "read"), 0, s.listTokens))
-	mux.Handle("POST /api/v1/enroll-tokens", s.authed(can("deploy", "write"), 0, s.createToken))
-	mux.Handle("POST /api/v1/enroll-tokens/{id}/revoke", s.authed(can("deploy", "write"), 0, s.revokeToken))
-	mux.Handle("POST /api/v1/enroll-tokens/package", s.authed(can("deploy", "write"), 0, s.tokenPackage))
-	mux.Handle("POST /api/v1/enroll-tokens/msi", s.authed(can("deploy", "write"), 0, s.tokenMSI))
-	mux.Handle("GET /api/v1/agent-update.msi", s.authed(can("deploy", "write"), 0, s.agentUpdateMSI))
+	for _, rt := range s.routes() {
+		if rt.need == public {
+			mux.HandleFunc(rt.pattern, rt.h)
+		} else {
+			mux.Handle(rt.pattern, s.authed(rt.need, rt.flags, rt.h))
+		}
+	}
 
 	// Dla agentów (bez sesji panelu): rejestracja tokenem i odnowienie certyfikatu.
 	mux.HandleFunc("POST /enroll/v1/register", s.enrollRegister)
@@ -493,8 +376,18 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) audit(r *http.Request, actor *store.User, action, target string, details map[string]any) {
 	e := store.AuditEntry{Action: action, Target: target, IP: clientIP(r), Details: details}
 	if actor != nil {
-		id := actor.ID
-		e.UserID, e.Username = &id, actor.Username
+		e.Username = actor.Username
+		if actor.ID != 0 { // 0 – token API (aktor api:<nazwa>, bez konta)
+			id := actor.ID
+			e.UserID = &id
+		}
+	}
+	if t := current(r).token; t != nil {
+		e.Details = maps.Clone(details)
+		if e.Details == nil {
+			e.Details = map[string]any{}
+		}
+		e.Details["api_token_id"] = t.ID
 	}
 	if err := s.Store.Audit(context.WithoutCancel(r.Context()), e); err != nil {
 		s.Log.Error("writing the audit entry failed", "action", action, "err", err)

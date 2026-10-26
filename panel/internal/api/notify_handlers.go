@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"siem/internal/lang"
+	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/notify"
 )
@@ -22,6 +23,7 @@ type NotifyStore interface {
 	CreateChannel(ctx context.Context, c store.Channel) (store.Channel, error)
 	UpdateChannel(ctx context.Context, c store.Channel) (store.Channel, error)
 	DeleteChannel(ctx context.Context, id int64) error
+	SetChannelSecret(ctx context.Context, id int64, secret string) (store.Channel, error)
 	NotifyLog(ctx context.Context, limit int) ([]store.NotifyLogEntry, error)
 }
 
@@ -100,7 +102,7 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 	if s.Notify.Anchor != nil {
 		anchorHour = s.Notify.Anchor.Hour
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"channels": views, "events": notify.Events, "log": logs,
+	writeJSON(w, http.StatusOK, map[string]any{"channels": views, "events": notify.Events, "kinds": notify.Kinds, "log": logs,
 		"anchor_hour": anchorHour, "relay_configured": s.Notify.RelayConfigured})
 }
 
@@ -112,7 +114,15 @@ type channelRequest struct {
 	AlertFilter store.AlertFilter `json:"alert_filter"`
 	Enabled     *bool             `json:"enabled"`
 	Password    string            `json:"password"`
+	// Sign: podpis HMAC wiadomości (webhook, Teams) – nil: bez zmian.
+	// NewSecret: nowy sekret podpisu (poprzedni przestaje działać).
+	Sign      *bool `json:"sign"`
+	NewSecret bool  `json:"new_secret"`
 }
+
+// newSigningSecret: sekret podpisu (32 B, base64url) z prefiksem do
+// rozpoznania w skanerach sekretów.
+func newSigningSecret() string { return "vardrsig_" + auth.NewToken() }
 
 // cleanFilter sprawdza filtr alertów kanału.
 func cleanFilter(f store.AlertFilter) (store.AlertFilter, bool) {
@@ -190,8 +200,11 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	case req.Name == "" || len([]rune(req.Name)) > 100:
 		writeError(w, http.StatusBadRequest, "bad_name", "podaj nazwę kanału (do 100 znaków)")
 		return
-	case req.Kind != notify.KindDiscord && req.Kind != notify.KindWebhook:
-		writeError(w, http.StatusBadRequest, "bad_kind", "rodzaj kanału: discord albo webhook")
+	case !slices.Contains(notify.Kinds, req.Kind):
+		writeError(w, http.StatusBadRequest, "bad_kind", "rodzaj kanału: discord, teams albo webhook")
+		return
+	case req.Sign != nil && *req.Sign && !notify.Signable(req.Kind):
+		writeError(w, http.StatusBadRequest, "not_signable", "podpis wiadomości jest dostępny dla kanałów webhook i Power Automate / Teams")
 		return
 	case !ok:
 		writeError(w, http.StatusBadRequest, "bad_events", "nieznany rodzaj powiadomień")
@@ -201,8 +214,13 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_url", err)
 		return
 	}
+	secret := ""
+	if req.Sign != nil && *req.Sign {
+		secret = newSigningSecret()
+	}
 	c, err := s.Notify.Store.CreateChannel(r.Context(), store.Channel{Name: req.Name, Kind: req.Kind, URL: req.URL,
-		Events: events, AlertFilter: filter, Enabled: req.Enabled == nil || *req.Enabled, CreatedBy: a.user.Username})
+		Events: events, AlertFilter: filter, Enabled: req.Enabled == nil || *req.Enabled, CreatedBy: a.user.Username,
+		SigningSecret: secret})
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "name_taken", "kanał o tej nazwie już istnieje")
 		return
@@ -212,8 +230,12 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, &a.user, "notify_channel_created", c.Name, map[string]any{"kind": c.Kind, "events": c.Events,
-		"alert_filter": c.AlertFilter, "url": notify.Hint(c.URL)})
-	writeJSON(w, http.StatusCreated, map[string]any{"channel": channelView{Channel: c, URLHint: notify.Hint(c.URL)}})
+		"alert_filter": c.AlertFilter, "url": notify.Hint(c.URL), "signed": c.Signed})
+	out := map[string]any{"channel": channelView{Channel: c, URLHint: notify.Hint(c.URL)}}
+	if secret != "" {
+		out["signing_secret"] = secret // tylko w tej odpowiedzi
+	}
+	writeJSON(w, http.StatusCreated, out)
 }
 
 // updateChannel zmienia kanał. Wyłączenie, rezygnacja z rodzaju powiadomień
@@ -249,9 +271,23 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	if (req.Sign != nil && *req.Sign || req.NewSecret) && !notify.Signable(c.Kind) {
+		writeError(w, http.StatusBadRequest, "not_signable", "podpis wiadomości jest dostępny dla kanałów webhook i Power Automate / Teams")
+		return
+	}
+	// Podpis: włączenie albo nowy sekret – nowy sekret; wyłączenie – bez.
+	secretChange, secret := false, ""
+	switch {
+	case req.Sign != nil && !*req.Sign && c.Signed:
+		secretChange = true
+	case req.NewSecret || (req.Sign != nil && *req.Sign && !c.Signed):
+		secretChange, secret = true, newSigningSecret()
+	}
+	// Wyłączenie podpisu i nowy sekret (stary przestaje działać u odbiorcy)
+	// zmieniają zaufanie do kanału – jak zmiana adresu, z hasłem.
 	weakening := (c.Enabled && !enabled) || (req.URL != "" && req.URL != c.URL) ||
 		slices.ContainsFunc(c.Events, func(e string) bool { return !slices.Contains(events, e) }) ||
-		narrows(c.AlertFilter, filter)
+		narrows(c.AlertFilter, filter) || (secretChange && c.Signed)
 	if weakening && !s.reauth(w, r, req.Password, "notify_channel_change") {
 		return
 	}
@@ -265,10 +301,21 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
+	if secretChange {
+		if upd, err = s.Notify.Store.SetChannelSecret(r.Context(), c.ID, secret); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
 	s.audit(r, &a.user, "notify_channel_changed", upd.Name, map[string]any{"events": upd.Events, "enabled": upd.Enabled,
-		"alert_filter": upd.AlertFilter, "url_changed": req.URL != "" && req.URL != c.URL,
-		"previous": map[string]any{"name": c.Name, "events": c.Events, "enabled": c.Enabled, "alert_filter": c.AlertFilter}})
-	writeJSON(w, http.StatusOK, map[string]any{"channel": channelView{Channel: upd, URLHint: notify.Hint(upd.URL)}})
+		"alert_filter": upd.AlertFilter, "url_changed": req.URL != "" && req.URL != c.URL, "signed": upd.Signed,
+		"secret_changed": secretChange && secret != "",
+		"previous":       map[string]any{"name": c.Name, "events": c.Events, "enabled": c.Enabled, "alert_filter": c.AlertFilter, "signed": c.Signed}})
+	out := map[string]any{"channel": channelView{Channel: upd, URLHint: notify.Hint(upd.URL)}}
+	if secret != "" {
+		out["signing_secret"] = secret // tylko w tej odpowiedzi
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) deleteChannel(w http.ResponseWriter, r *http.Request) {
@@ -306,8 +353,11 @@ func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	l := s.Notify.Svc.Language(r.Context())
 	err := s.Notify.Svc.SendTo(r.Context(), c, notify.Message{Event: notify.EventTest, Severity: notify.SevInfo,
-		Title: "Test kanału „" + c.Name + "”", Text: "Wiadomość testowa z panelu Vardr (wysłał " + a.user.Username + ").", At: s.now()})
+		Title: lang.Pick(l, "Test kanału „"+c.Name+"”", "Channel test “"+c.Name+"”"),
+		Text:  lang.Pick(l, "Wiadomość testowa z panelu Vardr (wysłał "+a.user.Username+").", "Test message from the Vardr panel (sent by "+a.user.Username+")."),
+		At:    s.now()})
 	s.audit(r, &a.user, "notify_channel_tested", c.Name, map[string]any{"ok": err == nil})
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, "send_failed", lang.Errorf("wysyłka nieudana: %w", "sending failed: %w", err))

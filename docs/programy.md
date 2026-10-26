@@ -224,6 +224,8 @@ W laboratorium: `docker compose run --rm api bootstrap-admin -username admin`.
 | `SIEM_ANCHOR_HOUR`, `SIEM_ANCHOR_TZ` | 7, `Europe/Warsaw` | dzienna kotwica archiwum na kanał |
 | `SIEM_API_INTERNAL_LISTEN`, `SIEM_ALERT_RELAY_TOKEN` | `:8081`, – | przekaźnik alertów Grafany na kanały panelu |
 | `SIEM_SYSLOG_TZ` | `Europe/Warsaw` | test dekoderów w panelu |
+| `SIEM_API_TOKEN_RATE` | 600 | limit zapytań jednego tokenu API na minutę (krótki zapas ponad limit; powyżej – 429) |
+| `SIEM_API_TOKEN_LOG_DAYS` | 30 | jak długo panel przechowuje historię zapytań tokenów API |
 
 ## siem-loadgen
 

@@ -111,9 +111,10 @@ The menu is grouped by the kind of work: **Detection** (Alerts, Incidents, Detec
 | **Urd** | `/archive` | NIS2 archive: state, segments, verifications, inconsistency handling (files unknown to the catalog – adoption after checking hashes or quarantine, with a reason and password; history of operations), policy (enabling, retention, groups), auditor exports, replay to `siem.events_replay` |
 | **Himinbjörg** | `/system` | state of services, queues, disks and databases (from Prometheus); links to Grafana: the "pipeline health" and "event overview" dashboards, active alerts, alert rules, Explore – with the chosen time range, and charts of that area at every group and problem |
 | **Users** | `/admin/users` | accounts, profiles, password reset, MFA requirement |
+| **API tokens** | `/admin/api-tokens` | tokens for programs and integrations: profile, validity, last use, revocation; OpenAPI description ([API](#api)) |
 | **Audit log** | `/admin/audit` | who changed what and when in the panel |
 | **Backups** | `/admin/backup` | tabs: *Settings* (schedule, contents, retention, SFTP/SMB/S3 destination with credentials), backup *History*, *Restore* (list of backups, content check, restoring the database with configuration and/or Grafana with a backup of the current state); on-demand backup, connection test |
-| **Notifications** | `/admin/notifications` | channels (Discord, webhook) with message kinds (alerts with level and rule filters, health, archive anchor), channel test, system language |
+| **Notifications** | `/admin/notifications` | channels (Discord, Power Automate / Teams, webhook – [Notifications](#notifications)) with message kinds (alerts with level and rule filters, health, archive anchor), channel test, system language |
 
 ## Event search (Mímir)
 
@@ -143,6 +144,81 @@ Lost-contact and silent-source alerts close themselves when the agent or the sou
 
 Further hits of the same rule with the same key (e.g. the same person, the same address) within the merge window go to the same alert: the counter grows and events join the timeline. When one rule raises more than `SIEM_ALERT_NOTIFY_PER_RULE` new alerts within `SIEM_ALERT_NOTIFY_WINDOW`, the channel gets one digest message instead of a series.
 
+## Notifications
+
+*Administration → Notifications*: channels to which Vardr sends messages outside the system – detection alerts (with level and rule filters), incidents and NIS2 report deadlines, health alerts from Grafana and the daily archive anchor. Messages are in the system language. A channel address is a secret: the panel shows only its beginning and end, and disabling a channel, opting out of a message kind, narrowing the filter, changing the address and deleting require a password and are recorded in the audit log.
+
+| Kind | Where | Content |
+|---|---|---|
+| **Discord** | a Discord channel webhook (`https://discord.com/api/webhooks/…`) | an embed coloured by severity |
+| **Power Automate / Teams** | the HTTP trigger of a Power Automate flow (`https://….logic.azure.com/workflows/…` or `https://….api.powerplatform.com/…`) | an Adaptive Card (title coloured by severity, fields, a "Vardr – Panel" button) and data in the `vardr` field |
+| **Webhook (JSON)** | any HTTPS address (n8n, ticketing, your own service) | `{source, event, severity, title, text, fields, at}` |
+
+### Microsoft Teams via Power Automate
+
+Microsoft is retiring Teams webhooks based on Office 365 connectors; their successor is *Workflows* (Power Automate) with an HTTP trigger.
+
+1. In Teams, on the channel: *…* → *Workflows* → the template **"Post to a channel when a webhook request is received"** (or a new flow from this template in Power Automate). Choose the team and channel.
+2. Copy the trigger address (*When a Teams webhook request is received* → *HTTP URL*). The address contains an access signature (`sig=…`) – whoever knows it can post to the channel; treat it like a password.
+3. In the panel: *Add channel* → **Power Automate / Teams**, paste the address, tick the message kinds, save and click *Test*.
+
+The template shows the card from the `attachments` field. A custom flow (e.g. a ticket in the ticketing system, an SMS, escalation only for critical alerts) can use the data in the `vardr` field (the same as the JSON webhook: `event`, `severity`, `title`, `text`, `fields`, `at`). Values from events do not become links in the card (an attacker cannot slip a "Panel" link into a command line).
+
+### Message signing (HMAC)
+
+**Webhook** and **Power Automate / Teams** channels can sign messages (*Sign messages* when adding a channel, or *Enable signing* on the channel). The panel shows the secret (`vardrsig_…`) once; *New secret* invalidates the previous one, and disabling signing or a new secret require a password.
+
+Every message has the headers:
+
+- `X-Vardr-Timestamp` – the sending time (Unix seconds),
+- `X-Vardr-Signature` – `sha256=<hex>`: HMAC-SHA256 with the secret over `<X-Vardr-Timestamp>.<request body>`.
+
+The recipient computes the signature from the raw request body, compares it in constant time and rejects messages with a timestamp older than a few minutes (replay protection):
+
+```python
+import hashlib, hmac, time
+
+def vardr_signature_ok(secret: str, headers: dict, body: bytes, max_age: int = 300) -> bool:
+    ts = headers.get("X-Vardr-Timestamp", "")
+    sig = headers.get("X-Vardr-Signature", "")
+    if not ts.isdigit() or abs(time.time() - int(ts)) > max_age:
+        return False
+    mac = hmac.new(secret.encode(), ts.encode() + b"." + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, "sha256=" + mac)
+```
+
+Power Automate has no built-in HMAC function – for a Teams channel the sender is authenticated by the secret flow address (`sig=…`). The signature is useful when the flow forwards the message to a service that checks it (e.g. an Azure Function), and for webhook channels.
+
 ## API
 
-The panel is a client of its own JSON API (`/api/v1/…`, a session in an `HttpOnly` cookie, CSRF protection with the `X-CSRF-Token` header). Errors have a fixed code (`error`), a Polish description (`message`) and – for validation errors – an English one (`message_en`). The list of routes: `panel/internal/api/server.go` (`Handler`). Agents use separate routes without a session, authenticated with a token or certificate: `/enroll/v1/register`, `/enroll/v1/renew`, `/enroll/v1/config`.
+The panel is a client of its own JSON API (`/api/v1/…`, a session in an `HttpOnly` cookie, CSRF protection with the `X-CSRF-Token` header). Programs – scripts, integrations (SOAR, ticketing, Power Automate), an MCP server – use the same API with an **API token**. Agents have separate routes without a session, authenticated with an enrollment token or certificate: `/enroll/v1/register`, `/enroll/v1/renew`, `/enroll/v1/config`.
+
+### API tokens
+
+A panel administrator creates a token in *Administration → API tokens* (confirmed with a password):
+
+- **A permission profile** like an account – the token sees and changes only what the profile allows. A read-only profile is usually enough for an integration (e.g. *Viewer* or a custom one: alerts and events read-only).
+- **Token restrictions regardless of the profile:** it does not manage accounts, profiles or tokens (the *Users and security* module at most read-only), does not perform operations that require a password (weakening the archive policy, restoring backups, changing profiles) or account routes (session, MFA, password change). A stolen token gives no permanent foothold in the panel.
+- **Validity** from 1 to 365 days (90 by default) – a token that never expires stays in forgotten scripts. The list shows the last use (time and address) and tokens about to expire; revocation is immediate.
+- **The secret is shown once**, at creation; the database keeps only a SHA-256 hash and the beginning of the token (`vardr_abc123…`) to recognize it in the list. The `vardr_` prefix helps secret scanners find tokens committed to repositories.
+- **Audit:** every change made with a token is in the audit log as `api:<name>` (with the token number in the details); the "who" fields (alerts, incidents, exports) also show `api:<name>`. A denied request (an operation outside the profile, a session-only route) is an `api_token_denied` entry – an integration error or token misuse.
+- **Request history:** every token request (method, path with parameters, response code, response time, IP address) is in the panel – a 24-hour counter next to the token, a click opens the history – and in the siem-api log (`API token request`). The history is kept for 30 days (`SIEM_API_TOKEN_LOG_DAYS`); `429` responses are not recorded.
+- **Rate limit:** 600 requests per minute per token (`SIEM_API_TOKEN_RATE`), above it – `429` with `Retry-After`.
+
+Usage – the `Authorization: Bearer` header (no cookie, no CSRF):
+
+```bash
+curl -H "Authorization: Bearer vardr_…" "https://siem.example.local:8444/api/v1/alerts?status=open&level=high"
+```
+
+```bash
+curl -H "Authorization: Bearer vardr_…" "https://siem.example.local:8444/api/v1/events?q=event.code:4625&from=2026-10-26T00:00:00Z"
+```
+
+`GET /api/v1/api-tokens/self` returns the token's name, profile, permissions and expiry – to check an integration's configuration.
+
+### API description (OpenAPI)
+
+`GET /api/v1/openapi.json` (no sign-in) returns an OpenAPI 3.1 description of all routes – load it into Swagger UI, Postman or a client generator. The description is built from the same route table as the server (`panel/internal/api/routes.go`), so it never drifts from the code. Each operation lists the required permission (`x-vardr-permission`, e.g. `alerts:read`) and whether tokens may use it (`x-vardr-token`). Query parameters are described for the routes used by integrations (alerts, events, incidents, audit); request and response bodies – as a JSON object.
+
+Errors have a fixed code (`error`), a Polish description (`message`) and – for validation errors – an English one (`message_en`); an integration should recognize an error by its code.

@@ -231,7 +231,49 @@ export const api = {
 
   audit: (before?: number) =>
     request<{ entries: AuditEntry[] }>("GET", `/api/v1/audit?limit=100${before ? `&before=${before}` : ""}`),
+
+  apiTokens: () =>
+    request<{
+      tokens: APIToken[];
+      enabled: boolean;
+      default_days?: number;
+      max_days?: number;
+      log_days?: number;
+      requests_24h?: Record<string, number>;
+    }>("GET", "/api/v1/api-tokens"),
+  apiTokenRequests: (id: number, before?: number) =>
+    request<{ requests: APIRequest[] }>("GET", `/api/v1/api-tokens/${id}/requests${before ? `?before=${before}` : ""}`),
+  createAPIToken: (t: { name: string; description: string; profile: string; days: number; password: string }) =>
+    request<{ token: APIToken; secret: string }>("POST", "/api/v1/api-tokens", t),
+  revokeAPIToken: (id: number) => request<{ token: APIToken }>("POST", `/api/v1/api-tokens/${id}/revoke`),
 };
+
+// APIRequest: zapytanie wykonane tokenem (historia w panelu).
+export interface APIRequest {
+  id: number;
+  at: string;
+  method: string;
+  path: string;
+  status: number;
+  duration_ms: number;
+  ip: string;
+}
+
+// APIToken: token programu (konto serwisowe) – sam token tylko przy utworzeniu.
+export interface APIToken {
+  id: number;
+  name: string;
+  description: string;
+  prefix: string;
+  profile: string;
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at?: string;
+  last_used_ip?: string;
+  revoked_at?: string;
+  revoked_by?: string;
+}
 
 // Nazwy profili wbudowanych (gdy lista profili jeszcze się nie wczytała).
 export const roleLabels: Record<string, string> = translatedStrings("role", ["admin", "analyst", "viewer"]);
@@ -1084,10 +1126,14 @@ export interface AlertFilter {
   rules?: string[];
 }
 
+export type ChannelKind = "discord" | "teams" | "webhook";
+
 export interface NotifyChannel {
   id: number;
   name: string;
-  kind: "discord" | "webhook";
+  kind: ChannelKind;
+  // signed: wiadomości z podpisem HMAC (sekret tylko przy utworzeniu).
+  signed: boolean;
   url_hint: string;
   events: NotifyEvent[];
   alert_filter: AlertFilter;
@@ -1115,12 +1161,14 @@ export interface NotifyLogEntry {
 
 export interface ChannelRequest {
   name: string;
-  kind?: "discord" | "webhook";
+  kind?: ChannelKind;
   url?: string;
   events: NotifyEvent[];
   alert_filter?: AlertFilter;
   enabled?: boolean;
   password?: string;
+  sign?: boolean;
+  new_secret?: boolean;
 }
 
 export const notifyApi = {
@@ -1129,8 +1177,10 @@ export const notifyApi = {
       "GET",
       "/api/v1/notify/channels",
     ),
-  create: (c: ChannelRequest) => request<{ channel: NotifyChannel }>("POST", "/api/v1/notify/channels", c),
-  update: (id: number, c: ChannelRequest) => request<{ channel: NotifyChannel }>("PATCH", `/api/v1/notify/channels/${id}`, c),
+  create: (c: ChannelRequest) =>
+    request<{ channel: NotifyChannel; signing_secret?: string }>("POST", "/api/v1/notify/channels", c),
+  update: (id: number, c: ChannelRequest) =>
+    request<{ channel: NotifyChannel; signing_secret?: string }>("PATCH", `/api/v1/notify/channels/${id}`, c),
   remove: (id: number, password: string) => request<void>("POST", `/api/v1/notify/channels/${id}/delete`, { password }),
   test: (id: number) => request<{ message: string }>("POST", `/api/v1/notify/channels/${id}/test`),
   sendAnchor: () => request<{ message: string }>("POST", "/api/v1/notify/anchor"),

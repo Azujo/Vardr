@@ -7,6 +7,8 @@ import {
   Button,
   Card,
   Checkbox,
+  Code,
+  CopyButton,
   Group,
   Modal,
   MultiSelect,
@@ -22,7 +24,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAnchor, IconBell, IconPlus, IconSend, IconTrash } from "@tabler/icons-react";
+import { IconAnchor, IconBell, IconCheck, IconCopy, IconKey, IconPlus, IconSend, IconSignature, IconTrash } from "@tabler/icons-react";
 import {
   ApiError,
   alertsApi,
@@ -34,6 +36,7 @@ import {
   settingsApi,
   type AlertFilter,
   type AlertLevel,
+  type ChannelKind,
   type ChannelRequest,
   type NotifyChannel,
   type NotifyEvent,
@@ -44,6 +47,44 @@ import { useAuth } from "../auth";
 import { languages } from "../i18n";
 
 const allEvents: NotifyEvent[] = ["alert", "incident", "health", "anchor"];
+
+const kindLabels: Record<ChannelKind, string> = { discord: "Discord", teams: "Power Automate / Teams", webhook: "Webhook (JSON)" };
+// Podpis HMAC – kanały, których odbiorca może go sprawdzić (nie Discord).
+const signable = (k: ChannelKind) => k === "webhook" || k === "teams";
+
+// Sekret podpisu pokazywany raz – przy utworzeniu kanału albo nowym sekrecie.
+function SigningSecret({ data, onClose }: { data: { channel: string; secret: string } | null; onClose: () => void }) {
+  const { t } = useTranslation("admin");
+  return (
+    <Modal opened={data !== null} onClose={onClose} title={t("notify.secretTitle", { name: data?.channel ?? "" })} centered size="lg">
+      {data && (
+        <Stack>
+          <Text size="sm">
+            {t("notify.secretText")} <b>{t("notify.secretOnce")}</b>
+          </Text>
+          <Group wrap="nowrap" align="flex-start">
+            <Code block style={{ flex: 1, wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
+              {data.secret}
+            </Code>
+            <CopyButton value={data.secret}>
+              {({ copied, copy }) => (
+                <Button leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />} onClick={copy}>
+                  {copied ? t("copied") : t("copy")}
+                </Button>
+              )}
+            </CopyButton>
+          </Group>
+          <Text size="sm" c="dimmed">
+            {t("notify.secretHow")}
+          </Text>
+          <Button variant="default" onClick={onClose}>
+            {t("done")}
+          </Button>
+        </Stack>
+      )}
+    </Modal>
+  );
+}
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -122,12 +163,9 @@ export default function NotificationsPage() {
   const [relay, setRelay] = useState(true);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState<{ name: string; kind: "discord" | "webhook"; url: string; events: NotifyEvent[] }>({
-    name: "",
-    kind: "discord",
-    url: "",
-    events: ["alert", "health", "anchor"],
-  });
+  const emptyForm = { name: "", kind: "discord" as ChannelKind, url: "", events: ["alert", "health", "anchor"] as NotifyEvent[], sign: false };
+  const [form, setForm] = useState(emptyForm);
+  const [secret, setSecret] = useState<{ channel: string; secret: string } | null>(null);
   // Zmiana wymagająca hasła (wyłączenie, rezygnacja z powiadomień, usunięcie).
   const [pending, setPending] = useState<{ label: string; run: (pw: string) => Promise<void> } | null>(null);
   const [password, setPassword] = useState("");
@@ -179,10 +217,11 @@ export default function NotificationsPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await notifyApi.create({ ...form, enabled: true });
+      const res = await notifyApi.create({ ...form, sign: signable(form.kind) && form.sign, enabled: true });
       notifications.show({ color: "green", message: t("notify.added") });
       setAdding(false);
-      setForm({ name: "", kind: "discord", url: "", events: ["alert", "health", "anchor"] });
+      setForm(emptyForm);
+      if (res.signing_secret) setSecret({ channel: res.channel.name, secret: res.signing_secret });
       load();
     } catch (err) {
       notifications.show({ color: "red", message: errMsg(err) });
@@ -194,16 +233,18 @@ export default function NotificationsPage() {
   // Zmiana kanału; gdy serwer zażąda hasła – okno z hasłem i ponowienie.
   const update = async (c: NotifyChannel, patch: Partial<ChannelRequest>, label: string) => {
     const req: ChannelRequest = { name: c.name, events: c.events, alert_filter: c.alert_filter, enabled: c.enabled, ...patch };
-    try {
-      await notifyApi.update(c.id, req);
+    const done = (res: { signing_secret?: string }) => {
+      if (res.signing_secret) setSecret({ channel: c.name, secret: res.signing_secret });
       load();
+    };
+    try {
+      done(await notifyApi.update(c.id, req));
     } catch (e) {
       if (e instanceof ApiError && e.code === "reauth_required") {
         setPending({
           label,
           run: async (pw) => {
-            await notifyApi.update(c.id, { ...req, password: pw });
-            load();
+            done(await notifyApi.update(c.id, { ...req, password: pw }));
           },
         });
       } else notifications.show({ color: "red", message: errMsg(e) });
@@ -296,7 +337,14 @@ export default function NotificationsPage() {
             <Stack gap={4}>
               <Group gap="xs">
                 <Text fw={600}>{c.name}</Text>
-                <Badge variant="light">{c.kind === "discord" ? "Discord" : "webhook"}</Badge>
+                <Badge variant="light">{kindLabels[c.kind] ?? c.kind}</Badge>
+                {c.signed && (
+                  <Tooltip label={t("notify.signedTip")}>
+                    <Badge variant="light" color="teal" leftSection={<IconSignature size={12} />}>
+                      {t("notify.signed")}
+                    </Badge>
+                  </Tooltip>
+                )}
                 <Text size="xs" c="dimmed" ff="monospace">
                   {c.url_hint}
                 </Text>
@@ -336,6 +384,21 @@ export default function NotificationsPage() {
               <Button size="xs" variant="light" leftSection={<IconSend size={14} />} onClick={() => void action(() => notifyApi.test(c.id), t("notify.testSent"))}>
                 {t("notify.test")}
               </Button>
+              {signable(c.kind) &&
+                (c.signed ? (
+                  <>
+                    <Button size="xs" variant="subtle" leftSection={<IconKey size={14} />} onClick={() => void update(c, { new_secret: true }, t("notify.newSecretLabel"))}>
+                      {t("notify.newSecret")}
+                    </Button>
+                    <Button size="xs" variant="subtle" color="gray" onClick={() => void update(c, { sign: false }, t("notify.unsignLabel"))}>
+                      {t("notify.unsign")}
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="xs" variant="subtle" leftSection={<IconSignature size={14} />} onClick={() => void update(c, { sign: true }, "")}>
+                    {t("notify.sign")}
+                  </Button>
+                ))}
               <Button
                 size="xs"
                 variant="subtle"
@@ -414,20 +477,25 @@ export default function NotificationsPage() {
           <Stack gap="sm">
             <SegmentedControl
               value={form.kind}
-              onChange={(v) => setForm({ ...form, kind: v as "discord" | "webhook" })}
-              data={[
-                { value: "discord", label: "Discord" },
-                { value: "webhook", label: "Webhook (JSON)" },
-              ]}
+              onChange={(v) => setForm({ ...form, kind: v as ChannelKind })}
+              data={(["discord", "teams", "webhook"] as ChannelKind[]).map((k) => ({ value: k, label: kindLabels[k] }))}
             />
             <TextInput label={t("notify.name")} required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} />
             <PasswordInput
               label={t("notify.url")}
-              description={form.kind === "discord" ? t("notify.urlDiscord") : t("notify.urlWebhook")}
+              description={form.kind === "discord" ? t("notify.urlDiscord") : form.kind === "teams" ? t("notify.urlTeams") : t("notify.urlWebhook")}
               required
               value={form.url}
               onChange={(e) => setForm({ ...form, url: e.currentTarget.value })}
             />
+            {signable(form.kind) && (
+              <Checkbox
+                label={t("notify.signLabel")}
+                description={t("notify.signHelp")}
+                checked={form.sign}
+                onChange={(e) => setForm({ ...form, sign: e.currentTarget.checked })}
+              />
+            )}
             <Checkbox.Group
               label={t("notify.what")}
               value={form.events}
@@ -451,6 +519,7 @@ export default function NotificationsPage() {
         </form>
       </Modal>
 
+      <SigningSecret data={secret} onClose={() => setSecret(null)} />
       <Modal opened={!!pending} onClose={() => setPending(null)} title={t("notify.confirmTitle")} centered>
         <form onSubmit={confirm}>
           <Stack gap="sm">

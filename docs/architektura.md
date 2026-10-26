@@ -22,7 +22,7 @@ Vardr to zestaw małych programów w Go, połączonych kolejką NATS JetStream. 
     │                                           └──▶ siem-detector (w locie) ──▶ Saga: gjallarhorn.*
     └──▶ siem-archiver ──▶ archiwum NIS2 (pliki)     siem-detector (zapytania, korelacje) ◀── ClickHouse
                                                                      │
- siem-api (panel Hliðskjálf :8444) ◀── Saga, ClickHouse, NATS ◀──────┘ (outbox → Discord/e-mail)
+ siem-api (panel Hliðskjálf :8444) ◀── Saga, ClickHouse, NATS ◀──────┘ (outbox → Discord/Teams/webhook)
  Prometheus ◀── metryki :9100 wszystkich usług ──▶ Grafana :3000 (pulpity, alerty)
 ```
 
@@ -129,7 +129,7 @@ Zapis alertu (`internal/alerts`):
 2. **Łączenie.** Trafienie z kluczem grupy (`group_by`) łączy się z otwartym alertem tej reguły i klucza z okna `suppress`. Licznik `hits` rośnie, zdarzenie jest dołączane do osi alertu.
 3. **Nowy alert.** Gdy nie ma otwartego alertu do połączenia, powstaje nowy alert z wpisem w outboxie.
 
-Równoległe zapisy z różnych mechanizmów czekają na siebie tylko przy tym samym kluczu (blokady doradcze transakcji). Panel wysyła wpisy z outboxu na kanały (Discord, z filtrem poziomu i limitem „burzy alertów”).
+Równoległe zapisy z różnych mechanizmów czekają na siebie tylko przy tym samym kluczu (blokady doradcze transakcji). Panel wysyła wpisy z outboxu na kanały (Discord, Power Automate / Teams, webhook, z filtrem poziomu i limitem „burzy alertów”).
 
 Szczegóły pisania reguł: [reguly.md](reguly.md).
 

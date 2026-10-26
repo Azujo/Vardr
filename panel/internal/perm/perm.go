@@ -47,7 +47,7 @@ var Modules = []Module{
 	{"quarantine", "Kwarantanna", "zmiana: ponowne przetwarzanie", []Level{read, {"write", "ponowne przetwarzanie"}}},
 	{"identities", "Tożsamości", "domeny organizacji, aliasy kont", []Level{read, write}},
 	{"system", "Stan systemu", "zdrowie usług (Himinbjörg)", []Level{read}},
-	{"notify", "Powiadomienia", "kanały (Discord, webhook)", []Level{read, write}},
+	{"notify", "Powiadomienia", "kanały (Discord, Teams, webhook)", []Level{read, write}},
 	{"backup", "Kopie zapasowe", "ustawienia, zlecenia i przywracanie", []Level{read, write}},
 	{"users", "Użytkownicy i bezpieczeństwo", "konta, profile uprawnień, wymóg MFA; zmiana = administrator panelu", []Level{read, write}},
 	{"audit", "Dziennik audytu", "", []Level{read}},

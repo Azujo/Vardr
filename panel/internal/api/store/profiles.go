@@ -64,10 +64,11 @@ func (s *PG) SaveProfile(ctx context.Context, p Profile, by string, now time.Tim
 	return err
 }
 
-// DeleteProfile usuwa profil, którego nie ma żadne konto.
+// DeleteProfile usuwa profil, którego nie ma żadne konto ani ważny token API.
 func (s *PG) DeleteProfile(ctx context.Context, id string) error {
 	var used int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE role = $1`, id).Scan(&used); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM users WHERE role = $1)
+		+ (SELECT count(*) FROM api_tokens WHERE profile = $1 AND revoked_at IS NULL AND expires_at > now())`, id).Scan(&used); err != nil {
 		return err
 	}
 	if used > 0 {

@@ -165,6 +165,15 @@ func serve(log *slog.Logger) error {
 	apiServer.Profiles = db
 	apiServer.LDAP = db
 	apiServer.Incidents = db
+	apiServer.APITokens = db
+	if apiServer.TokenRatePerMin, err = svc.EnvInt("SIEM_API_TOKEN_RATE", 600); err != nil {
+		return err
+	}
+	if apiServer.TokenLogDays, err = svc.EnvInt("SIEM_API_TOKEN_LOG_DAYS", 30); err != nil {
+		return err
+	} else if apiServer.TokenLogDays < 1 {
+		return fmt.Errorf("SIEM_API_TOKEN_LOG_DAYS must be at least 1")
+	}
 	// Drugi składnik logowania (TOTP): klucz szyfrujący sekrety z pliku
 	// (deploy.sh tworzy certs/mfa.key); bez klucza – logowanie samym hasłem.
 	if keyFile := svc.Env("SIEM_MFA_KEY_FILE", "/certs/mfa.key"); keyFile != "" {
@@ -467,7 +476,10 @@ func serve(log *slog.Logger) error {
 		log.Warn("SIEM_NATS_URL is missing – the agent list will not be updated")
 	}
 
-	// Sprzątanie wygasłych sesji.
+	// Historia zapytań tokenów API: zapis w tle (Handler zakłada kolejkę).
+	go apiServer.RunTokenLog(ctx)
+
+	// Sprzątanie wygasłych sesji i starej historii zapytań tokenów.
 	go func() {
 		t := time.NewTicker(10 * time.Minute)
 		defer t.Stop()
@@ -478,6 +490,12 @@ func serve(log *slog.Logger) error {
 					log.Warn("session cleanup failed", "err", err)
 				} else if n > 0 {
 					log.Info("expired sessions removed", "count", n)
+				}
+				days := time.Duration(apiServer.TokenLogDays) * 24 * time.Hour
+				if n, err := db.DeleteOldAPIRequests(ctx, time.Now().Add(-days)); err != nil {
+					log.Warn("API token request history cleanup failed", "err", err)
+				} else if n > 0 {
+					log.Info("old API token requests removed", "count", n)
 				}
 			case <-ctx.Done():
 				return

@@ -116,7 +116,7 @@ Pattern: `server/internal/detector/silence.go` (silent source).
 
 ### …a panel module
 
-1. A handler in `panel/internal/api/<module>_handlers.go`, a route in `server.go` with a permission. Record changes in the audit log (`s.audit`); sensitive operations – with password re-entry.
+1. A handler in `panel/internal/api/<module>_handlers.go`, a route in the `routes.go` table with a module permission (`can("<module>", "read|write")`) – the OpenAPI description is built from the same table, and a route with a permission is available to API tokens right away (within their profile). Record changes in the audit log (`s.audit`); sensitive operations – with password re-entry (`s.reauth`, not available to tokens).
 2. A store in `panel/internal/api/store` (+ a migration) and a PostgreSQL test.
 3. Types and calls in `panel/web/src/api.ts`, a page in `panel/web/src/pages`, a route in `App.tsx`, a menu item in `Layout.tsx`.
 4. Page texts in the module's translation files (below).

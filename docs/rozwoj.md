@@ -114,7 +114,7 @@ Wzór: `server/internal/detector/silence.go` (cisza źródła).
 
 ### …moduł panelu
 
-1. Handler w `panel/internal/api/<moduł>_handlers.go`, trasa w `server.go` z rolą (`roleViewer`, `roleAnalyst`, `roleAdmin`). Zmiany zapisuj do audytu (`s.audit`); operacje wrażliwe – z ponownym hasłem.
+1. Handler w `panel/internal/api/<moduł>_handlers.go`, trasa w tabeli `routes.go` z uprawnieniem modułu (`can("<moduł>", "read|write")`) – z tej samej tabeli powstaje opis OpenAPI, a trasa z uprawnieniem jest od razu dostępna dla tokenów API (w granicach ich profilu). Zmiany zapisuj do audytu (`s.audit`); operacje wrażliwe – z ponownym hasłem (`s.reauth`, niedostępne dla tokenów).
 2. Magazyn w `panel/internal/api/store` (+ migracja) i test na PostgreSQL.
 3. Typy i wywołania w `panel/web/src/api.ts`, strona w `panel/web/src/pages`, trasa w `App.tsx`, pozycja menu w `Layout.tsx`.
 4. Teksty strony w plikach tłumaczeń modułu (niżej).

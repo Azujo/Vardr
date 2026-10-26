@@ -2,6 +2,26 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.2.0] – 2026-10-26 – API, Microsoft Teams
+
+### Dodane
+- **Tokeny API** (*Administracja → Tokeny API*, [docs/panel.md](docs/panel.md#tokeny-api)): programy i integracje korzystają z API panelu nagłówkiem `Authorization: Bearer vardr_…`. Token ma profil uprawnień jak konto, ważność od 1 do 365 dni (domyślnie 90), zapis ostatniego użycia i natychmiastowe unieważnienie; sekret pokazywany raz, w bazie tylko skrót. Tworzenie z potwierdzeniem hasłem, zapis w audycie.
+- Token nie zarządza kontami, profilami ani tokenami, nie wykonuje operacji wymagających hasła ani tras konta (sesja, MFA) – niezależnie od profilu.
+- Zmiany wykonane tokenem są w audycie jako `api:<nazwa>`; odmowa dostępu dla tokenu – wpis `api_token_denied`.
+- **Historia zapytań tokenów:** każde zapytanie (metoda, ścieżka z parametrami, wynik, czas odpowiedzi, adres) w panelu – licznik z 24 h i historia przy tokenie – oraz w logu siem-api. Przechowywana 30 dni (`SIEM_API_TOKEN_LOG_DAYS`).
+- Limit zapytań na token (`SIEM_API_TOKEN_RATE`, domyślnie 600 na minutę, powyżej – 429).
+- `GET /api/v1/api-tokens/self` – opis tokenu, którym przedstawia się program.
+- **Powiadomienia w Microsoft Teams przez Power Automate** ([docs/panel.md](docs/panel.md#microsoft-teams-przez-power-automate)): nowy rodzaj kanału *Power Automate / Teams* – wiadomość jako karta Adaptive Card (tytuł w kolorze ważności, pola, przycisk „Vardr – Panel”) dla szablonu Teams „Post to a channel when a webhook request is received”, a dane strukturalne w polu `vardr` dla własnych przepływów (tickety, SMS, eskalacje). Panel przyjmuje tylko adresy wyzwalaczy Power Automate (`*.logic.azure.com`, `*.api.powerplatform.com`).
+- **Podpis HMAC wiadomości** na kanałach webhook i Power Automate / Teams: nagłówki `X-Vardr-Timestamp` i `X-Vardr-Signature` (`sha256=` HMAC-SHA256 nad `<znacznik>.<treść>`); sekret pokazywany raz, nowy sekret i wyłączenie podpisu z hasłem; przykład sprawdzania w dokumentacji.
+- **Opis OpenAPI 3.1** pod `GET /api/v1/openapi.json`: wszystkie trasy z wymaganym uprawnieniem i dostępnością dla tokenów, parametry zapytań alertów, zdarzeń, incydentów i audytu. Powstaje z tej samej tabeli tras co serwer.
+
+### Zmienione
+- Profilu uprawnień z ważnym tokenem API nie można usunąć (jak profilu z kontami).
+- Wiadomość testowa kanału jest w języku systemu (wcześniej zawsze po polsku).
+
+### Aktualizacja
+- Migracje bazy panelu `023_api_tokens.sql`, `024_api_token_requests.sql` i `025_notify_teams.sql` – stosowane automatycznie przy starcie siem-api.
+
 ## [1.0.2] – 2026-10-23 – Poprawki bezpieczeństwa
 
 ### Bezpieczeństwo

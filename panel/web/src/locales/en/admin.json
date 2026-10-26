@@ -83,7 +83,10 @@
       "password_change_failed": "failed password change",
       "password_reset": "new initial password",
       "user_created": "new account",
-      "user_updated": "account change"
+      "user_updated": "account change",
+      "api_token_created": "new API token",
+      "api_token_revoked": "API token revoked",
+      "api_token_denied": "API token denied"
     },
     "older": "Older entries"
   },
@@ -149,7 +152,7 @@
     },
     "notify": {
       "label": "Notifications",
-      "help": "channels (Discord, webhook)"
+      "help": "channels (Discord, Teams, webhook)"
     },
     "backup": {
       "label": "Backups",
@@ -264,6 +267,61 @@
     "saveText": "The change is recorded in the audit log (without passwords) and takes effect immediately.",
     "saved": "Domain sign-in settings saved"
   },
+  "tokens": {
+    "title": "API tokens",
+    "intro": "A token lets a program (a script, an integration, an MCP server) use the panel API with the Authorization: Bearer header. A token has a permission profile like an account, but it cannot manage accounts, profiles or tokens, and operations that require a password are not available to it. Every change made with a token is recorded in the audit log as api:<name>.",
+    "openapi": "API description (OpenAPI)",
+    "new": "New token",
+    "disabled": "API tokens are not available in this server configuration.",
+    "empty": "No tokens.",
+    "col": {
+      "name": "Name",
+      "profile": "Permission profile",
+      "token": "Token",
+      "state": "State",
+      "expires": "Valid until",
+      "lastUse": "Last use",
+      "created": "Created",
+      "requests": "Requests (24 h)"
+    },
+    "state": {
+      "active": "active",
+      "expiring": "expires soon",
+      "expired": "expired",
+      "revoked": "revoked"
+    },
+    "never": "never",
+    "revokedBy": "revoked by {{by}}, {{date}}",
+    "nameHint": "2–64 characters: letters, digits, dot, hyphen, underscore – shown in the audit log as api:<name>",
+    "description": "Description",
+    "descriptionPlaceholder": "e.g. exporting alerts to the ticketing system",
+    "profileHint": "Grant only what the integration needs – usually read access.",
+    "adminWarning": "The administrator profile gives the token full access to data and settings (without account management). A stolen token is a stolen panel – consider a narrower profile.",
+    "days": "Validity (days)",
+    "create": "Create token",
+    "secretTitle": "Token “{{name}}”",
+    "secretText": "Copy the token and store it in the program's configuration (e.g. in a secrets manager).",
+    "secretOnce": "The panel shows it only now – the database keeps only its hash.",
+    "example": "Example:",
+    "revoke": "Revoke",
+    "revokeOf": "Revoke token {{name}}",
+    "revokeTitle": "Revoking token “{{name}}”",
+    "revokeText": "The program using this token loses access immediately. This cannot be undone – create a new token if needed. The change is recorded in the audit log.",
+    "revoked": "Token “{{name}}” revoked",
+    "history": "Request history",
+    "historyOf": "Request history of token {{name}}",
+    "historyTitle": "Requests of token “{{name}}”",
+    "historyIntro": "Every request made with this token: method, path with parameters, result and response time. The history is kept for {{days}} days; permission denials are also in the audit log.",
+    "req": {
+      "time": "Time",
+      "request": "Request",
+      "status": "Result",
+      "duration": "Response time",
+      "ip": "IP address"
+    },
+    "noRequests": "No requests in the history.",
+    "older": "Older requests"
+  },
   "notify": {
     "minLevel": "Alerts from level",
     "rules": "Rules",
@@ -321,6 +379,20 @@
     "confirm": "Confirm",
     "systemLanguage": "System language",
     "systemLanguageHelp": "Language of notifications (alerts, incidents, Grafana health alerts, archive anchor) and the default language of NIS2 report drafts. Each account sees the panel in its own language. The change is recorded in the audit log.",
-    "systemLanguageSaved": "System language: {{language}}"
+    "systemLanguageSaved": "System language: {{language}}",
+    "urlTeams": "The HTTP trigger address of a Power Automate flow (e.g. the Teams template “Post to a channel when a webhook request is received”) – https://….logic.azure.com/workflows/… or https://….api.powerplatform.com/…; treat it like a password",
+    "signLabel": "Sign messages (HMAC)",
+    "signHelp": "X-Vardr-Timestamp and X-Vardr-Signature headers – the recipient can check that Vardr sent the message. The panel shows the secret once, after saving.",
+    "signed": "signed",
+    "signedTip": "Messages signed with HMAC-SHA256 (X-Vardr-Signature header)",
+    "sign": "Enable signing",
+    "unsign": "Disable signing",
+    "unsignLabel": "disabling message signing (a recipient that checks the signature will reject further messages)",
+    "newSecret": "New secret",
+    "newSecretLabel": "a new signing secret (the current one stops working at the recipient)",
+    "secretTitle": "Signing secret of channel “{{name}}”",
+    "secretText": "Copy the secret and set it at the recipient (in the flow, function or service that checks the signature).",
+    "secretOnce": "The panel shows it only now.",
+    "secretHow": "Signature: HMAC-SHA256 with the secret over “<X-Vardr-Timestamp>.<body>”, header X-Vardr-Signature: sha256=<hex>. Reject messages with a timestamp older than a few minutes. Details and an example: the panel documentation (Notifications)."
   }
 }

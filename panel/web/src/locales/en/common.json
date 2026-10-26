@@ -31,6 +31,8 @@
     "profiles": "Permission profiles",
     "profilesHint": "access matrix",
     "ldap": "Domain sign-in",
+    "apiTokens": "API tokens",
+    "apiTokensHint": "integrations, OpenAPI",
     "notifications": "Notifications",
     "backup": "Backups",
     "backupHint": "schedule and destination",

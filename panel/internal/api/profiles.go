@@ -263,7 +263,7 @@ func (s *Server) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	switch err := s.Profiles.DeleteProfile(r.Context(), id); {
 	case errors.Is(err, store.ErrConflict):
-		writeError(w, http.StatusConflict, "in_use", "profil ma przypisane konta – najpierw zmień im profil")
+		writeError(w, http.StatusConflict, "in_use", "profil ma przypisane konta lub ważne tokeny API – najpierw zmień im profil albo unieważnij tokeny")
 		return
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego profilu (albo jest wbudowany)")

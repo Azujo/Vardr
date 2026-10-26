@@ -31,6 +31,8 @@
     "profiles": "Profile uprawnień",
     "profilesHint": "macierz dostępu",
     "ldap": "Logowanie domenowe",
+    "apiTokens": "Tokeny API",
+    "apiTokensHint": "integracje, OpenAPI",
     "notifications": "Powiadomienia",
     "backup": "Kopie zapasowe",
     "backupHint": "harmonogram i miejsce",

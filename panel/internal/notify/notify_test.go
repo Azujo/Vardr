@@ -102,6 +102,10 @@ func TestValidateURLAndHint(t *testing.T) {
 		{KindWebhook, "https://n8n.lan/hook", true},
 		{KindWebhook, "https://user:pass@n8n.lan/hook", false},
 		{KindWebhook, "ftp://x", false},
+		{KindTeams, "https://prod-12.westeurope.logic.azure.com:443/workflows/abc/triggers/manual/paths/invoke?api-version=2016-06-01&sig=x", true},
+		{KindTeams, "https://default1234.56.environment.api.powerplatform.com/powerautomate/automations/direct/workflows/abc/triggers/manual/paths/invoke?sig=x", true},
+		{KindTeams, "https://logic.azure.com.evil.example/workflows/abc", false},
+		{KindTeams, "https://n8n.lan/hook", false},
 	} {
 		if err := ValidateURL(c.kind, c.url); (err == nil) != c.ok {
 			t.Errorf("%s %s: %v", c.kind, c.url, err)
@@ -300,5 +304,88 @@ func TestAlertMessageEnglish(t *testing.T) {
 	// Instrukcja bez tłumaczenia – oryginalna.
 	if !strings.Contains(got, "Computer=dc01") || !strings.Contains(got, "What to do=Sprawdź.") {
 		t.Fatalf("pola: %s", got)
+	}
+}
+
+// Karta Teams: tytuł z kolorem ważności, pola jako FactSet, link do panelu
+// jako przycisk; dane ze zdarzeń bez działających linków Markdownu; dane
+// strukturalne w polu „vardr” dla własnych przepływów.
+func TestTeamsAlertCard(t *testing.T) {
+	a := &AlertSender{PanelURL: "https://siem:8444"}
+	al := alerts.Alert{ID: 7, RuleTitle: "PowerShell", Level: "critical", HostName: "pc1",
+		Summary:  "polecenie: powershell [Otwórz alert w panelu](https://zly.example/x)",
+		UserName: "jan_kowalski", GroupFields: map[string]string{"CommandLine": "[klik](https://zly.example/y) " + strings.Repeat("A", 3000)}}
+	m := a.Message(al)
+	p := teamsPayload(m)
+	att := p["attachments"].([]any)[0].(map[string]any)
+	card := att["content"].(map[string]any)
+	// Karta (renderowana przez Teams) bez linków; dane w „vardr” – surowe,
+	// to dane dla przepływu, nie tekst do wyświetlenia.
+	if raw, _ := json.Marshal(card); strings.Contains(string(raw), "](https://zly") {
+		t.Fatalf("link Markdownu z danych zdarzenia w karcie: %s", raw)
+	}
+	if att["contentType"] != "application/vnd.microsoft.card.adaptive" || card["type"] != "AdaptiveCard" || p["type"] != "message" {
+		t.Fatalf("kształt wiadomości: %v", p)
+	}
+	body := card["body"].([]any)
+	title := body[0].(map[string]any)
+	if title["color"] != "Attention" || !strings.Contains(title["text"].(string), "PowerShell") {
+		t.Fatalf("tytuł: %v", title)
+	}
+	actions := card["actions"].([]any)
+	if act := actions[0].(map[string]any); act["url"] != "https://siem:8444/alerts/7" || act["type"] != "Action.OpenUrl" {
+		t.Fatalf("przycisk panelu: %v", actions)
+	}
+	for _, b := range body {
+		if fs, ok := b.(map[string]any)["facts"].([]any); ok {
+			for _, f := range fs {
+				if v := f.(map[string]any)["value"].(string); len([]rune(v)) > teamsMaxValue || strings.HasPrefix(v, "https://siem") {
+					t.Fatalf("pole: %q", v)
+				}
+			}
+		}
+	}
+	if v := p["vardr"].(map[string]any); v["event"] != EventAlert || v["severity"] != m.Severity {
+		t.Fatalf("dane dla przepływów: %v", v)
+	}
+}
+
+// Podpis HMAC: kanał z sekretem wysyła znacznik czasu i podpis treści,
+// który odbiorca odtwarza; bez sekretu – bez nagłówków.
+func TestSignedDelivery(t *testing.T) {
+	var mu sync.Mutex
+	var heads []http.Header
+	var bodies [][]byte
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		heads, bodies = append(heads, r.Header.Clone()), append(bodies, b)
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(srv.Close)
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	st := &memStore{chans: []store.Channel{
+		{ID: 1, Name: "teams", Kind: KindTeams, URL: srv.URL + "/t", Events: []string{EventHealth}, Enabled: true, SigningSecret: "tajny-sekret"},
+		{ID: 2, Name: "hook", Kind: KindWebhook, URL: srv.URL + "/h", Events: []string{EventHealth}, Enabled: true},
+	}}
+	s := &Service{Store: st, Log: slog.New(slog.DiscardHandler), Client: srv.Client(), Now: func() time.Time { return now }}
+	if n, err := s.Send(context.Background(), Message{Event: EventHealth, Severity: SevWarning, Title: "Dysk"}); err != nil || n != 2 {
+		t.Fatalf("wysyłka: %d %v", n, err)
+	}
+	var signed, plain int
+	for i, h := range heads {
+		if sig := h.Get(HeaderSignature); sig != "" {
+			signed++
+			ts := h.Get(HeaderTimestamp)
+			if ts != "1793016000" || sig != Sign("tajny-sekret", ts, bodies[i]) || Sign("inny", ts, bodies[i]) == sig {
+				t.Fatalf("podpis: %s %s", ts, sig)
+			}
+		} else {
+			plain++
+		}
+	}
+	if signed != 1 || plain != 1 {
+		t.Fatalf("podpisane %d, bez podpisu %d", signed, plain)
 	}
 }

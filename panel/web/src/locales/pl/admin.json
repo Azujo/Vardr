@@ -83,7 +83,10 @@
       "password_change_failed": "nieudana zmiana hasła",
       "password_reset": "nowe hasło startowe",
       "user_created": "nowe konto",
-      "user_updated": "zmiana konta"
+      "user_updated": "zmiana konta",
+      "api_token_created": "nowy token API",
+      "api_token_revoked": "unieważnienie tokenu API",
+      "api_token_denied": "odmowa dla tokenu API"
     },
     "older": "Starsze wpisy"
   },
@@ -149,7 +152,7 @@
     },
     "notify": {
       "label": "Powiadomienia",
-      "help": "kanały (Discord, webhook)"
+      "help": "kanały (Discord, Teams, webhook)"
     },
     "backup": {
       "label": "Kopie zapasowe",
@@ -264,6 +267,61 @@
     "saveText": "Zmiana trafi do audytu (bez haseł) i działa od razu.",
     "saved": "Zapisano ustawienia logowania domenowego"
   },
+  "tokens": {
+    "title": "Tokeny API",
+    "intro": "Token pozwala programowi (skryptowi, integracji, serwerowi MCP) korzystać z API panelu nagłówkiem Authorization: Bearer. Token ma profil uprawnień jak konto, ale nie może zarządzać kontami, profilami ani tokenami, a operacje wymagające hasła są dla niego niedostępne. Każda zmiana wykonana tokenem trafia do audytu jako api:<nazwa>.",
+    "openapi": "Opis API (OpenAPI)",
+    "new": "Nowy token",
+    "disabled": "Tokeny API są niedostępne w tej konfiguracji serwera.",
+    "empty": "Brak tokenów.",
+    "col": {
+      "name": "Nazwa",
+      "profile": "Profil uprawnień",
+      "token": "Token",
+      "state": "Stan",
+      "expires": "Ważny do",
+      "lastUse": "Ostatnie użycie",
+      "created": "Utworzony",
+      "requests": "Zapytania (24 h)"
+    },
+    "state": {
+      "active": "aktywny",
+      "expiring": "wkrótce wygaśnie",
+      "expired": "wygasły",
+      "revoked": "unieważniony"
+    },
+    "never": "nigdy",
+    "revokedBy": "unieważnił {{by}}, {{date}}",
+    "nameHint": "2–64 znaki: litery, cyfry, kropka, myślnik, podkreślenie – widoczna w audycie jako api:<nazwa>",
+    "description": "Opis",
+    "descriptionPlaceholder": "np. eksport alertów do systemu zgłoszeń",
+    "profileHint": "Daj tylko tyle, ile integracja potrzebuje – najczęściej odczyt.",
+    "adminWarning": "Profil administratora daje tokenowi pełny dostęp do danych i ustawień (bez zarządzania kontami). Przejęty token to przejęty panel – rozważ węższy profil.",
+    "days": "Ważność (dni)",
+    "create": "Utwórz token",
+    "secretTitle": "Token „{{name}}”",
+    "secretText": "Skopiuj token i zapisz go w konfiguracji programu (np. w menedżerze sekretów).",
+    "secretOnce": "Panel pokazuje go tylko teraz – w bazie zostaje jedynie jego skrót.",
+    "example": "Przykład użycia:",
+    "revoke": "Unieważnij",
+    "revokeOf": "Unieważnij token {{name}}",
+    "revokeTitle": "Unieważnienie tokenu „{{name}}”",
+    "revokeText": "Program używający tego tokenu od razu straci dostęp. Tej operacji nie można cofnąć – w razie potrzeby utwórz nowy token. Zmiana trafi do audytu.",
+    "revoked": "Unieważniono token „{{name}}”",
+    "history": "Historia zapytań",
+    "historyOf": "Historia zapytań tokenu {{name}}",
+    "historyTitle": "Zapytania tokenu „{{name}}”",
+    "historyIntro": "Każde zapytanie wykonane tym tokenem: metoda, ścieżka z parametrami, wynik i czas odpowiedzi. Historia jest przechowywana {{days}} dni; odmowy uprawnień są także w dzienniku audytu.",
+    "req": {
+      "time": "Czas",
+      "request": "Zapytanie",
+      "status": "Wynik",
+      "duration": "Czas odpowiedzi",
+      "ip": "Adres IP"
+    },
+    "noRequests": "Brak zapytań w historii.",
+    "older": "Starsze zapytania"
+  },
   "notify": {
     "minLevel": "Alerty od poziomu",
     "rules": "Reguły",
@@ -321,6 +379,20 @@
     "confirm": "Potwierdź",
     "systemLanguage": "Język systemu",
     "systemLanguageHelp": "Język powiadomień (alerty, incydenty, alerty zdrowia z Grafany, kotwica archiwum) i domyślny język szkiców zgłoszeń NIS2. Panel każde konto widzi we własnym języku. Zmiana trafia do dziennika audytu.",
-    "systemLanguageSaved": "Język systemu: {{language}}"
+    "systemLanguageSaved": "Język systemu: {{language}}",
+    "urlTeams": "Adres wyzwalacza HTTP przepływu Power Automate (np. szablon Teams „Post to a channel when a webhook request is received”) – https://….logic.azure.com/workflows/… albo https://….api.powerplatform.com/…; traktuj jak hasło",
+    "signLabel": "Podpisuj wiadomości (HMAC)",
+    "signHelp": "Nagłówki X-Vardr-Timestamp i X-Vardr-Signature – odbiorca sprawdzi, że wiadomość wysłał Vardr. Sekret panel pokaże raz, po zapisaniu.",
+    "signed": "podpisany",
+    "signedTip": "Wiadomości z podpisem HMAC-SHA256 (nagłówek X-Vardr-Signature)",
+    "sign": "Włącz podpis",
+    "unsign": "Wyłącz podpis",
+    "unsignLabel": "wyłączenie podpisu wiadomości (odbiorca sprawdzający podpis odrzuci kolejne)",
+    "newSecret": "Nowy sekret",
+    "newSecretLabel": "nowy sekret podpisu (dotychczasowy przestanie działać u odbiorcy)",
+    "secretTitle": "Sekret podpisu kanału „{{name}}”",
+    "secretText": "Skopiuj sekret i ustaw go u odbiorcy (w przepływie, funkcji albo usłudze sprawdzającej podpis).",
+    "secretOnce": "Panel pokazuje go tylko teraz.",
+    "secretHow": "Podpis: HMAC-SHA256 z sekretu nad „<X-Vardr-Timestamp>.<treść>”, nagłówek X-Vardr-Signature: sha256=<hex>. Odrzucaj wiadomości ze znacznikiem czasu starszym niż kilka minut. Szczegóły i przykład: dokumentacja panelu (Powiadomienia)."
   }
 }
