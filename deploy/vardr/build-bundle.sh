@@ -49,11 +49,13 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" -o "$stage/stack/bin/siem-connector" ./agent/cmd/siem_connector
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/stack/bin/siem-pki" ./tools/cmd/siem-pki
 
-echo "== Windows agent and export reader"
+echo "== Windows agent, export reader and MCP server"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$stage/stack/agent-dist/vardr-agent.exe" ./agent/cmd/vardr-agent
 sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go > "$stage/stack/agent-dist/AGENT_VERSION"
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" \
   -o "$stage/stack/export-tools/odczytaj.exe" ./tools/cmd/odczytaj
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version_=$version" \
+  -o "$stage/stack/agent-dist/vardr-mcp.exe" ./tools/cmd/vardr-mcp
 
 echo "== stack files"
 tar -C "$lab" -cf - Dockerfile backup/Dockerfile msi/Dockerfile msi/agent.wxs nats clickhouse saga grafana prometheus \

@@ -237,6 +237,7 @@ The command messages are in English. On the server: `docker compose run --rm api
 | `SIEM_SYSLOG_TZ` | `Europe/Warsaw` | decoder tests in the panel |
 | `SIEM_API_TOKEN_RATE` | 600 | limit of requests per minute for one API token (a short burst above it is allowed; above the limit – 429) |
 | `SIEM_API_TOKEN_LOG_DAYS` | 30 | how long the panel keeps the request history of API tokens |
+| `SIEM_MCP_EXE` | `/agent-dist/vardr-mcp.exe` | the vardr-mcp.exe program offered for download on the AI access page |
 
 ## siem-loadgen
 
@@ -251,6 +252,7 @@ Code: `server/cmd/siem-loadgen`, `server/internal/loadgen`. A traffic generator:
 | `fortisim` | `tools/cmd/fortisim` | a FortiGate syslog simulator: `-target 192.168.88.98:514 -proto udp\|tcp -scenario traffic\|portscan\|sweep\|vpn-ok\|vpn-brute\|vpn-spray\|admin-brute\|utm\|mix -count N -every 100ms -user -attacker -header bare\|rfc3164\|rfc5424 -dry` |
 | `entrasim` | `tools/cmd/entrasim`, `internal/entrasim` | a Microsoft Graph simulator (`entrasim` container): background sign-ins and scenarios on demand – `curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'`; scenarios `normal`, `spray`, `brute`, `success-after-failures`, `foreign`, `mfa-fatigue`, `admin-role` (parameters `user=`, `attacker=`) |
 | `attackgen` | `tools/cmd/attackgen` | the MITRE ATT&CK dictionary from the official STIX bundle: `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json` |
+| `vardr-mcp` | `tools/cmd/vardr-mcp` | the MCP server for an AI client on the analyst's computer (stdio): read-only tools on the panel API with an AI token ([AI access](panel.md#ai-access-mcp-and-data-protection)). Variables: `VARDR_URL`, `VARDR_TOKEN` or `VARDR_TOKEN_FILE`, `VARDR_CA_FILE`, `VARDR_INSECURE=1` (lab only). `vardr-mcp setup` (also a double-click) – wizard that connects Claude Desktop; `vardr-mcp check` – checks the connection, token and policy. Downloadable from the panel (`deploy.sh tools`, installation bundle: `agent-dist/vardr-mcp.exe`) |
 | `odczytaj` | `tools/cmd/odczytaj` | the archive export reader for auditors (Windows, no installation): checks the package integrity and writes a report and the events of each day into the `ODCZYT` subfolder – in English or Polish according to the Windows language (`VARDR_LANG`) |
 
 Building: [development.md](development.md#building).

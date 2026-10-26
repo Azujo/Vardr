@@ -120,12 +120,27 @@ func (s *Server) tokenAuthed(w http.ResponseWriter, r *http.Request, req need, f
 		writeError(w, http.StatusForbidden, "forbidden", "brak uprawnień do tej operacji")
 		return
 	}
+	// Token AI: polityka AI (wyłącznik, narzędzia) przed handlerem.
+	if t.Kind == store.TokenAI {
+		pol, ok := s.aiGate(w, r, a)
+		if !ok {
+			return
+		}
+		a.ai = &pol
+	}
 	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) > time.Minute || t.LastUsedIP != ip {
 		if err := s.APITokens.TouchAPIToken(context.WithoutCancel(r.Context()), t.ID, now, ip); err != nil {
 			s.Log.Warn("recording API token use failed", "err", err)
 		}
 	}
-	h(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, a)))
+	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, a))
+	// Endpoint MCP nie jest maskowany drugi raz: zwraca wyniki wewnętrznych
+	// zapytań, a te są już zamaskowane.
+	if a.ai != nil && a.ai.Mask.any() && r.Pattern != mcpPattern {
+		s.serveMasked(w, r, *a.ai, h)
+		return
+	}
+	h(w, r)
 }
 
 // tokenDenied zapisuje w audycie odmowę dla tokenu: program próbuje czegoś
@@ -197,6 +212,9 @@ func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 		Profile     string `json:"profile"`
 		Days        int    `json:"days"`
 		Password    string `json:"password"`
+		// Kind: integration (domyślnie) albo ai – z potwierdzeniem ostrzeżeń.
+		Kind        string `json:"kind"`
+		Acknowledge bool   `json:"acknowledge"`
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -218,6 +236,12 @@ func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	case !s.profileExists(r.Context(), req.Profile):
 		writeError(w, http.StatusBadRequest, "bad_role", "nie ma takiego profilu uprawnień")
 		return
+	case req.Kind != "" && req.Kind != store.TokenIntegration && req.Kind != store.TokenAI:
+		writeError(w, http.StatusBadRequest, "bad_token_kind", "rodzaj tokenu: integration albo ai")
+		return
+	case req.Kind == store.TokenAI && !req.Acknowledge:
+		writeError(w, http.StatusBadRequest, "ai_ack_required", "token AI wymaga potwierdzenia ostrzeżeń (RODO, halucynacje, prompt injection)")
+		return
 	}
 	if !s.reauth(w, r, req.Password, "api_token_create") {
 		return
@@ -226,7 +250,7 @@ func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 	token := apiTokenPrefix + auth.NewToken()
 	t, err := s.APITokens.CreateAPIToken(r.Context(), store.APIToken{Name: req.Name, Description: req.Description,
 		TokenHash: auth.TokenID(token), Prefix: token[:len(apiTokenPrefix)+6], Profile: req.Profile,
-		CreatedBy: a.user.Username, CreatedAt: now, ExpiresAt: now.Add(time.Duration(req.Days) * 24 * time.Hour)})
+		CreatedBy: a.user.Username, CreatedAt: now, ExpiresAt: now.Add(time.Duration(req.Days) * 24 * time.Hour), Kind: req.Kind})
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, "token_name_taken", "aktywny token o tej nazwie już istnieje")
 		return
@@ -235,8 +259,11 @@ func (s *Server) createAPIToken(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	s.audit(r, &a.user, "api_token_created", t.Name, map[string]any{"token_id": t.ID, "profile": t.Profile,
-		"expires_at": t.ExpiresAt, "prefix": t.Prefix})
+	details := map[string]any{"token_id": t.ID, "profile": t.Profile, "expires_at": t.ExpiresAt, "prefix": t.Prefix, "kind": t.Kind}
+	if t.Kind == store.TokenAI {
+		details["acknowledged_disclaimer"] = AIDisclaimerVersion
+	}
+	s.audit(r, &a.user, "api_token_created", t.Name, details)
 	writeJSON(w, http.StatusCreated, map[string]any{"token": t, "secret": token})
 }
 
@@ -272,6 +299,10 @@ func (s *Server) tokenSelf(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "not_a_token", "to zapytanie jest dla programów z tokenem API")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"name": a.token.Name, "actor": a.user.Username, "profile": a.token.Profile,
-		"permissions": a.perms, "expires_at": a.token.ExpiresAt})
+	out := map[string]any{"name": a.token.Name, "actor": a.user.Username, "profile": a.token.Profile,
+		"permissions": a.perms, "expires_at": a.token.ExpiresAt, "kind": a.token.Kind}
+	if a.ai != nil {
+		out["masking"] = a.ai.Mask
+	}
+	writeJSON(w, http.StatusOK, out)
 }

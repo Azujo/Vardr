@@ -243,7 +243,15 @@ export const api = {
     }>("GET", "/api/v1/api-tokens"),
   apiTokenRequests: (id: number, before?: number) =>
     request<{ requests: APIRequest[] }>("GET", `/api/v1/api-tokens/${id}/requests${before ? `?before=${before}` : ""}`),
-  createAPIToken: (t: { name: string; description: string; profile: string; days: number; password: string }) =>
+  createAPIToken: (t: {
+    name: string;
+    description: string;
+    profile: string;
+    days: number;
+    password: string;
+    kind: APITokenKind;
+    acknowledge: boolean;
+  }) =>
     request<{ token: APIToken; secret: string }>("POST", "/api/v1/api-tokens", t),
   revokeAPIToken: (id: number) => request<{ token: APIToken }>("POST", `/api/v1/api-tokens/${id}/revoke`),
 };
@@ -273,7 +281,60 @@ export interface APIToken {
   last_used_ip?: string;
   revoked_at?: string;
   revoked_by?: string;
+  kind: APITokenKind;
 }
+
+export type APITokenKind = "integration" | "ai";
+
+// ---- Dostęp AI (MCP, wersja 1.4) ----
+
+export interface AIMask {
+  users: boolean;
+  hosts: boolean;
+  ips: boolean;
+  emails: boolean;
+}
+
+export interface AIPolicy {
+  enabled: boolean;
+  tools: Record<string, boolean>;
+  max_range_hours: number;
+  max_rows: number;
+  excluded_datasets: string[] | null;
+  mask: AIMask;
+  ack_version: number;
+  ack_by?: string;
+  ack_at?: string;
+}
+
+export interface AIToolGroup {
+  id: string;
+  default: boolean;
+  sensitive: boolean;
+  routes: string[];
+  enabled: boolean;
+}
+
+export interface AIRequest extends APIRequest {
+  token_name: string;
+}
+
+export const aiApi = {
+  policy: () =>
+    request<{ policy: AIPolicy; tools: AIToolGroup[]; disclaimer_version: number; acknowledged: boolean; settings: boolean }>(
+      "GET",
+      "/api/v1/ai/policy",
+    ),
+  setPolicy: (policy: AIPolicy, acknowledge: boolean, password: string) =>
+    request<{ policy: AIPolicy }>("PUT", "/api/v1/ai/policy", { policy, acknowledge, password }),
+  requests: (before?: number) => request<{ requests: AIRequest[] }>("GET", `/api/v1/ai/requests${before ? `?before=${before}` : ""}`),
+  reveal: (pseudonym: string, reason: string) =>
+    request<{ pseudonym: { pseudonym: string; kind: string; value: string; first_seen: string; last_seen: string } }>(
+      "POST",
+      "/api/v1/ai/reveal",
+      { pseudonym, reason },
+    ),
+};
 
 // Nazwy profili wbudowanych (gdy lista profili jeszcze się nie wczytała).
 export const roleLabels: Record<string, string> = translatedStrings("role", ["admin", "analyst", "viewer"]);

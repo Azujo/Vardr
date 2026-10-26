@@ -35,6 +35,8 @@
     "ldap": "Logowanie domenowe",
     "apiTokens": "Tokeny API",
     "apiTokensHint": "integracje, OpenAPI",
+    "ai": "Dostęp AI",
+    "aiHint": "MCP, ochrona danych",
     "notifications": "Powiadomienia",
     "backup": "Kopie zapasowe",
     "backupHint": "harmonogram i miejsce",

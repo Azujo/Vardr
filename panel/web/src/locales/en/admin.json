@@ -86,7 +86,10 @@
       "user_updated": "account change",
       "api_token_created": "new API token",
       "api_token_revoked": "API token revoked",
-      "api_token_denied": "API token denied"
+      "api_token_denied": "API token denied",
+      "ai_policy_changed": "AI policy changed",
+      "ai_pseudonym_revealed": "AI pseudonym revealed",
+      "ai_mcp_downloaded": "vardr-mcp downloaded"
     },
     "older": "Older entries"
   },
@@ -157,6 +160,13 @@
     "notify": {
       "label": "Notifications",
       "help": "channels (Discord, Teams, webhook)"
+    },
+    "ai": {
+      "label": "AI access (MCP)",
+      "help": "read: AI policy and request history; reveal: masking pseudonyms; change: AI policy",
+      "level": {
+        "reveal": "revealing pseudonyms"
+      }
     },
     "backup": {
       "label": "Backups",
@@ -324,7 +334,12 @@
       "ip": "IP address"
     },
     "noRequests": "No requests in the history.",
-    "older": "Older requests"
+    "older": "Older requests",
+    "kindIntegration": "Integration",
+    "kindAi": "AI (MCP)",
+    "aiHelp": "A token for the MCP server (vardr-mcp): the AI policy (Administration → AI access) also applies to it – only enabled tools, data scope and masking. Choose a read-only profile.",
+    "aiAck": "I have read the warnings and take responsibility for GDPR-compliant use of AI",
+    "exampleAi": "Settings for vardr-mcp (better save the token in a file and use VARDR_TOKEN_FILE):"
   },
   "notify": {
     "minLevel": "Alerts from level",

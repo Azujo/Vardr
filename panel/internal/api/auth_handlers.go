@@ -33,6 +33,8 @@ type authCtx struct {
 	perms   perm.Set // uprawnienia profilu konta
 	// token: żądanie z tokenem API (wtedy bez sesji; user – aktor api:<nazwa>).
 	token *store.APIToken
+	// ai: polityka AI dla tokenu AI (limity zapytań, maskowanie); nil – inny.
+	ai *AIPolicy
 }
 
 func current(r *http.Request) authCtx {

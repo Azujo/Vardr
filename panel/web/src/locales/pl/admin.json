@@ -86,7 +86,10 @@
       "user_updated": "zmiana konta",
       "api_token_created": "nowy token API",
       "api_token_revoked": "unieważnienie tokenu API",
-      "api_token_denied": "odmowa dla tokenu API"
+      "api_token_denied": "odmowa dla tokenu API",
+      "ai_policy_changed": "zmiana polityki AI",
+      "ai_pseudonym_revealed": "odkrycie pseudonimu AI",
+      "ai_mcp_downloaded": "pobranie vardr-mcp"
     },
     "older": "Starsze wpisy"
   },
@@ -157,6 +160,13 @@
     "notify": {
       "label": "Powiadomienia",
       "help": "kanały (Discord, Teams, webhook)"
+    },
+    "ai": {
+      "label": "Dostęp AI (MCP)",
+      "help": "odczyt: polityka i historia zapytań AI; odkrywanie: pseudonimy z maskowania; zmiana: polityka AI",
+      "level": {
+        "reveal": "odkrywanie pseudonimów"
+      }
     },
     "backup": {
       "label": "Kopie zapasowe",
@@ -324,7 +334,12 @@
       "ip": "Adres IP"
     },
     "noRequests": "Brak zapytań w historii.",
-    "older": "Starsze zapytania"
+    "older": "Starsze zapytania",
+    "kindIntegration": "Integracja",
+    "kindAi": "AI (MCP)",
+    "aiHelp": "Token dla serwera MCP (vardr-mcp): obowiązuje go dodatkowo polityka AI (Administracja → Dostęp AI) – tylko włączone narzędzia, zakres danych i maskowanie. Wybierz profil tylko do odczytu.",
+    "aiAck": "Przeczytałem ostrzeżenia i biorę odpowiedzialność za zgodność użycia AI z RODO",
+    "exampleAi": "Ustawienia dla vardr-mcp (lepiej zapisać token w pliku i użyć VARDR_TOKEN_FILE):"
   },
   "notify": {
     "minLevel": "Alerty od poziomu",

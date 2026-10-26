@@ -22,6 +22,7 @@ import AccountSecurityPage from "./pages/AccountSecurityPage";
 import ProfilesPage from "./pages/ProfilesPage";
 import LdapPage from "./pages/LdapPage";
 import ApiTokensPage from "./pages/ApiTokensPage";
+import AiAccessPage from "./pages/AiAccessPage";
 import IncidentsPage from "./pages/IncidentsPage";
 import IncidentDetailPage from "./pages/IncidentDetailPage";
 import DecodersPage from "./pages/DecodersPage";
@@ -77,6 +78,7 @@ export default function App() {
         {can("users", "read") && <Route path="/admin/profiles" element={<ProfilesPage />} />}
         {can("users", "read") && <Route path="/admin/ldap" element={<LdapPage />} />}
         {can("users", "read") && <Route path="/admin/api-tokens" element={<ApiTokensPage />} />}
+        {can("ai", "read") && <Route path="/admin/ai" element={<AiAccessPage />} />}
         {can("audit", "read") && <Route path="/admin/audit" element={<AuditPage />} />}
         {can("notify", "read") && <Route path="/admin/notifications" element={<NotificationsPage />} />}
         {can("backup", "read") && <Route path="/admin/backup" element={<BackupPage />} />}

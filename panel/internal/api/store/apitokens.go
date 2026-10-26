@@ -27,15 +27,23 @@ type APIToken struct {
 	LastUsedIP  string     `json:"last_used_ip,omitempty"`
 	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
 	RevokedBy   string     `json:"revoked_by,omitempty"`
+	// Kind: integration (programy) albo ai (serwer MCP – polityka AI).
+	Kind string `json:"kind"`
 }
 
+// Rodzaje tokenów API.
+const (
+	TokenIntegration = "integration"
+	TokenAI          = "ai"
+)
+
 const apiTokenCols = `id, name, description, token_hash, prefix, profile, created_by, created_at, expires_at,
-	last_used_at, last_used_ip, revoked_at, revoked_by`
+	last_used_at, last_used_ip, revoked_at, revoked_by, kind`
 
 func scanAPIToken(row pgx.Row) (APIToken, error) {
 	var t APIToken
 	err := row.Scan(&t.ID, &t.Name, &t.Description, &t.TokenHash, &t.Prefix, &t.Profile, &t.CreatedBy, &t.CreatedAt, &t.ExpiresAt,
-		&t.LastUsedAt, &t.LastUsedIP, &t.RevokedAt, &t.RevokedBy)
+		&t.LastUsedAt, &t.LastUsedIP, &t.RevokedAt, &t.RevokedBy, &t.Kind)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -44,10 +52,13 @@ func scanAPIToken(row pgx.Row) (APIToken, error) {
 
 // CreateAPIToken zapisuje nowy token (ErrConflict – aktywny token o tej nazwie istnieje).
 func (s *PG) CreateAPIToken(ctx context.Context, t APIToken) (APIToken, error) {
+	if t.Kind == "" {
+		t.Kind = TokenIntegration
+	}
 	created, err := scanAPIToken(s.pool.QueryRow(ctx, `INSERT INTO api_tokens
-		(name, description, token_hash, prefix, profile, created_by, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+apiTokenCols,
-		t.Name, t.Description, t.TokenHash, t.Prefix, t.Profile, t.CreatedBy, t.CreatedAt, t.ExpiresAt))
+		(name, description, token_hash, prefix, profile, created_by, created_at, expires_at, kind)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING `+apiTokenCols,
+		t.Name, t.Description, t.TokenHash, t.Prefix, t.Profile, t.CreatedBy, t.CreatedAt, t.ExpiresAt, t.Kind))
 	if isUniqueViolation(err) {
 		return created, ErrConflict
 	}
@@ -180,4 +191,68 @@ func (s *PG) ProfileTokens(ctx context.Context, now time.Time) (map[string]int, 
 		out[id] = n
 	}
 	return out, rows.Err()
+}
+
+// KindRequest to zapytanie tokenu z nazwą tokenu (historia zapytań AI).
+type KindRequest struct {
+	APIRequest
+	TokenName string `json:"token_name"`
+}
+
+// APIRequestsByKind: zapytania tokenów danego rodzaju od najnowszych
+// (beforeID > 0 – starsze niż ten wpis).
+func (s *PG) APIRequestsByKind(ctx context.Context, kind string, limit int, beforeID int64) ([]KindRequest, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `SELECT r.id, r.token_id, r.at, r.method, r.path, r.status, r.duration_ms, r.ip, t.name
+		FROM api_token_requests r JOIN api_tokens t ON t.id = r.token_id
+		WHERE t.kind = $1 AND ($3 = 0 OR r.id < $3) ORDER BY r.id DESC LIMIT $2`, kind, limit, beforeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []KindRequest{}
+	for rows.Next() {
+		var r KindRequest
+		if err := rows.Scan(&r.ID, &r.TokenID, &r.At, &r.Method, &r.Path, &r.Status, &r.DurationMS, &r.IP, &r.TokenName); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Pseudonym to pseudonim danych maskowanych dla AI.
+type Pseudonym struct {
+	Pseudonym string    `json:"pseudonym"`
+	Kind      string    `json:"kind"`
+	Value     string    `json:"value"`
+	FirstSeen time.Time `json:"first_seen"`
+	LastSeen  time.Time `json:"last_seen"`
+}
+
+// SavePseudonyms zapisuje pseudonimy (pseudonim → rodzaj i wartość);
+// istniejące – tylko czas ostatniego użycia.
+func (s *PG) SavePseudonyms(ctx context.Context, ps []Pseudonym, now time.Time) error {
+	if len(ps) == 0 {
+		return nil
+	}
+	b := &pgx.Batch{}
+	for _, p := range ps {
+		b.Queue(`INSERT INTO ai_pseudonyms (pseudonym, kind, value, first_seen, last_seen) VALUES ($1, $2, $3, $4, $4)
+			ON CONFLICT (pseudonym) DO UPDATE SET last_seen = $4`, p.Pseudonym, p.Kind, p.Value, now)
+	}
+	return s.pool.SendBatch(ctx, b).Close()
+}
+
+// PseudonymOf zwraca wartość pseudonimu (ErrNotFound – nieznany).
+func (s *PG) PseudonymOf(ctx context.Context, pseudonym string) (Pseudonym, error) {
+	var p Pseudonym
+	err := s.pool.QueryRow(ctx, `SELECT pseudonym, kind, value, first_seen, last_seen FROM ai_pseudonyms WHERE pseudonym = $1`,
+		pseudonym).Scan(&p.Pseudonym, &p.Kind, &p.Value, &p.FirstSeen, &p.LastSeen)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	return p, err
 }

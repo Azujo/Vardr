@@ -19,6 +19,7 @@
 #   collector   siem-collector (kolektor syslog, kontener na VM; rejestracja:
 #               deploy/lab/collector-enroll.sh)
 #   tools       odczytaj.exe – czytnik eksportu archiwum dołączany do paczek (export-tools/)
+#               i vardr-mcp.exe – serwer MCP do pobrania z panelu (agent-dist/)
 #
 # Zmienne: SIEM_LAB_HOST (siem@192.168.88.98), SIEM_LAB_KEY (~/.ssh/siem_lab),
 # SIEM_LAB_DIR (~/siem-lab na VM).
@@ -103,6 +104,11 @@ for t in "${targets[@]}"; do
       -o deploy/lab/export-tools/odczytaj.exe ./tools/cmd/odczytaj
     remote "mkdir -p export-tools"
     copy deploy/lab/export-tools/odczytaj.exe "$host:$dir/export-tools/odczytaj.exe"
+    echo "== serwer MCP (vardr-mcp.exe) -> agent-dist/ – pobieranie z panelu (Dostęp AI)"
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version_=$version" \
+      -o deploy/lab/bin/vardr-mcp.exe ./tools/cmd/vardr-mcp
+    remote "mkdir -p agent-dist"
+    copy deploy/lab/bin/vardr-mcp.exe "$host:$dir/agent-dist/vardr-mcp.exe"
     ;;
   agent)
     echo "== agent Windows -> agent-dist/ (program i instalator MSI)"

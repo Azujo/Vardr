@@ -1,0 +1,143 @@
+{
+  "title": "Dostęp AI (MCP)",
+  "intro": "Serwer MCP (vardr-mcp) pozwala podłączyć do Vardra model AI – lokalny (np. Ollama, LM Studio) albo zewnętrzny (np. Claude Desktop) – który może czytać zdarzenia, alerty, reguły i stan systemu, żeby podpowiadać analitykowi. Model widzi tylko to, co zwrócą mu narzędzia; wszystkie ograniczenia poniżej egzekwuje serwer Vardra przy każdym zapytaniu tokenem AI. Narzędzia tylko czytają – AI niczego nie zmieni.",
+  "copy": "Kopiuj",
+  "copied": "Skopiowano",
+  "warnings": {
+    "title": "Zanim włączysz dostęp AI",
+    "gdpr": {
+      "title": "RODO.",
+      "text": "Logi zawierają dane osobowe (loginy, adresy, aktywność pracowników). Udostępnienie ich modelowi AI to przetwarzanie danych: ustal podstawę prawną i cel, uzgodnij to z inspektorem ochrony danych i odnotuj w rejestrze czynności przetwarzania."
+    },
+    "external": {
+      "title": "Model zewnętrzny = przekazanie danych.",
+      "text": "Dane wysłane do usługi w chmurze (Claude, ChatGPT, Gemini…) trafiają do dostawcy, który staje się podmiotem przetwarzającym: potrzebna jest umowa powierzenia (DPA), sprawdzenie, czy dane nie wychodzą poza EOG, i warunki dostawcy dotyczące uczenia na danych. Dla danych wrażliwych zalecany jest model lokalny."
+    },
+    "hallucination": {
+      "title": "Halucynacje.",
+      "text": "Model może zmyślić zdarzenia, powiązania, techniki ATT&CK albo wnioski i podawać je z pewnością. Każdą odpowiedź traktuj jako hipotezę i sprawdź w panelu przed działaniem."
+    },
+    "injection": {
+      "title": "Prompt injection.",
+      "text": "Treść logów (nazwy kont, linie poleceń, wiadomości syslog) może pochodzić od atakującego i zawierać instrukcje dla modelu, np. „zignoruj ten alert”. Vardr oznacza dane jako dane, nie instrukcje, ale nie da się tego wykluczyć – dlatego AI tylko czyta."
+    },
+    "decisions": {
+      "title": "Bez decyzji automatycznych.",
+      "text": "Ocena pracownika, decyzje kadrowe czy dyscyplinarne nie mogą opierać się wyłącznie na odpowiedzi AI (art. 22 RODO) – zawsze potrzebna jest analiza człowieka."
+    },
+    "masking": {
+      "title": "Maskowanie ogranicza, nie usuwa ryzyka.",
+      "text": "Pseudonimy zastępują loginy, komputery i adresy w polach i rozpoznane w tekście, ale nazwa występująca tylko w treści zdarzenia może zostać przeoczona."
+    }
+  },
+  "policy": {
+    "title": "Polityka AI",
+    "ackBy": "ostrzeżenia potwierdził {{by}}, {{date}}",
+    "enabled": "Dostęp AI włączony",
+    "enabledHelp": "Wyłączenie natychmiast blokuje wszystkie tokeny AI (odpowiedź 403), bez ich unieważniania.",
+    "tools": "Narzędzia dostępne dla AI",
+    "sensitive": "wrażliwe",
+    "limits": "Zakres danych",
+    "maxRange": "Najdłuższy okres zapytania (godziny)",
+    "maxRangeHelp": "Dla wyszukiwania zdarzeń i histogramu, np. 168 = 7 dni.",
+    "maxRows": "Najwięcej zdarzeń w odpowiedzi",
+    "excluded": "Źródła niedostępne dla AI",
+    "excludedHelp": "Zbiory danych (event.dataset) wyłączone z wyszukiwania i szczegółów zdarzeń, np. systemy kadrowe.",
+    "masking": "Maskowanie (pseudonimy)",
+    "maskingHelp": "Wartości zamieniane na stałe pseudonimy (USER-7F3A12BC…) w polach i w tekście: model widzi, że to ta sama osoba czy ten sam komputer, ale nie wie, kto to. Pseudonim odkryjesz niżej (uprawnienie, audyt).",
+    "ack": "Przeczytałem ostrzeżenia powyżej i biorę odpowiedzialność za zgodność użycia AI z RODO w organizacji",
+    "password": "Twoje hasło (zmiana polityki)",
+    "save": "Zapisz politykę",
+    "saved": "Zapisano politykę AI"
+  },
+  "tools": {
+    "events": {
+      "label": "Wyszukiwanie zdarzeń",
+      "help": "znormalizowane zdarzenia (pola, opis) – w granicach okresu i liczby wierszy"
+    },
+    "histogram": {
+      "label": "Histogram zdarzeń",
+      "help": "liczby zdarzeń w czasie – trendy bez treści zdarzeń"
+    },
+    "alerts": {
+      "label": "Alerty",
+      "help": "lista, podsumowanie i szczegóły alertów z osią zdarzeń i notatkami"
+    },
+    "rules": {
+      "label": "Reguły i ATT&CK",
+      "help": "lista reguł i pokrycie technik – „czego brakuje w detekcji”"
+    },
+    "system": {
+      "label": "Stan systemu i agenci",
+      "help": "zdrowie usług, kolejek, dysków; lista agentów"
+    },
+    "raw_events": {
+      "label": "Surowe zdarzenia",
+      "help": "pełna treść zdarzenia (XML, syslog) – najwięcej danych osobowych"
+    },
+    "incidents": {
+      "label": "Incydenty",
+      "help": "incydenty z notatkami i stanem zgłoszeń NIS2 – często dane wrażliwe"
+    },
+    "risk": {
+      "label": "Ryzyko osób i komputerów",
+      "help": "ranking ryzyka – profilowanie pracowników (RODO)"
+    }
+  },
+  "mask": {
+    "users": "loginy i osoby",
+    "hosts": "komputery",
+    "ips": "adresy IP",
+    "emails": "adresy e-mail"
+  },
+  "setup": {
+    "title": "Podłączenie klienta AI",
+    "step1": "Utwórz token rodzaju „AI (MCP)” z profilem tylko do odczytu i skopiuj go:",
+    "tokens": "Tokeny API",
+    "step2": "Pobierz program i certyfikat CA serwera (najlepiej do jednego folderu):",
+    "step3": "Uruchom vardr-mcp.exe dwuklikiem i wklej adres panelu oraz token.",
+    "address": "Adres panelu:",
+    "wizard": "Kreator sam znajdzie certyfikat, sprawdzi połączenie i politykę AI, zapisze token w %APPDATA%\\Vardr i dopisze serwer „vardr” do konfiguracji Claude Desktop (z kopią zapasową, bez zmieniania reszty pliku). Gdy test się nie powiedzie, niczego nie zapisuje.",
+    "step4": "Zamknij całkowicie Claude Desktop (także z zasobnika systemowego), uruchom go ponownie i zapytaj np. „Jakie mam otwarte alerty w Vardrze?”.",
+    "defenderTitle": "Windows Defender blokuje program?",
+    "defender": "vardr-mcp.exe nie jest jeszcze podpisany cyfrowo, więc Defender może go oznaczyć heurystycznie (np. Wacatac!ml). Sprawdź, że plik pochodzi z tego panelu, i w Zabezpieczenia Windows → Historia ochrony wybierz Akcje → Zezwalaj na urządzeniu. Zezwolenie dotyczy pliku w tym miejscu – nie przenoś go potem.",
+    "manualTitle": "Konfiguracja ręczna (Linux, macOS, inne klienty uruchamiające vardr-mcp)",
+    "manual": "Dodaj serwer w konfiguracji klienta AI (Claude Desktop: Ustawienia → Developer → Edit Config). Wpis „mcpServers” musi być kluczem głównego obiektu JSON, obok istniejących ustawień – nie osobnym blokiem. Na Linuksie i macOS: vardr-mcp setup.",
+    "check": "Sprawdź połączenie, token i politykę:",
+    "local": "Model lokalny (Ollama, LM Studio z obsługą MCP) – te same ustawienia; dane nie opuszczają wtedy Twojego komputera i sieci.",
+    "tabDesktop": "Claude Desktop (komputer analityka)",
+    "tabRemote": "Serwer z LLM-em / inny klient MCP",
+    "remote": {
+      "intro": "Dla klienta AI na serwerze albo w sieci – np. własny model (vLLM, Ollama) z Open WebUI, LibreChat, n8n, a także VS Code czy Cursor. Panel sam jest serwerem MCP (transport Streamable HTTP), więc nie trzeba instalować vardr-mcp.",
+      "step1": "Utwórz token rodzaju „AI (MCP)” z profilem tylko do odczytu:",
+      "step2": "W kliencie dodaj serwer MCP typu Streamable HTTP (w niektórych klientach: „HTTP” albo „streamable-http”):",
+      "url": "Adres:",
+      "header": "Nagłówek:",
+      "step3": "Komputer lub kontener klienta musi ufać certyfikatowi panelu – dodaj vardr-ca.crt do zaufanych certyfikatów (Linux: /usr/local/share/ca-certificates i update-ca-certificates; Node.js: NODE_EXTRA_CA_CERTS; Python: SSL_CERT_FILE).",
+      "step4": "Sprawdź połączenie z serwera klienta (powinna wrócić lista narzędzi):",
+      "example": "Przykład konfiguracji w formacie JSON używanym przez wiele klientów (nazwy pól różnią się między klientami – sprawdź dokumentację swojego):",
+      "modelTitle": "Model musi umieć wywoływać narzędzia",
+      "model": "Potrzebny jest model trenowany do wywoływania narzędzi (tool calling), np. z rodzin Qwen3, Llama 3.1+, Mistral, gpt-oss, z oknem kontekstu co najmniej 32 tys. tokenów. Małe modele częściej mylą argumenty i zmyślają wnioski – tym bardziej obowiązują ostrzeżenia powyżej.",
+      "notes": "Serwer tylko odpowiada na zapytania (bez sesji i strumienia SSE). Obowiązują te same zasady co dla vardr-mcp: polityka AI, maskowanie, limity; każde wywołanie narzędzia trafia do historii zapytań. Token trzymaj w sekretach klienta, nie w jawnym pliku."
+    }
+  },
+  "reveal": {
+    "title": "Odkrywanie pseudonimów",
+    "help": "Wklej pseudonim z odpowiedzi AI (np. USER-7F3A12BC), żeby zobaczyć prawdziwą wartość. Każde odkrycie trafia do audytu z powodem.",
+    "pseudonym": "Pseudonim",
+    "reason": "Powód",
+    "reasonPlaceholder": "np. alert 4211 – analiza",
+    "button": "Odkryj",
+    "result": "Wartość ({{kind}}):"
+  },
+  "history": {
+    "title": "Historia zapytań AI",
+    "time": "Czas",
+    "token": "Token",
+    "request": "Zapytanie",
+    "status": "Wynik",
+    "duration": "Czas odpowiedzi",
+    "empty": "Brak zapytań tokenów AI.",
+    "older": "Starsze zapytania"
+  }
+}

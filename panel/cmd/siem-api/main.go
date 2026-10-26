@@ -166,6 +166,8 @@ func serve(log *slog.Logger) error {
 	apiServer.LDAP = db
 	apiServer.Incidents = db
 	apiServer.APITokens = db
+	apiServer.AI = db
+	apiServer.MCPExe = svc.Env("SIEM_MCP_EXE", "/agent-dist/vardr-mcp.exe")
 	if apiServer.TokenRatePerMin, err = svc.EnvInt("SIEM_API_TOKEN_RATE", 600); err != nil {
 		return err
 	}

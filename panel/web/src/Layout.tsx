@@ -21,6 +21,7 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconActivityHeartbeat,
   IconApi,
+  IconSparkles,
   IconGridDots,
   IconGauge,
   IconAlertOctagon,
@@ -121,6 +122,7 @@ const sections: Section[] = [
       { to: "/admin/profiles", label: "nav.profiles", hint: "nav.profilesHint", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
       { to: "/admin/ldap", label: "nav.ldap", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
       { to: "/admin/api-tokens", label: "nav.apiTokens", hint: "nav.apiTokensHint", icon: <IconApi size={18} />, perm: ["users", "read"] },
+      { to: "/admin/ai", label: "nav.ai", hint: "nav.aiHint", icon: <IconSparkles size={18} />, perm: ["ai", "read"] },
       { to: "/admin/notifications", label: "nav.notifications", hint: "Discord, Teams, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
       { to: "/admin/backup", label: "nav.backup", hint: "nav.backupHint", icon: <IconDatabaseExport size={18} />, perm: ["backup", "read"] },
       { to: "/admin/audit", label: "nav.audit", icon: <IconListDetails size={18} />, perm: ["audit", "read"] },

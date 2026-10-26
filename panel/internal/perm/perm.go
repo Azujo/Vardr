@@ -49,6 +49,8 @@ var Modules = []Module{
 	{"risk", "Ryzyko osób i komputerów", "wyniki ryzyka (profilowanie – dostęp tylko dla uprawnionych); zmiana: ustawienia scoringu", []Level{read, write}},
 	{"system", "Stan systemu", "zdrowie usług (Himinbjörg)", []Level{read}},
 	{"notify", "Powiadomienia", "kanały (Discord, Teams, webhook)", []Level{read, write}},
+	{"ai", "Dostęp AI (MCP)", "odczyt: polityka i historia zapytań AI; odkrywanie: pseudonimy z maskowania; zmiana: polityka AI",
+		[]Level{read, {"reveal", "odkrywanie pseudonimów"}, write}},
 	{"backup", "Kopie zapasowe", "ustawienia, zlecenia i przywracanie", []Level{read, write}},
 	{"users", "Użytkownicy i bezpieczeństwo", "konta, profile uprawnień, wymóg MFA; zmiana = administrator panelu", []Level{read, write}},
 	{"audit", "Dziennik audytu", "", []Level{read}},

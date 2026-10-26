@@ -463,7 +463,7 @@ MVP zamknięte 17.10.2026 (etapy 0–8), wydane wersje 1.0.1 (English update) i 
 | **1.1** | API dla integracji – ✅ wydane w 1.2.0 (26.10.2026) | 30–40 | – |
 | **1.2** | Powiadomienia Power Automate / Microsoft Teams – ✅ wydane w 1.2.0 (26.10.2026) | 15–20 | – (podpis HMAC wspólny z webhookiem) |
 | **1.3** | Scoring ryzyka osób i stacji – ✅ wydane w 1.3.0 (26.10.2026) | 40–60 | mapowanie tożsamości (etap 7) |
-| **1.4** | Serwer MCP (AI tylko do odczytu) | 30–40 | 1.1 |
+| **1.4** | Serwer MCP (AI tylko do odczytu) – ✅ wydane w 1.4.0 (26.10.2026) | 30–40 | 1.1 |
 | **1.5** | Asystent AI w panelu (eksperymentalny) | 60–80 | 1.1, 1.4; korzysta z 1.3 |
 
 ### 1.1 – API dla integracji
@@ -525,6 +525,7 @@ Serwer [Model Context Protocol](https://modelcontextprotocol.io) pozwala podłą
 - **Agenci:** automatyczne aktualizacje.
 - **Skala i dostępność:** HA i replikacja (W6), wydajność writera (W7), częste pola z `fields` w osobnych kolumnach (M4).
 - **Porządki z przeglądu:** kwarantanna nieczytelnych wiadomości w normalizatorze (M2), zapora na serwerze i ograniczenie dostępu do Grafany i ingest (M5), raport synchronizacji czasu agenta (M6) – do sprawdzenia, które są nadal aktualne.
+- **Podpisywanie programów Windows (Authenticode):** `vardr-agent.exe`, MSI, `odczytaj.exe`, `vardr-mcp.exe` – niepodpisany, nowy plik pobrany z przeglądarki Microsoft Defender blokuje heurystyką reputacji (np. `Wacatac.C!ml` dla `vardr-mcp.exe`, 26.10.2026). Certyfikat do podpisywania kodu (np. Azure Trusted Signing) – decyzja i koszt po stronie właściciela projektu.
 - **Publikacja:** automatyczne wydania na GitHubie (Actions na tagu: paczka serwera, MSI agenta, `odczytaj.exe`), szybki start w README.
 - **Laboratorium:** krótsza retencja surowego XML w ClickHouse (np. 1 dzień zamiast 5 – archiwum Urd przechowuje oryginały).
 

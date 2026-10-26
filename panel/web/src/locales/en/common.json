@@ -35,6 +35,8 @@
     "ldap": "Domain sign-in",
     "apiTokens": "API tokens",
     "apiTokensHint": "integrations, OpenAPI",
+    "ai": "AI access",
+    "aiHint": "MCP, data protection",
     "notifications": "Notifications",
     "backup": "Backups",
     "backupHint": "schedule and destination",

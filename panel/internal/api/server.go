@@ -127,6 +127,15 @@ type Server struct {
 	tokenLogDropped atomic.Int64
 	// Risk (opcjonalne): scoring ryzyka osób i komputerów (wyniki z detektora).
 	Risk RiskStore
+	// AI (opcjonalne): historia zapytań tokenów AI i pseudonimy maskowania
+	// (polityka AI – ai.go, w ustawieniach panelu).
+	AI      AIStore
+	aiCache aiPolicyCache
+	// MCPExe: program vardr-mcp.exe do pobrania (domyślnie /agent-dist/vardr-mcp.exe).
+	MCPExe string
+	// mux: drzewo tras – dla wewnętrznych zapytań narzędzi MCP (mcp_handlers.go).
+	mux *http.ServeMux
+	aiKeyState
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore
 	ldap      ldapState
@@ -200,6 +209,7 @@ func (s *Server) Handler() http.Handler {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu API")
 	})
 	mux.Handle("/", s.ui())
+	s.mux = mux
 	return s.recover(securityHeaders(mux))
 }
 

@@ -1,0 +1,143 @@
+{
+  "title": "AI access (MCP)",
+  "intro": "The MCP server (vardr-mcp) lets you connect an AI model to Vardr – local (e.g. Ollama, LM Studio) or external (e.g. Claude Desktop) – which can read events, alerts, rules and system health to assist the analyst. The model sees only what the tools return; all the limits below are enforced by the Vardr server on every request made with an AI token. The tools only read – AI cannot change anything.",
+  "copy": "Copy",
+  "copied": "Copied",
+  "warnings": {
+    "title": "Before you enable AI access",
+    "gdpr": {
+      "title": "GDPR.",
+      "text": "Logs contain personal data (accounts, addresses, employee activity). Giving them to an AI model is data processing: establish the legal basis and purpose, agree it with the data protection officer and record it in the register of processing activities."
+    },
+    "external": {
+      "title": "An external model means a data transfer.",
+      "text": "Data sent to a cloud service (Claude, ChatGPT, Gemini…) goes to the provider, which becomes a processor: you need a data processing agreement (DPA), a check whether data leaves the EEA, and the provider's terms on training on your data. A local model is recommended for sensitive data."
+    },
+    "hallucination": {
+      "title": "Hallucinations.",
+      "text": "The model may invent events, relationships, ATT&CK techniques or conclusions and state them confidently. Treat every answer as a hypothesis and verify it in the panel before acting."
+    },
+    "injection": {
+      "title": "Prompt injection.",
+      "text": "Log content (account names, command lines, syslog messages) may come from an attacker and contain instructions for the model, e.g. “ignore this alert”. Vardr marks data as data, not instructions, but this cannot be ruled out – which is why AI only reads."
+    },
+    "decisions": {
+      "title": "No automated decisions.",
+      "text": "Assessing an employee or HR and disciplinary decisions must not rely solely on an AI answer (GDPR Art. 22) – human analysis is always required."
+    },
+    "masking": {
+      "title": "Masking reduces, not removes, the risk.",
+      "text": "Pseudonyms replace accounts, computers and addresses in fields and where recognized in text, but a name that appears only inside an event's content may be missed."
+    }
+  },
+  "policy": {
+    "title": "AI policy",
+    "ackBy": "warnings confirmed by {{by}}, {{date}}",
+    "enabled": "AI access enabled",
+    "enabledHelp": "Disabling immediately blocks all AI tokens (403) without revoking them.",
+    "tools": "Tools available to AI",
+    "sensitive": "sensitive",
+    "limits": "Data scope",
+    "maxRange": "Longest query period (hours)",
+    "maxRangeHelp": "For event search and the histogram, e.g. 168 = 7 days.",
+    "maxRows": "Most events per response",
+    "excluded": "Sources unavailable to AI",
+    "excludedHelp": "Datasets (event.dataset) excluded from event search and details, e.g. HR systems.",
+    "masking": "Masking (pseudonyms)",
+    "maskingHelp": "Values replaced with stable pseudonyms (USER-7F3A12BC…) in fields and text: the model sees it is the same person or computer but not who it is. Reveal a pseudonym below (permission, audit).",
+    "ack": "I have read the warnings above and take responsibility for GDPR-compliant use of AI in the organisation",
+    "password": "Your password (policy change)",
+    "save": "Save policy",
+    "saved": "AI policy saved"
+  },
+  "tools": {
+    "events": {
+      "label": "Event search",
+      "help": "normalized events (fields, description) – within the period and row limits"
+    },
+    "histogram": {
+      "label": "Event histogram",
+      "help": "event counts over time – trends without event content"
+    },
+    "alerts": {
+      "label": "Alerts",
+      "help": "list, summary and alert details with the event timeline and notes"
+    },
+    "rules": {
+      "label": "Rules and ATT&CK",
+      "help": "rule list and technique coverage – “what detection is missing”"
+    },
+    "system": {
+      "label": "System health and agents",
+      "help": "service, queue and disk health; agent list"
+    },
+    "raw_events": {
+      "label": "Raw events",
+      "help": "full event content (XML, syslog) – the most personal data"
+    },
+    "incidents": {
+      "label": "Incidents",
+      "help": "incidents with notes and NIS2 report state – often sensitive"
+    },
+    "risk": {
+      "label": "Risk of people and computers",
+      "help": "risk ranking – employee profiling (GDPR)"
+    }
+  },
+  "mask": {
+    "users": "accounts and people",
+    "hosts": "computers",
+    "ips": "IP addresses",
+    "emails": "e-mail addresses"
+  },
+  "setup": {
+    "title": "Connecting an AI client",
+    "step1": "Create a token of kind “AI (MCP)” with a read-only profile and copy it:",
+    "tokens": "API tokens",
+    "step2": "Download the program and the server CA certificate (preferably into one folder):",
+    "step3": "Run vardr-mcp.exe with a double-click and paste the panel address and the token.",
+    "address": "Panel address:",
+    "wizard": "The wizard finds the certificate, checks the connection and the AI policy, saves the token in %APPDATA%\\Vardr and adds the “vardr” server to the Claude Desktop configuration (with a backup, leaving the rest of the file unchanged). If the check fails, nothing is saved.",
+    "step4": "Quit Claude Desktop completely (also from the system tray), start it again and ask e.g. “What open alerts do I have in Vardr?”.",
+    "defenderTitle": "Windows Defender blocks the program?",
+    "defender": "vardr-mcp.exe is not code-signed yet, so Defender may flag it heuristically (e.g. Wacatac!ml). Make sure the file comes from this panel, then in Windows Security → Protection history choose Actions → Allow on device. The permission applies to the file in that location – do not move it afterwards.",
+    "manualTitle": "Manual configuration (Linux, macOS, other clients that run vardr-mcp)",
+    "manual": "Add the server to the AI client's configuration (Claude Desktop: Settings → Developer → Edit Config). “mcpServers” must be a key of the top-level JSON object, next to existing settings – not a separate block. On Linux and macOS: vardr-mcp setup.",
+    "check": "Check the connection, token and policy:",
+    "local": "A local model (Ollama, LM Studio with MCP support) – the same settings; data then never leaves your computer and network.",
+    "tabDesktop": "Claude Desktop (analyst's computer)",
+    "tabRemote": "Server with an LLM / other MCP client",
+    "remote": {
+      "intro": "For an AI client on a server or in the network – e.g. your own model (vLLM, Ollama) with Open WebUI, LibreChat, n8n, as well as VS Code or Cursor. The panel itself is an MCP server (Streamable HTTP transport), so there is no need to install vardr-mcp.",
+      "step1": "Create a token of kind “AI (MCP)” with a read-only profile:",
+      "step2": "In the client, add an MCP server of type Streamable HTTP (in some clients: “HTTP” or “streamable-http”):",
+      "url": "URL:",
+      "header": "Header:",
+      "step3": "The client's computer or container must trust the panel's certificate – add vardr-ca.crt to the trusted certificates (Linux: /usr/local/share/ca-certificates and update-ca-certificates; Node.js: NODE_EXTRA_CA_CERTS; Python: SSL_CERT_FILE).",
+      "step4": "Check the connection from the client's server (it should return the list of tools):",
+      "example": "Example configuration in the JSON format used by many clients (field names differ between clients – check your client's documentation):",
+      "modelTitle": "The model must be able to call tools",
+      "model": "You need a model trained for tool calling, e.g. from the Qwen3, Llama 3.1+, Mistral or gpt-oss families, with a context window of at least 32k tokens. Small models more often get arguments wrong and make up conclusions – the warnings above apply all the more.",
+      "notes": "The server only answers requests (no session, no SSE stream). The same rules as for vardr-mcp apply: AI policy, masking, limits; every tool call is recorded in the request history. Keep the token in the client's secrets, not in a plain file."
+    }
+  },
+  "reveal": {
+    "title": "Revealing pseudonyms",
+    "help": "Paste a pseudonym from an AI answer (e.g. USER-7F3A12BC) to see the real value. Every reveal is recorded in the audit log with the reason.",
+    "pseudonym": "Pseudonym",
+    "reason": "Reason",
+    "reasonPlaceholder": "e.g. alert 4211 – analysis",
+    "button": "Reveal",
+    "result": "Value ({{kind}}):"
+  },
+  "history": {
+    "title": "AI request history",
+    "time": "Time",
+    "token": "Token",
+    "request": "Request",
+    "status": "Result",
+    "duration": "Response time",
+    "empty": "No AI token requests.",
+    "older": "Older requests"
+  }
+}

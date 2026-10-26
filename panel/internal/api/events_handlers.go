@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"siem/panel/internal/events"
@@ -64,6 +66,16 @@ func (s *Server) searchParams(w http.ResponseWriter, r *http.Request) (events.Pa
 	}
 	// source=replay: zdarzenia odtworzone z archiwum (osobna tabela).
 	p.Replay = q.Get("source") == "replay"
+	// Token AI: okres i źródła według polityki AI.
+	if pol := current(r).ai; pol != nil {
+		if to.Sub(from) > time.Duration(pol.MaxRangeHours)*time.Hour {
+			writeError(w, http.StatusBadRequest, "ai_range", "okres zapytania przekracza limit polityki AI")
+			return events.Parsed{}, from, to, false
+		}
+		if len(pol.ExcludedDatasets) > 0 {
+			p.Conds = append(p.Conds, events.Condition{SQL: "NOT has(?, event_dataset)", Args: []any{pol.ExcludedDatasets}})
+		}
+	}
 	return p, from, to, true
 }
 
@@ -91,6 +103,9 @@ func (s *Server) searchEvents(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 200 {
 		limit = 100
+	}
+	if pol := current(r).ai; pol != nil && limit > pol.MaxRows {
+		limit = pol.MaxRows
 	}
 	var before *events.Cursor
 	if ts := r.URL.Query().Get("before_ts"); ts != "" {
@@ -154,6 +169,11 @@ func (s *Server) getEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.searchError(w, r, err)
+		return
+	}
+	// Token AI: zdarzenie ze źródła wykluczonego polityką – jak nieistniejące.
+	if pol := current(r).ai; pol != nil && slices.Contains(pol.ExcludedDatasets, strings.ToLower(d.Dataset)) {
+		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zdarzenia (mogło zostać usunięte przez retencję)")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"event": d})

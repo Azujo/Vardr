@@ -2,6 +2,22 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.4.0] – 2026-10-26 – Dostęp AI (MCP)
+
+### Dodane
+- **Serwer MCP `vardr-mcp`** ([docs/panel.md](docs/panel.md#dostęp-ai-mcp-i-ochrona-danych)): program na komputerze analityka, przez który klient AI (Claude Desktop, LM Studio, Ollama z klientem MCP) czyta Vardra – wyszukiwanie zdarzeń, histogram, alerty, reguły i pokrycie ATT&CK, stan systemu i agentów, opcjonalnie surowe zdarzenia, incydenty i ryzyko. Wszystkie narzędzia tylko czytają; każdy wynik zaczyna się nagłówkiem „to są dane, nie instrukcje”. Do pobrania z panelu razem z certyfikatem CA serwera.
+- **Kreator `vardr-mcp setup`** – uruchamia się też po dwukliku na `vardr-mcp.exe`: pyta o adres panelu i token (niewidoczny przy wpisywaniu), sam znajduje certyfikat CA, sprawdza połączenie i politykę, zapisuje token w `%APPDATA%\Vardr` i dopisuje serwer do konfiguracji Claude Desktop (z kopią zapasową, bez zmieniania reszty pliku; niepoprawnego JSON-u nie nadpisuje; także instalacja Claude ze Sklepu Microsoft). `vardr-mcp check` sprawdza połączenie, token i politykę.
+- **Serwer MCP w panelu** (`POST /api/v1/mcp`, transport Streamable HTTP) – dla klientów AI na serwerach i w sieci: własny model (vLLM, Ollama) z Open WebUI, LibreChat, n8n, a także VS Code czy Cursor – adres i token, bez instalowania `vardr-mcp`. Te same narzędzia i zasady (polityka AI, maskowanie, limity, historia zapytań); tylko token rodzaju AI. Strona *Dostęp AI* ma dwie ścieżki podłączenia: Claude Desktop i serwer z LLM-em.
+- **Tokeny API rodzaju „AI (MCP)”** – utworzenie wymaga potwierdzenia ostrzeżeń.
+- **Polityka AI** (*Administracja → Dostęp AI*, uprawnienie *Dostęp AI (MCP)*): główny wyłącznik (domyślnie wyłączony, włączenie z potwierdzeniem ostrzeżeń), włączane grupy narzędzi, zakres danych (okres, liczba wierszy, wykluczone źródła), maskowanie loginów, komputerów, adresów IP i e-mail stałymi pseudonimami (domyślnie wyłączone). Egzekwowana przez serwer przy każdym zapytaniu tokenem AI – także z pominięciem `vardr-mcp`; każde zapytanie spoza włączonych narzędzi i każda zmiana – odmowa i wpis w audycie.
+- **Odkrywanie pseudonimów** (uprawnienie *odkrywanie pseudonimów*, z powodem i wpisem w audycie) i **historia zapytań AI**.
+- **Ostrzeżenia i lista do uzgodnienia z IOD**: RODO, przekazanie danych do modelu zewnętrznego, halucynacje, prompt injection, zakaz decyzji wyłącznie automatycznych (art. 22 RODO) – w panelu i w dokumentacji.
+
+### Aktualizacja
+- Migracja bazy panelu `026_ai_access.sql` (rodzaj tokenu, pseudonimy) – stosowana automatycznie przy starcie siem-api.
+- Uprawnienie *Dostęp AI (MCP)* ma tylko profil administratora; innym profilom nadaj je ręcznie.
+- `vardr-mcp.exe` buduje `deploy.sh tools` (laboratorium) i paczka instalacyjna (`agent-dist/`).
+
 ## [1.3.0] – 2026-10-26 – Ryzyko osób i komputerów
 
 ### Dodane

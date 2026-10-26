@@ -27,7 +27,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"api_token_requests", "api_tokens", "incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"ai_pseudonyms", "api_token_requests", "api_tokens", "incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "profiles", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)
@@ -656,6 +656,34 @@ func testMFA(ctx context.Context, t *testing.T, db *PG) {
 	if n, err := db.DeleteOldAPIRequests(ctx, now.Add(-24*time.Hour)); err != nil || n != 1 {
 		t.Fatalf("retencja: %d %v", n, err)
 	}
+	// Token AI: rodzaj, historia zapytań tokenów AI i pseudonimy maskowania.
+	aiTok, err := db.CreateAPIToken(ctx, APIToken{Name: "claude", TokenHash: "hash-ai", Prefix: "vardr_ai", Profile: "viewer",
+		CreatedBy: "adam", CreatedAt: now, ExpiresAt: now.Add(time.Hour), Kind: TokenAI})
+	if err != nil || aiTok.Kind != TokenAI || third.Kind != TokenIntegration {
+		t.Fatalf("rodzaj tokenu: %+v %+v %v", aiTok, third, err)
+	}
+	if err := db.RecordAPIRequests(ctx, []APIRequest{{TokenID: aiTok.ID, At: now, Method: "GET", Path: "/api/v1/alerts", Status: 200}}); err != nil {
+		t.Fatal(err)
+	}
+	if ai, err := db.APIRequestsByKind(ctx, TokenAI, 10, 0); err != nil || len(ai) != 1 || ai[0].TokenName != "claude" {
+		t.Fatalf("historia AI: %+v %v", ai, err)
+	}
+	if err := db.SavePseudonyms(ctx, []Pseudonym{{Pseudonym: "USER-0000ABCD", Kind: "USER", Value: `AZUJO\jan`}}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SavePseudonyms(ctx, []Pseudonym{{Pseudonym: "USER-0000ABCD", Kind: "USER", Value: `AZUJO\jan`}}, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if ps, err := db.PseudonymOf(ctx, "USER-0000ABCD"); err != nil || ps.Value != `AZUJO\jan` || !ps.LastSeen.After(ps.FirstSeen) {
+		t.Fatalf("pseudonim: %+v %v", ps, err)
+	}
+	if _, err := db.PseudonymOf(ctx, "USER-FFFFFFFF"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nieznany pseudonim: %v", err)
+	}
+	if _, err := db.RevokeAPIToken(ctx, aiTok.ID, "adam", now); err != nil {
+		t.Fatal(err)
+	}
+
 	// Sprzątanie: inne testy (profile) zakładają tylko profile wbudowane.
 	if _, err := db.RevokeAPIToken(ctx, third.ID, "adam", now); err != nil {
 		t.Fatal(err)

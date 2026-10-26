@@ -12,6 +12,8 @@ import {
   Group,
   Modal,
   NumberInput,
+  SegmentedControl,
+  Checkbox,
   PasswordInput,
   Select,
   Stack,
@@ -24,7 +26,8 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconCopy, IconHistory, IconKey, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
-import { api, formatDate, formatNumber, profileName, type APIRequest, type APIToken, type Profile } from "../api";
+import { api, formatDate, formatNumber, profileName, type APIRequest, type APIToken, type APITokenKind, type Profile } from "../api";
+import { AIWarnings } from "./AiAccessPage";
 import { useAuth } from "../auth";
 
 function errorMessage(err: unknown) {
@@ -46,7 +49,12 @@ const stateColors = { revoked: "gray", expired: "gray", expiring: "orange", acti
 // Token pokazywany jeden raz – z przykładem użycia.
 function NewSecret({ data, onClose }: { data: { token: APIToken; secret: string } | null; onClose: () => void }) {
   const { t } = useTranslation("admin");
-  const example = data ? `curl -H "Authorization: Bearer ${data.secret}" ${window.location.origin}/api/v1/alerts?status=open` : "";
+  const ai = data?.token.kind === "ai";
+  const example = !data
+    ? ""
+    : ai
+      ? `VARDR_URL=${window.location.origin}\nVARDR_TOKEN=${data.secret}`
+      : `curl -H "Authorization: Bearer ${data.secret}" ${window.location.origin}/api/v1/alerts?status=open`;
   return (
     <Modal opened={data !== null} onClose={onClose} title={t("tokens.secretTitle", { name: data?.token.name ?? "" })} centered size="lg">
       {data && (
@@ -67,7 +75,7 @@ function NewSecret({ data, onClose }: { data: { token: APIToken; secret: string 
             </CopyButton>
           </Group>
           <Text size="sm" fw={500}>
-            {t("tokens.example")}
+            {ai ? t("tokens.exampleAi") : t("tokens.example")}
           </Text>
           <Code block style={{ wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
             {example}
@@ -182,7 +190,9 @@ export default function ApiTokensPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", profile: "viewer", days: 90 });
+  const emptyForm = { name: "", description: "", profile: "viewer", days: 90, kind: "integration" as APITokenKind };
+  const [form, setForm] = useState(emptyForm);
+  const [ack, setAck] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [secret, setSecret] = useState<{ token: APIToken; secret: string } | null>(null);
@@ -217,9 +227,10 @@ export default function ApiTokensPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await api.createAPIToken({ ...form, password });
+      const res = await api.createAPIToken({ ...form, password, acknowledge: form.kind === "ai" && ack });
       setCreateOpen(false);
-      setForm({ name: "", description: "", profile: "viewer", days: limits.def });
+      setForm({ ...emptyForm, days: limits.def });
+      setAck(false);
       setPassword("");
       setSecret(res);
       load();
@@ -262,7 +273,8 @@ export default function ApiTokensPage() {
             leftSection={<IconPlus size={18} />}
             onClick={() => {
               setPassword("");
-              setForm({ name: "", description: "", profile: "viewer", days: limits.def });
+              setForm({ ...emptyForm, days: limits.def });
+              setAck(false);
               setCreateOpen(true);
             }}
           >
@@ -303,7 +315,14 @@ export default function ApiTokensPage() {
               return (
                 <Table.Tr key={tk.id} style={st === "revoked" || st === "expired" ? { opacity: 0.6 } : undefined}>
                   <Table.Td>
-                    <Text fw={500}>{tk.name}</Text>
+                    <Group gap={6}>
+                      <Text fw={500}>{tk.name}</Text>
+                      {tk.kind === "ai" && (
+                        <Badge size="xs" color="violet" variant="light">
+                          AI
+                        </Badge>
+                      )}
+                    </Group>
                     {tk.description && (
                       <Text size="xs" c="dimmed">
                         {tk.description}
@@ -370,9 +389,26 @@ export default function ApiTokensPage() {
         </Table>
       </Table.ScrollContainer>
 
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title={t("tokens.new")} centered>
+      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title={t("tokens.new")} centered size="lg">
         <form onSubmit={create}>
           <Stack>
+            <SegmentedControl
+              value={form.kind}
+              onChange={(v) => setForm({ ...form, kind: v as APITokenKind })}
+              data={[
+                { value: "integration", label: t("tokens.kindIntegration") },
+                { value: "ai", label: t("tokens.kindAi") },
+              ]}
+            />
+            {form.kind === "ai" && (
+              <>
+                <Text size="sm" c="dimmed">
+                  {t("tokens.aiHelp")}
+                </Text>
+                <AIWarnings />
+                <Checkbox label={t("tokens.aiAck")} checked={ack} onChange={(e) => setAck(e.currentTarget.checked)} />
+              </>
+            )}
             <TextInput
               label={t("tokens.col.name")}
               description={t("tokens.nameHint")}
@@ -407,7 +443,7 @@ export default function ApiTokensPage() {
               onChange={(v) => setForm({ ...form, days: typeof v === "number" ? v : limits.def })}
             />
             <PasswordInput label={t("yourPassword")} required value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
-            <Button type="submit" loading={busy} disabled={!password || form.name.trim().length < 2}>
+            <Button type="submit" loading={busy} disabled={!password || form.name.trim().length < 2 || (form.kind === "ai" && !ack)}>
               {t("tokens.create")}
             </Button>
           </Stack>

@@ -153,6 +153,15 @@ func (s *Server) routes() []route {
 		{"PUT /api/v1/risk/config", can("risk", "write"), 0, s.setRiskConfig},
 		{"GET /api/v1/risk/{type}/{entity}", can("risk", "read"), 0, s.getRisk},
 
+		{"GET /api/v1/ai/policy", loggedIn, allowToken, s.getAIPolicy},
+		{mcpPattern, loggedIn, allowToken, s.mcpHTTP},
+		{"GET /api/v1/mcp", public, 0, s.mcpNoStream},
+		{"PUT /api/v1/ai/policy", can("ai", "write"), 0, s.setAIPolicy},
+		{"GET /api/v1/ai/requests", can("ai", "read"), 0, s.listAIRequests},
+		{"POST /api/v1/ai/reveal", can("ai", "reveal"), 0, s.revealPseudonym},
+		{"GET /api/v1/ai/vardr-mcp.exe", can("ai", "read"), 0, s.downloadMCP},
+		{"GET /api/v1/ai/ca.crt", can("ai", "read"), 0, s.downloadCA},
+
 		{"GET /api/v1/api-tokens", can("users", "read"), 0, s.listAPITokens},
 		{"POST /api/v1/api-tokens", can("users", "write"), 0, s.createAPIToken},
 		{"POST /api/v1/api-tokens/{id}/revoke", can("users", "write"), 0, s.revokeAPIToken},

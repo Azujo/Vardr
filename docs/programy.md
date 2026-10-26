@@ -226,6 +226,7 @@ W laboratorium: `docker compose run --rm api bootstrap-admin -username admin`.
 | `SIEM_SYSLOG_TZ` | `Europe/Warsaw` | test dekoderów w panelu |
 | `SIEM_API_TOKEN_RATE` | 600 | limit zapytań jednego tokenu API na minutę (krótki zapas ponad limit; powyżej – 429) |
 | `SIEM_API_TOKEN_LOG_DAYS` | 30 | jak długo panel przechowuje historię zapytań tokenów API |
+| `SIEM_MCP_EXE` | `/agent-dist/vardr-mcp.exe` | program vardr-mcp.exe do pobrania na stronie Dostęp AI |
 
 ## siem-loadgen
 
@@ -240,6 +241,7 @@ Kod: `server/cmd/siem-loadgen`, `server/internal/loadgen`. Generator ruchu: symu
 | `fortisim` | `tools/cmd/fortisim` | symulator syslog FortiGate: `-target 192.168.88.98:514 -proto udp\|tcp -scenario traffic\|portscan\|sweep\|vpn-ok\|vpn-brute\|vpn-spray\|admin-brute\|utm\|mix -count N -every 100ms -user -attacker -header bare\|rfc3164\|rfc5424 -dry` |
 | `entrasim` | `tools/cmd/entrasim`, `internal/entrasim` | symulator Microsoft Graph (kontener `entrasim`): tło logowań i scenariusze na żądanie – `curl -X POST 'http://127.0.0.1:8099/sim/scenario?name=spray'`; scenariusze `normal`, `spray`, `brute`, `success-after-failures`, `foreign`, `mfa-fatigue`, `admin-role` (parametry `user=`, `attacker=`) |
 | `attackgen` | `tools/cmd/attackgen` | słownik MITRE ATT&CK z oficjalnego pakietu STIX: `go run ./tools/cmd/attackgen enterprise-attack.json > internal/attack/enterprise.json` |
+| `vardr-mcp` | `tools/cmd/vardr-mcp` | serwer MCP dla klienta AI na komputerze analityka (stdio): narzędzia tylko do odczytu na API panelu z tokenem AI ([Dostęp AI](panel.md#dostęp-ai-mcp-i-ochrona-danych)). Zmienne: `VARDR_URL`, `VARDR_TOKEN` albo `VARDR_TOKEN_FILE`, `VARDR_CA_FILE`, `VARDR_INSECURE=1` (tylko laboratorium). `vardr-mcp setup` (także dwuklik) – kreator podłączenia Claude Desktop; `vardr-mcp check` – sprawdzenie połączenia, tokenu i polityki. Do pobrania z panelu (`deploy.sh tools`, paczka instalacyjna: `agent-dist/vardr-mcp.exe`) |
 | `odczytaj` | `tools/cmd/odczytaj` | czytnik eksportu archiwum dla audytora (Windows, bez instalacji): sprawdza integralność paczki i zapisuje raport oraz zdarzenia dnia w podfolderze `ODCZYT` – po polsku albo po angielsku, według języka Windows (`VARDR_LANG`) |
 
 Budowanie: [rozwoj.md](rozwoj.md#budowanie).
