@@ -136,7 +136,7 @@ func (s *Server) tokenAuthed(w http.ResponseWriter, r *http.Request, req need, f
 	r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, a))
 	// Endpoint MCP nie jest maskowany drugi raz: zwraca wyniki wewnętrznych
 	// zapytań, a te są już zamaskowane.
-	if a.ai != nil && a.ai.Mask.any() && r.Pattern != mcpPattern {
+	if a.ai != nil && a.ai.Mask.any() && !aiUnmasked(r.Pattern) {
 		s.serveMasked(w, r, *a.ai, h)
 		return
 	}

@@ -39,6 +39,7 @@ func (m *memSettings) SetSetting(_ context.Context, k, v, _ string, _ time.Time)
 type memAI struct {
 	mu sync.Mutex
 	ps map[string]store.Pseudonym
+	an []store.AlertAnalysis
 }
 
 func (m *memAI) APIRequestsByKind(context.Context, string, int, int64) ([]store.KindRequest, error) {
@@ -62,13 +63,19 @@ func (m *memAI) PseudonymOf(_ context.Context, p string) (store.Pseudonym, error
 	return v, nil
 }
 
-func newAIEnv(t *testing.T) (*env, *memAI) {
+func newAIEnv(t *testing.T) (*env, *memAI) { return newAIEnvWith(t, nil) }
+
+// newAIEnvWith: środowisko AI z dodatkowymi zależnościami serwera (setup).
+func newAIEnvWith(t *testing.T, setup func(*Server)) (*env, *memAI) {
 	e := &env{t: t, clock: time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)}
 	e.st = newMemStore(func() time.Time { return e.clock })
 	ai := &memAI{ps: map[string]store.Pseudonym{}}
 	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), UI: fstest.MapFS{"index.html": {Data: []byte("x")}},
 		APITokens: &memAPITokens{}, Settings: &memSettings{kv: map[string]string{}}, AI: ai}
 	srv.now = func() time.Time { return e.clock }
+	if setup != nil {
+		setup(srv)
+	}
 	e.h = srv.Handler()
 	e.addUser("admin", store.RoleAdmin, "bardzo-tajne-haslo-1", false)
 	e.st.agents = map[string]store.Agent{"agt-1": {ID: "agt-1", Hostname: "PC-JANA", RemoteIP: "10.1.2.3"}}
@@ -218,4 +225,34 @@ func TestMaskJSONFreeText(t *testing.T) {
 	if !strings.Contains(string(plain), "jan.kowalski") || len(ps) != 0 {
 		t.Fatalf("bez maskowania: %s", plain)
 	}
+}
+
+func (m *memAI) SaveAlertAnalysis(_ context.Context, a store.AlertAnalysis) (store.AlertAnalysis, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a.ID = int64(len(m.an) + 1)
+	m.an = append([]store.AlertAnalysis{a}, m.an...)
+	return a, nil
+}
+func (m *memAI) AlertAnalyses(_ context.Context, alertID int64, _ int) ([]store.AlertAnalysis, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []store.AlertAnalysis{}
+	for _, a := range m.an {
+		if a.AlertID == alertID {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+func (m *memAI) DeleteAlertAnalysis(_ context.Context, alertID, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, a := range m.an {
+		if a.AlertID == alertID && a.ID == id {
+			m.an = append(m.an[:i], m.an[i+1:]...)
+			return nil
+		}
+	}
+	return store.ErrNotFound
 }

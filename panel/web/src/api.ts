@@ -35,7 +35,8 @@ export interface SessionInfo {
 
 // Uprawnienia profilu: moduł → najwyższy poziom (wyższy obejmuje niższe).
 export type Permissions = Record<string, string>;
-const levelRank: Record<string, number> = { read: 0, test: 1, export: 1, write: 2 };
+// Kolejność poziomów w modułach: read < test/export/use < reveal < write.
+const levelRank: Record<string, number> = { read: 0, test: 1, export: 1, use: 1, reveal: 1.5, write: 2 };
 
 export function hasPerm(p: Permissions | undefined, mod: string, level: string): boolean {
   const got = p?.[mod];
@@ -1953,3 +1954,115 @@ export const riskApi = {
   setConfig: (config: RiskConfig, password: string) =>
     request<{ config: RiskConfig }>("PUT", "/api/v1/risk/config", { config, password }),
 };
+
+// ---- Asystent AI w panelu (wersja 1.5) ----
+
+export interface AssistantSettings {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+  max_steps: number;
+  timeout_seconds: number;
+  max_result_chars: number;
+  daily_limit: number;
+  concurrency: number;
+  language: string; // "" – język panelu analityka
+  has_api_key?: boolean;
+  policy_enabled?: boolean;
+}
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AssistantEvent {
+  type?: string;
+  step?: number;
+  tool?: string;
+  args?: Record<string, unknown>;
+  fail?: boolean;
+  text?: string;
+  message?: string;
+  model?: string;
+  ms?: number;
+  steps?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  analysis_id?: number; // analiza alertu zapisana przy alercie
+  alert_id?: number;
+}
+
+export interface AlertAnalysis {
+  id: number;
+  alert_id: number;
+  created_at: string;
+  created_by: string;
+  model: string;
+  question?: string;
+  answer: string;
+  steps: number;
+  tools: string[];
+  tokens: number;
+  took_ms: number;
+}
+
+export const alertAnalysesApi = {
+  list: (alertId: number) => request<{ analyses: AlertAnalysis[] }>("GET", `/api/v1/alerts/${alertId}/ai-analyses`),
+  remove: (alertId: number, id: number) => request<{ ok: boolean }>("DELETE", `/api/v1/alerts/${alertId}/ai-analyses/${id}`),
+};
+
+export const assistantApi = {
+  get: () => request<{ assistant: AssistantSettings }>("GET", "/api/v1/ai/assistant"),
+  // has_api_key i policy_enabled są tylko do odczytu – serwer odrzuca nieznane pola.
+  set: (a: AssistantSettings, api_key: string, clear_api_key: boolean, password: string) => {
+    const assistant: Partial<AssistantSettings> = { ...a };
+    delete assistant.has_api_key;
+    delete assistant.policy_enabled;
+    return request<{ assistant: AssistantSettings }>("PUT", "/api/v1/ai/assistant", { assistant, api_key, clear_api_key, password });
+  },
+  models: (base_url: string, api_key: string) => request<{ models: string[] }>("POST", "/api/v1/ai/assistant/models", { base_url, api_key }),
+};
+
+// askAssistant: pytanie do asystenta – odpowiedź strumieniem SSE (krok,
+// narzędzie, odpowiedź, błąd, koniec); onEvent dostaje każde zdarzenie.
+export async function askAssistant(
+  body: { alert_id?: number; question: string; history: ChatTurn[]; lang: string },
+  onEvent: (name: string, data: AssistantEvent) => void,
+  signal?: AbortSignal,
+) {
+  const res = await fetch("/api/v1/ai/assistant/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream", "X-CSRF-Token": csrfToken },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({}));
+    const code = data.error ?? "error";
+    const err = new ApiError(res.status, code, errorMessage(code, data.message ?? i18n.t("httpError", { status: res.status }), data.message_en));
+    if (res.status === 401) onUnauthenticated(err);
+    throw err;
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i: number;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let name = "message";
+      let data = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) name = line.slice(7);
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (data) onEvent(name, JSON.parse(data) as AssistantEvent);
+    }
+  }
+}

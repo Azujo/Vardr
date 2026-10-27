@@ -22,7 +22,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowLeft, IconMessage, IconSearch, IconUserCheck, IconArrowsExchange } from "@tabler/icons-react";
+import { IconArrowLeft, IconMessage, IconSearch, IconUserCheck, IconArrowsExchange, IconSparkles } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 import {
   ago,
@@ -50,6 +50,7 @@ import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
 import { ResolutionPicker, RiskBadge, resolutionLabel } from "../risk";
 import AddToIncident from "./AddToIncident";
+import { AlertAnalyses, useAssistant } from "../assistant";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -228,6 +229,7 @@ export default function AlertDetailPage() {
   if (error) return <MAlert color="red">{error}</MAlert>;
   if (!alert) return null;
   const canEdit = can("alerts", "write");
+  const { open: openAssistant } = useAssistant();
   const lv = levelLabels[alert.level];
   // Zdarzenia z okolicy alertu w Mímirze: komputer, ±15 min od pierwszego i ostatniego zdarzenia.
   const around = alert.host_name
@@ -266,6 +268,12 @@ export default function AlertDetailPage() {
             <AttackBadges ra={attack[alert.rule_id]} />
           </Box>
         </div>
+        <Group>
+          {can("ai", "use") && (
+            <Button variant="light" color="violet" leftSection={<IconSparkles size={16} />} onClick={() => openAssistant({ alertId: alert.id })}>
+              {i18n.t("ai:assistant.analyze")}
+            </Button>
+          )}
         {canEdit && (
           <Group>
             <Select
@@ -300,6 +308,7 @@ export default function AlertDetailPage() {
             )}
           </Group>
         )}
+        </Group>
       </Group>
 
       <Card withBorder>
@@ -360,6 +369,8 @@ export default function AlertDetailPage() {
           </Button>
         )}
       </Group>
+
+      <AlertAnalyses alertId={alert.id} />
 
       {(incidents.length > 0 || can("incidents", "write")) && (
         <Card withBorder>

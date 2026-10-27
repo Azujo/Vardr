@@ -109,8 +109,23 @@ func (s *Server) authed(req need, flags int, h http.HandlerFunc) http.Handler {
 				s.Log.Warn("extending the session failed", "err", err)
 			}
 		}
-		ctx := context.WithValue(r.Context(), ctxKey{}, authCtx{session: sess, user: user, perms: perms})
-		h(w, r.WithContext(ctx))
+		ac := authCtx{session: sess, user: user, perms: perms}
+		// Wewnętrzne zapytanie narzędzia asystenta AI: uprawnienia analityka
+		// i dodatkowo polityka AI – tylko trasy włączonych narzędzi, limity
+		// zakresu danych i maskowanie, jak dla tokenu AI.
+		if pol, ok := r.Context().Value(assistantCtxKey{}).(AIPolicy); ok {
+			if !pol.allows(r.Pattern) {
+				writeError(w, http.StatusForbidden, "ai_not_allowed", "polityka AI nie pozwala na to zapytanie (narzędzie wyłączone albo zapytanie poza listą narzędzi AI)")
+				return
+			}
+			ac.ai = &pol
+		}
+		r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, ac))
+		if ac.ai != nil && ac.ai.Mask.any() && !aiUnmasked(r.Pattern) {
+			s.serveMasked(w, r, *ac.ai, h)
+			return
+		}
+		h(w, r)
 	})
 }
 

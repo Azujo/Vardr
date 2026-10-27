@@ -38,10 +38,12 @@ func (s *Server) mcpNoStream(w http.ResponseWriter, _ *http.Request) {
 }
 
 // internalCaller wykonuje zapytanie GET narzędzia przez drzewo tras panelu,
-// z nagłówkiem Authorization i adresem klienta z zapytania MCP.
+// z poświadczeniem i adresem klienta z zapytania zewnętrznego: nagłówkiem
+// Authorization (MCP, token AI) albo ciasteczkiem sesji (asystent w panelu).
 type internalCaller struct {
-	s     *Server
-	outer *http.Request
+	s       *Server
+	outer   *http.Request
+	session bool
 }
 
 func (c internalCaller) Get(ctx context.Context, path string, q url.Values, out any) error {
@@ -53,9 +55,13 @@ func (c internalCaller) Get(ctx context.Context, path string, q url.Values, out 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", c.outer.Header.Get("Authorization"))
+	if c.session {
+		req.Header.Set("Cookie", c.outer.Header.Get("Cookie"))
+	} else {
+		req.Header.Set("Authorization", c.outer.Header.Get("Authorization"))
+	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "vardr-mcp-http")
+	req.Header.Set("User-Agent", "vardr-mcp-internal")
 	req.RemoteAddr, req.Host, req.TLS = c.outer.RemoteAddr, c.outer.Host, c.outer.TLS
 	bw := &bufferWriter{header: http.Header{}}
 	c.s.mux.ServeHTTP(bw, req)

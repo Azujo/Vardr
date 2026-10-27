@@ -56,7 +56,11 @@ var AIToolGroups = []AIToolGroup{
 
 // aiAlways: trasy dostępne dla tokenu AI przy włączonej polityce
 // (vardr-mcp sprawdza nimi siebie i politykę).
-var aiAlways = []string{"GET /api/v1/api-tokens/self", "GET /api/v1/ai/policy", mcpPattern}
+var aiAlways = []string{"GET /api/v1/api-tokens/self", "GET /api/v1/ai/policy", mcpPattern, docsSearchPattern}
+
+// aiUnmasked: trasy bez maskowania odpowiedzi – serwer MCP (maskują jego
+// wewnętrzne zapytania) i dokumentacja (przykłady to nie dane osobowe).
+func aiUnmasked(pattern string) bool { return pattern == mcpPattern || pattern == docsSearchPattern }
 
 // AIDisclaimerVersion: wersja ostrzeżeń – zmiana treści wymaga ponownego
 // potwierdzenia przez administratora.
@@ -314,6 +318,9 @@ type AIStore interface {
 	APIRequestsByKind(ctx context.Context, kind string, limit int, beforeID int64) ([]store.KindRequest, error)
 	SavePseudonyms(ctx context.Context, ps []store.Pseudonym, now time.Time) error
 	PseudonymOf(ctx context.Context, pseudonym string) (store.Pseudonym, error)
+	SaveAlertAnalysis(ctx context.Context, a store.AlertAnalysis) (store.AlertAnalysis, error)
+	AlertAnalyses(ctx context.Context, alertID int64, limit int) ([]store.AlertAnalysis, error)
+	DeleteAlertAnalysis(ctx context.Context, alertID, id int64) error
 }
 
 func (s *Server) aiEnabledStore(w http.ResponseWriter) bool {

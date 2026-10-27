@@ -89,7 +89,10 @@
       "api_token_denied": "API token denied",
       "ai_policy_changed": "AI policy changed",
       "ai_pseudonym_revealed": "AI pseudonym revealed",
-      "ai_mcp_downloaded": "vardr-mcp downloaded"
+      "ai_mcp_downloaded": "vardr-mcp downloaded",
+      "ai_assistant_used": "AI assistant question",
+      "ai_assistant_changed": "AI assistant settings changed",
+      "ai_analysis_deleted": "AI alert analysis deleted"
     },
     "older": "Older entries"
   },
@@ -162,9 +165,10 @@
       "help": "channels (Discord, Teams, webhook)"
     },
     "ai": {
-      "label": "AI access (MCP)",
-      "help": "read: AI policy and request history; reveal: masking pseudonyms; change: AI policy",
+      "label": "AI access",
+      "help": "read: AI policy and request history; assistant: AI analysis and chat in the panel; reveal: masking pseudonyms; change: AI policy and settings",
       "level": {
+        "use": "AI assistant",
         "reveal": "revealing pseudonyms"
       }
     },

@@ -5,6 +5,7 @@ import {
   Accordion,
   Alert,
   Anchor,
+  Autocomplete,
   Badge,
   Button,
   Card,
@@ -15,6 +16,7 @@ import {
   List,
   NumberInput,
   PasswordInput,
+  Select,
   SimpleGrid,
   Stack,
   Switch,
@@ -29,7 +31,7 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconCheck, IconCopy, IconDownload, IconEye } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { aiApi, formatDate, formatNumber, type AIPolicy, type AIRequest, type AIToolGroup } from "../api";
+import { aiApi, assistantApi, formatDate, formatNumber, type AIPolicy, type AIRequest, type AIToolGroup, type AssistantSettings } from "../api";
 import { useAuth } from "../auth";
 
 function errMsg(e: unknown) {
@@ -506,6 +508,173 @@ function History({ refresh }: { refresh: number }) {
 }
 
 // Dostęp AI (MCP): ostrzeżenia, polityka, podłączenie, pseudonimy, historia.
+// isLocalHost: adres w sieci lokalnej (prywatne IP, localhost, .local/.lan) –
+// inaczej dane z Vardra trafiają do modelu poza siecią firmy.
+function isLocalHost(base: string) {
+  let host = "";
+  try {
+    host = new URL(base).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return true;
+  }
+  return (
+    /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fd|fe80:)/i.test(host) ||
+    /\.(local|lan|internal|home\.arpa)$/i.test(host) ||
+    !host.includes(".")
+  );
+}
+
+function AssistantCard() {
+  const { t } = useTranslation("ai");
+  const { can } = useAuth();
+  const edit = can("ai", "write");
+  const [a, setA] = useState<AssistantSettings | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [clearKey, setClearKey] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const load = useCallback(() => {
+    assistantApi
+      .get()
+      .then((r) => setA(r.assistant))
+      .catch((e) => notifications.show({ color: "red", message: errMsg(e) }));
+  }, []);
+  useEffect(load, [load]);
+  if (!a) return null;
+  const num = (k: keyof AssistantSettings) => (v: string | number) => setA({ ...a, [k]: Number(v) || 0 });
+  const check = async () => {
+    setChecking(true);
+    try {
+      const r = await assistantApi.models(a.base_url, apiKey);
+      setModels(r.models);
+      notifications.show({ color: "green", message: t("assistant.settings.connected", { n: r.models.length }) });
+    } catch (e) {
+      notifications.show({ color: "red", message: errMsg(e) });
+    } finally {
+      setChecking(false);
+    }
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await assistantApi.set(a, apiKey, clearKey, password);
+      setA(r.assistant);
+      setApiKey("");
+      setClearKey(false);
+      setPassword("");
+      notifications.show({ color: "green", message: t("assistant.settings.saved") });
+    } catch (e) {
+      notifications.show({ color: "red", message: errMsg(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card withBorder>
+      <Stack>
+        <Group justify="space-between">
+          <Title order={4}>{t("assistant.settings.title")}</Title>
+          <Switch
+            label={t("assistant.settings.enabled")}
+            checked={a.enabled}
+            disabled={!edit}
+            onChange={(e) => setA({ ...a, enabled: e.currentTarget.checked })}
+          />
+        </Group>
+        <Text size="sm" c="dimmed">
+          {t("assistant.settings.intro")}
+        </Text>
+        {!a.policy_enabled && (
+          <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>
+            {t("assistant.settings.policyOff")}
+          </Alert>
+        )}
+        <Group align="flex-end" wrap="nowrap">
+          <TextInput
+            style={{ flex: 1 }}
+            label={t("assistant.settings.baseURL")}
+            description={t("assistant.settings.baseURLHelp")}
+            placeholder="http://192.168.88.20:1234/v1"
+            value={a.base_url}
+            disabled={!edit}
+            onChange={(e) => setA({ ...a, base_url: e.currentTarget.value })}
+          />
+          {edit && (
+            <Button variant="default" loading={checking} disabled={!a.base_url} onClick={() => void check()}>
+              {t("assistant.settings.check")}
+            </Button>
+          )}
+        </Group>
+        {a.base_url && !isLocalHost(a.base_url) && (
+          <Alert color="orange" icon={<IconAlertTriangle size={16} />} title={t("assistant.settings.externalTitle")}>
+            {t("assistant.settings.external")}
+          </Alert>
+        )}
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <Autocomplete
+            label={t("assistant.settings.model")}
+            description={t("assistant.settings.modelHelp")}
+            data={models}
+            value={a.model}
+            disabled={!edit}
+            onChange={(v) => setA({ ...a, model: v })}
+          />
+          <Stack gap={4}>
+            <PasswordInput
+              label={t("assistant.settings.apiKey")}
+              description={t("assistant.settings.apiKeyHelp")}
+              placeholder={a.has_api_key ? t("assistant.settings.apiKeySaved") : ""}
+              value={apiKey}
+              disabled={!edit || clearKey}
+              onChange={(e) => setApiKey(e.currentTarget.value)}
+            />
+            {a.has_api_key && edit && (
+              <Checkbox size="xs" label={t("assistant.settings.clearKey")} checked={clearKey} onChange={(e) => setClearKey(e.currentTarget.checked)} />
+            )}
+          </Stack>
+        </SimpleGrid>
+        <Select
+          label={t("assistant.settings.language")}
+          description={t("assistant.settings.languageHelp")}
+          data={[
+            { value: "", label: t("assistant.settings.languageUser") },
+            { value: "pl", label: "Polski" },
+            { value: "en", label: "English" },
+          ]}
+          value={a.language ?? ""}
+          disabled={!edit}
+          allowDeselect={false}
+          onChange={(v) => setA({ ...a, language: v ?? "" })}
+          maw={360}
+        />
+        <SimpleGrid cols={{ base: 2, sm: 5 }}>
+          <NumberInput label={t("assistant.settings.maxSteps")} min={1} max={20} value={a.max_steps} disabled={!edit} onChange={num("max_steps")} />
+          <NumberInput label={t("assistant.settings.timeout")} min={30} max={900} value={a.timeout_seconds} disabled={!edit} onChange={num("timeout_seconds")} />
+          <NumberInput label={t("assistant.settings.maxResult")} min={2000} max={60000} step={1000} value={a.max_result_chars} disabled={!edit} onChange={num("max_result_chars")} />
+          <NumberInput label={t("assistant.settings.dailyLimit")} min={0} max={10000} value={a.daily_limit} disabled={!edit} onChange={num("daily_limit")} />
+          <NumberInput label={t("assistant.settings.concurrency")} min={1} max={20} value={a.concurrency} disabled={!edit} onChange={num("concurrency")} />
+        </SimpleGrid>
+        <Text size="xs" c="dimmed">
+          {t("assistant.settings.limitsHelp")}
+        </Text>
+        <Alert variant="light" color="gray" title={t("assistant.settings.lmTitle")}>
+          <Text size="sm">{t("assistant.settings.lm")}</Text>
+        </Alert>
+        {edit && (
+          <Group align="flex-end">
+            <PasswordInput label={t("policy.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <Button loading={busy} disabled={!password} onClick={() => void save()}>
+              {t("assistant.settings.save")}
+            </Button>
+          </Group>
+        )}
+      </Stack>
+    </Card>
+  );
+}
+
 export default function AiAccessPage() {
   const { t } = useTranslation("ai");
   const { can } = useAuth();
@@ -521,6 +690,7 @@ export default function AiAccessPage() {
       <AIWarnings />
       <Policy onSaved={() => setRefresh((n) => n + 1)} />
       <Setup />
+      <AssistantCard />
       {can("ai", "reveal") && <Reveal />}
       <History refresh={refresh} />
     </Stack>

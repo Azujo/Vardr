@@ -2,6 +2,26 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.5.0] – 2026-10-27 – Asystent AI
+
+### Dodane
+- **Asystent AI w panelu** ([docs/panel.md](docs/panel.md#asystent-ai-w-panelu)): przycisk „Analiza AI” na stronie alertu i czat „Zapytaj Vardra” w nagłówku. Serwer łączy się z modelem przez API zgodne z OpenAI (LM Studio, Ollama, vLLM, usługa w chmurze); model korzysta z narzędzi MCP tylko do odczytu, z uprawnieniami zalogowanego analityka zawężonymi przez politykę AI (narzędzia, zakres, maskowanie). Odpowiedzi z odnośnikami do źródeł (alert, zapytanie), postęp na żywo (wywoływane narzędzia), przerwanie, kontynuacja rozmowy. Limity: kroki, czas, długość wyniku narzędzia, pytania dziennie na osobę, równoczesne pytania; każde pytanie w audycie (`ai_assistant_used`).
+- **Analiza AI zapisana przy alercie** – wynik „Analizy AI” zostaje na stronie alertu (karta *Analiza AI*: kto, kiedy, model; wcześniejsze analizy do wyboru, „Analizuj ponownie”); widzi ją każdy z odczytem alertów, usunąć może osoba ze zmianą alertów (wpis w audycie). Dalsze pytania w czacie nie są zapisywane.
+- **Korelacja alertów** – narzędzie `correlate_alerts` (asystent w panelu i serwer MCP): grupy alertów połączonych wspólnym komputerem, kontem (osobą) albo adresem IP, ze wspólnymi cechami, regułami i czasem; reguły na wielu komputerach i cechy zbyt częste, by łączyć (np. serwer centralny). Grupy liczy serwer (do 300 alertów), model je interpretuje i sprawdza. W pustym czacie – przykładowe pytania.
+- **Dokumentacja Vardra dla AI** – narzędzie `search_docs` (asystent w panelu i serwer MCP, przy włączonej polityce AI niezależnie od grup narzędzi): wyszukiwanie w dokumentacji wbudowanej w siem-api (reguły, język zapytań, panel, dekodery, agent, operacje; PL i EN). Asystent sięga do niej przed napisaniem reguły albo zapytania i podaje regułę jako gotowy YAML do przetestowania w trybie próbnym. Odpowiedzi dokumentacji nie są maskowane.
+- **Język odpowiedzi asystenta** ustawiany przez administratora (polski, angielski albo język panelu analityka) – model dostaje strukturę analizy w tym języku i przypomnienie przy każdym pytaniu.
+- **Uprawnienie „asystent AI”** (poziom *use* w module *Dostęp AI*) – korzystanie z asystenta bez prawa do zmiany polityki.
+
+### Dokumentacja
+- Jak zgłosić do Microsoftu fałszywe wykrycie programu Vardra przez Defendera ([docs/panel.md](docs/panel.md#dostęp-ai-mcp-i-ochrona-danych)).
+
+### Poprawione
+- Panel nie rozpoznawał poziomu uprawnienia *odkrywanie pseudonimów* przy sprawdzaniu dostępu w interfejsie (przyciski mogły się nie pokazywać).
+
+### Aktualizacja
+- Migracja bazy panelu `027_alert_ai_analyses.sql` – stosowana automatycznie przy starcie siem-api.
+- Poziom *asystent AI* ma profil administratora; innym profilom nadaj go ręcznie. Asystent jest domyślnie wyłączony.
+
 ## [1.4.0] – 2026-10-26 – Dostęp AI (MCP)
 
 ### Dodane

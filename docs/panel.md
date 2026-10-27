@@ -241,6 +241,16 @@ Power Automate nie ma wbudowanej funkcji HMAC – przy kanale Teams uwierzytelni
 
 Program nie jest jeszcze podpisany cyfrowo – Microsoft Defender może go zablokować heurystycznie (np. `Wacatac.C!ml`). Po sprawdzeniu, że plik pochodzi z panelu: *Zabezpieczenia Windows → Historia ochrony → Akcje → Zezwalaj na urządzeniu*; zezwolenie dotyczy pliku w tym miejscu.
 
+**Zgłoszenie fałszywego wykrycia do Microsoftu** (to samo dotyczy `vardr-agent.exe` i `odczytaj.exe`) – po analizie Microsoft zdejmuje wykrycie dla wszystkich, zwykle w ciągu kilku godzin do kilku dni:
+
+1. Upewnij się, że plik pochodzi z Twojego panelu Vardra (pobrany z niego, nie z poczty czy innej strony) – zgłaszaj tylko taki.
+2. Sprawdź nazwę wykrycia (*Historia ochrony*, np. `Trojan:Win32/Wacatac.C!ml`) i wersję definicji: `Get-MpComputerStatus | Select-Object AntivirusSignatureVersion` w PowerShellu.
+3. Otwórz [formularz zgłoszeń Microsoftu](https://www.microsoft.com/wdsi/filesubmission), wybierz *Software developer* (albo *Home customer*) i zaloguj się kontem Microsoft.
+4. Produkt: *Microsoft Defender Antivirus*; wskaż plik (zablokowany plik przywróć wcześniej z kwarantanny albo dołącz w archiwum ZIP); typ: *Incorrectly detected as malware/malicious*; wpisz nazwę wykrycia i wersję definicji, a w komentarzu – że to składnik SIEM Vardr (projekt open source, AGPL-3.0) i co robi program.
+5. Stan i werdykt zobaczysz w historii zgłoszeń. Werdykt *Not malware* oznacza zdjęcie wykrycia; na komputerze odśwież definicje (wiersz poleceń jako administrator, w `C:\Program Files\Windows Defender`): `MpCmdRun.exe -removedefinitions -dynamicsignature`, potem `MpCmdRun.exe -SignatureUpdate`.
+
+Werdykt dotyczy tego konkretnego pliku (jego skrótu) – nowa wersja programu może wymagać ponownego zgłoszenia, dopóki programy Vardra nie są podpisane cyfrowo.
+
 **Konfiguracja ręczna** (inne klienty MCP): wpis `mcpServers` jako klucz głównego obiektu JSON, obok istniejących ustawień:
 
 ```json
@@ -267,6 +277,18 @@ Program nie jest jeszcze podpisany cyfrowo – Microsoft Defender może go zablo
 - test: `curl --cacert vardr-ca.crt -H "Authorization: Bearer $VARDR_TOKEN" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' https://siem.firma.local:8444/api/v1/mcp`.
 
 Serwer jest bezstanowy i tylko odpowiada (bez sesji i strumienia SSE; `GET` – 405). Narzędzia wykonują wewnętrzne zapytania do API z tym samym tokenem, więc obowiązuje dokładnie to samo co dla `vardr-mcp`: polityka AI, maskowanie, limity, audyt odmów, a każde wywołanie narzędzia trafia do historii zapytań. Model musi obsługiwać wywoływanie narzędzi (tool calling – np. rodziny Qwen3, Llama 3.1+, Mistral, gpt-oss) i mieć okno kontekstu co najmniej 32 tys. tokenów; małe modele częściej mylą argumenty i zmyślają wnioski.
+
+### Asystent AI w panelu
+
+„**Analiza AI**” na stronie alertu i czat „**Zapytaj Vardra**” (ikona ✨ w nagłówku) – bez instalowania niczego u analityka. Serwer Vardra łączy się z modelem przez API zgodne z OpenAI (`/v1/chat/completions`): LM Studio, Ollama, vLLM albo usługa w chmurze. Ustawienia: *Dostęp AI → Asystent AI w panelu* (adres endpointu z `/v1`, model, opcjonalny klucz API – nigdy niepokazywany; zmiana z hasłem i wpisem w audycie).
+
+- **Uprawnienia** – asystent działa z uprawnieniami zalogowanego analityka, zawężonymi przez politykę AI (narzędzia, zakres danych, maskowanie): model nie zobaczy niczego, czego analityk nie widzi, ani niczego spoza polityki. Korzystanie wymaga poziomu *asystent AI* w module *Dostęp AI* (ma go profil administratora). Wymaga włączonej polityki AI.
+- **Tylko odczyt i źródła** – narzędzia te same co w MCP; każde stwierdzenie w odpowiedzi ma odnośnik do danych (`[alert:12]`, `[query:…]` – kliknięcie otwiera alert albo wyszukiwanie). Treść logów to dane, nie instrukcje; model nie ocenia ludzi (art. 22 RODO), tylko opisuje zdarzenia.
+- **Limity** – kroki narzędzi na odpowiedź (domyślnie 6), limit czasu (300 s), długość wyniku narzędzia (12 000 znaków – dla modeli z krótkim kontekstem 8000–16 000), pytania na osobę dziennie, równoczesne pytania (lokalny model na jednej karcie: 1–2).
+- **Zapis przy alercie** – wynik „Analizy AI” zostaje w karcie *Analiza AI* na stronie alertu (kto, kiedy, model; wcześniejsze do wyboru). Widzi ją każdy z odczytem alertów – także gdy sam nie ma dostępu do wszystkich danych, z których model korzystał; treść jest taka, jaką zobaczył model (przy maskowaniu – z pseudonimami). Usunięcie – uprawnienie zmiany alertów, wpis `ai_analysis_deleted`. Dalsze pytania w czacie nie są zapisywane.
+- **Audyt** – każde pytanie: wpis `ai_assistant_used` (model, kroki, narzędzia, tokeny, czas, alert); każde wywołanie narzędzia – w historii zapytań.
+
+**LM Studio** (test lokalny): *Developer* → załaduj model obsługujący narzędzia (Qwen3, gpt-oss, Llama 3.1+, Mistral) z kontekstem co najmniej 16 tys. tokenów (zalecane 32 tys.) → *Settings* → *Serve on Local Network* → *Start Server*. W panelu adres `http://ADRES-KOMPUTERA:1234/v1` → *Sprawdź i pobierz modele* → wybierz model → zapisz. Zapora Windows musi wpuścić połączenia na port 1234 z serwera Vardra.
 
 ## API
 

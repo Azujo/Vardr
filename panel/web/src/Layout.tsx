@@ -58,6 +58,7 @@ import { notifications } from "@mantine/notifications";
 import { useAuth } from "./auth";
 import ErrorBoundary from "./ErrorBoundary";
 import UpdateBanner from "./UpdateBanner";
+import { AssistantProvider, useAssistant } from "./assistant";
 import { api, profileName } from "./api";
 import { languages, setLanguage } from "./i18n";
 
@@ -170,112 +171,127 @@ export default function Layout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AppShell header={{ height: 56 }} navbar={{ width: 240, breakpoint: "sm", collapsed: { mobile: !opened } }} padding="lg">
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Menu" />
-            <IconShieldHalf size={26} color="var(--mantine-color-yellow-5)" />
-            <Text fw={700} size="lg">
-              Vardr
-            </Text>
-            <Text c="dimmed" size="sm" visibleFrom="xs">
-              Hliðskjálf
-            </Text>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <Tooltip label={scheme === "dark" ? t("header.light") : t("header.dark")}>
-              <ActionIcon
-                variant="default"
-                size="lg"
-                aria-label={t("header.toggleScheme")}
-                onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
-              >
-                {scheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
-              </ActionIcon>
-            </Tooltip>
-            <Menu position="bottom-end" width={220}>
-              <Menu.Target>
-                <UnstyledButton aria-label={t("header.accountMenu")}>
-                  <Group gap={6} wrap="nowrap">
-                    <div style={{ textAlign: "right" }}>
-                      <Text size="sm" fw={500}>
-                        {user?.display_name || user?.username}
-                      </Text>
-                      <Text size="xs" c="dimmed">
-                        {user && (profile ? profileName(profile.id, profile.name) : t(`enum.role.${user.role}`, { defaultValue: user.role }))}
-                      </Text>
-                    </div>
-                    <IconChevronDown size={14} />
-                  </Group>
-                </UnstyledButton>
-              </Menu.Target>
-              <Menu.Dropdown>
-                {user?.source !== "ldap" && (
-                  <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
-                    {t("header.changePassword")}
+    <AssistantProvider>
+      <AppShell header={{ height: 56 }} navbar={{ width: 240, breakpoint: "sm", collapsed: { mobile: !opened } }} padding="lg">
+        <AppShell.Header>
+          <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+            <Group gap="xs" wrap="nowrap">
+              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Menu" />
+              <IconShieldHalf size={26} color="var(--mantine-color-yellow-5)" />
+              <Text fw={700} size="lg">
+                Vardr
+              </Text>
+              <Text c="dimmed" size="sm" visibleFrom="xs">
+                Hliðskjálf
+              </Text>
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              {can("ai", "use") && <AssistantButton />}
+              <Tooltip label={scheme === "dark" ? t("header.light") : t("header.dark")}>
+                <ActionIcon
+                  variant="default"
+                  size="lg"
+                  aria-label={t("header.toggleScheme")}
+                  onClick={() => setColorScheme(scheme === "dark" ? "light" : "dark")}
+                >
+                  {scheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
+                </ActionIcon>
+              </Tooltip>
+              <Menu position="bottom-end" width={220}>
+                <Menu.Target>
+                  <UnstyledButton aria-label={t("header.accountMenu")}>
+                    <Group gap={6} wrap="nowrap">
+                      <div style={{ textAlign: "right" }}>
+                        <Text size="sm" fw={500}>
+                          {user?.display_name || user?.username}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          {user && (profile ? profileName(profile.id, profile.name) : t(`enum.role.${user.role}`, { defaultValue: user.role }))}
+                        </Text>
+                      </div>
+                      <IconChevronDown size={14} />
+                    </Group>
+                  </UnstyledButton>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {user?.source !== "ldap" && (
+                    <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
+                      {t("header.changePassword")}
+                    </Menu.Item>
+                  )}
+                  <Menu.Item component={Link} to="/account/security" leftSection={<IconShieldLock size={16} />}>
+                    {t("header.security")}
                   </Menu.Item>
-                )}
-                <Menu.Item component={Link} to="/account/security" leftSection={<IconShieldLock size={16} />}>
-                  {t("header.security")}
-                </Menu.Item>
-                <Menu.Divider />
-                <Menu.Label>
-                  <Group gap={6}>
-                    <IconLanguage size={14} /> {t("header.language")}
-                  </Group>
-                </Menu.Label>
-                {[["", t("header.languageAuto")], ...Object.entries(languages)].map(([code, name]) => (
-                  <Menu.Item
-                    key={code}
-                    lang={code || undefined}
-                    rightSection={(user?.language ?? "") === code ? <IconCheck size={14} /> : null}
-                    onClick={() => void changeLanguage(code)}
-                  >
-                    {name}
+                  <Menu.Divider />
+                  <Menu.Label>
+                    <Group gap={6}>
+                      <IconLanguage size={14} /> {t("header.language")}
+                    </Group>
+                  </Menu.Label>
+                  {[["", t("header.languageAuto")], ...Object.entries(languages)].map(([code, name]) => (
+                    <Menu.Item
+                      key={code}
+                      lang={code || undefined}
+                      rightSection={(user?.language ?? "") === code ? <IconCheck size={14} /> : null}
+                      onClick={() => void changeLanguage(code)}
+                    >
+                      {name}
+                    </Menu.Item>
+                  ))}
+                  <Menu.Divider />
+                  <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={() => void logout()}>
+                    {t("header.logout")}
                   </Menu.Item>
-                ))}
-                <Menu.Divider />
-                <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={() => void logout()}>
-                  {t("header.logout")}
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+                </Menu.Dropdown>
+              </Menu>
+            </Group>
           </Group>
-        </Group>
-      </AppShell.Header>
+        </AppShell.Header>
 
-      <AppShell.Navbar p="xs">
-        <AppShell.Section grow component={ScrollArea} type="scroll">
-          {sections
-            .map((sec) => ({ ...sec, items: sec.items.filter((it) => !it.perm || can(it.perm[0], it.perm[1])) }))
-            .filter((sec) => sec.items.length > 0)
-            .map((sec, i) => (
-              <div key={sec.title ?? i}>
-                {sec.title && (
-                  <Text size="xs" c="dimmed" fw={600} tt="uppercase" mt="md" mb={2} px="sm">
-                    {t(sec.title)}
-                  </Text>
-                )}
-                {sec.items.map(link)}
-              </div>
-            ))}
-        </AppShell.Section>
-        <AppShell.Section>
-          <Text size="xs" c="dimmed" ta="center" my="xs" title={t("footer.versionTitle")}>
-            {version && `${t("footer.version", { version })} · `}
-            {/* AGPL-3.0 §13: użytkownicy panelu przez sieć mają dostęp do kodu źródłowego. */}
-            <Anchor href="https://github.com/Azujo/Vardr" target="_blank" rel="noopener noreferrer" size="xs" c="dimmed" underline="always">
-              {t("footer.source")}
-            </Anchor>
-          </Text>
-        </AppShell.Section>
-      </AppShell.Navbar>
+        <AppShell.Navbar p="xs">
+          <AppShell.Section grow component={ScrollArea} type="scroll">
+            {sections
+              .map((sec) => ({ ...sec, items: sec.items.filter((it) => !it.perm || can(it.perm[0], it.perm[1])) }))
+              .filter((sec) => sec.items.length > 0)
+              .map((sec, i) => (
+                <div key={sec.title ?? i}>
+                  {sec.title && (
+                    <Text size="xs" c="dimmed" fw={600} tt="uppercase" mt="md" mb={2} px="sm">
+                      {t(sec.title)}
+                    </Text>
+                  )}
+                  {sec.items.map(link)}
+                </div>
+              ))}
+          </AppShell.Section>
+          <AppShell.Section>
+            <Text size="xs" c="dimmed" ta="center" my="xs" title={t("footer.versionTitle")}>
+              {version && `${t("footer.version", { version })} · `}
+              {/* AGPL-3.0 §13: użytkownicy panelu przez sieć mają dostęp do kodu źródłowego. */}
+              <Anchor href="https://github.com/Azujo/Vardr" target="_blank" rel="noopener noreferrer" size="xs" c="dimmed" underline="always">
+                {t("footer.source")}
+              </Anchor>
+            </Text>
+          </AppShell.Section>
+        </AppShell.Navbar>
 
-      <AppShell.Main>
-        <UpdateBanner />
-        <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
-      </AppShell.Main>
-    </AppShell>
+        <AppShell.Main>
+          <UpdateBanner />
+          <ErrorBoundary resetKey={pathname}>{children}</ErrorBoundary>
+        </AppShell.Main>
+      </AppShell>
+    </AssistantProvider>
+  );
+}
+
+function AssistantButton() {
+  const { t } = useTranslation("ai");
+  const { open } = useAssistant();
+  return (
+    <Tooltip label={t("assistant.open")}>
+      <ActionIcon variant="default" size="lg" aria-label={t("assistant.open")} onClick={() => open()}>
+        <IconSparkles size={18} />
+      </ActionIcon>
+    </Tooltip>
   );
 }

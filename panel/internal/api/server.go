@@ -135,6 +135,8 @@ type Server struct {
 	MCPExe string
 	// mux: drzewo tras – dla wewnętrznych zapytań narzędzi MCP (mcp_handlers.go).
 	mux *http.ServeMux
+	// assistantBusy: równoczesne pytania do asystenta AI (limit z ustawień).
+	assistantBusy assistantSem
 	aiKeyState
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore

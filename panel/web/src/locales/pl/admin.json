@@ -89,7 +89,10 @@
       "api_token_denied": "odmowa dla tokenu API",
       "ai_policy_changed": "zmiana polityki AI",
       "ai_pseudonym_revealed": "odkrycie pseudonimu AI",
-      "ai_mcp_downloaded": "pobranie vardr-mcp"
+      "ai_mcp_downloaded": "pobranie vardr-mcp",
+      "ai_assistant_used": "pytanie do asystenta AI",
+      "ai_assistant_changed": "zmiana ustawień asystenta AI",
+      "ai_analysis_deleted": "Usunięcie analizy AI alertu"
     },
     "older": "Starsze wpisy"
   },
@@ -162,9 +165,10 @@
       "help": "kanały (Discord, Teams, webhook)"
     },
     "ai": {
-      "label": "Dostęp AI (MCP)",
-      "help": "odczyt: polityka i historia zapytań AI; odkrywanie: pseudonimy z maskowania; zmiana: polityka AI",
+      "label": "Dostęp AI",
+      "help": "odczyt: polityka i historia zapytań AI; asystent: analiza AI i czat w panelu; odkrywanie: pseudonimy z maskowania; zmiana: polityka i ustawienia AI",
       "level": {
+        "use": "asystent AI",
         "reveal": "odkrywanie pseudonimów"
       }
     },

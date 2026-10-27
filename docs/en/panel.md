@@ -241,6 +241,16 @@ Power Automate has no built-in HMAC function – for a Teams channel the sender 
 
 The program is not code-signed yet – Microsoft Defender may block it heuristically (e.g. `Wacatac.C!ml`). After making sure the file comes from the panel: *Windows Security → Protection history → Actions → Allow on device*; the permission applies to the file in that location.
 
+**Reporting a false positive to Microsoft** (the same applies to `vardr-agent.exe` and `odczytaj.exe`) – after analysis Microsoft removes the detection for everyone, usually within hours to a few days:
+
+1. Make sure the file comes from your Vardr panel (downloaded from it, not from e-mail or another site) – report only such a file.
+2. Check the detection name (*Protection history*, e.g. `Trojan:Win32/Wacatac.C!ml`) and the definition version: `Get-MpComputerStatus | Select-Object AntivirusSignatureVersion` in PowerShell.
+3. Open [Microsoft's submission form](https://www.microsoft.com/wdsi/filesubmission), choose *Software developer* (or *Home customer*) and sign in with a Microsoft account.
+4. Product: *Microsoft Defender Antivirus*; select the file (restore a blocked file from quarantine first or attach it in a ZIP archive); type: *Incorrectly detected as malware/malicious*; enter the detection name and definition version, and in the comment say that it is a component of the Vardr SIEM (open source, AGPL-3.0) and what the program does.
+5. The status and verdict appear in the submission history. The verdict *Not malware* means the detection is removed; refresh the definitions on the computer (command prompt as administrator, in `C:\Program Files\Windows Defender`): `MpCmdRun.exe -removedefinitions -dynamicsignature`, then `MpCmdRun.exe -SignatureUpdate`.
+
+The verdict applies to that particular file (its hash) – a new version of the program may need to be reported again until Vardr's programs are code-signed.
+
 **Manual configuration** (other MCP clients): `mcpServers` as a key of the top-level JSON object, next to existing settings:
 
 ```json
@@ -267,6 +277,18 @@ The program is not code-signed yet – Microsoft Defender may block it heuristic
 - test: `curl --cacert vardr-ca.crt -H "Authorization: Bearer $VARDR_TOKEN" -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' https://siem.example.local:8444/api/v1/mcp`.
 
 The server is stateless and only answers (no session, no SSE stream; `GET` – 405). The tools make internal API requests with the same token, so exactly the same applies as for `vardr-mcp`: AI policy, masking, limits, audit of refusals, and every tool call is recorded in the request history. The model must support tool calling (e.g. the Qwen3, Llama 3.1+, Mistral, gpt-oss families) and have a context window of at least 32k tokens; small models more often get arguments wrong and make up conclusions.
+
+### AI assistant in the panel
+
+"**AI analysis**" on the alert page and the "**Ask Vardr**" chat (the ✨ icon in the header) – nothing to install for the analyst. The Vardr server reaches the model through an OpenAI-compatible API (`/v1/chat/completions`): LM Studio, Ollama, vLLM or a cloud service. Settings: *AI access → AI assistant in the panel* (endpoint URL with `/v1`, model, optional API key – never shown; changes need the password and are audited).
+
+- **Permissions** – the assistant works with the logged-in analyst's permissions, narrowed by the AI policy (tools, data scope, masking): the model sees nothing the analyst cannot see and nothing outside the policy. Using it requires the *AI assistant* level in the *AI access* module (the administrator profile has it). The AI policy must be enabled.
+- **Read-only, with sources** – the same tools as MCP; every claim in an answer links to data (`[alert:12]`, `[query:…]` – a click opens the alert or the search). Log content is data, not instructions; the model does not judge people (Art. 22 GDPR), it only describes events.
+- **Limits** – tool steps per answer (default 6), timeout (300 s), tool result length (12,000 characters – 8,000–16,000 for models with a short context), questions per person per day, concurrent questions (a local model on one GPU: 1–2).
+- **Saved with the alert** – the result of "AI analysis" stays in the *AI analysis* card on the alert page (who, when, model; earlier ones selectable). Everyone with alert read access sees it – also when they cannot access all the data the model used; the content is as the model saw it (with masking – pseudonyms). Deleting requires alert write access and is audited (`ai_analysis_deleted`). Follow-up questions in the chat are not saved.
+- **Audit** – every question: an `ai_assistant_used` entry (model, steps, tools, tokens, time, alert); every tool call is in the query history.
+
+**LM Studio** (local test): *Developer* → load a model that supports tools (Qwen3, gpt-oss, Llama 3.1+, Mistral) with a context of at least 16k tokens (32k recommended) → *Settings* → *Serve on Local Network* → *Start Server*. In the panel: URL `http://COMPUTER-ADDRESS:1234/v1` → *Check and load models* → pick the model → save. Windows Firewall must allow connections to port 1234 from the Vardr server.
 
 ## API
 
