@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Accordion,
   Alert as MAlert,
@@ -22,7 +22,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowLeft, IconMessage, IconSearch, IconUserCheck, IconArrowsExchange, IconSparkles } from "@tabler/icons-react";
+import { IconArrowLeft, IconMessage, IconSearch, IconUserCheck, IconArrowsExchange, IconSparkles, IconFilterOff } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 import {
   ago,
@@ -50,6 +50,7 @@ import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
 import { ResolutionPicker, RiskBadge, resolutionLabel } from "../risk";
 import AddToIncident from "./AddToIncident";
+import { ExceptionModal } from "./RuleExceptions";
 import { AiAnalyses, useAssistant } from "../assistant";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -156,6 +157,9 @@ export default function AlertDetailPage() {
   const [toIncident, setToIncident] = useState(false);
   const [assignees, setAssignees] = useState<{ value: string; label: string }[]>([]);
   const [note, setNote] = useState("");
+  // Wyjątek reguły z alertu: pola pierwszego zdarzenia do wyboru.
+  const [exception, setException] = useState<Record<string, string> | null>(null);
+  const exceptionDraft = useMemo(() => (alert?.close_reason ? { reason: alert.close_reason } : undefined), [alert]);
 
   const load = useCallback(() => {
     alertsApi
@@ -181,6 +185,15 @@ export default function AlertDetailPage() {
   }, []);
 
   const fail = (e: unknown) => notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+  const openException = async () => {
+    const first = events[events.length - 1];
+    try {
+      const r = await eventsApi.get(first.event_id, first.event_time);
+      setException({ Computer: r.event.host, ...r.event.fields });
+    } catch (e) {
+      fail(e);
+    }
+  };
   const assign = async (who: string) => {
     try {
       await alertsApi.assign(Number(id), who);
@@ -272,6 +285,11 @@ export default function AlertDetailPage() {
           {can("ai", "use") && (
             <Button variant="light" color="violet" leftSection={<IconSparkles size={16} />} onClick={() => openAssistant({ alertId: alert.id })}>
               {i18n.t("ai:assistant.analyze")}
+            </Button>
+          )}
+          {can("rules", "write") && rule && rule.mode !== "system" && rule.mode !== "correlation" && events.length > 0 && (
+            <Button variant="light" color="cyan" leftSection={<IconFilterOff size={16} />} onClick={() => void openException()}>
+              {t("detail.addException")}
             </Button>
           )}
         {canEdit && (
@@ -569,6 +587,14 @@ export default function AlertDetailPage() {
           </Group>
         </Stack>
       </Modal>
+      <ExceptionModal
+        ruleId={alert.rule_id}
+        ruleTitle={at!.title}
+        opened={!!exception}
+        onClose={() => setException(null)}
+        candidates={exception ?? undefined}
+        draft={exceptionDraft}
+      />
     </Stack>
   );
 }

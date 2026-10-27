@@ -183,6 +183,11 @@ var tools = []toolDef{
 			"level":  prop("string", "minimum level", "informational", "low", "medium", "high", "critical"),
 			"since":  prop("string", "only alerts seen in this period", "24h", "7d", "30d")})},
 		call: correlateAlerts},
+	{group: "alerts", Tool: Tool{Name: "fp_candidates", Title: "False positive candidates",
+		Description: "Rules whose alerts analysts closed as false positive or benign (up to 500 recent closed alerts), with counts, the most common computers and accounts, close reasons, sample alert IDs, open alerts and existing exceptions. Use it to suggest rule exceptions for recurring false positives: check the events of the sample alerts, then propose a narrow exception.",
+		InputSchema: schema(map[string]any{
+			"since": prop("string", "only alerts seen in this period", "24h", "7d", "30d")})},
+		call: fpCandidates},
 	{group: "alerts", Tool: Tool{Name: "get_alert", Title: "Alert details",
 		Description: "Returns one alert with its events (timeline), the rule's description and analyst instructions, related alerts (same computer, account, person), activity (notes, status changes) and ATT&CK mapping.",
 		InputSchema: schema(map[string]any{"id": prop("integer", "alert ID")}, "id")},

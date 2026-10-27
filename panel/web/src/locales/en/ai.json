@@ -202,7 +202,9 @@
     "examples": {
       "correlate": "Review the open alerts and check whether they are linked",
       "today": "What were the most important events in the last 24 hours?",
-      "coverage": "Which ATT&CK techniques do we not detect with any rule?"
+      "coverage": "Which ATT&CK techniques do we not detect with any rule?",
+      "falsePositives": "Which rules produce recurring false positives? Propose narrow exceptions",
+      "newRule": "Propose a rule for an important ATT&CK technique we do not detect"
     },
     "analyzeIncident": "Analysis of incident #{{id}}",
     "incidentBadge": "incident #{{id}}",
@@ -221,5 +223,13 @@
       "root_cause": "Root cause",
       "mitigation": "Mitigation measures"
     }
+  },
+  "proposals": {
+    "exception": "Create exception: {{rule}}",
+    "rule": "Test and save as trial: {{title}}",
+    "ruleTitle": "Proposed rule: {{title}}",
+    "ruleHelp": "A rule proposed by the AI assistant. Test it on events from recent hours and correct it. Saving in the panel turns on trial mode: the rule counts hits without alerts (“Rule trials”) – enable it only when the results are good.",
+    "note": "Change note (optional)",
+    "saveTrial": "Save in trial mode"
   }
 }

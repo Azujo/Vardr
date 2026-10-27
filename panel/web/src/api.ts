@@ -1467,14 +1467,43 @@ export const rulesApi = {
       password,
     }),
   trials: () => request<{ trials: TrialStat[]; now: string }>("GET", "/api/v1/rules/trial"),
+  // Wyjątki reguł (fałszywe alarmy).
+  exceptions: (id: string) =>
+    request<{ exceptions: RuleException[] }>("GET", `/api/v1/rules/${encodeURIComponent(id)}/exceptions`),
+  checkException: (id: string, match: ExceptionMatch) =>
+    request<{
+      ok: boolean;
+      error?: string;
+      error_en?: string;
+      days?: number;
+      suppressed?: number;
+      alerts?: number;
+      events?: RuleTestResult["events"];
+    }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/exceptions/check`, { match }),
+  addException: (id: string, match: ExceptionMatch, reason: string, days: number, password: string, aiProposed = false) =>
+    request<{ id: number; message: string }>("POST", `/api/v1/rules/${encodeURIComponent(id)}/exceptions`, {
+      match,
+      reason,
+      days,
+      password,
+      ai_proposed: aiProposed,
+    }),
+  deleteException: (id: string, eid: number) =>
+    request<{ ok: boolean; message: string }>(
+      "POST",
+      `/api/v1/rules/${encodeURIComponent(id)}/exceptions/${eid}/delete`,
+      {},
+    ),
   // Kreator korelacji: przykładowe zdarzenia z polami i pasującymi regułami.
   wizardEvents: (events: { id: string; ts: string }[]) =>
     request<{ events: WizEvent[]; missing: number }>("POST", "/api/v1/rules/wizard/events", { events }),
   panelRule: (id: string) => request<{ rule: PanelRule }>("GET", `/api/v1/panel-rules/${encodeURIComponent(id)}`),
-  savePanelRule: (id: string, source: string, note: string) =>
-    request<{ ok: boolean; file: string; message: string }>("PUT", `/api/v1/panel-rules/${encodeURIComponent(id)}`, {
+  savePanelRule: (id: string, source: string, note: string, trial = false, aiProposed = false) =>
+    request<{ ok: boolean; file: string; trial: boolean; message: string }>("PUT", `/api/v1/panel-rules/${encodeURIComponent(id)}`, {
       source,
       note,
+      trial,
+      ai_proposed: aiProposed,
     }),
   deletePanelRule: (id: string, reason: string, password: string) =>
     request<{ ok: boolean; message: string }>("POST", `/api/v1/panel-rules/${encodeURIComponent(id)}/delete`, {
@@ -1482,6 +1511,20 @@ export const rulesApi = {
       password,
     }),
 };
+
+// Warunek wyjątku: pole[|modyfikator] → wartość albo lista (jak selekcja Sigmy).
+export type ExceptionMatch = Record<string, string | number | boolean | (string | number | boolean)[]>;
+
+export interface RuleException {
+  id: number;
+  rule_id: string;
+  match: ExceptionMatch;
+  reason: string;
+  created_by: string;
+  created_at: string;
+  expires_at?: string;
+  ai_proposed: boolean;
+}
 
 export interface PanelRule {
   id: string;
@@ -1545,6 +1588,7 @@ export const alertsApi = {
       errors: { file: string; error: string; error_en?: string; seen_at: string }[];
       configured: boolean;
       attributions?: Record<string, RuleAttribution>;
+      exceptions?: Record<string, number>;
     }>("GET", "/api/v1/rules"),
 };
 

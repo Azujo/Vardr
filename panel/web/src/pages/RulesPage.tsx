@@ -29,6 +29,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import {
   IconDownload,
+  IconFilterOff,
   IconFlask,
   IconHistory,
   IconFileCode,
@@ -59,6 +60,7 @@ import { AttackTags, AttributionLine } from "../attack";
 import { lineDiff } from "../diff";
 import RuleBulkModal, { bulkLabels } from "./RuleBulkModal";
 import RuleTester from "./RuleTester";
+import { RuleExceptions } from "./RuleExceptions";
 import SigmaImportHelp from "./SigmaImportHelp";
 
 function modeLabel(r: RuleInfo): string {
@@ -186,6 +188,7 @@ export default function RulesPage() {
   const [del, setDel] = useState<{ id: string; title: string } | null>(null);
   const [sigmaHelp, setSigmaHelp] = useState(false);
   const [attributions, setAttributions] = useState<Record<string, RuleAttribution>>({});
+  const [exceptionCounts, setExceptionCounts] = useState<Record<string, number>>({});
   const [q, setQ] = useState("");
   const [source, setSource] = useState("all");
   const [stateF, setStateF] = useState<string | null>("all");
@@ -200,6 +203,7 @@ export default function RulesPage() {
       .then((r) => {
         setRules(r.rules);
         setAttributions(r.attributions ?? {});
+        setExceptionCounts(r.exceptions ?? {});
         setErrors(r.errors);
         setConfigured(r.configured);
       })
@@ -463,6 +467,13 @@ export default function RulesPage() {
                           </Badge>
                         </Tooltip>
                       )}
+                      {exceptionCounts[r.id] > 0 && (
+                        <Tooltip label={t("exceptions.badgeTip", { count: exceptionCounts[r.id] })}>
+                          <Badge size="xs" color="cyan" variant="light">
+                            {t("exceptions.badge", { count: exceptionCounts[r.id] })}
+                          </Badge>
+                        </Tooltip>
+                      )}
                       {r.override && !r.override.trial && (
                         <Tooltip
                           multiline
@@ -568,15 +579,17 @@ export default function RulesPage() {
                 </Badge>
                 {admin && (
                   <>
-                    <Button
-                      size="xs"
-                      variant="light"
-                      leftSection={<IconPencil size={14} />}
-                      component={Link}
-                      to={`/rules/correlation?edit=${encodeURIComponent(panelRuleId(show.file)!)}`}
-                    >
-                      {t("edit")}
-                    </Button>
+                    {(show.mode === "correlation" || show.id !== panelRuleId(show.file)) && (
+                      <Button
+                        size="xs"
+                        variant="light"
+                        leftSection={<IconPencil size={14} />}
+                        component={Link}
+                        to={`/rules/correlation?edit=${encodeURIComponent(panelRuleId(show.file)!)}`}
+                      >
+                        {t("edit")}
+                      </Button>
+                    )}
                     <Button
                       size="xs"
                       variant="light"
@@ -598,6 +611,11 @@ export default function RulesPage() {
                 <Tabs.Tab value="versions" leftSection={<IconHistory size={14} />}>
                   {t("tab.versions")}
                 </Tabs.Tab>
+                {show.mode !== "system" && show.mode !== "correlation" && (
+                  <Tabs.Tab value="exceptions" leftSection={<IconFilterOff size={14} />}>
+                    {t("tab.exceptions")}
+                  </Tabs.Tab>
+                )}
                 {canTest && show.mode !== "system" && !(show.mode === "correlation" && show.file === "(wbudowana)") && (
                   <Tabs.Tab value="test" leftSection={<IconFlask size={14} />}>
                     {t("tab.test")}
@@ -611,6 +629,9 @@ export default function RulesPage() {
               </Tabs.Panel>
               <Tabs.Panel value="versions" pt="xs">
                 {tab === "versions" && <Versions id={show.id} />}
+              </Tabs.Panel>
+              <Tabs.Panel value="exceptions" pt="xs">
+                {tab === "exceptions" && <RuleExceptions ruleId={show.id} ruleTitle={ruleText(show).title} canWrite={admin} />}
               </Tabs.Panel>
               <Tabs.Panel value="test" pt="xs">
                 {tab === "test" && <RuleTester initial={show.source ?? ""} />}

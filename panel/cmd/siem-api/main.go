@@ -257,6 +257,7 @@ func serve(log *slog.Logger) error {
 	apiServer.Alerts = alertStore
 	apiServer.Risk = alertStore
 	apiServer.RuleAdmin = alertStore
+	apiServer.Exceptions = alertStore
 	panelLink := ""
 	if ps := os.Getenv("SIEM_PUBLIC_SERVER"); ps != "" {
 		panelLink = "https://" + ps + ":8444"

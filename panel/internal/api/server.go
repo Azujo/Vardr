@@ -91,6 +91,8 @@ type Server struct {
 	Alerts AlertStore
 	// RuleAdmin (opcjonalne) – wersje reguł i ich włączanie z panelu.
 	RuleAdmin RuleAdmin
+	// Exceptions (opcjonalne) – wyjątki reguł (fałszywe alarmy).
+	Exceptions ExceptionStore
 	// RuleTester (opcjonalne) – test reguły na zdarzeniach w ClickHouse.
 	RuleTester RuleTester
 	// Status (opcjonalne) – stan systemu z metryk Prometheusa.

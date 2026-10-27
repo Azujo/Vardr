@@ -192,7 +192,14 @@ func serve(log *slog.Logger) error {
 			log.Warn("reading rules from the panel failed – keeping the previous ones", "err", err)
 			return
 		}
-		cur := detector.Fingerprint(dir) + "|" + sig + "|" + psig
+		// Wyjątki reguł (fałszywe alarmy) – wygasłe pomija zapytanie.
+		exs, esig, err := store.ActiveExceptions(ctx, time.Now().UTC())
+		if err != nil {
+			m.Errors.WithLabelValues("rule_exceptions").Inc()
+			log.Warn("reading rule exceptions failed – keeping the previous ones", "err", err)
+			return
+		}
+		cur := detector.Fingerprint(dir) + "|" + sig + "|" + psig + "|" + esig
 		if cur == fp {
 			return
 		}
@@ -208,6 +215,13 @@ func serve(log *slog.Logger) error {
 		}
 		rules := set.Rules
 		fileEnabled := detector.ApplyOverrides(rules, ov)
+		ex := make([]detect.Exception, 0, len(exs))
+		for _, e := range exs {
+			ex = append(ex, detect.Exception{ID: e.ID, RuleID: e.RuleID, Match: e.Match})
+		}
+		for _, err := range detect.ApplyExceptions(rules, ex) {
+			log.Warn("rule exception skipped", "err", err)
+		}
 		sigmaInfos := detector.ApplyCorrelationOverrides(set.Correlations, ov)
 		sigma := set.Correlations
 		sigmaCorr.Store(&sigma)
@@ -242,7 +256,7 @@ func serve(log *slog.Logger) error {
 		m.Rules.Set(float64(n))
 		m.RuleErrors.Set(float64(len(errs)))
 		log.Info("rules loaded", "dir", dir, "loaded", len(rules), "stream", n, "correlations", len(sigma), "panel", len(prs),
-			"overrides", changed, "trial", len(trial), "errors", len(errs))
+			"overrides", changed, "trial", len(trial), "exceptions", len(exs), "errors", len(errs))
 	}
 	reload()
 	restore()

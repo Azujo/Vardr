@@ -42,6 +42,7 @@ import {
   type ProposalField,
 } from "./api";
 import { useAuth } from "./auth";
+import { ProposalActions } from "./aiProposals";
 
 // ---- Markdown (podzbiór: nagłówki, listy, pogrubienie, kod, odwołania) ----
 
@@ -333,7 +334,7 @@ function AssistantDrawer({
               <Text size="sm" c="dimmed">
                 {t("assistant.empty")}
               </Text>
-              {(["correlate", "today", "coverage"] as const).map((k) => (
+              {(["correlate", "today", "coverage", "falsePositives", "newRule"] as const).map((k) => (
                 <Button key={k} size="xs" variant="light" color="violet" justify="flex-start" onClick={() => void run(t(`assistant.examples.${k}`), [])}>
                   {t(`assistant.examples.${k}`)}
                 </Button>
@@ -353,6 +354,7 @@ function AssistantDrawer({
                   {t("assistant.aiBadge")}
                 </Badge>
                 <Markdown text={tu.content} />
+                <ProposalActions text={tu.content} />
                 {tu.meta && (
                   <Text size="xs" c="dimmed" mt={6}>
                     {tu.meta}
@@ -537,6 +539,7 @@ export function AiAnalyses({
             {t("assistant.analysisMeta", { by: a.created_by, date: formatDate(a.created_at), model: a.model, s: Math.round(a.took_ms / 1000) })}
           </Text>
           <Markdown text={a.answer} />
+          <ProposalActions text={a.answer} />
           {proposal.length > 0 && (
             <Paper withBorder p="sm" radius="md">
               <Stack gap="xs">

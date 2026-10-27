@@ -64,7 +64,8 @@
   "tab": {
     "source": "Source",
     "versions": "Versions",
-    "test": "Test"
+    "test": "Test",
+    "exceptions": "Exceptions"
   },
   "reason": "Reason",
   "yourPassword": "Your password",
@@ -363,5 +364,43 @@
     "saveRule": "Save rule",
     "adminOnly": "Saving requires the administrator role – copy the rule and pass it to an administrator.",
     "copyYaml": "copy YAML"
+  },
+  "exceptions": {
+    "intro": "Events matching an exception do not trigger the rule (both engines). For recurring false positives – instead of disabling the whole rule.",
+    "help": "All fields must match. The same field several times = any of the values. Keep the condition as narrow as possible (e.g. computer and process) and check how many hits from the last 7 days it would hide before saving.",
+    "add": "Add exception",
+    "addTitle": "Rule exception: {{title}}",
+    "aiDraft": "Proposed by the AI assistant – check the condition against history and correct it before saving. An exception weakens detection.",
+    "fromEvent": "Add a field from the alert…",
+    "field": "Field",
+    "modifier": "Comparison",
+    "equals": "equals",
+    "value": "Value",
+    "addRow": "Add condition",
+    "removeRow": "Remove condition",
+    "check": "Check against history",
+    "checkResult_one": "The exception would hide {{count}} hit from the last {{days}} days (alerts: {{alerts}}).",
+    "checkResult_other": "The exception would hide {{count}} hits from the last {{days}} days (alerts: {{alerts}}).",
+    "reason": "Reason",
+    "reasonPlaceholder": "e.g. nightly backup run by svc_backup",
+    "expires": "Expires after",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "never": "never",
+    "save": "Save exception",
+    "none": "No exceptions.",
+    "meta": "{{by}}, {{date}}",
+    "expiresAt": "expires {{date}}",
+    "expired": "expired {{date}}",
+    "noExpiry": "no expiry",
+    "ai": "AI proposal",
+    "delete": "Delete exception",
+    "deleteConfirm": "Delete the exception? The rule will detect these events again.",
+    "badge_one": "{{count}} exception",
+    "badge_other": "{{count}} exceptions",
+    "badgeTip": "Active exceptions – details in the “Exceptions” tab.",
+    "pseudonyms": "The condition contains pseudonyms from AI data masking ({{list}}) – an exception needs real values. Reveal them or type the values yourself.",
+    "reveal": "Reveal pseudonyms",
+    "revealReason": "exception of rule {{rule}}"
   }
 }

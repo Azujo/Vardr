@@ -166,7 +166,9 @@ func (s *Server) getPanelRule(w http.ResponseWriter, r *http.Request) {
 }
 
 // savePanelRule zapisuje korelację z kreatora (z regułami bazowymi
-// w tym samym tekście albo wdrożonymi). Detektor wczyta ją w ciągu 30 s.
+// w tym samym tekście albo wdrożonymi) albo jedną regułę Sigmy (od wersji
+// 1.5.3 – np. propozycję asystenta AI), opcjonalnie od razu w trybie
+// próbnym (trafienia bez alertów). Detektor wczyta ją w ciągu 30 s.
 func (s *Server) savePanelRule(w http.ResponseWriter, r *http.Request) {
 	if !s.ruleAdminEnabled(w) {
 		return
@@ -174,8 +176,10 @@ func (s *Server) savePanelRule(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	id := r.PathValue("id")
 	var req struct {
-		Source string `json:"source"`
-		Note   string `json:"note"`
+		Source     string `json:"source"`
+		Note       string `json:"note"`
+		Trial      bool   `json:"trial"`
+		AIProposed bool   `json:"ai_proposed"`
 	}
 	if !readJSONLimit(w, r, &req, 2*maxPanelRuleSource) {
 		return
@@ -196,14 +200,22 @@ func (s *Server) savePanelRule(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "bad_rule", err)
 		return
 	}
-	if len(set.Correlations) != 1 || set.Correlations[0].ID != id {
-		writeError(w, http.StatusBadRequest, "bad_rule", "reguła z panelu: jedna reguła korelacyjna o id "+id+
-			" (reguły bazowe mogą być obok, rozdzielone ---)")
+	single := len(set.Correlations) == 0 && len(set.Rules) == 1 && set.Rules[0].ID == id
+	if !single && (len(set.Correlations) != 1 || set.Correlations[0].ID != id) {
+		writeError(w, http.StatusBadRequest, "bad_rule", "reguła z panelu: jedna reguła Sigmy albo jedna reguła korelacyjna o id "+id+
+			" (reguły bazowe korelacji mogą być obok, rozdzielone ---)")
+		return
+	}
+	if req.Trial && !single {
+		writeError(w, http.StatusBadRequest, "no_trial", "tryb próbny jest dla reguł Sigmy (bez korelacji)")
 		return
 	}
 	// Id z tekstu nie mogą zajmować id reguł wdrożonych (z plików, wbudowanych
 	// i innych reguł panelu) – detektor odrzuciłby duplikat.
-	ids := []string{id}
+	ids := []string{}
+	if !single {
+		ids = append(ids, id)
+	}
 	for _, rule := range set.Rules {
 		if slices.Contains(ids, rule.ID) {
 			writeError(w, http.StatusBadRequest, "duplicate_id", "id "+rule.ID+" powtórzone w tekście")
@@ -221,11 +233,29 @@ func (s *Server) savePanelRule(w http.ResponseWriter, r *http.Request) {
 		s.alertsError(w, r, err)
 		return
 	}
-	c := set.Correlations[0]
-	s.audit(r, &a.user, "panel_rule_saved", id, map[string]any{"title": c.Title, "type": c.Type, "base_rules": len(c.Rules),
-		"note": req.Note})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "file": file,
-		"message": "zapisano – detektor wczyta regułę w ciągu 30 s"})
+	msg := "zapisano – detektor wczyta regułę w ciągu 30 s"
+	if req.Trial {
+		reason := req.Note
+		if reason == "" {
+			reason = "nowa reguła z panelu – próba przed włączeniem"
+		}
+		if err := s.RuleAdmin.SetOverride(r.Context(), id, alerts.Override{Trial: true, Reason: reason,
+			ChangedBy: a.user.Username, ChangedAt: s.now()}); err != nil {
+			s.alertsError(w, r, err)
+			return
+		}
+		msg = "zapisano w trybie próbnym – trafienia bez alertów w „Próbach reguł” w ciągu 30 s"
+	}
+	if single {
+		ru := set.Rules[0]
+		s.audit(r, &a.user, "panel_rule_saved", id, map[string]any{"title": ru.Title, "type": "rule", "trial": req.Trial,
+			"ai_proposed": req.AIProposed, "note": req.Note})
+	} else {
+		c := set.Correlations[0]
+		s.audit(r, &a.user, "panel_rule_saved", id, map[string]any{"title": c.Title, "type": c.Type, "base_rules": len(c.Rules),
+			"note": req.Note})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "file": file, "trial": req.Trial, "message": msg})
 }
 
 // deletePanelRule usuwa regułę z panelu. Osłabia detekcję jak wyłączenie:

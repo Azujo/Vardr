@@ -64,6 +64,8 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, failed(err))
 		return
 	}
+	// Obowiązujące wyjątki reguły – test pokazuje to, co zrobi detektor.
+	detect.ApplyExceptions([]*detect.Rule{rule}, s.ruleExceptions(r.Context(), rule.ID))
 	if s.RuleTester == nil {
 		writeError(w, http.StatusServiceUnavailable, "events_disabled", "wyszukiwarka zdarzeń wyłączona – test reguły niedostępny")
 		return
@@ -93,6 +95,7 @@ func (s *Server) testRule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res, "sql": rule.SQL(),
 		"attack_warnings":    nonNilSlice(attack.Enterprise().Map(rule.Tags).Warnings),
 		"attack_warnings_en": nonNilSlice(attack.Enterprise().Map(rule.Tags).WarningsEn),
+		"exceptions":         rule.Exceptions,
 		"rule": map[string]any{"id": rule.ID, "title": rule.Title, "level": rule.Level, "group_by": rule.Vardr.GroupBy,
 			"suppress_s": int(time.Duration(rule.Vardr.Suppress) / time.Second), "threshold": th, "mode": rule.Vardr.Mode}})
 }

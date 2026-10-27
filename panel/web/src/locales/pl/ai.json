@@ -202,7 +202,9 @@
     "examples": {
       "correlate": "Przejrzyj otwarte alerty i sprawdź, czy są między nimi powiązania",
       "today": "Co najważniejszego wydarzyło się w ostatnich 24 godzinach?",
-      "coverage": "Których technik ATT&CK nie wykrywamy żadną regułą?"
+      "coverage": "Których technik ATT&CK nie wykrywamy żadną regułą?",
+      "falsePositives": "Które reguły dają powtarzalne fałszywe alarmy? Zaproponuj wąskie wyjątki",
+      "newRule": "Zaproponuj regułę dla ważnej techniki ATT&CK, której nie wykrywamy"
     },
     "analyzeIncident": "Analiza incydentu #{{id}}",
     "incidentBadge": "incydent #{{id}}",
@@ -221,5 +223,13 @@
       "root_cause": "Przyczyna",
       "mitigation": "Środki ograniczające"
     }
+  },
+  "proposals": {
+    "exception": "Utwórz wyjątek: {{rule}}",
+    "rule": "Przetestuj i zapisz jako próbną: {{title}}",
+    "ruleTitle": "Propozycja reguły: {{title}}",
+    "ruleHelp": "Reguła zaproponowana przez asystenta AI. Przetestuj ją na zdarzeniach z ostatnich godzin i popraw. Zapis w panelu włącza tryb próbny: reguła liczy trafienia bez alertów („Próby reguły”) – włączasz ją dopiero, gdy wyniki są dobre.",
+    "note": "Opis zmiany (opcjonalnie)",
+    "saveTrial": "Zapisz w trybie próbnym"
   }
 }

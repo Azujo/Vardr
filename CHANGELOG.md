@@ -2,6 +2,18 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.5.3] – 2026-10-27 – Wyjątki reguł i propozycje AI
+
+### Dodane
+- **Wyjątki reguł** ([docs/reguly.md](docs/reguly.md#wyjątki)): warunek (pola z modyfikatorami jak w selekcji Sigmy), przy którym reguła nie trafia – na powtarzalne fałszywe alarmy zamiast wyłączania całej reguły. Zakładka *Wyjątki* w szczegółach reguły i *Dodaj wyjątek reguły* na stronie alertu (pola zdarzenia do wyboru). Przed zapisem *Sprawdź na historii* – ile trafień z ostatnich 7 dni wyjątek ukryje, z przykładami. Powód, hasło, opcjonalne wygaśnięcie (domyślnie 90 dni), audyt; działa w obu silnikach w ciągu 30 s, test reguły uwzględnia wyjątki, lista reguł pokazuje ich liczbę.
+- **Propozycje wyjątków od asystenta AI** – narzędzie `fp_candidates` (asystent i serwer MCP): reguły z alertami zamkniętymi jako fałszywy alarm albo uzasadnione działanie, z najczęstszymi komputerami, kontami i przykładami. Asystent (czat albo „Analiza AI” alertu) proponuje wąski wyjątek; przycisk *Utwórz wyjątek* otwiera formularz z propozycją – zapisuje człowiek, po sprawdzeniu na historii.
+- **Propozycje reguł od asystenta AI** – nowa reguła Sigmy (np. dla techniki ATT&CK bez wykrywania) z przyciskiem *Przetestuj i zapisz jako próbną*: test na zdarzeniach i zapis w panelu od razu w trybie próbnym (trafienia bez alertów).
+- **Pojedyncze reguły Sigmy zapisywane w panelu** (dotąd tylko korelacje z kreatora), opcjonalnie od razu w trybie próbnym.
+
+### Aktualizacja
+- Migracja bazy detekcji `015_rule_exceptions.sql` (wykonuje ją siem-detector) – zaktualizuj detektor przed siem-api.
+- Nowe narzędzie `fp_candidates` w serwerze MCP – pobierz nowy `vardr-mcp.exe` z panelu (*Dostęp AI*), jeśli używasz MCP na komputerze analityka.
+
 ## [1.5.2] – 2026-10-27 – Analiza AI incydentu i propozycje NIS2
 
 ### Dodane

@@ -258,6 +258,22 @@ Typowy przebieg dla reguł SigmaHQ: filtr *SigmaHQ*, poziom *wysoki* i *krytyczn
 - Trafienia leżą w `gjallarhorn.rule_trial_hits` 35 dni; ponowne rozpoczęcie próby liczy od zera.
 - Próba nie dotyczy korelacji, reguł wbudowanych i reguł bazowych korelacji.
 
+### Wyjątki
+
+Powtarzalny fałszywy alarm (kopia zapasowa uruchamiana co noc, skaner podatności, konto serwisowe) lepiej wyciąć **wyjątkiem** niż wyłączać całą regułę. Wyjątek to warunek w składni selekcji Sigmy – pola z modyfikatorami (`contains`, `startswith`, `endswith`, `re`, `cidr`), wszystkie muszą pasować, to samo pole kilka razy oznacza którąkolwiek z wartości. Reguła z wyjątkami działa jak „warunek reguły **i nie** (wyjątek 1 **albo** wyjątek 2 …)” – w obu silnikach.
+
+Dodawanie (administrator reguł, *Reguły detekcji → reguła → Wyjątki → Dodaj wyjątek* albo *Dodaj wyjątek reguły* na stronie alertu – z polami zdarzenia do wyboru):
+
+1. Zbuduj warunek możliwie wąski – np. komputer **i** ścieżka procesu, nie samo konto. Nazwy pól jak w zdarzeniu; `Computer` to nazwa komputera.
+2. *Sprawdź na historii* – panel liczy, ile trafień reguły z ostatnich 7 dni wyjątek by ukrył, z przykładami. Jeśli ukrywa więcej niż oczekiwany fałszywy alarm, zawęź warunek.
+3. Podaj powód, czas obowiązywania (7, 30, 90 – domyślnie – albo 365 dni, albo bez wygaśnięcia) i hasło. Detektor stosuje wyjątek w ciągu 30 s.
+
+- Wyjątek osłabia wykrywanie, dlatego wymaga powodu i hasła i trafia do audytu (`rule_exception_added`, `rule_exception_checked`); usunięcie (`rule_exception_deleted`) nie wymaga hasła – wzmacnia wykrywanie.
+- Wygasły wyjątek detektor pomija sam; zostaje na liście (wyszarzony) jako ślad. Lista reguł pokazuje liczbę obowiązujących wyjątków.
+- Test reguły w panelu uwzględnia jej obowiązujące wyjątki.
+- Wyjątki leżą w `gjallarhorn.rule_exceptions`; nie zmieniają pliku reguły, więc przetrwają aktualizację reguł SigmaHQ. Dotyczą reguł Sigmy (także bazowych korelacji), nie korelacji i reguł wbudowanych.
+- Wyjątek może zaproponować asystent AI (patrz [panel](panel.md#asystent-ai-w-panelu)) – zapisuje go zawsze człowiek, tą samą drogą.
+
 ## Reguły wbudowane
 
 Nie są plikami Sigmy – działają w kodzie detektora, ale są widoczne w panelu jak reguły (plik „(wbudowana)”):

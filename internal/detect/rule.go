@@ -59,6 +59,8 @@ type Rule struct {
 	// CorrelationOnly: reguła bazowa korelacji z generate: false – zasila
 	// korelację, sama nie tworzy alertów.
 	CorrelationOnly bool `json:"correlation_only,omitempty"`
+	// Exceptions: liczba doklejonych wyjątków (ApplyExceptions).
+	Exceptions int `json:"exceptions,omitempty"`
 
 	match Node
 }

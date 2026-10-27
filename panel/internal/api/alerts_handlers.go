@@ -415,5 +415,13 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request) {
 			attributions[ru.ID] = at
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "errors": errs, "configured": true, "attributions": attributions})
+	// Liczba obowiązujących wyjątków każdej reguły (znaczek na liście).
+	exceptions := map[string]int{}
+	if s.Exceptions != nil {
+		if n, err := s.Exceptions.ExceptionCounts(r.Context(), s.now().UTC()); err == nil {
+			exceptions = n
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "errors": errs, "configured": true, "attributions": attributions,
+		"exceptions": exceptions})
 }

@@ -271,6 +271,22 @@ A typical flow for SigmaHQ rules: *SigmaHQ* filter, levels *high* and *critical*
 - Hits are kept in `gjallarhorn.rule_trial_hits` for 35 days; restarting a trial counts from zero.
 - Trials do not apply to correlations, built-in rules and correlation base rules.
 
+### Exceptions
+
+A recurring false positive (a nightly backup, a vulnerability scanner, a service account) is better cut out with an **exception** than by disabling the whole rule. An exception is a condition in Sigma selection syntax – fields with modifiers (`contains`, `startswith`, `endswith`, `re`, `cidr`), all must match, the same field several times means any of the values. A rule with exceptions works as "rule condition **and not** (exception 1 **or** exception 2 …)" – in both engines.
+
+Adding one (rule administrator, *Detection rules → rule → Exceptions → Add exception*, or *Add rule exception* on the alert page – with the event fields to pick from):
+
+1. Keep the condition as narrow as possible – e.g. computer **and** process path, not just the account. Field names as in the event; `Computer` is the computer name.
+2. *Check against history* – the panel counts how many of the rule's hits from the last 7 days the exception would hide, with examples. If it hides more than the expected false positive, narrow it down.
+3. Give a reason, a validity period (7, 30, 90 – the default – or 365 days, or no expiry) and your password. The detector applies the exception within 30 s.
+
+- An exception weakens detection, so it needs a reason and the password and is audited (`rule_exception_added`, `rule_exception_checked`); deleting one (`rule_exception_deleted`) needs no password – it strengthens detection.
+- The detector skips expired exceptions by itself; they stay on the list (greyed out) as a trace. The rule list shows the number of active exceptions.
+- The rule test in the panel applies the rule's active exceptions.
+- Exceptions live in `gjallarhorn.rule_exceptions`; they do not change the rule file, so they survive SigmaHQ rule updates. They apply to Sigma rules (including correlation base rules), not to correlations and built-in rules.
+- The AI assistant can propose an exception (see [panel](panel.md#ai-assistant-in-the-panel)) – a human always saves it, the same way.
+
 ## Built-in rules
 
 They are not Sigma files – they run in the detector code, but are visible in the panel like rules (file "(built-in)"):

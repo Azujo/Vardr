@@ -110,7 +110,8 @@
     "eventsOf": "Zdarzenia ({{count}} z {{hits}})",
     "closeTitle": "Zamknij alert",
     "reasonHint": "np. fałszywy alarm, wyjaśnione z użytkownikiem, incydent nr…",
-    "cancel": "Wróć"
+    "cancel": "Wróć",
+    "addException": "Dodaj wyjątek reguły"
   },
   "autoClose": {
     "heimdall-agent-heartbeat-lost": "Agent znów wysyła heartbeat – zamknięte automatycznie.",

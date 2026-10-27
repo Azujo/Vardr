@@ -108,7 +108,8 @@
     "eventsOf": "Events ({{count}} of {{hits}})",
     "closeTitle": "Close alert",
     "reasonHint": "e.g. false positive, clarified with the user, incident no.…",
-    "cancel": "Back"
+    "cancel": "Back",
+    "addException": "Add rule exception"
   },
   "autoClose": {
     "heimdall-agent-heartbeat-lost": "The agent is sending heartbeats again – closed automatically.",
