@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"siem/internal/mcp"
@@ -194,12 +196,38 @@ func (s *Server) setAssistant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"assistant": v})
 }
 
+// modelHTTP: klient do endpointu modelu – bez przekierowań i bez połączeń
+// z adresami lokalnymi łącza (169.254.0.0/16 – m.in. metadane chmury,
+// fe80::/10), rozgłoszeniowymi i nieokreślonymi; adres jest sprawdzany po
+// rozwiązaniu nazwy, więc nie obejdzie tego DNS. Sieć lokalna i localhost
+// zostają dozwolone – tam zwykle działa model lokalny.
 func modelHTTP(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		if ip := net.ParseIP(host); ip == nil || blockedModelIP(ip) {
+			return fmt.Errorf("adres %s jest niedozwolony dla endpointu modelu", host)
+		}
+		return nil
+	}}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = nil
+	tr.DialContext = dialer.DialContext
+	return &http.Client{Timeout: timeout, Transport: tr,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+func blockedModelIP(ip net.IP) bool {
+	return ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() ||
+		ip.IsUnspecified()
 }
 
 // assistantModels: lista modeli endpointu – test połączenia przed zapisem
-// (adres z formularza; klucz z formularza albo zapisany).
+// (adres z formularza; klucz z formularza albo zapisany – ten tylko do
+// zapisanego adresu, żeby nie dało się go wysłać gdzie indziej bez hasła).
+// Treść odpowiedzi z błędem nie wraca do przeglądarki – sam kod HTTP.
 func (s *Server) assistantModels(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		BaseURL string `json:"base_url"`
@@ -220,11 +248,18 @@ func (s *Server) assistantModels(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, err)
 			return
 		}
-		key = prev.APIKey
+		if prev.BaseURL == base {
+			key = prev.APIKey
+		}
 	}
 	c := &assistant.Client{BaseURL: base, APIKey: key, HTTP: modelHTTP(15 * time.Second)}
 	ids, err := c.Models(r.Context())
-	if err != nil {
+	var he *assistant.HTTPError
+	switch {
+	case errors.As(err, &he):
+		writeError(w, http.StatusBadGateway, "assistant_unreachable", fmt.Sprintf("endpoint modelu odpowiedział HTTP %d", he.Status))
+		return
+	case err != nil:
 		writeErr(w, http.StatusBadGateway, "assistant_unreachable", err)
 		return
 	}
@@ -458,9 +493,20 @@ func toolText(res mcp.ToolResult) string {
 	return b.String()
 }
 
-// listAlertAnalyses: zapisane analizy AI alertu (najnowsze pierwsze).
+// aiAlertsAllowed: analizy AI alertu – uprawnienie „asystent AI” (trasa)
+// i do alertów: odczyt, a usunięcie – zmiana.
+func aiAlertsAllowed(w http.ResponseWriter, r *http.Request, level string) bool {
+	if !current(r).perms.Has("alerts", level) {
+		writeError(w, http.StatusForbidden, "forbidden", "brak uprawnienia do alertów")
+		return false
+	}
+	return true
+}
+
+// listAlertAnalyses: zapisane analizy AI alertu (najnowsze pierwsze);
+// widoczne tylko dla osób z uprawnieniem „asystent AI”.
 func (s *Server) listAlertAnalyses(w http.ResponseWriter, r *http.Request) {
-	if !s.aiEnabledStore(w) {
+	if !s.aiEnabledStore(w) || !aiAlertsAllowed(w, r, "read") {
 		return
 	}
 	id, ok := alertID(w, r)
@@ -475,9 +521,10 @@ func (s *Server) listAlertAnalyses(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"analyses": list})
 }
 
-// deleteAlertAnalysis: usunięcie błędnej analizy (zmiana alertów, audyt).
+// deleteAlertAnalysis: usunięcie błędnej analizy (asystent AI i zmiana
+// alertów, audyt).
 func (s *Server) deleteAlertAnalysis(w http.ResponseWriter, r *http.Request) {
-	if !s.aiEnabledStore(w) {
+	if !s.aiEnabledStore(w) || !aiAlertsAllowed(w, r, "write") {
 		return
 	}
 	id, ok := alertID(w, r)

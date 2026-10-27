@@ -76,6 +76,16 @@ type chatResponse struct {
 	Usage Usage `json:"usage"`
 }
 
+// HTTPError: endpoint modelu odpowiedział kodem błędu.
+type HTTPError struct {
+	Status int
+	Body   string // początek treści odpowiedzi
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("model endpoint: HTTP %d: %s", e.Status, e.Body)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	var rd io.Reader
 	if body != nil {
@@ -107,7 +117,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		if len(msg) > 300 {
 			msg = msg[:300] + "…"
 		}
-		return fmt.Errorf("model endpoint: HTTP %d: %s", resp.StatusCode, msg)
+		return &HTTPError{Status: resp.StatusCode, Body: msg}
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("model endpoint: invalid response: %w", err)

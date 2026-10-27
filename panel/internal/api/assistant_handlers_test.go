@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"siem/internal/alerts"
+	"siem/panel/internal/api/store"
 )
 
 // fakeLLM udaje endpoint zgodny z OpenAI: na pytanie wywołuje narzędzie
@@ -129,6 +130,19 @@ func TestAssistant(t *testing.T) {
 	if llm.auth[len(llm.auth)-1] != "Bearer sekret-klucz" {
 		t.Fatalf("zapisany klucz przy liście modeli: %v", llm.auth)
 	}
+	// Zapisany klucz nie idzie pod inny adres niż zapisany.
+	other := &fakeLLM{}
+	otherSrv := httptest.NewServer(other)
+	t.Cleanup(otherSrv.Close)
+	if code, _, _ := a.do("POST", "/api/v1/ai/assistant/models", map[string]any{"base_url": otherSrv.URL + "/v1"}); code != 200 ||
+		other.auth[0] != "" {
+		t.Fatalf("klucz pod innym adresem: %d %v", code, other.auth)
+	}
+	// Adres lokalny łącza (metadane chmury) – odmowa połączenia.
+	if code, out, _ := a.do("POST", "/api/v1/ai/assistant/models", map[string]any{"base_url": "http://169.254.169.254/v1"}); code != 502 ||
+		!strings.Contains(fmt.Sprint(out["message"]), "niedozwolony") {
+		t.Fatalf("metadane: %d %v", code, out)
+	}
 
 	code, evs := ask("Jakie mam agenty?")
 	answer, _ := eventOf(evs, "answer")["text"].(string)
@@ -209,6 +223,16 @@ func TestAlertAnalysisSaved(t *testing.T) {
 	list, _ := out["analyses"].([]any)
 	if code != 200 || len(list) != 1 {
 		t.Fatalf("lista: %d %v", code, out)
+	}
+	// Analityk bez uprawnienia „asystent AI” nie widzi ani nie usuwa analiz.
+	e.addUser("anna", store.RoleAnalyst, "bardzo-tajne-haslo-2", false)
+	b := e.client("10.0.0.2")
+	b.login("anna", "bardzo-tajne-haslo-2")
+	if code, _, _ := b.do("GET", "/api/v1/alerts/7/ai-analyses", nil); code != 403 {
+		t.Fatalf("bez asystenta AI – lista: %d", code)
+	}
+	if code, _, _ := b.do("DELETE", "/api/v1/alerts/7/ai-analyses/1", nil); code != 403 {
+		t.Fatalf("bez asystenta AI – usunięcie: %d", code)
 	}
 	an := list[0].(map[string]any)
 	if an["created_by"] != "admin" || an["model"] != "qwen3-8b" || !strings.HasPrefix(an["answer"].(string), "ECHO:") {

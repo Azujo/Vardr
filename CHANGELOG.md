@@ -2,6 +2,14 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.5.1] – 2026-10-27 – Poprawki bezpieczeństwa asystenta AI
+
+### Bezpieczeństwo
+- **Połączenia asystenta z endpointem modelu** (CodeQL `go/request-forgery`): zapisany klucz API idzie tylko pod zapisany adres – „Sprawdź i pobierz modele” z innym adresem nie wyśle go bez potwierdzenia hasłem; przy błędzie sprawdzania panel pokazuje tylko kod HTTP, bez treści odpowiedzi; odmowa połączeń z adresami lokalnymi łącza (169.254.0.0/16 – metadane chmury, fe80::/10), rozgłoszeniowymi i nieokreślonymi, sprawdzana po rozwiązaniu nazwy (także przy DNS rebinding). Adres endpointu ustawia administrator, więc alert dotyczył funkcji zamierzonej; sieć lokalna i localhost pozostają dozwolone dla modeli lokalnych.
+
+### Zmienione
+- **Analizy AI przy alercie widzą tylko osoby z uprawnieniem „asystent AI”** (dotąd – każdy z odczytem alertów): wnioski modelu mogą opierać się na danych, do których inni nie mają dostępu. Usunięcie analizy – „asystent AI” i zmiana alertów.
+
 ## [1.5.0] – 2026-10-27 – Asystent AI
 
 ### Dodane

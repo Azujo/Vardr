@@ -370,7 +370,7 @@ export default function AlertDetailPage() {
         )}
       </Group>
 
-      <AlertAnalyses alertId={alert.id} />
+      {can("ai", "use") && <AlertAnalyses alertId={alert.id} />}
 
       {(incidents.length > 0 || can("incidents", "write")) && (
         <Card withBorder>
