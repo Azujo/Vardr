@@ -203,6 +203,23 @@
       "correlate": "Review the open alerts and check whether they are linked",
       "today": "What were the most important events in the last 24 hours?",
       "coverage": "Which ATT&CK techniques do we not detect with any rule?"
+    },
+    "analyzeIncident": "Analysis of incident #{{id}}",
+    "incidentBadge": "incident #{{id}}",
+    "savedToIncident": "saved to the incident",
+    "proposalReady": "NIS2 field proposals on the incident page",
+    "proposalTitle": "Proposals for the NIS2 report",
+    "proposalHelp": "Insert the proposals you choose into the findings form below, correct them and save. Nothing changes by itself – you approve the content, and the save is recorded on the incident timeline.",
+    "proposalReadOnly": "Model proposals – to be transferred by someone who can change incidents.",
+    "useProposal": "Insert into the form",
+    "proposalUsed": "Inserted into the findings form – check the text and save.",
+    "proposalNote": "Findings completed from AI proposals (analysis #{{id}}, model {{model}}) – content checked and approved by the analyst.",
+    "fields": {
+      "description": "Description",
+      "impact": "Impact",
+      "iocs": "Indicators of compromise (IoC)",
+      "root_cause": "Root cause",
+      "mitigation": "Mitigation measures"
     }
   }
 }

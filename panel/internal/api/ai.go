@@ -318,9 +318,9 @@ type AIStore interface {
 	APIRequestsByKind(ctx context.Context, kind string, limit int, beforeID int64) ([]store.KindRequest, error)
 	SavePseudonyms(ctx context.Context, ps []store.Pseudonym, now time.Time) error
 	PseudonymOf(ctx context.Context, pseudonym string) (store.Pseudonym, error)
-	SaveAlertAnalysis(ctx context.Context, a store.AlertAnalysis) (store.AlertAnalysis, error)
-	AlertAnalyses(ctx context.Context, alertID int64, limit int) ([]store.AlertAnalysis, error)
-	DeleteAlertAnalysis(ctx context.Context, alertID, id int64) error
+	SaveAIAnalysis(ctx context.Context, a store.AIAnalysis) (store.AIAnalysis, error)
+	AIAnalyses(ctx context.Context, target string, targetID int64, limit int) ([]store.AIAnalysis, error)
+	DeleteAIAnalysis(ctx context.Context, target string, targetID, id int64) error
 }
 
 func (s *Server) aiEnabledStore(w http.ResponseWriter) bool {

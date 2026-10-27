@@ -257,45 +257,61 @@ func (s *PG) PseudonymOf(ctx context.Context, pseudonym string) (Pseudonym, erro
 	return p, err
 }
 
-// AlertAnalysis to analiza AI alertu zapisana przy alercie.
-type AlertAnalysis struct {
-	ID        int64     `json:"id"`
-	AlertID   int64     `json:"alert_id"`
-	CreatedAt time.Time `json:"created_at"`
-	CreatedBy string    `json:"created_by"`
-	Model     string    `json:"model"`
-	Question  string    `json:"question,omitempty"`
-	Answer    string    `json:"answer"`
-	Steps     int       `json:"steps"`
-	Tools     []string  `json:"tools"`
-	Tokens    int       `json:"tokens"`
-	TookMS    int       `json:"took_ms"`
+// Cele analiz AI.
+const (
+	AnalysisAlert    = "alert"
+	AnalysisIncident = "incident"
+)
+
+// AIAnalysis to analiza AI zapisana przy alercie albo incydencie.
+// Proposal: propozycje pól incydentu (description, impact, iocs,
+// root_cause, mitigation) – do przejrzenia przez analityka.
+type AIAnalysis struct {
+	ID        int64             `json:"id"`
+	Target    string            `json:"target"`
+	TargetID  int64             `json:"target_id"`
+	CreatedAt time.Time         `json:"created_at"`
+	CreatedBy string            `json:"created_by"`
+	Model     string            `json:"model"`
+	Question  string            `json:"question,omitempty"`
+	Answer    string            `json:"answer"`
+	Proposal  map[string]string `json:"proposal,omitempty"`
+	Steps     int               `json:"steps"`
+	Tools     []string          `json:"tools"`
+	Tokens    int               `json:"tokens"`
+	TookMS    int               `json:"took_ms"`
 }
 
-// SaveAlertAnalysis zapisuje analizę i zwraca ją z nadanym identyfikatorem.
-func (s *PG) SaveAlertAnalysis(ctx context.Context, a AlertAnalysis) (AlertAnalysis, error) {
+// SaveAIAnalysis zapisuje analizę i zwraca ją z nadanym identyfikatorem.
+func (s *PG) SaveAIAnalysis(ctx context.Context, a AIAnalysis) (AIAnalysis, error) {
 	if a.Tools == nil {
 		a.Tools = []string{}
 	}
-	err := s.pool.QueryRow(ctx, `INSERT INTO alert_ai_analyses (alert_id, created_at, created_by, model, question, answer, steps, tools, tokens, took_ms)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-		a.AlertID, a.CreatedAt, a.CreatedBy, a.Model, a.Question, a.Answer, a.Steps, a.Tools, a.Tokens, a.TookMS).Scan(&a.ID)
+	var proposal any
+	if len(a.Proposal) > 0 {
+		proposal = a.Proposal
+	}
+	err := s.pool.QueryRow(ctx, `INSERT INTO ai_analyses (target, target_id, created_at, created_by, model, question, answer, proposal,
+		steps, tools, tokens, took_ms) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+		a.Target, a.TargetID, a.CreatedAt, a.CreatedBy, a.Model, a.Question, a.Answer, proposal, a.Steps, a.Tools, a.Tokens,
+		a.TookMS).Scan(&a.ID)
 	return a, err
 }
 
-// AlertAnalyses zwraca analizy alertu (najnowsze pierwsze).
-func (s *PG) AlertAnalyses(ctx context.Context, alertID int64, limit int) ([]AlertAnalysis, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, alert_id, created_at, created_by, model, question, answer, steps, tools, tokens, took_ms
-		FROM alert_ai_analyses WHERE alert_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`, alertID, limit)
+// AIAnalyses zwraca analizy alertu albo incydentu (najnowsze pierwsze).
+func (s *PG) AIAnalyses(ctx context.Context, target string, targetID int64, limit int) ([]AIAnalysis, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, target, target_id, created_at, created_by, model, question, answer, proposal, steps,
+		tools, tokens, took_ms FROM ai_analyses WHERE target = $1 AND target_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3`,
+		target, targetID, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []AlertAnalysis{}
+	out := []AIAnalysis{}
 	for rows.Next() {
-		var a AlertAnalysis
-		if err := rows.Scan(&a.ID, &a.AlertID, &a.CreatedAt, &a.CreatedBy, &a.Model, &a.Question, &a.Answer, &a.Steps, &a.Tools,
-			&a.Tokens, &a.TookMS); err != nil {
+		var a AIAnalysis
+		if err := rows.Scan(&a.ID, &a.Target, &a.TargetID, &a.CreatedAt, &a.CreatedBy, &a.Model, &a.Question, &a.Answer, &a.Proposal,
+			&a.Steps, &a.Tools, &a.Tokens, &a.TookMS); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -303,9 +319,9 @@ func (s *PG) AlertAnalyses(ctx context.Context, alertID int64, limit int) ([]Ale
 	return out, rows.Err()
 }
 
-// DeleteAlertAnalysis usuwa analizę alertu (ErrNotFound – nie ma takiej).
-func (s *PG) DeleteAlertAnalysis(ctx context.Context, alertID, id int64) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM alert_ai_analyses WHERE alert_id = $1 AND id = $2`, alertID, id)
+// DeleteAIAnalysis usuwa analizę (ErrNotFound – nie ma takiej przy tym celu).
+func (s *PG) DeleteAIAnalysis(ctx context.Context, target string, targetID, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM ai_analyses WHERE target = $1 AND target_id = $2 AND id = $3`, target, targetID, id)
 	if err != nil {
 		return err
 	}

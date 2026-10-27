@@ -2,6 +2,15 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.5.2] – 2026-10-27 – Analiza AI incydentu i propozycje NIS2
+
+### Dodane
+- **Analiza AI incydentu** ([docs/panel.md](docs/panel.md#asystent-ai-w-panelu)): przycisk „Analiza AI” na stronie incydentu (przebieg, zakres i skutki, IoC, przyczyna, zalecane działania, otwarte pytania), zapis przy incydencie jak przy alercie. Wymaga grupy *incydenty* w polityce AI.
+- **Propozycje AI do zgłoszenia NIS2** – analiza incydentu proponuje treść pól: opis, skutki, IoC, przyczyna, środki ograniczające. Analityk wstawia wybrane do formularza ustaleń, poprawia i zapisuje; na osi czasu zostaje wpis o użyciu propozycji AI (analiza, model). Szkic zgłoszenia powstaje z pól incydentu – AI nie pisze zgłoszenia samo.
+
+### Aktualizacja
+- Migracja bazy panelu `028_ai_analyses.sql` – wspólna tabela analiz AI alertów i incydentów; analizy z 1.5.x przenoszone automatycznie.
+
 ## [1.5.1] – 2026-10-27 – Poprawki bezpieczeństwa asystenta AI
 
 ### Bezpieczeństwo

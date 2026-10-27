@@ -210,7 +210,7 @@ func TestAlertAnalysisSaved(t *testing.T) {
 		t.Fatalf("analiza: %d", code)
 	}
 	done := eventOf(readSSE(t, res.Body), "done")
-	if done == nil || done["analysis_id"] != float64(1) || done["alert_id"] != float64(7) {
+	if done == nil || done["analysis_id"] != float64(1) || done["target"] != "alert" || done["target_id"] != float64(7) {
 		t.Fatalf("done: %v", done)
 	}
 	// Dalsza rozmowa – bez zapisu.
@@ -266,5 +266,48 @@ func TestDocsSearch(t *testing.T) {
 	code, out = e.bearer(tok["secret"].(string), "GET", "/api/v1/docs/search?q=adres+IP+syslog", nil)
 	if code != 200 || strings.Contains(fmt.Sprint(out), "IP-") {
 		t.Fatalf("token AI: %d %v", code, out)
+	}
+}
+
+// Propozycje pól incydentu: ostatni blok JSON, tylko znane pola z tekstem;
+// odpowiedź bez bloku. Bez poprawnego bloku – odpowiedź bez zmian.
+func TestExtractProposal(t *testing.T) {
+	ans := "## Podsumowanie\nAtak.\n\n```json\n{\"description\": \"Brute force na VPN\", \"impact\": \"\", \"iocs\": \"203.0.113.5\", \"x\": \"y\"}\n```\n"
+	p, rest := extractProposal(ans)
+	if len(p) != 2 || p["description"] != "Brute force na VPN" || p["iocs"] != "203.0.113.5" || rest != "## Podsumowanie\nAtak." {
+		t.Fatalf("propozycja: %v / %q", p, rest)
+	}
+	for _, bad := range []string{"bez bloku", "```json\n{zepsuty\n```", "```json\n{\"impact\": \"\"}\n```"} {
+		if p, rest := extractProposal(bad); p != nil || rest != bad {
+			t.Fatalf("%q: %v / %q", bad, p, rest)
+		}
+	}
+}
+
+// Analizy incydentu: lista z propozycjami dla „asystenta AI”, odmowa bez
+// niego; usunięcie z audytem.
+func TestIncidentAnalyses(t *testing.T) {
+	e, ai := newAIEnv(t)
+	ai.an = []store.AIAnalysis{{ID: 1, Target: store.AnalysisIncident, TargetID: 3, CreatedBy: "admin", Model: "m", Answer: "a",
+		Proposal: map[string]string{"impact": "VPN"}}, {ID: 2, Target: store.AnalysisAlert, TargetID: 3, Answer: "alert"}}
+	ai.seq = 2
+	a := e.client("10.0.0.1")
+	a.login("admin", "bardzo-tajne-haslo-1")
+	code, out, _ := a.do("GET", "/api/v1/incidents/3/ai-analyses", nil)
+	list, _ := out["analyses"].([]any)
+	if code != 200 || len(list) != 1 || list[0].(map[string]any)["proposal"].(map[string]any)["impact"] != "VPN" {
+		t.Fatalf("lista: %d %v", code, out)
+	}
+	e.addUser("anna", store.RoleAnalyst, "bardzo-tajne-haslo-2", false)
+	b := e.client("10.0.0.2")
+	b.login("anna", "bardzo-tajne-haslo-2")
+	if code, _, _ := b.do("GET", "/api/v1/incidents/3/ai-analyses", nil); code != 403 {
+		t.Fatalf("bez asystenta AI: %d", code)
+	}
+	if code, _, _ := a.do("DELETE", "/api/v1/incidents/3/ai-analyses/2", nil); code != 404 {
+		t.Fatalf("analiza alertu przez incydent: %d", code)
+	}
+	if code, _, _ := a.do("DELETE", "/api/v1/incidents/3/ai-analyses/1", nil); code != 200 || len(ai.an) != 1 {
+		t.Fatalf("usunięcie: %d", code)
 	}
 }

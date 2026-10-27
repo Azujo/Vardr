@@ -35,6 +35,7 @@ import {
   IconFileCertificate,
   IconLock,
   IconSend,
+  IconSparkles,
   IconTrash,
 } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
@@ -61,7 +62,8 @@ import {
   type TriState,
 } from "../api";
 import { useAuth } from "../auth";
-import { languages, locale } from "../i18n";
+import { AiAnalyses, useAssistant } from "../assistant";
+import i18n, { languages, locale } from "../i18n";
 import { DeadlineBadge } from "../incidents";
 
 const triStates: TriState[] = ["yes", "no", "unknown"];
@@ -341,6 +343,10 @@ export default function IncidentDetailPage() {
   const [note, setNote] = useState("");
   const [tab, setTab] = useState<string | null>("early_warning");
   const [busy, setBusy] = useState(false);
+  const { open: openAssistant } = useAssistant();
+  // Analiza AI, z której wstawiono propozycje do formularza – przy zapisie
+  // wpis na osi czasu (kto zatwierdził treść z AI).
+  const [aiSource, setAiSource] = useState<{ id: number; model: string } | null>(null);
 
   const load = useCallback(() => {
     incidentsApi
@@ -441,6 +447,17 @@ export default function IncidentDetailPage() {
     }
   };
 
+  const saveFindings = async () => {
+    if (!(await patch(findings)) || !aiSource) return;
+    try {
+      await incidentsApi.note(id, i18n.t("ai:assistant.proposalNote", { id: aiSource.id, model: aiSource.model }));
+      setAiSource(null);
+      load();
+    } catch (e) {
+      notifications.show({ color: "red", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
   if (error) return <Alert color="red">{error}</Alert>;
   if (!x) return null;
   const findingsChanged =
@@ -470,6 +487,11 @@ export default function IncidentDetailPage() {
           </Text>
         </div>
         <Group gap="xs">
+          {can("ai", "use") && (
+            <Button variant="light" color="violet" leftSection={<IconSparkles size={16} />} onClick={() => openAssistant({ incidentId: x.id })}>
+              {i18n.t("ai:assistant.analyze")}
+            </Button>
+          )}
           {x.significant && (
             <Badge color="red" size="lg">
               {t("detail.significantBadge")}
@@ -514,6 +536,22 @@ export default function IncidentDetailPage() {
           )}
         </Stack>
       </Card>
+
+      {can("ai", "use") && (
+        <AiAnalyses
+          target="incident"
+          id={x.id}
+          onUseProposal={
+            canEdit
+              ? (f, text, a) => {
+                  setFindings((cur) => ({ ...cur, [f]: cur[f].trim() ? `${cur[f].trim()}\n\n${text}` : text }));
+                  setAiSource({ id: a.id, model: a.model });
+                  notifications.show({ color: "violet", message: i18n.t("ai:assistant.proposalUsed") });
+                }
+              : undefined
+          }
+        />
+      )}
 
       <Grid>
         <Grid.Col span={{ base: 12, md: 7 }}>
@@ -583,7 +621,7 @@ export default function IncidentDetailPage() {
               />
               {canEdit && (
                 <Group>
-                  <Button size="xs" disabled={!findingsChanged} loading={busy} onClick={() => void patch(findings)}>
+                  <Button size="xs" disabled={!findingsChanged} loading={busy} onClick={() => void saveFindings()}>
                     {t("detail.saveFindings")}
                   </Button>
                 </Group>

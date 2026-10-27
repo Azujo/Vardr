@@ -37,9 +37,10 @@ func (m *memSettings) SetSetting(_ context.Context, k, v, _ string, _ time.Time)
 }
 
 type memAI struct {
-	mu sync.Mutex
-	ps map[string]store.Pseudonym
-	an []store.AlertAnalysis
+	mu  sync.Mutex
+	ps  map[string]store.Pseudonym
+	an  []store.AIAnalysis
+	seq int64
 }
 
 func (m *memAI) APIRequestsByKind(context.Context, string, int, int64) ([]store.KindRequest, error) {
@@ -227,29 +228,30 @@ func TestMaskJSONFreeText(t *testing.T) {
 	}
 }
 
-func (m *memAI) SaveAlertAnalysis(_ context.Context, a store.AlertAnalysis) (store.AlertAnalysis, error) {
+func (m *memAI) SaveAIAnalysis(_ context.Context, a store.AIAnalysis) (store.AIAnalysis, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	a.ID = int64(len(m.an) + 1)
-	m.an = append([]store.AlertAnalysis{a}, m.an...)
+	m.seq++
+	a.ID = m.seq
+	m.an = append([]store.AIAnalysis{a}, m.an...)
 	return a, nil
 }
-func (m *memAI) AlertAnalyses(_ context.Context, alertID int64, _ int) ([]store.AlertAnalysis, error) {
+func (m *memAI) AIAnalyses(_ context.Context, target string, id int64, _ int) ([]store.AIAnalysis, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := []store.AlertAnalysis{}
+	out := []store.AIAnalysis{}
 	for _, a := range m.an {
-		if a.AlertID == alertID {
+		if a.Target == target && a.TargetID == id {
 			out = append(out, a)
 		}
 	}
 	return out, nil
 }
-func (m *memAI) DeleteAlertAnalysis(_ context.Context, alertID, id int64) error {
+func (m *memAI) DeleteAIAnalysis(_ context.Context, target string, targetID, id int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, a := range m.an {
-		if a.AlertID == alertID && a.ID == id {
+		if a.Target == target && a.TargetID == targetID && a.ID == id {
 			m.an = append(m.an[:i], m.an[i+1:]...)
 			return nil
 		}

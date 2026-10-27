@@ -30,7 +30,17 @@ import { IconAlertTriangle, IconPlayerStop, IconRefresh, IconSend, IconSparkles,
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "./i18n";
-import { alertAnalysesApi, askAssistant, formatDate, type AlertAnalysis, type AssistantEvent, type ChatTurn } from "./api";
+import {
+  aiAnalysesApi,
+  askAssistant,
+  formatDate,
+  proposalFields,
+  type AIAnalysis,
+  type AnalysisTarget,
+  type AssistantEvent,
+  type ChatTurn,
+  type ProposalField,
+} from "./api";
 import { useAuth } from "./auth";
 
 // ---- Markdown (podzbiór: nagłówki, listy, pogrubienie, kod, odwołania) ----
@@ -149,7 +159,7 @@ export function Markdown({ text }: { text: string }) {
 // ---- kontekst i panel boczny ----
 
 interface AssistantCtx {
-  open: (opts?: { alertId?: number }) => void;
+  open: (opts?: { alertId?: number; incidentId?: number }) => void;
 }
 
 const Ctx = createContext<AssistantCtx>({ open: () => {} });
@@ -157,6 +167,14 @@ const Ctx = createContext<AssistantCtx>({ open: () => {} });
 export function useAssistant() {
   return useContext(Ctx);
 }
+
+// Alert albo incydent, którego dotyczy rozmowa.
+interface Target {
+  kind: AnalysisTarget;
+  id: number;
+}
+
+const sameTarget = (a?: Target, b?: Target) => a?.kind === b?.kind && a?.id === b?.id;
 
 interface Turn extends ChatTurn {
   label?: string; // tekst pokazywany zamiast treści (np. „Analiza alertu #7”)
@@ -170,17 +188,19 @@ interface Progress {
 
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const [opened, setOpened] = useState(false);
-  const [alertId, setAlertId] = useState<number | undefined>();
+  const [target, setTarget] = useState<Target | undefined>();
   const [startNonce, setStartNonce] = useState(0);
-  const open = useCallback((opts?: { alertId?: number }) => {
-    setAlertId(opts?.alertId);
+  const open = useCallback((opts?: { alertId?: number; incidentId?: number }) => {
+    setTarget(
+      opts?.alertId ? { kind: "alert", id: opts.alertId } : opts?.incidentId ? { kind: "incident", id: opts.incidentId } : undefined,
+    );
     setOpened(true);
     setStartNonce((n) => n + 1);
   }, []);
   return (
     <Ctx.Provider value={{ open }}>
       {children}
-      <AssistantDrawer opened={opened} onClose={() => setOpened(false)} alertId={alertId} startNonce={startNonce} clearAlert={() => setAlertId(undefined)} />
+      <AssistantDrawer opened={opened} onClose={() => setOpened(false)} target={target} startNonce={startNonce} clearTarget={() => setTarget(undefined)} />
     </Ctx.Provider>
   );
 }
@@ -188,15 +208,15 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 function AssistantDrawer({
   opened,
   onClose,
-  alertId,
+  target,
   startNonce,
-  clearAlert,
+  clearTarget,
 }: {
   opened: boolean;
   onClose: () => void;
-  alertId?: number;
+  target?: Target;
   startNonce: number;
-  clearAlert: () => void;
+  clearTarget: () => void;
 }) {
   const { t } = useTranslation("ai");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -205,7 +225,7 @@ function AssistantDrawer({
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState("");
   const abort = useRef<AbortController | null>(null);
-  const convAlert = useRef<number | undefined>(undefined);
+  const conv = useRef<Target | undefined>(undefined);
   const viewport = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -213,7 +233,7 @@ function AssistantDrawer({
   }, [turns, progress]);
 
   const run = useCallback(
-    async (question: string, history: Turn[], forAlert?: number, label?: string) => {
+    async (question: string, history: Turn[], about?: Target, label?: string) => {
       setBusy(true);
       setError("");
       setProgress({ step: 0, tools: [] });
@@ -226,7 +246,8 @@ function AssistantDrawer({
       try {
         await askAssistant(
           {
-            alert_id: history.length === 0 ? forAlert : undefined,
+            alert_id: history.length === 0 && about?.kind === "alert" ? about.id : undefined,
+            incident_id: history.length === 0 && about?.kind === "incident" ? about.id : undefined,
             question,
             history: history.map(({ role, content }) => ({ role, content })),
             lang: (i18n.resolvedLanguage ?? "pl").slice(0, 2),
@@ -238,9 +259,10 @@ function AssistantDrawer({
             else if (name === "error") setError(e.message ?? "");
             else if (name === "done") {
               meta = t("assistant.meta", { model: e.model, s: Math.round((e.ms ?? 0) / 1000), steps: e.steps ?? 0, tokens: (e.prompt_tokens ?? 0) + (e.completion_tokens ?? 0) });
-              if (e.analysis_id && e.alert_id) {
-                meta += " · " + t("assistant.savedToAlert");
-                window.dispatchEvent(new CustomEvent(analysisSavedEvent, { detail: e.alert_id }));
+              if (e.analysis_id && e.target && e.target_id) {
+                meta += " · " + t(e.target === "alert" ? "assistant.savedToAlert" : "assistant.savedToIncident");
+                if (e.proposal) meta += " · " + t("assistant.proposalReady");
+                window.dispatchEvent(new CustomEvent(analysisSavedEvent, { detail: `${e.target}:${e.target_id}` }));
               }
             }
           },
@@ -261,17 +283,17 @@ function AssistantDrawer({
   // Otwarcie z alertu: nowa rozmowa i od razu analiza.
   useEffect(() => {
     if (!opened || startNonce === 0) return;
-    if (alertId !== undefined && convAlert.current !== alertId) {
+    if (target && !sameTarget(conv.current, target)) {
       abort.current?.abort();
-      convAlert.current = alertId;
-      void run("", [], alertId, t("assistant.analyzeAlert", { id: alertId }));
+      conv.current = target;
+      void run("", [], target, t(target.kind === "alert" ? "assistant.analyzeAlert" : "assistant.analyzeIncident", { id: target.id }));
     }
   }, [startNonce]); // tylko nowe otwarcie z alertu
 
   const reset = () => {
     abort.current?.abort();
-    convAlert.current = undefined;
-    clearAlert();
+    conv.current = undefined;
+    clearTarget();
     setTurns([]);
     setError("");
   };
@@ -279,7 +301,7 @@ function AssistantDrawer({
     const q = input.trim();
     if (!q || busy) return;
     setInput("");
-    void run(q, turns, convAlert.current);
+    void run(q, turns, conv.current);
   };
 
   return (
@@ -292,9 +314,9 @@ function AssistantDrawer({
         <Group gap="xs">
           <IconSparkles size={18} />
           <Text fw={600}>{t("assistant.title")}</Text>
-          {convAlert.current !== undefined && (
+          {conv.current && (
             <Badge variant="light" rightSection={<IconX size={10} style={{ cursor: "pointer" }} onClick={reset} />}>
-              {t("assistant.alertBadge", { id: convAlert.current })}
+              {t(conv.current.kind === "alert" ? "assistant.alertBadge" : "assistant.incidentBadge", { id: conv.current.id })}
             </Badge>
           )}
         </Group>
@@ -403,48 +425,60 @@ function AssistantDrawer({
 
 const analysisSavedEvent = "vardr:ai-analysis-saved";
 
-// AlertAnalyses: karta „Analiza AI” na stronie alertu – ostatnia zapisana
-// analiza (wcześniejsze do wyboru); odświeża się po nowej analizie z czatu.
-export function AlertAnalyses({ alertId }: { alertId: number }) {
+// AiAnalyses: karta „Analiza AI” na stronie alertu albo incydentu – ostatnia
+// zapisana analiza (wcześniejsze do wyboru); odświeża się po nowej analizie
+// z czatu. Incydent: propozycje pól zgłoszenia NIS2 – onUseProposal wstawia
+// pole do formularza (analityk sprawdza i zapisuje sam).
+export function AiAnalyses({
+  target,
+  id,
+  onUseProposal,
+}: {
+  target: AnalysisTarget;
+  id: number;
+  onUseProposal?: (field: ProposalField, text: string, a: AIAnalysis) => void;
+}) {
   const { t } = useTranslation("ai");
   const { can } = useAuth();
   const { open } = useAssistant();
-  const [list, setList] = useState<AlertAnalysis[]>([]);
+  const [list, setList] = useState<AIAnalysis[]>([]);
   const [current, setCurrent] = useState<number | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    alertAnalysesApi
-      .list(alertId)
+    aiAnalysesApi
+      .list(target, id)
       .then((r) => {
         setList(r.analyses);
         setCurrent(r.analyses[0]?.id ?? null);
         setError("");
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [alertId]);
+  }, [target, id]);
   useEffect(() => load(), [load]);
   useEffect(() => {
     const h = (e: Event) => {
-      if ((e as CustomEvent<number>).detail === alertId) load();
+      if ((e as CustomEvent<string>).detail === `${target}:${id}`) load();
     };
     window.addEventListener(analysisSavedEvent, h);
     return () => window.removeEventListener(analysisSavedEvent, h);
-  }, [alertId, load]);
+  }, [target, id, load]);
 
   if (list.length === 0 && !error) return null;
   const a = list.find((x) => x.id === current) ?? list[0];
   const remove = async () => {
     if (!a) return;
     try {
-      await alertAnalysesApi.remove(alertId, a.id);
+      await aiAnalysesApi.remove(target, id, a.id);
       setConfirm(false);
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+  const reopen = () => open(target === "alert" ? { alertId: id } : { incidentId: id });
+  const proposal = a?.proposal ? proposalFields.filter((f) => a.proposal?.[f]) : [];
   return (
     <Card withBorder style={{ borderColor: "var(--mantine-color-violet-filled)" }}>
       <Group justify="space-between" mb="xs" wrap="nowrap">
@@ -457,11 +491,11 @@ export function AlertAnalyses({ alertId }: { alertId: number }) {
         </Group>
         <Group gap="xs" wrap="nowrap">
           {can("ai", "use") && (
-            <Button size="xs" variant="subtle" color="violet" leftSection={<IconRefresh size={14} />} onClick={() => open({ alertId })}>
+            <Button size="xs" variant="subtle" color="violet" leftSection={<IconRefresh size={14} />} onClick={reopen}>
               {t("assistant.reanalyze")}
             </Button>
           )}
-          {a && can("alerts", "write") &&
+          {a && can(target === "alert" ? "alerts" : "incidents", "write") &&
             (confirm ? (
               <Group gap={4} wrap="nowrap">
                 <Button size="xs" color="red" onClick={() => void remove()}>
@@ -503,6 +537,35 @@ export function AlertAnalyses({ alertId }: { alertId: number }) {
             {t("assistant.analysisMeta", { by: a.created_by, date: formatDate(a.created_at), model: a.model, s: Math.round(a.took_ms / 1000) })}
           </Text>
           <Markdown text={a.answer} />
+          {proposal.length > 0 && (
+            <Paper withBorder p="sm" radius="md">
+              <Stack gap="xs">
+                <Text fw={600} size="sm">
+                  {t("assistant.proposalTitle")}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {t(onUseProposal ? "assistant.proposalHelp" : "assistant.proposalReadOnly")}
+                </Text>
+                {proposal.map((f) => (
+                  <Stack key={f} gap={2}>
+                    <Group justify="space-between" wrap="nowrap">
+                      <Text size="sm" fw={500}>
+                        {t(`assistant.fields.${f}`)}
+                      </Text>
+                      {onUseProposal && (
+                        <Button size="compact-xs" variant="light" color="violet" onClick={() => onUseProposal(f, a.proposal![f]!, a)}>
+                          {t("assistant.useProposal")}
+                        </Button>
+                      )}
+                    </Group>
+                    <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>
+                      {a.proposal![f]}
+                    </Text>
+                  </Stack>
+                ))}
+              </Stack>
+            </Paper>
+          )}
           <Text size="xs" c="dimmed">
             {t("assistant.analysisNote")}
           </Text>

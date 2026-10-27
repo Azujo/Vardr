@@ -176,5 +176,6 @@
   "too_many": "Too many items.",
   "unauthenticated": "Your session has expired – sign in again.",
   "username_taken": "The domain account username is taken by a local panel account – an administrator must rename one of them.",
-  "weak_password": "The new password is too weak or the same as the current one."
+  "weak_password": "The new password is too weak or the same as the current one.",
+  "assistant_incident_denied": "The assistant cannot read the incident (permissions or AI policy – the “incidents” group)"
 }

@@ -27,7 +27,7 @@ func TestPostgresStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, tbl := range []string{"alert_ai_analyses", "ai_pseudonyms", "api_token_requests", "api_tokens", "incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
+	for _, tbl := range []string{"ai_analyses", "ai_pseudonyms", "api_token_requests", "api_tokens", "incident_reminders", "incident_reports", "incident_activity", "incident_alerts", "incidents", "panel_settings", "user_recovery_codes", "user_mfa", "backup_files", "backup_requests", "backup_runs", "backup_runner", "backup_secrets", "backup_config", "agent_uninstall_tokens", "identity_shared_accounts", "identity_aliases", "identity_domains", "quarantine_outcomes", "quarantine_jobs", "syslog_decoder_versions", "syslog_decoders", "notify_log", "notify_channels", "agent_assignments", "agent_certs",
 		"enrollment_tokens", "agent_groups", "agents", "audit_log", "sessions", "users", "profiles", "schema_migrations"} {
 		if _, err := db.pool.Exec(ctx, "DROP TABLE IF EXISTS "+tbl+" CASCADE"); err != nil {
 			t.Fatal(err)

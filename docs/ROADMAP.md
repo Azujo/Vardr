@@ -464,7 +464,7 @@ MVP zamknięte 17.10.2026 (etapy 0–8), wydane wersje 1.0.1 (English update) i 
 | **1.2** | Powiadomienia Power Automate / Microsoft Teams – ✅ wydane w 1.2.0 (26.10.2026) | 15–20 | – (podpis HMAC wspólny z webhookiem) |
 | **1.3** | Scoring ryzyka osób i stacji – ✅ wydane w 1.3.0 (26.10.2026) | 40–60 | mapowanie tożsamości (etap 7) |
 | **1.4** | Serwer MCP (AI tylko do odczytu) – ✅ wydane w 1.4.0 (26.10.2026) | 30–40 | 1.1 |
-| **1.5** | Asystent AI w panelu (eksperymentalny) – ✅ część pierwsza wydana w 1.5.0 (27.10.2026): analiza alertu, czat, korelacja alertów, dokumentacja; dalej – incydenty i szkic NIS2, propozycje wyjątków i reguł | 60–80 | 1.1, 1.4; korzysta z 1.3 |
+| **1.5** | Asystent AI w panelu (eksperymentalny) – ✅ wydane w 1.5.0–1.5.2 (27.10.2026): analiza alertu i incydentu, czat, korelacja alertów, dokumentacja, propozycje pól zgłoszenia NIS2; dalej – propozycje wyjątków i reguł | 60–80 | 1.1, 1.4; korzysta z 1.3 |
 
 ### 1.1 – API dla integracji
 

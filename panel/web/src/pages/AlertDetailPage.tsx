@@ -50,7 +50,7 @@ import { useAuth } from "../auth";
 import { AttackBadges, AttributionLine } from "../attack";
 import { ResolutionPicker, RiskBadge, resolutionLabel } from "../risk";
 import AddToIncident from "./AddToIncident";
-import { AlertAnalyses, useAssistant } from "../assistant";
+import { AiAnalyses, useAssistant } from "../assistant";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -370,7 +370,7 @@ export default function AlertDetailPage() {
         )}
       </Group>
 
-      {can("ai", "use") && <AlertAnalyses alertId={alert.id} />}
+      {can("ai", "use") && <AiAnalyses target="alert" id={alert.id} />}
 
       {(incidents.length > 0 || can("incidents", "write")) && (
         <Card withBorder>

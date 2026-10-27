@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -311,7 +312,7 @@ Rules:
 // dopisywane do każdego pytania (modele lokalne łatwo przechodzą na
 // angielski, gdy dane i narzędzia są po angielsku).
 type assistantLang struct {
-	name, alertTask, alsoAsks, reminder string
+	name, alertTask, incidentTask, alsoAsks, reminder string
 }
 
 var assistantLanguages = map[string]assistantLang{
@@ -322,6 +323,18 @@ var assistantLanguages = map[string]assistantLang{
 ## Co sprawdzić – konkretne kroki, wyszukiwania zdarzeń jako [query:…]
 ## ATT&CK – techniki z krótkim uzasadnieniem
 ## Wstępna ocena – prawdziwy alarm, uzasadnione działanie albo kandydat na fałszywy alarm, z pewnością; decyzję podejmuje analityk`,
+		incidentTask: `Przeanalizuj ten incydent (sprawę NIS2) na podstawie jego alertów; w razie potrzeby sprawdź zdarzenia. Użyj tej struktury:
+## Podsumowanie – przebieg w czasie: co się stało, gdzie, które konta i komputery
+## Zakres i skutki – systemy i konta, możliwy wpływ na usługi
+## Wskaźniki naruszenia (IoC) – adresy, nazwy plików, skróty, konta, domeny z danych
+## Przyczyna – najbardziej prawdopodobny wektor ataku, z pewnością
+## Zalecane działania – ograniczenie, usunięcie, odtworzenie
+## Do ustalenia – czego nie wiadomo z danych Vardra
+
+Na końcu dodaj blok kodu json z propozycjami pól zgłoszenia NIS2 – po polsku, tylko fakty z danych, bez oceniania osób; czego nie wiadomo – pusty tekst:
+` + "```json" + `
+{"description": "…", "impact": "…", "iocs": "…", "root_cause": "…", "mitigation": "…"}
+` + "```",
 		alsoAsks: "Analityk pyta też:",
 		reminder: "Odpowiedz wyłącznie po polsku – nagłówki, opis i wnioski. Nazwy pól, zapytania [query:…] i identyfikatory zostaw bez zmian."},
 	"en": {name: "English",
@@ -331,6 +344,18 @@ var assistantLanguages = map[string]assistantLang{
 ## What to check – concrete steps, event searches as [query:…]
 ## ATT&CK – techniques with a short justification
 ## Preliminary assessment – true positive, benign or false positive candidate, with confidence; the analyst decides`,
+		incidentTask: `Analyze this incident (NIS2 case) from its alerts; check events if needed. Use this structure:
+## Summary – timeline: what happened, where, which accounts and computers
+## Scope and impact – systems and accounts, possible impact on services
+## Indicators of compromise (IoC) – addresses, file names, hashes, accounts, domains from the data
+## Root cause – the most likely attack vector, with confidence
+## Recommended actions – containment, eradication, recovery
+## Open questions – what is not known from Vardr's data
+
+At the end add a json code block with proposals for the NIS2 report fields – in English, only facts from the data, no judgement of people; unknown – empty text:
+` + "```json" + `
+{"description": "…", "impact": "…", "iocs": "…", "root_cause": "…", "mitigation": "…"}
+` + "```",
 		alsoAsks: "The analyst also asks:",
 		reminder: "Answer in English only. Keep field names, [query:…] searches and identifiers unchanged."},
 }
@@ -347,16 +372,18 @@ func (s *Server) assistantAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		AlertID  int64      `json:"alert_id"`
-		Question string     `json:"question"`
-		History  []chatTurn `json:"history"`
-		Lang     string     `json:"lang"`
+		AlertID    int64      `json:"alert_id"`
+		IncidentID int64      `json:"incident_id"`
+		Question   string     `json:"question"`
+		History    []chatTurn `json:"history"`
+		Lang       string     `json:"lang"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	req.Question = strings.TrimSpace(req.Question)
-	if (req.Question == "" && req.AlertID == 0) || len(req.Question) > 4000 || len(req.History) > 40 {
+	if (req.Question == "" && req.AlertID == 0 && req.IncidentID == 0) || len(req.Question) > 4000 || len(req.History) > 40 ||
+		(req.AlertID != 0 && req.IncidentID != 0) {
 		writeError(w, http.StatusBadRequest, "bad_request", "pytanie: 1–4000 znaków, historia do 40 wiadomości")
 		return
 	}
@@ -422,6 +449,32 @@ func (s *Server) assistantAsk(w http.ResponseWriter, r *http.Request) {
 		}
 		question = fmt.Sprintf("Alert #%d (from get_alert):\n%s\n\n%s", req.AlertID, toolText(res), question)
 	}
+	if req.IncidentID > 0 && len(req.History) == 0 {
+		// Incydent (z alertami) – narzędzie get_incident, grupa „incydenty”
+		// w polityce AI.
+		res := tools.Call(ctx, "get_incident", map[string]any{"id": float64(req.IncidentID)})
+		if res.IsError {
+			writeError(w, http.StatusForbidden, "assistant_incident_denied",
+				"asystent nie może odczytać incydentu (uprawnienia albo polityka AI – grupa „incydenty”): "+toolText(res))
+			return
+		}
+		if question == "" {
+			question = lang.incidentTask
+		} else {
+			question = lang.incidentTask + "\n\n" + lang.alsoAsks + " " + question
+		}
+		question = fmt.Sprintf("Incident #%d (from get_incident):\n%s\n\n%s", req.IncidentID, toolText(res), question)
+	}
+	// Analiza alertu albo incydentu zostaje przy nim (karta „Analiza AI”);
+	// pytania w dalszej rozmowie – tylko w czacie.
+	saveTarget, saveID := "", int64(0)
+	switch {
+	case len(req.History) > 0:
+	case req.AlertID > 0:
+		saveTarget, saveID = store.AnalysisAlert, req.AlertID
+	case req.IncidentID > 0:
+		saveTarget, saveID = store.AnalysisIncident, req.IncidentID
+	}
 	msgs = append(msgs, assistant.Message{Role: "user", Content: question + "\n\n" + lang.reminder})
 
 	// Odpowiedź strumieniem SSE: postęp (krok, narzędzie) i wynik.
@@ -442,24 +495,40 @@ func (s *Server) assistantAsk(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	client := &assistant.Client{BaseURL: set.BaseURL, Model: set.Model, APIKey: set.APIKey, HTTP: modelHTTP(timeout)}
-	res, runErr := assistant.Run(ctx, client, tools, msgs, set.MaxSteps, func(e assistant.Event) { send(e.Type, e) })
+	res, runErr := assistant.Run(ctx, client, tools, msgs, set.MaxSteps, func(e assistant.Event) {
+		if e.Type == "answer" && saveTarget == store.AnalysisIncident {
+			// Propozycje pól idą osobno (zdarzenie „proposal”), nie w tekście.
+			_, e.Text = extractProposal(e.Text)
+		}
+		send(e.Type, e)
+	})
+	var proposal map[string]string
+	answer := res.Answer
+	if saveTarget == store.AnalysisIncident {
+		proposal, answer = extractProposal(answer)
+	}
 	details := map[string]any{"model": set.Model, "steps": res.Steps, "tools": res.Tools, "prompt_tokens": res.Usage.PromptTokens,
 		"completion_tokens": res.Usage.CompletionTokens, "ms": res.Took.Milliseconds(), "question_chars": len(req.Question),
 		"history": len(req.History)}
 	target := "ai"
-	if req.AlertID > 0 {
+	switch {
+	case req.AlertID > 0:
 		details["alert_id"] = req.AlertID
 		target = "alert:" + strconv.FormatInt(req.AlertID, 10)
+	case req.IncidentID > 0:
+		details["incident_id"] = req.IncidentID
+		target = "incident:" + strconv.FormatInt(req.IncidentID, 10)
 	}
-	var saved *store.AlertAnalysis
-	if runErr == nil && req.AlertID > 0 && len(req.History) == 0 && res.Answer != "" && s.AI != nil {
-		// Analiza alertu zostaje przy alercie (karta „Analiza AI”); pytania
-		// w dalszej rozmowie – tylko w czacie.
-		an, err := s.AI.SaveAlertAnalysis(context.WithoutCancel(ctx), store.AlertAnalysis{AlertID: req.AlertID, CreatedAt: s.now(),
-			CreatedBy: a.user.Username, Model: set.Model, Question: req.Question, Answer: res.Answer, Steps: res.Steps, Tools: res.Tools,
-			Tokens: res.Usage.PromptTokens + res.Usage.CompletionTokens, TookMS: int(res.Took.Milliseconds())})
+	if proposal != nil {
+		details["proposal_fields"] = len(proposal)
+	}
+	var saved *store.AIAnalysis
+	if runErr == nil && saveTarget != "" && answer != "" && s.AI != nil {
+		an, err := s.AI.SaveAIAnalysis(context.WithoutCancel(ctx), store.AIAnalysis{Target: saveTarget, TargetID: saveID, CreatedAt: s.now(),
+			CreatedBy: a.user.Username, Model: set.Model, Question: req.Question, Answer: answer, Proposal: proposal, Steps: res.Steps,
+			Tools: res.Tools, Tokens: res.Usage.PromptTokens + res.Usage.CompletionTokens, TookMS: int(res.Took.Milliseconds())})
 		if err != nil {
-			s.Log.Error("zapis analizy AI alertu", "alert", req.AlertID, "err", err)
+			s.Log.Error("zapis analizy AI", "target", saveTarget, "id", saveID, "err", err)
 		} else {
 			saved = &an
 			details["analysis_id"] = an.ID
@@ -477,7 +546,9 @@ func (s *Server) assistantAsk(w http.ResponseWriter, r *http.Request) {
 		"completion_tokens": res.Usage.CompletionTokens, "ms": res.Took.Milliseconds(), "model": set.Model}
 	if saved != nil {
 		done["analysis_id"] = saved.ID
-		done["alert_id"] = saved.AlertID
+		done["target"] = saved.Target
+		done["target_id"] = saved.TargetID
+		done["proposal"] = saved.Proposal != nil
 	}
 	send("done", done)
 	s.audit(r, &a.user, "ai_assistant_used", target, details)
@@ -493,27 +564,36 @@ func toolText(res mcp.ToolResult) string {
 	return b.String()
 }
 
-// aiAlertsAllowed: analizy AI alertu – uprawnienie „asystent AI” (trasa)
-// i do alertów: odczyt, a usunięcie – zmiana.
-func aiAlertsAllowed(w http.ResponseWriter, r *http.Request, level string) bool {
-	if !current(r).perms.Has("alerts", level) {
-		writeError(w, http.StatusForbidden, "forbidden", "brak uprawnienia do alertów")
-		return false
+// analysisTarget: cel analiz AI z trasy – alert albo incydent – i moduł
+// uprawnień do niego (odczyt – lista, zmiana – usunięcie).
+func analysisTarget(w http.ResponseWriter, r *http.Request, level string) (string, int64, bool) {
+	target, module := store.AnalysisAlert, "alerts"
+	if strings.HasPrefix(r.Pattern, "GET /api/v1/incidents/") || strings.HasPrefix(r.Pattern, "DELETE /api/v1/incidents/") {
+		target, module = store.AnalysisIncident, "incidents"
 	}
-	return true
+	if !current(r).perms.Has(module, level) {
+		writeError(w, http.StatusForbidden, "forbidden", "brak uprawnienia do "+map[string]string{"alerts": "alertów", "incidents": "incydentów"}[module])
+		return "", 0, false
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "bad_id", "niepoprawny identyfikator")
+		return "", 0, false
+	}
+	return target, id, true
 }
 
-// listAlertAnalyses: zapisane analizy AI alertu (najnowsze pierwsze);
-// widoczne tylko dla osób z uprawnieniem „asystent AI”.
-func (s *Server) listAlertAnalyses(w http.ResponseWriter, r *http.Request) {
-	if !s.aiEnabledStore(w) || !aiAlertsAllowed(w, r, "read") {
+// listAIAnalyses: zapisane analizy AI alertu albo incydentu (najnowsze
+// pierwsze); widoczne tylko z uprawnieniem „asystent AI” (trasa).
+func (s *Server) listAIAnalyses(w http.ResponseWriter, r *http.Request) {
+	if !s.aiEnabledStore(w) {
 		return
 	}
-	id, ok := alertID(w, r)
+	target, id, ok := analysisTarget(w, r, "read")
 	if !ok {
 		return
 	}
-	list, err := s.AI.AlertAnalyses(r.Context(), id, 20)
+	list, err := s.AI.AIAnalyses(r.Context(), target, id, 20)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
@@ -521,13 +601,13 @@ func (s *Server) listAlertAnalyses(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"analyses": list})
 }
 
-// deleteAlertAnalysis: usunięcie błędnej analizy (asystent AI i zmiana
-// alertów, audyt).
-func (s *Server) deleteAlertAnalysis(w http.ResponseWriter, r *http.Request) {
-	if !s.aiEnabledStore(w) || !aiAlertsAllowed(w, r, "write") {
+// deleteAIAnalysis: usunięcie błędnej analizy (asystent AI i zmiana
+// alertów albo incydentów, audyt).
+func (s *Server) deleteAIAnalysis(w http.ResponseWriter, r *http.Request) {
+	if !s.aiEnabledStore(w) {
 		return
 	}
-	id, ok := alertID(w, r)
+	target, id, ok := analysisTarget(w, r, "write")
 	if !ok {
 		return
 	}
@@ -536,7 +616,7 @@ func (s *Server) deleteAlertAnalysis(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bad_id", "niepoprawny identyfikator")
 		return
 	}
-	switch err := s.AI.DeleteAlertAnalysis(r.Context(), id, aid); {
+	switch err := s.AI.DeleteAIAnalysis(r.Context(), target, id, aid); {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiej analizy")
 		return
@@ -545,6 +625,40 @@ func (s *Server) deleteAlertAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a := current(r)
-	s.audit(r, &a.user, "ai_analysis_deleted", "alert:"+strconv.FormatInt(id, 10), map[string]any{"analysis_id": aid})
+	s.audit(r, &a.user, "ai_analysis_deleted", target+":"+strconv.FormatInt(id, 10), map[string]any{"analysis_id": aid})
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// proposalFields: pola incydentu, które asystent może zaproponować.
+var proposalFields = []string{"description", "impact", "iocs", "root_cause", "mitigation"}
+
+var proposalBlock = regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\})\\s*```")
+
+// extractProposal wyjmuje z odpowiedzi blok JSON z propozycjami pól
+// incydentu; zwraca propozycje (tylko znane pola z tekstem, do 4000
+// znaków) i odpowiedź bez bloku. Niepoprawny blok – bez propozycji.
+func extractProposal(answer string) (map[string]string, string) {
+	loc := proposalBlock.FindAllStringSubmatchIndex(answer, -1)
+	if len(loc) == 0 {
+		return nil, answer
+	}
+	last := loc[len(loc)-1]
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(answer[last[2]:last[3]]), &raw); err != nil {
+		return nil, answer
+	}
+	out := map[string]string{}
+	for _, f := range proposalFields {
+		v, _ := raw[f].(string)
+		if v = strings.TrimSpace(v); v != "" {
+			if r := []rune(v); len(r) > 4000 {
+				v = string(r[:4000])
+			}
+			out[f] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil, answer
+	}
+	return out, strings.TrimSpace(answer[:last[0]] + answer[last[1]:])
 }

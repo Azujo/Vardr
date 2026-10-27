@@ -203,6 +203,23 @@
       "correlate": "Przejrzyj otwarte alerty i sprawdź, czy są między nimi powiązania",
       "today": "Co najważniejszego wydarzyło się w ostatnich 24 godzinach?",
       "coverage": "Których technik ATT&CK nie wykrywamy żadną regułą?"
+    },
+    "analyzeIncident": "Analiza incydentu #{{id}}",
+    "incidentBadge": "incydent #{{id}}",
+    "savedToIncident": "zapisano przy incydencie",
+    "proposalReady": "propozycje pól NIS2 na stronie incydentu",
+    "proposalTitle": "Propozycje do zgłoszenia NIS2",
+    "proposalHelp": "Wstaw wybrane propozycje do formularza ustaleń poniżej, popraw je i zapisz. Nic nie zmienia się samo – treść zatwierdzasz Ty, a zapis trafia na oś czasu incydentu.",
+    "proposalReadOnly": "Propozycje modelu – do przeniesienia przez osobę ze zmianą incydentów.",
+    "useProposal": "Wstaw do formularza",
+    "proposalUsed": "Wstawiono do formularza ustaleń – sprawdź treść i zapisz.",
+    "proposalNote": "Ustalenia uzupełnione na podstawie propozycji AI (analiza #{{id}}, model {{model}}) – treść sprawdzona i zatwierdzona przez analityka.",
+    "fields": {
+      "description": "Opis",
+      "impact": "Skutki",
+      "iocs": "Wskaźniki naruszenia (IoC)",
+      "root_cause": "Przyczyna",
+      "mitigation": "Środki ograniczające"
     }
   }
 }

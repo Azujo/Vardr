@@ -1989,27 +1989,39 @@ export interface AssistantEvent {
   steps?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
-  analysis_id?: number; // analiza alertu zapisana przy alercie
-  alert_id?: number;
+  analysis_id?: number; // analiza zapisana przy alercie albo incydencie
+  target?: AnalysisTarget;
+  target_id?: number;
+  proposal?: boolean; // są propozycje pól incydentu
 }
 
-export interface AlertAnalysis {
+export type AnalysisTarget = "alert" | "incident";
+
+// Pola incydentu, które asystent może zaproponować (zgłoszenie NIS2).
+export const proposalFields = ["description", "impact", "iocs", "root_cause", "mitigation"] as const;
+export type ProposalField = (typeof proposalFields)[number];
+
+export interface AIAnalysis {
   id: number;
-  alert_id: number;
+  target: AnalysisTarget;
+  target_id: number;
   created_at: string;
   created_by: string;
   model: string;
   question?: string;
   answer: string;
+  proposal?: Partial<Record<ProposalField, string>>;
   steps: number;
   tools: string[];
   tokens: number;
   took_ms: number;
 }
 
-export const alertAnalysesApi = {
-  list: (alertId: number) => request<{ analyses: AlertAnalysis[] }>("GET", `/api/v1/alerts/${alertId}/ai-analyses`),
-  remove: (alertId: number, id: number) => request<{ ok: boolean }>("DELETE", `/api/v1/alerts/${alertId}/ai-analyses/${id}`),
+const analysesPath = (target: AnalysisTarget, id: number) => `/api/v1/${target === "alert" ? "alerts" : "incidents"}/${id}/ai-analyses`;
+
+export const aiAnalysesApi = {
+  list: (target: AnalysisTarget, id: number) => request<{ analyses: AIAnalysis[] }>("GET", analysesPath(target, id)),
+  remove: (target: AnalysisTarget, id: number, aid: number) => request<{ ok: boolean }>("DELETE", `${analysesPath(target, id)}/${aid}`),
 };
 
 export const assistantApi = {
@@ -2027,7 +2039,7 @@ export const assistantApi = {
 // askAssistant: pytanie do asystenta – odpowiedź strumieniem SSE (krok,
 // narzędzie, odpowiedź, błąd, koniec); onEvent dostaje każde zdarzenie.
 export async function askAssistant(
-  body: { alert_id?: number; question: string; history: ChatTurn[]; lang: string },
+  body: { alert_id?: number; incident_id?: number; question: string; history: ChatTurn[]; lang: string },
   onEvent: (name: string, data: AssistantEvent) => void,
   signal?: AbortSignal,
 ) {
