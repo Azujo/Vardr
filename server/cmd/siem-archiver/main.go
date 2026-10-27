@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -30,6 +31,7 @@ import (
 
 	"siem/internal/lang"
 	"siem/internal/lang/langdb"
+	"siem/internal/s3"
 	"siem/internal/svc"
 	"siem/internal/urd"
 	"siem/server/internal/archiver"
@@ -93,6 +95,50 @@ type settings struct {
 	exportKeep   time.Duration
 	bounds       urd.PolicyBounds
 	grace        time.Duration
+	// Kopia archiwum w S3 z blokadą obiektów (nil = wyłączona).
+	offsite      *s3.Client
+	offsiteOpt   urd.OffsiteOptions
+	offsiteEvery time.Duration
+}
+
+// loadOffsite czyta ustawienia kopii w S3 (SIEM_ARCHIVE_S3_*); włączona,
+// gdy podano kubełek.
+func loadOffsite(s *settings) error {
+	bucket := strings.TrimSpace(os.Getenv("SIEM_ARCHIVE_S3_BUCKET"))
+	if bucket == "" {
+		return nil
+	}
+	c := &s3.Client{Endpoint: os.Getenv("SIEM_ARCHIVE_S3_ENDPOINT"), Region: svc.Env("SIEM_ARCHIVE_S3_REGION", "us-east-1"),
+		Bucket: bucket, AccessKey: os.Getenv("SIEM_ARCHIVE_S3_ACCESS_KEY"), SecretKey: os.Getenv("SIEM_ARCHIVE_S3_SECRET_KEY"),
+		HTTP: &http.Client{Timeout: 5 * time.Minute}}
+	if c.Endpoint == "" || c.AccessKey == "" || c.SecretKey == "" {
+		return fmt.Errorf("SIEM_ARCHIVE_S3_BUCKET needs SIEM_ARCHIVE_S3_ENDPOINT, SIEM_ARCHIVE_S3_ACCESS_KEY and SIEM_ARCHIVE_S3_SECRET_KEY")
+	}
+	// Adres ze ścieżką (MinIO, Ceph, większość magazynów poza AWS) – domyślnie
+	// poza amazonaws.com.
+	switch v := strings.ToLower(os.Getenv("SIEM_ARCHIVE_S3_PATH_STYLE")); v {
+	case "":
+		c.PathStyle = !strings.Contains(c.Endpoint, "amazonaws.com")
+	case "1", "true", "yes":
+		c.PathStyle = true
+	case "0", "false", "no":
+	default:
+		return fmt.Errorf("SIEM_ARCHIVE_S3_PATH_STYLE: true or false")
+	}
+	mode := strings.ToUpper(svc.Env("SIEM_ARCHIVE_S3_MODE", s3.ModeCompliance))
+	if mode != s3.ModeCompliance && mode != s3.ModeGovernance {
+		return fmt.Errorf("SIEM_ARCHIVE_S3_MODE: COMPLIANCE or GOVERNANCE")
+	}
+	prefix := strings.Trim(os.Getenv("SIEM_ARCHIVE_S3_PREFIX"), "/")
+	if prefix != "" {
+		prefix += "/"
+	}
+	every, err := svc.EnvDuration("SIEM_ARCHIVE_S3_EVERY", 5*time.Minute)
+	if err != nil {
+		return err
+	}
+	s.offsite, s.offsiteOpt, s.offsiteEvery = c, urd.OffsiteOptions{Prefix: prefix, Mode: mode}, every
+	return nil
 }
 
 func load(log *slog.Logger) (settings, error) {
@@ -156,6 +202,9 @@ func load(log *slog.Logger) (settings, error) {
 		return s, err
 	}
 	if s.warnFreePct, err = svc.EnvFloat("SIEM_ARCHIVE_WARN_FREE_PERCENT", 15); err != nil {
+		return s, err
+	}
+	if err := loadOffsite(&s); err != nil {
 		return s, err
 	}
 	if st, err := os.Stat(s.dir); err != nil || !st.IsDir() {
@@ -276,6 +325,10 @@ func serve(log *slog.Logger) error {
 		ToolsDir: svc.Env("SIEM_ARCHIVE_EXPORT_TOOLS", "/export-tools"),
 		Version:  svc.Version, Log: log, Lock: dataLock}).Run(ctx)
 	go (&archiver.Replayer{A: a, Store: cat, Pub: js, Log: log, Lock: dataLock}).Run(ctx)
+	if cfg.offsite != nil {
+		go (&archiver.Offsite{A: a, Store: cfg.offsite, Catalog: cat, Opt: cfg.offsiteOpt, Retention: policy.Retention,
+			Every: cfg.offsiteEvery, Log: log, M: metrics.NewOffsite(), Lock: dataLock}).Run(ctx)
+	}
 	go archiver.Maintain(ctx, a, log, m, archiver.MaintainConfig{
 		Retention: cfg.retention, VerifyEvery: cfg.verifyEvery, FirstVerify: 2 * time.Minute, VerifyBudget: cfg.verifyBudget,
 		Policy: policy, PolicyStore: cat, PolicyGrace: cfg.grace, Recoveries: cat, SealLock: sealLock,

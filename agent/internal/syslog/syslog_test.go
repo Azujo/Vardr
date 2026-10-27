@@ -4,11 +4,22 @@ package syslog
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -153,4 +164,102 @@ func TestSyslogRecordIDsAfterRestart(t *testing.T) {
 		t.Fatalf("numer po zapisanej pozycji: %d, oczekiwano %d", r.RecordID, future+1)
 	}
 	_ = io.EOF
+}
+
+// clientCert wystawia certyfikat urządzenia (CN) podpisany przez nowe CA.
+func clientCert(t *testing.T, cn string) (caPEM []byte, cert tls.Certificate) {
+	t.Helper()
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "CA urządzeń"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	ca, _ := x509.ParseCertificate(caDER)
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: cn},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, KeyUsage: x509.KeyUsageDigitalSignature}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}),
+		tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+func TestSyslogTLS(t *testing.T) {
+	dir := t.TempDir()
+	certPEM, keyPEM, err := SelfSigned([]string{"127.0.0.1", "kolektor.local"}, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "s.crt"), certPEM, 0o600)
+	os.WriteFile(filepath.Join(dir, "s.key"), keyPEM, 0o600)
+	caPEM, good := clientCert(t, "fw1.firma.local")
+	os.WriteFile(filepath.Join(dir, "ca.crt"), caPEM, 0o600)
+	_, foreign := clientCert(t, "fw1.firma.local") // ten sam CN, inne CA
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(certPEM)
+
+	for _, tc := range []struct {
+		name      string
+		clientCA  string
+		names     []string
+		cert      *tls.Certificate
+		delivered bool
+	}{
+		{"bez certyfikatu urządzenia", "", nil, nil, true},
+		{"certyfikat wymagany, brak", "ca.crt", nil, nil, false},
+		{"certyfikat z dobrego CA", "ca.crt", nil, &good, true},
+		{"certyfikat z innego CA", "ca.crt", nil, &foreign, false},
+		{"nazwa na liście", "ca.crt", []string{"FW1.firma.local"}, &good, true},
+		{"nazwa spoza listy", "ca.crt", []string{"fw2.firma.local"}, &good, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ca := ""
+			if tc.clientCA != "" {
+				ca = filepath.Join(dir, tc.clientCA)
+			}
+			cfg, err := ServerTLS(filepath.Join(dir, "s.crt"), filepath.Join(dir, "s.key"), ca)
+			if err != nil {
+				t.Fatal(err)
+			}
+			addr := freeAddr(t, "tcp")
+			s := &Source{Cfg: Config{TLS: addr, TLSConfig: cfg, ClientNames: tc.names}, Log: slog.New(slog.DiscardHandler)}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			out := make(chan source.Record, 10)
+			go s.Run(ctx, source.Position{}, out)
+			var conn *tls.Conn
+			for i := 0; i < 50; i++ {
+				ccfg := &tls.Config{RootCAs: roots, ServerName: "kolektor.local"}
+				if tc.cert != nil {
+					ccfg.Certificates = []tls.Certificate{*tc.cert}
+				}
+				conn, err = tls.Dial("tcp", addr, ccfg)
+				var oe *net.OpError
+				if err == nil || !errors.As(err, &oe) || oe.Op != "dial" {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if err == nil {
+				fmt.Fprintf(conn, "26 <13>1 - fw1 app - - - test")
+				conn.Close()
+			}
+			select {
+			case r := <-out:
+				if !tc.delivered || r.Raw != "<13>1 - fw1 app - - - test" || r.Source != "syslog:tls" {
+					t.Fatalf("odebrano %+v", r)
+				}
+			case <-time.After(time.Second):
+				if tc.delivered {
+					t.Fatalf("wiadomość nie dotarła (dial: %v)", err)
+				}
+				if s.Stats.TLSFailed.Load() == 0 {
+					t.Fatal("odrzucenie nie policzone")
+				}
+			}
+		})
+	}
 }

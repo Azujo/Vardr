@@ -77,13 +77,17 @@ func replaceCodes(ctx context.Context, tx pgx.Tx, userID int64, codeHashes []str
 	return nil
 }
 
-// DisableMFA usuwa drugi składnik i kody zapasowe konta.
+// DisableMFA usuwa drugi składnik konta: TOTP, kody zapasowe i klucze WebAuthn.
 func (s *PG) DisableMFA(ctx context.Context, userID int64) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM user_mfa WHERE user_id = $1`, userID)
-	if err == nil {
-		_, err = s.pool.Exec(ctx, `DELETE FROM user_recovery_codes WHERE user_id = $1`, userID)
-	}
-	return err
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		for _, q := range []string{`DELETE FROM user_mfa WHERE user_id = $1`, `DELETE FROM user_recovery_codes WHERE user_id = $1`,
+			`DELETE FROM user_webauthn WHERE user_id = $1`} {
+			if _, err := tx.Exec(ctx, q, userID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // AdvanceMFAStep zapisuje krok przyjętego kodu – tylko gdy jest późniejszy

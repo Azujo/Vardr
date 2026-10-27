@@ -10,6 +10,15 @@
     "24h": "24 h",
     "7d": "7 dni"
   },
+  "custom": {
+    "button": "Własny zakres",
+    "from": "Od",
+    "to": "Do",
+    "apply": "Pokaż",
+    "incomplete": "Podaj początek i koniec zakresu.",
+    "order": "Początek musi być przed końcem.",
+    "tooLong": "Zakres może mieć najwyżej {{days}} dni."
+  },
   "replayTip": "Zdarzenia odtworzone z archiwum NIS2 są w osobnej tabeli – nie mieszają się z bieżącymi",
   "live": "Bieżące",
   "replay": "Odtworzone z archiwum",

@@ -89,3 +89,37 @@ func TestUninstallTokenAndVersion(t *testing.T) {
 		t.Fatal("ochrona domyślnie włączona")
 	}
 }
+
+func TestAgentUpdate(t *testing.T) {
+	for _, c := range []struct {
+		a, b  string
+		newer bool
+	}{
+		{"0.10.0", "0.9.0", true}, {"0.9.0", "0.10.0", false}, {"1.0", "0.99.99", true},
+		{"0.9.0", "0.9.0", false}, {"0.9.0.1", "0.9.0", true}, {"0.9", "0.9.0", false},
+		{"x", "0.1.0", false}, {"0.10.0", "dev", true},
+	} {
+		if NewerVersion(c.a, c.b) != c.newer {
+			t.Errorf("NewerVersion(%q, %q) != %v", c.a, c.b, c.newer)
+		}
+	}
+	if (AgentLimits{}).AutoUpdateOn() {
+		t.Fatal("aktualizacje domyślnie wyłączone")
+	}
+	c := AgentConfig{Profile: "workstation"}
+	c.Version = c.ComputeVersion()
+	u := &AgentUpdate{Version: "0.10.0", SHA256: strings.Repeat("ab", 32), Size: 1 << 20}
+	w := c.WithTokens(nil).WithUpdate(u)
+	if w.Version == c.Version || BaseVersion(w.Version) != c.Version || w.Validate() != nil {
+		t.Fatalf("%q %q %v", w.Version, c.Version, w.Validate())
+	}
+	if c.WithUpdate(&AgentUpdate{Version: "0.10.1", SHA256: u.SHA256, Size: 1}).Version == w.Version {
+		t.Fatal("nowa wersja agenta nie zmienia wersji konfiguracji")
+	}
+	for _, bad := range []AgentUpdate{{Version: "1.x", SHA256: u.SHA256, Size: 1}, {Version: "1.0", SHA256: "ab", Size: 1},
+		{Version: "1.0", SHA256: u.SHA256, Size: 0}, {Version: "1.0", SHA256: u.SHA256, Size: MaxAgentMSISize + 1}} {
+		if (AgentConfig{Profile: "workstation", Update: &bad}).Validate() == nil {
+			t.Errorf("przyjęto %+v", bad)
+		}
+	}
+}

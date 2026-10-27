@@ -114,3 +114,10 @@ channels:
   # i zmiany ustawień (np. dodane wykluczenia).
   - name: Microsoft-Windows-Windows Defender/Operational
     event_ids: [1006, 1007, 1008, 1015, 1116, 1117, 1118, 1119, 1121, 5001, 5004, 5007, 5010, 5012, 5013]
+
+# Logi IIS w formacie W3C (serwery WWW): każdy podkatalog log_dir z plikami
+# u_ex*.log to osobny kanał (iis:W3SVC1…). Można też włączyć opcją grupy
+# w panelu („Logi IIS”). Bez zapisanej pozycji – od bieżącego pliku.
+#iis:
+#  enabled: true
+#  log_dir: 'C:\inetpub\logs\LogFiles'

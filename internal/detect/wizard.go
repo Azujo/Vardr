@@ -56,6 +56,8 @@ func LogsourceFor(dataset, channel string) (product, service string) {
 		return "pfsense", ""
 	case dataset == "cisco.asa":
 		return "cisco", ""
+	case strings.HasPrefix(dataset, "iis."):
+		return "iis", ""
 	}
 	for name, ds := range azureServices {
 		if ds == dataset {

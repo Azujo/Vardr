@@ -13,7 +13,7 @@ import (
 	"siem/panel/internal/api/store"
 )
 
-// MFAStore to drugi składnik logowania (TOTP) i ustawienia panelu
+// MFAStore to drugi składnik logowania (TOTP, klucze WebAuthn) i ustawienia panelu
 // (implementuje store.PG). Opcjonalne: bez niego (i bez klucza MFAKey)
 // panel loguje samym hasłem.
 type MFAStore interface {
@@ -25,6 +25,11 @@ type MFAStore interface {
 	AdvanceMFAStep(ctx context.Context, userID, step int64) (bool, error)
 	UseRecoveryCode(ctx context.Context, userID int64, codeHash string, now time.Time) (bool, int, error)
 	MarkSessionMFA(ctx context.Context, id string) error
+	WebAuthnKeys(ctx context.Context, userID int64) ([]store.WebAuthnKey, error)
+	AddWebAuthnKey(ctx context.Context, k store.WebAuthnKey) (int64, error)
+	UseWebAuthnKey(ctx context.Context, id int64, signCount uint32, uv bool, now time.Time) (bool, error)
+	DeleteWebAuthnKey(ctx context.Context, userID, id int64) (store.WebAuthnKey, error)
+	WebAuthnCounts(ctx context.Context) (map[int64]int, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value, by string, now time.Time) error
 }
@@ -59,6 +64,10 @@ type mfaChallenge struct {
 	attempts int
 	enroll   bool   // konto bez drugiego składnika, a polityka go wymaga
 	secret   []byte // konfiguracja: sekret do potwierdzenia
+	// WebAuthn: wyzwanie dla klucza (logowanie albo rejestracja) i nazwa
+	// panelu, dla której je wydano.
+	waChallenge []byte
+	waRP        string
 }
 
 func (s *Server) mfaEnabled() bool { return s.MFA != nil && len(s.MFAKey) == 32 }
@@ -206,21 +215,31 @@ type mfaLoginRequest struct {
 
 // loginChallenge: wspólny początek kroków logowania z drugim składnikiem.
 func (s *Server) loginChallenge(w http.ResponseWriter, r *http.Request, req *mfaLoginRequest) (string, *mfaChallenge, store.User, bool) {
+	if !s.loginAllowed(w, r) || !readJSON(w, r, req) {
+		return "", nil, store.User{}, false
+	}
+	return s.pendingLogin(w, r, req.Challenge)
+}
+
+// loginAllowed: drugi składnik dostępny i limit prób z adresu nieprzekroczony.
+func (s *Server) loginAllowed(w http.ResponseWriter, r *http.Request) bool {
 	if !s.mfaEnabled() {
 		writeError(w, http.StatusNotFound, "mfa_disabled", "drugi składnik logowania nie jest skonfigurowany")
-		return "", nil, store.User{}, false
+		return false
 	}
 	if !s.allow("login:"+clientIP(r), 10, 10) {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "rate_limited", "zbyt wiele prób logowania – odczekaj minutę")
-		return "", nil, store.User{}, false
+		return false
 	}
-	if !readJSON(w, r, req) {
-		return "", nil, store.User{}, false
-	}
-	key := "login:" + auth.TokenID(req.Challenge)
+	return true
+}
+
+// pendingLogin: oczekujące logowanie o tym wyzwaniu (hasło już sprawdzone).
+func (s *Server) pendingLogin(w http.ResponseWriter, r *http.Request, challenge string) (string, *mfaChallenge, store.User, bool) {
+	key := "login:" + auth.TokenID(challenge)
 	c := s.challenge(key)
-	if req.Challenge == "" || c == nil {
+	if challenge == "" || c == nil {
 		writeError(w, http.StatusUnauthorized, "mfa_expired", "logowanie wygasło – podaj login i hasło jeszcze raz")
 		return "", nil, store.User{}, false
 	}

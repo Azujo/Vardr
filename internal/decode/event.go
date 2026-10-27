@@ -29,14 +29,17 @@ func Builtin(loc *time.Location) ([]*Decoder, error) {
 }
 
 // ParserVersion trafia do zdarzeń z syslog (siem.parser_version);
-// APIParserVersion – do zdarzeń z konektorów API (Entra ID).
+// APIParserVersion – do zdarzeń z rekordów JSON (konektory API, pliki).
 const (
 	ParserVersion    = "syslog-1"
 	APIParserVersion = "api-1"
 )
 
-// IsAPI: źródło z konektora API (bez nagłówka syslog, treść to rekord JSON).
-func IsAPI(source string) bool { return strings.HasPrefix(source, "entra:") }
+// IsAPI: źródło z rekordami JSON bez nagłówka syslog – konektor API
+// („entra:…”) albo plik czytany przez agenta („file:iis”).
+func IsAPI(source string) bool {
+	return strings.HasPrefix(source, "entra:") || strings.HasPrefix(source, "file:")
+}
 
 // Granice czasu jak w normalizatorze zdarzeń Windows.
 var (

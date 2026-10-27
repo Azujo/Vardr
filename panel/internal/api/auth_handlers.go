@@ -271,7 +271,14 @@ func (s *Server) afterPassword(w http.ResponseWriter, r *http.Request, user stor
 			if !enrolled {
 				step = "enroll"
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"mfa": step, "challenge": token, "username": user.Username})
+			out := map[string]any{"mfa": step, "challenge": token, "username": user.Username}
+			// Klucz bezpieczeństwa zamiast kodu – gdy konto ma klucz dla tego adresu panelu.
+			if rpID, err := webauthnRP(r); enrolled && err == nil {
+				if keys, err := s.MFA.WebAuthnKeys(r.Context(), user.ID); err == nil && len(credDescriptors(keys, rpID)) > 0 {
+					out["webauthn"] = true
+				}
+			}
+			writeJSON(w, http.StatusOK, out)
 			return
 		}
 	}

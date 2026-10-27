@@ -62,6 +62,16 @@ MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `var
 
 Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/vardr-agent/main.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
 
+### Automatyczne aktualizacje (od wersji 0.10)
+
+Grupa agentów ma opcję *Automatyczne aktualizacje agenta* (panel → Grupy agentów; domyślnie wyłączona). Włączenie potwierdza się hasłem i trafia do audytu: panel może wtedy uruchomić instalator na wszystkich komputerach grupy – to takie samo zaufanie jak do konta, które wdraża MSI przez GPO.
+
+- Konfiguracja grupy podaje wersję, rozmiar i sumę SHA-256 bazowego instalatora z serwera (`agent-dist/vardr-agent.msi` i `AGENT_VERSION` – paczka instalacyjna serwera albo `deploy.sh agent`).
+- Agent starszy niż ta wersja czeka losowo do 30 minut (pobrania rozłożone w czasie), pobiera instalator z panelu przez mTLS (`/enroll/v1/agent.msi`, tylko dla grup z włączoną opcją), sprawdza rozmiar i sumę, zapisuje go w katalogu stanu (dostępnym tylko dla administratorów i SYSTEM) i uruchamia `msiexec /i … /qn`. Dalej jak przy ręcznej aktualizacji: usługa wraca w nowej wersji z tą samą rejestracją, a ochrona zgłasza aktualizację instalatorem (alert, gdy agent nie wróci w 15 min).
+- Nigdy nie obniża wersji. Nieudana próba danej wersji powtarza się najwcześniej po 6 godzinach; błąd i ścieżka dziennika `msiexec` są na stronie agenta w panelu i w `vardr-agent status`.
+- Strona agenta pokazuje stan: zaplanowana, trwa instalacja, nieudana, zaktualizowano (z wersji → do wersji).
+- Agenci starsi niż 0.10 nie mają tej funkcji – pierwszą aktualizację do 0.10 robi się ręcznie (MSI, GPO).
+
 ### Ochrona przed zatrzymaniem i deinstalacją (od wersji 0.7)
 
 Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia usługi, a konto SYSTEM może wszystko. Cel to **utrudnić i wykryć**. Ochronę włącza grupa agentów (panel → Grupy agentów → „Ochrona agenta”, domyślnie włączona). Agent bez konfiguracji z panelu jest bez ochrony.
@@ -85,6 +95,22 @@ Pełnej blokady nie ma: lokalny administrator zawsze może zmienić uprawnienia 
 `vardr-agent status` i strona agenta w panelu pokazują stan ochrony i ostatnie zdarzenia. Agent zatrzymany bez tokenu ma na liście czerwony znacznik „zatrzymany bez tokenu”. Reguła Sigma `system_security_service_stopped` dotyczy teraz tylko Sysmona: zatrzymania agenta zgłasza reguła wbudowana, która odróżnia zatrzymanie tokenem.
 
 Awaryjnie, gdy komputer nie ma łączności z panelem i nie da się użyć tokenu: `sc sdset SiemAgent` przywraca zwykłe uprawnienia, a potem `sc stop` / `sc delete`. Panel dostanie wtedy alert – to zamierzone.
+
+## Logi IIS (od wersji 0.10)
+
+Na serwerach WWW agent czyta też dzienniki IIS w formacie W3C (domyślny format IIS). Włączenie: opcja grupy *Logi IIS (serwery WWW)* w panelu (np. grupa „Serwery WWW”) albo w `agent.yaml`:
+
+```yaml
+iis:
+  enabled: true
+  log_dir: 'C:\inetpub\logs\LogFiles'   # domyślnie
+```
+
+- Każdy podkatalog `log_dir` z plikami `u_ex*.log` (witryna `W3SVC1`, `W3SVC2`…, także FTP) to osobny kanał agenta (`iis:W3SVC1`) – widoczny na stronie agenta w panelu. Nowa witryna jest wykrywana przy kolejnym uruchomieniu odczytu (zmiana konfiguracji grupy albo restart usługi).
+- Pozycja jest zapisywana jak dla dzienników Windows: po przerwie agent wznawia od następnego wiersza. Nowy agent (bez zapisanej pozycji) zaczyna od bieżącego pliku dnia, bez historii.
+- Pliki dzienne i godzinowe (`u_exRRMMDD.log`, `u_exRRMMDDGG.log`); agent przechodzi do nowszego pliku, gdy poprzedni nie zmienia się od 2 minut. Wymagane pola daty i czasu (`date`, `time` – domyślnie włączone); zalecane dodatkowo `cs-username`, `cs(User-Agent)`, `sc-status`, `sc-win32-status`.
+- Na serwerze zdarzenia rozbiera wbudowany dekoder `iis` (zbiór `iis.access`): adres klienta w `source.ip`, użytkownik (uwierzytelnienie Windows/Basic) w `user.name`, wynik `failure` dla 401 i 403. Pola W3C zostają pod własnymi nazwami (`cs-method`, `cs-uri-query`, `sc-status`…), więc reguły Sigmy z `logsource: category: webserver` (albo `product: iis`) działają bez zmian.
+- Agent czyta pliki jako SYSTEM; katalog domyślny IIS jest dla niego dostępny. Brak katalogu albo plików W3C – ostrzeżenie na stronie agenta.
 
 ## Odporność na usunięcie stanu
 

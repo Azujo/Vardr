@@ -65,7 +65,8 @@
       "integrity": "Integrity verification",
       "last_verify": "Last verification",
       "enabled": "Archiving",
-      "disk_free": "Free space on the archive disk"
+      "disk_free": "Free space on the archive disk",
+      "offsite": "Copy in S3 (Object Lock)"
     },
     "backup": {
       "last": "Last backup",
@@ -105,7 +106,8 @@
       "integrity": "Archive data was modified, removed or added outside the archiver – details: panel → Urd.",
       "last_verify": "Verification should run every 6 h – check the archiver logs.",
       "enabled": "Archiving is disabled by the policy or paused for lack of space – panel → Urd.",
-      "disk_free": "When the disk fills up, archiving pauses – enlarge the disk or shorten retention."
+      "disk_free": "When the disk fills up, archiving pauses – enlarge the disk or shorten retention.",
+      "offsite": "Closed archive hours do not reach the S3 bucket – check the archiver logs (archive copy) and access to the storage."
     },
     "backup": {
       "last": "A backup should be made every night (cron 02:15, backup.sh) – check ~/siem-lab/backup.log.",
@@ -142,6 +144,9 @@
     "rules_one": "{{n}} rule",
     "rules_other": "{{n}} rules",
     "events_one": "{{n}} event",
-    "events_other": "{{n}} events"
+    "events_other": "{{n}} events",
+    "off": "disabled",
+    "bucket": "bucket without Object Lock or unreachable",
+    "current": "up to date"
   }
 }

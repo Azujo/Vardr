@@ -17,6 +17,9 @@ type groupRequest struct {
 	Description string               `json:"description"`
 	Profile     string               `json:"profile"`
 	Limits      contract.AgentLimits `json:"limits"`
+	// Password: potwierdzenie włączenia automatycznych aktualizacji (panel
+	// może wtedy uruchomić instalator na komputerach grupy).
+	Password string `json:"password,omitempty"`
 }
 
 func (req *groupRequest) validate(w http.ResponseWriter) bool {
@@ -51,13 +54,20 @@ func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groups {
 		out = append(out, view{g, g.Config().Version})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"groups": out})
+	resp := map[string]any{"groups": out}
+	if u := s.agentUpdate(); u != nil {
+		resp["agent_version"] = u.Version // wersja instalatora na serwerze
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) createGroup(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	var req groupRequest
 	if !readJSON(w, r, &req) || !req.validate(w) {
+		return
+	}
+	if req.Limits.AutoUpdateOn() && !s.reauth(w, r, req.Password, "group_auto_update") {
 		return
 	}
 	g, err := s.Store.CreateGroup(r.Context(), store.AgentGroup{Name: req.Name, Description: req.Description, Profile: req.Profile, Limits: req.Limits})
@@ -91,6 +101,9 @@ func (s *Server) updateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.internalError(w, r, err)
+		return
+	}
+	if req.Limits.AutoUpdateOn() && !before.Limits.AutoUpdateOn() && !s.reauth(w, r, req.Password, "group_auto_update") {
 		return
 	}
 	g, err := s.Store.UpdateGroup(r.Context(), store.AgentGroup{ID: id, Name: req.Name, Description: req.Description, Profile: req.Profile, Limits: req.Limits})
@@ -168,18 +181,8 @@ func (s *Server) setAgentGroup(w http.ResponseWriter, r *http.Request) {
 // agentConfig: agent pobiera swoją konfigurację (mTLS). If-None-Match z
 // wersją, którą agent już ma → 304 bez treści.
 func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
-	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
-		writeError(w, http.StatusUnauthorized, "no_client_cert", "konfiguracja wymaga certyfikatu agenta")
-		return
-	}
-	cert := r.TLS.PeerCertificates[0]
-	agentID := cert.Subject.CommonName
-	if !agentIDPattern.MatchString(agentID) {
-		writeError(w, http.StatusForbidden, "bad_identity", "niepoprawny identyfikator agenta w certyfikacie")
-		return
-	}
-	if c, err := s.Store.AgentCertBySerial(r.Context(), cert.SerialNumber.Text(16)); err == nil && c.RevokedAt != nil {
-		writeError(w, http.StatusForbidden, "revoked", "certyfikat agenta został unieważniony")
+	agentID, ok := s.agentIdentity(w, r)
+	if !ok {
 		return
 	}
 	g, err := s.Store.GroupForAgent(r.Context(), agentID)
@@ -193,6 +196,9 @@ func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := g.Config().WithTokens(tokens) // tokeny deinstalacji tego agenta (skróty)
+	if g.Limits.AutoUpdateOn() {
+		cfg = cfg.WithUpdate(s.agentUpdate())
+	}
 	etag := `"` + cfg.Version + `"`
 	w.Header().Set("ETag", etag)
 	if r.Header.Get("If-None-Match") == etag {

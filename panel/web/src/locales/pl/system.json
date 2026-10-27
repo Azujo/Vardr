@@ -65,7 +65,8 @@
       "integrity": "Weryfikacja integralności",
       "last_verify": "Ostatnia weryfikacja",
       "enabled": "Archiwizacja",
-      "disk_free": "Wolne miejsce na dysku archiwum"
+      "disk_free": "Wolne miejsce na dysku archiwum",
+      "offsite": "Kopia w S3 (Object Lock)"
     },
     "backup": {
       "last": "Ostatnia kopia",
@@ -105,7 +106,8 @@
       "integrity": "Dane w archiwum zmieniono, usunięto albo dodano poza archiwizatorem – szczegóły: panel → Urd.",
       "last_verify": "Weryfikacja powinna przechodzić co 6 h – sprawdź logi archiwizatora.",
       "enabled": "Archiwizacja wyłączona w polityce albo wstrzymana z braku miejsca – panel → Urd.",
-      "disk_free": "Po zapełnieniu archiwizacja się wstrzyma – powiększ dysk albo skróć retencję."
+      "disk_free": "Po zapełnieniu archiwizacja się wstrzyma – powiększ dysk albo skróć retencję.",
+      "offsite": "Zamknięte godziny archiwum nie trafiają do kubełka S3 – sprawdź logi archiwizatora (archive copy) i dostęp do magazynu."
     },
     "backup": {
       "last": "Kopia powinna powstawać co noc (cron 02:15, backup.sh) – sprawdź ~/siem-lab/backup.log.",
@@ -146,6 +148,9 @@
     "events_one": "{{n}} zdarzenie",
     "events_few": "{{n}} zdarzenia",
     "events_many": "{{n}} zdarzeń",
-    "events_other": "{{n}} zdarzenia"
+    "events_other": "{{n}} zdarzenia",
+    "off": "wyłączona",
+    "bucket": "kubełek bez Object Lock albo niedostępny",
+    "current": "aktualna"
   }
 }

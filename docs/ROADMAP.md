@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.7.0 • 26.10.2026 (plan wersji po 1.0: sekcja 17a, wersja 1.6: sekcja 17b)
+Wersja planistyczna 1.8.0 • 27.10.2026 (plan wersji po 1.0: sekcja 17a, wersja 1.6: sekcja 17b, wersje 1.7 i 1.8: sekcja 17c)
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -517,16 +517,10 @@ Serwer [Model Context Protocol](https://modelcontextprotocol.io) pozwala podłą
 
 ### Backlog (bez ustalonej kolejności)
 
-- **Źródła:** agent Linux; SentinelOne, F5, Forcepoint, GreyCortex, Kentico; pliki IIS/W3C; syslog po TLS z uwierzytelnieniem; logowania nieinteraktywne Entra ID (API beta, przy prawdziwym tenancie).
+- **Źródła:** SentinelOne, F5, Forcepoint, GreyCortex, Kentico; logowania nieinteraktywne Entra ID (API beta, przy prawdziwym tenancie).
 - **Detekcja:** sekwencje i korelacje zaawansowane; edytor dekoderów regex/grok.
 - **Powiadomienia:** SMS i eskalacje (częściowo możliwe już przez Power Automate z 1.2).
-- **Logowanie:** SSO / MFA przez dostawcę tożsamości (Entra ID), WebAuthn.
-- **Archiwum:** S3 z Object Lock (compliance); retencja i polityki per `event.dataset`.
-- **Agenci:** automatyczne aktualizacje.
 - **Skala i dostępność:** HA i replikacja (W6), wydajność writera (W7), częste pola z `fields` w osobnych kolumnach (M4).
-- **Porządki z przeglądu:** kwarantanna nieczytelnych wiadomości w normalizatorze (M2), zapora na serwerze i ograniczenie dostępu do Grafany i ingest (M5), raport synchronizacji czasu agenta (M6) – do sprawdzenia, które są nadal aktualne.
-- **Podpisywanie programów Windows (Authenticode):** `vardr-agent.exe`, MSI, `odczytaj.exe`, `vardr-mcp.exe` – niepodpisany, nowy plik pobrany z przeglądarki Microsoft Defender blokuje heurystyką reputacji (np. `Wacatac.C!ml` dla `vardr-mcp.exe`, 26.10.2026). Certyfikat do podpisywania kodu (np. Azure Trusted Signing) – decyzja i koszt po stronie właściciela projektu.
-- **Publikacja:** automatyczne wydania na GitHubie (Actions na tagu: paczka serwera, MSI agenta, `odczytaj.exe`), szybki start w README.
 - **Laboratorium:** krótsza retencja surowego XML w ClickHouse (np. 1 dzień zamiast 5 – archiwum Urd przechowuje oryginały).
 
 ## 17b. Plan wersji 1.6 (27.10.2026)
@@ -566,6 +560,27 @@ Stan: napisane i sprawdzone w laboratorium (27.10.2026) – rsyslog z VM: zdarze
 - Dekodery wbudowane: `linux` (sshd, sudo, su, PAM, shadow-utils), `pfsense` (filterlog, logowania do panelu; także OPNsense), `cisco-asa` (listy dostępu, logowania, AAA, AnyConnect, polecenia).
 - Produkty Sigmy `linux`, `pfsense`/`opnsense`, `cisco`/`asa`; 11 reguł; logowania z nowych źródeł w tabeli logowań i korelacjach (widok odświeżany przez instalator przy aktualizacji).
 - **Warunek ukończenia:** próbki i korpus zgodności silników przechodzą; prawdziwy serwer Linux przez rsyslog w laboratorium daje zdarzenia `linux.auth` i alert przy serii nieudanych logowań SSH.
+
+## 17c. Plan wersji 1.7 i 1.8 (27.10.2026)
+
+Po 1.6 (instalacja poza laboratorium) – etap 1.7: utrzymanie wdrożenia (aktualizacje agentów, archiwum zgodne z NIS2, bezpieczne źródła, silniejsze logowanie), potem 1.8: agent Linux (decyzja właściciela 27.10.2026). Jak przy 1.6 – całość pisana najpierw, wydanie na końcu.
+
+**Stan:** punkty 1.7.0–1.7.3 wydane razem jako **1.7.0** (27.10.2026); w następnej kolejności 1.8 (agent Linux).
+
+| Wersja | Funkcja | Godziny | Uwagi |
+|---|---|---|---|
+| **1.7.0** | Automatyczne aktualizacje agenta Windows z panelu (per grupa) – ✅ wydane w 1.7.0 (27.10.2026) | 10–15 | domyślnie wyłączone; włączenie potwierdzane hasłem |
+| **1.7.1** | Archiwum Urd w S3 z Object Lock (compliance); retencja per `event.dataset` – ✅ wydane w 1.7.0 (27.10.2026) | 15–25 | dowolny magazyn S3 z blokadą (AWS, Wasabi, Backblaze, MinIO) |
+| **1.7.2** | Syslog po TLS z uwierzytelnieniem certyfikatem; pliki IIS/W3C w agencie – ✅ wydane w 1.7.0 (27.10.2026) | 15–20 | domyka źródła z 1.6.2 |
+| **1.7.3** | WebAuthn (klucze sprzętowe, passkey) dla kont lokalnych panelu – ✅ wydane w 1.7.0 (27.10.2026) | 10–15 | obok TOTP; konta SSO – MFA dostawcy |
+| **1.8** | Agent Linux (journald, auditd, pliki; ta sama rejestracja, grupy i ochrona co agent Windows) | 40–60 | rsyslog z 1.6.2 zostaje dla urządzeń bez agenta |
+
+### 1.7.0 – Automatyczne aktualizacje agenta
+
+- Grupa agentów: opcja *Automatyczne aktualizacje* (domyślnie wyłączona; włączenie potwierdzane hasłem – panel może wtedy uruchomić instalator na komputerach grupy).
+- Konfiguracja grupy podaje wersję i sumę SHA-256 instalatora MSI z serwera; agent starszy niż ta wersja pobiera MSI z panelu (mTLS, certyfikat agenta), sprawdza sumę i uruchamia `msiexec` (aktualizacja jak przez GPO – usługa wraca z tą samą rejestracją). Bez obniżania wersji.
+- Rozłożenie w czasie: losowe opóźnienie (do 30 min), jedna próba danej wersji na 6 godzin; wynik w heartbeacie i w panelu.
+- **Warunek ukończenia:** stacja w laboratorium w grupie z włączonymi aktualizacjami sama przechodzi na nową wersję agenta po `deploy.sh agent`; panel pokazuje nową wersję, a przy nieudanej instalacji – błąd z dziennika MSI.
 
 ## 18. Pierwsze kroki (etap 0)
 

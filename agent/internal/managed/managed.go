@@ -102,6 +102,9 @@ func Apply(base *config.Config, m *contract.AgentConfig) (*config.Config, error)
 	if l.BufferOnFull != nil {
 		eff.Buffer.OnFull = *l.BufferOnFull
 	}
+	if l.IISLogs != nil {
+		eff.IIS.Enabled = *l.IISLogs
+	}
 	if err := eff.Validate(); err != nil {
 		return nil, lang.Errorf("konfiguracja z panelu jest niepoprawna: %w", "the configuration from the panel is invalid: %w", err)
 	}

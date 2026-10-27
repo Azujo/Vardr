@@ -172,7 +172,14 @@
     "warnings": "Ostrzeżenia agenta",
     "noWarnings": "Brak ostrzeżeń.",
     "showRaw": "Pokaż pełny status (JSON)",
-    "hideRaw": "Ukryj pełny status (JSON)"
+    "hideRaw": "Ukryj pełny status (JSON)",
+    "update": {
+      "waiting": "Zaplanowana aktualizacja agenta do {{v}}",
+      "waitingAt": "Najpóźniej: {{at}}",
+      "installing": "Trwa instalacja agenta {{v}}",
+      "failed": "Aktualizacja agenta do {{v}} nieudana",
+      "done": "Agent zaktualizowany automatycznie z {{from}} do {{v}}"
+    }
   },
   "protection": {
     "title": "Ochrona agenta",
@@ -258,7 +265,9 @@
     "heartbeat": "alarm po {{n}} min bez łączności",
     "heartbeatReturn": "alarm po {{n}} min bez łączności (i o powrocie)",
     "priority": "priorytet {{p}}",
-    "defaults": "domyślne agenta"
+    "defaults": "domyślne agenta",
+    "autoUpdate": "automatyczne aktualizacje",
+    "iis": "logi IIS"
   },
   "groups": {
     "title": "Grupy agentów",
@@ -303,7 +312,14 @@
       "protection": "Ochrona agenta (zalecana)",
       "protectionHint": "Administrator komputera nie zatrzyma ani nie odinstaluje agenta bez jednorazowego tokenu z panelu (Huginn → agent → Token deinstalacji); próby bez tokenu, zabicie procesu i zmiana uprawnień usługi dają alert „Próba sabotażu agenta”. Wyłączenie przywraca zwykłe uprawnienia usługi.",
       "notifyReturn": "Powiadamiaj także o powrocie agenta",
-      "notifyReturnHint": "Gdy agent z tej grupy znów wyśle heartbeat, alert utraty łączności zamyka się sam, a na kanały powiadomień idzie wiadomość „rozwiązany” z długością przerwy. Wymaga ustawionego alarmu po utracie łączności."
+      "notifyReturnHint": "Gdy agent z tej grupy znów wyśle heartbeat, alert utraty łączności zamyka się sam, a na kanały powiadomień idzie wiadomość „rozwiązany” z długością przerwy. Wymaga ustawionego alarmu po utracie łączności.",
+      "autoUpdate": "Automatyczne aktualizacje agenta",
+      "autoUpdateHint": "Agenci grupy (0.10+) sami instalują wersję agenta z serwera: pobierają instalator MSI z panelu, sprawdzają sumę SHA-256 i uruchamiają go w ciągu 30 minut (losowo – bez obciążenia serwera); nieudana próba powtarza się po 6 godzinach. Bez obniżania wersji.",
+      "autoUpdateServer": "Wersja na serwerze: {{v}}.",
+      "autoUpdateNoMsi": "Na serwerze brak instalatora MSI z numerem wersji (deploy.sh agent / paczka instalacyjna).",
+      "autoUpdatePassword": "Panel będzie mógł uruchomić instalator na komputerach tej grupy – potwierdź włączenie.",
+      "iis": "Logi IIS (serwery WWW)",
+      "iisHint": "Agenci grupy (0.10+) czytają też logi IIS w formacie W3C z C:\\inetpub\\logs\\LogFiles (każda witryna osobno; inny katalog – iis.log_dir w agent.yaml). Nowy agent zaczyna od bieżącego pliku dnia, bez historii. Na komputerach bez IIS agent zgłasza ostrzeżenie."
     }
   },
   "deploy": {

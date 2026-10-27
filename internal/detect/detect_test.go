@@ -121,6 +121,13 @@ func TestRepositoryRules(t *testing.T) {
 	must("f406b909-37ba-4b21-b8c2-f4bd5cbf3192", ev("Security", 4728, map[string]string{"TargetSid": "S-1-5-21-1-2-3-512"}), true)
 	must("f406b909-37ba-4b21-b8c2-f4bd5cbf3192", ev("Security", 4728, map[string]string{"TargetSid": "S-1-5-21-1-2-3-1105"}), false)
 	must("557f7b4d-d6bf-4d17-8aaf-cd1094a46a67", ev("Security", 1102, nil), true)
+	// IIS: złe hasło (401.1) tak, zwykłe wezwanie NTLM (401.2) i inny zbiór nie.
+	iis := func(ds, sub string) Event {
+		return Event{&model.Event{Dataset: ds, Fields: map[string]string{"sc-status": "401", "sc-substatus": sub}}}
+	}
+	must("16b82dd9-6ddd-4964-aa6c-3f3c6538a89a", iis("iis.access", "1"), true)
+	must("16b82dd9-6ddd-4964-aa6c-3f3c6538a89a", iis("iis.access", "2"), false)
+	must("16b82dd9-6ddd-4964-aa6c-3f3c6538a89a", iis("linux.auth", "1"), false)
 	enc := ev("Security", 4688, map[string]string{"NewProcessName": `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
 		"CommandLine": `powershell -NoProfile -EncodedCommand VwByAGkAdABlAA==`})
 	must("4b767c65-adff-4033-841f-3a325dc1bda4", enc, true)

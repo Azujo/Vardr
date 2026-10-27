@@ -12,7 +12,7 @@ Serwer Vardr instaluje się z paczki `vardr-<wersja>-linux-amd64.tar.gz`: progra
 | Dysk (katalog Dockera) | 20 GB | 60 GB i więcej (kolejki, baza zdarzeń) |
 | Archiwum NIS2 | | osobny dysk pod `/srv/vardr` |
 
-Porty: `8443/tcp` (agenci), `8444/tcp` (panel), `3000/tcp` (Grafana), opcjonalnie `514/udp+tcp` (kolektor syslog) – kto ma do nich dostęp: [Zapora](#zapora).
+Porty: `8443/tcp` (agenci), `8444/tcp` (panel), `3000/tcp` (Grafana), opcjonalnie `514/udp+tcp` i `6514/tcp` (kolektor syslog, TLS) – kto ma do nich dostęp: [Zapora](#zapora).
 
 ## Instalacja
 
@@ -64,7 +64,7 @@ Do serwera powinny mieć dostęp tylko te sieci, które go potrzebują:
 | `8443/tcp` (ingest) | sieci z komputerami z agentem |
 | `8444/tcp` (panel) | sieć administratorów i SOC |
 | `3000/tcp` (Grafana) | administratorzy – albo wcale (niżej) |
-| `514/udp+tcp` (kolektor) | sieci urządzeń wysyłających syslog (dodatkowo lista `syslog.allow` kolektora) |
+| `514/udp+tcp`, `6514/tcp` (kolektor, 6514 – TLS) | sieci urządzeń wysyłających syslog (dodatkowo lista `syslog.allow` kolektora) |
 | `22/tcp` (SSH) | administratorzy |
 
 **Docker omija ufw i firewalld** – porty kontenerów są publikowane regułami Dockera, przed regułami INPUT. Ruch do kontenerów filtruje się w łańcuchu `DOCKER-USER`, po porcie sprzed przekierowania (`--ctorigdstport`), np. panel i Grafana tylko z `10.0.10.0/24`:
@@ -78,6 +78,28 @@ sudo apt install iptables-persistent && sudo netfilter-persistent save   # zacho
 SSH i inne usługi samego serwera – zwykle (ufw, firewalld).
 
 **Grafana bez dostępu z sieci:** `VARDR_GRAFANA_ADDR=127.0.0.1` w `/opt/vardr/.env`, potem `sudo systemctl restart vardr`. Grafana jest wtedy dostępna tylko tunelem SSH (`ssh -L 3000:127.0.0.1:3000 admin@serwer`, w przeglądarce `http://localhost:3000`); odnośniki do Grafany w panelu działają przy otwartym tunelu.
+
+## Kopia archiwum w S3
+
+Archiwum NIS2 leży na dysku serwera – administrator serwera (albo napastnik, który go przejmie) może je usunąć. Kopia w magazynie S3 z **blokadą obiektów (Object Lock) w trybie COMPLIANCE** jest nie do usunięcia ani nadpisania do końca retencji – także przez właściciela konta magazynu. Archiwizator wysyła do niej każdą zamkniętą godzinę (segmenty, na końcu manifest) w ciągu kilku minut; blokada obiektu trwa do końca godziny + bieżącej retencji z panelu. Działa z AWS S3 i zgodnymi magazynami: Wasabi, Backblaze B2, MinIO, Ceph RGW.
+
+1. Załóż kubełek **z włączonym Object Lock** (da się to zrobić tylko przy zakładaniu; włącza też wersjonowanie). Reguła domyślna nie jest potrzebna – Vardr ustawia blokadę każdego obiektu.
+2. Załóż użytkownika (klucz dostępu) z uprawnieniami tylko do tego kubełka: `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetBucketObjectLockConfiguration` (bez usuwania).
+3. Dopisz do `/opt/vardr/.env` i uruchom ponownie (`sudo systemctl restart vardr`):
+
+```bash
+SIEM_ARCHIVE_S3_BUCKET=vardr-archiwum
+SIEM_ARCHIVE_S3_ENDPOINT=https://s3.eu-central-1.amazonaws.com   # MinIO: https://minio.firma.local:9000
+SIEM_ARCHIVE_S3_REGION=eu-central-1
+SIEM_ARCHIVE_S3_ACCESS_KEY=…
+SIEM_ARCHIVE_S3_SECRET_KEY=…
+#SIEM_ARCHIVE_S3_PREFIX=serwer1        # kilka instalacji w jednym kubełku
+#SIEM_ARCHIVE_S3_MODE=GOVERNANCE       # blokada, którą uprawniony użytkownik może zdjąć (testy)
+```
+
+Godziny sprzed włączenia kopii są wysyłane od najstarszej w retencji. Kubełek bez Object Lock archiwizator odrzuca (nic nie wysyła). Stan: *Stan systemu → Kopia w S3 (Object Lock)*, metryki `siem_archive_offsite_*`, logi archiwizatora (`archive copy`).
+
+Wygasłe obiekty usuwa reguła cyklu życia kubełka (np. usuwanie wersji nieaktualnych i obiektów starszych niż retencja + 2 dni) – zablokowanych magazyn i tak nie usunie przed czasem. Kopia ma ten sam układ katalogów co archiwum: po utracie serwera pobierz ją do katalogu archiwum nowej instalacji (np. `aws s3 sync`), przywróć bazę z kopii zapasowej (`restore.sh`) i uzgodnij archiwum w panelu (Urd → obsługa niezgodności).
 
 ## Kolektor syslog i konektor API
 

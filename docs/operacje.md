@@ -120,11 +120,14 @@ Kopia nie zawiera zdarzeń w ClickHouse (kilka dni, odtwarzalne z archiwum przez
 | Dane | Ustawienie | Zmiana |
 |---|---|---|
 | zdarzenia i kwarantanna w ClickHouse | `SIEM_EVENTS_TTL_DAYS` (lab 5) | `.env`, potem `./clickhouse/retention.sh` |
+| wybrane zbiory zdarzeń (`event.dataset`) | `SIEM_EVENTS_TTL_DATASETS`, np. `fortigate.=3,windows.security=30` (prefiks=dni) | jw.; instalator stosuje przy aktualizacji |
 | surowy XML zdarzeń | `SIEM_RAW_TTL_DAYS` (lab 2, ≤ zdarzenia) | jw. |
 | tabela logowań | udane logowania Windows 1 dzień, reszta jak zdarzenia | `retention.sh` |
 | zdarzenia odtworzone | `SIEM_REPLAY_TTL_DAYS` (7) | compose |
 | archiwum NIS2 | polityka w panelu (Urd), granice `SIEM_ARCHIVE_MIN/MAX_RETENTION_DAYS` | panel (skrócenie z 24 h opóźnieniem) |
 | alerty zamknięte | `SIEM_ALERT_RETENTION_DAYS` (365) | compose |
+
+**Retencja per zbiór.** Prefiks pasuje do początku nazwy zbioru (`fortigate.` obejmuje `fortigate.traffic`, `fortigate.event`…), przy kilku pasujących wygrywa najdłuższy, zbiory bez reguły mają `SIEM_EVENTS_TTL_DAYS`. Typowo: ruch z zapory (najliczniejszy, mało przydatny po kilku dniach) krócej, logowania i zmiany kont dłużej. Nowe reguły obowiązują od razu dla nowych danych; dane zapisane wcześniej wygasają po dawnych regułach, dopóki ich części się nie scalą – `./clickhouse/retention.sh --materialize` stosuje reguły od razu do wszystkiego (przepisuje całą tabelę). Dane usuwane są w tle, przy scalaniu części (do kilku godzin po terminie). Archiwum NIS2 ma jedną retencję dla wszystkich źródeł.
 
 Planowanie dysku: ok. 125 B na zdarzenie w ClickHouse z surowym XML (ok. 75 GB na dobę przy 7000 zdarzeń/s), archiwum ok. 120 B na zdarzenie (ok. 100 GB na dobę przy 10 000/s).
 

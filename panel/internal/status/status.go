@@ -318,6 +318,23 @@ var defs = []def{
 	{id: "archive.disk_free", group: "Archiwum NIS2", name: "Wolne miejsce na dysku archiwum", query: `min(siem_archive_disk_free_bytes / siem_archive_disk_total_bytes)`,
 		hint: "Po zapełnieniu archiwizacja się wstrzyma – powiększ dysk albo skróć retencję.",
 		eval: thresholdLow(0.15, 0.05, pct)},
+	// Metryki kopii w S3 istnieją tylko przy włączonej kopii (SIEM_ARCHIVE_S3_BUCKET);
+	// -1 = kubełek niesprawdzony (brak Object Lock, błędne dane dostępu).
+	{id: "archive.offsite", group: "Archiwum NIS2", name: "Kopia w S3 (Object Lock)",
+		query: `((max(siem_archive_offsite_enabled) == 0) - 1) or max(siem_archive_offsite_oldest_pending_age_seconds)`,
+		hint:  "Zamknięte godziny archiwum nie trafiają do kubełka S3 – sprawdź logi archiwizatora (archive copy) i dostęp do magazynu.",
+		eval: func(s []sample) (string, value) {
+			v, ok := one(s)
+			switch {
+			case !ok:
+				return OK, val("off", "wyłączona")
+			case v < 0:
+				return Crit, val("bucket", "kubełek bez Object Lock albo niedostępny")
+			case v == 0:
+				return OK, val("current", "aktualna")
+			}
+			return thresholdHigh(3*3600, 24*3600, ago)(s)
+		}},
 	{id: "backup.last", group: "Kopie zapasowe", name: "Ostatnia kopia", query: `time() - max(vardr_backup_last_success_timestamp_seconds or heimdall_backup_last_success_timestamp_seconds)`,
 		hint: "Kopia powinna powstawać co noc (cron 02:15, backup.sh) – sprawdź ~/siem-lab/backup.log.",
 		eval: thresholdHigh(26*3600, 50*3600, ago)},

@@ -121,11 +121,14 @@ A backup does not contain events in ClickHouse (a few days, can be replayed from
 | Data | Setting | How to change |
 |---|---|---|
 | events and quarantine in ClickHouse | `SIEM_EVENTS_TTL_DAYS` | `.env`, then `./clickhouse/retention.sh` |
+| selected event datasets (`event.dataset`) | `SIEM_EVENTS_TTL_DATASETS`, e.g. `fortigate.=3,windows.security=30` (prefix=days) | as above; the installer applies it on upgrade |
 | raw event XML | `SIEM_RAW_TTL_DAYS` (≤ events) | as above |
 | sign-in table | successful Windows sign-ins 1 day, the rest as events | `retention.sh` |
 | replayed events | `SIEM_REPLAY_TTL_DAYS` (7) | compose |
 | NIS2 archive | policy in the panel (Urd), bounds `SIEM_ARCHIVE_MIN/MAX_RETENTION_DAYS` | panel (shortening with a 24 h delay) |
 | closed alerts | `SIEM_ALERT_RETENTION_DAYS` (365) | compose |
+
+**Retention per dataset.** A prefix matches the beginning of the dataset name (`fortigate.` covers `fortigate.traffic`, `fortigate.event`…), the longest matching prefix wins, datasets without a rule use `SIEM_EVENTS_TTL_DAYS`. Typically: firewall traffic (the largest, of little use after a few days) shorter, sign-ins and account changes longer. New rules apply to new data at once; data written earlier expires under the old rules until its parts are merged – `./clickhouse/retention.sh --materialize` applies the rules to everything at once (rewrites the whole table). Data is removed in the background, when parts are merged (up to a few hours after the deadline). The NIS2 archive has one retention for all sources.
 
 Disk planning: about 125 B per event in ClickHouse with raw XML (about 75 GB a day at 7,000 events/s), the archive about 120 B per event (about 100 GB a day at 10,000/s).
 

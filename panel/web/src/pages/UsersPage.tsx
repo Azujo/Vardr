@@ -88,6 +88,7 @@ export default function UsersPage() {
   const [form, setForm] = useState({ username: "", display_name: "", role: "viewer" as Role });
   const [busy, setBusy] = useState(false);
   const [mfa, setMfa] = useState<Record<string, string>>({});
+  const [keys, setKeys] = useState<Record<string, number>>({});
   const [mfaAvailable, setMfaAvailable] = useState(false);
   const [policy, setPolicy] = useState<MFAPolicy>("all");
   const [policyEdit, setPolicyEdit] = useState<MFAPolicy | null>(null);
@@ -100,6 +101,7 @@ export default function UsersPage() {
       .then((r) => {
         setUsers(r.users);
         setMfa(r.mfa ?? {});
+        setKeys(r.webauthn_keys ?? {});
         setMfaAvailable(!!r.mfa_available);
         if (r.mfa_policy) setPolicy(r.mfa_policy);
       })
@@ -301,7 +303,7 @@ export default function UsersPage() {
                   {mfa[String(u.id)] ? (
                     <Tooltip label={t("users.mfaOn", { date: formatDate(mfa[String(u.id)]) })}>
                       <Badge color="green" variant="light">
-                        TOTP
+                        TOTP{keys[String(u.id)] ? ` + ${t("users.keys", { count: keys[String(u.id)] })}` : ""}
                       </Badge>
                     </Tooltip>
                   ) : (

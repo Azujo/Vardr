@@ -215,6 +215,8 @@ SIEM_ALERT_RELAY_TOKEN=$(secret 32)
 
 # Retencja zdarzeń w ClickHouse (dni) i surowego XML (dni, ≤ zdarzeń).
 SIEM_EVENTS_TTL_DAYS=5
+# Osobna retencja wybranych zbiorów (prefiks=dni), np. zapora krócej:
+#SIEM_EVENTS_TTL_DATASETS=fortigate.=3,windows.security=30
 SIEM_RAW_TTL_DAYS=2
 # Silniki detekcji: stream (w locie), index_query (zapytania) albo both.
 SIEM_DETECTION_MODE=both
@@ -229,6 +231,13 @@ SIEM_BACKUP_DIR=$DATA/backup
 SIEM_ARCHIVE_RETENTION_DAYS=30
 # Hasło szyfrujące kopie zapasowe (poza katalogiem stosu i poza kopiami).
 VARDR_BACKUP_PASS_FILE=/etc/vardr/backup.pass
+# Kopia archiwum w S3 z Object Lock (kubełek z włączoną blokadą obiektów):
+# docs/instalacja.md#kopia-archiwum-w-s3
+#SIEM_ARCHIVE_S3_BUCKET=vardr-archiwum
+#SIEM_ARCHIVE_S3_ENDPOINT=https://s3.eu-central-1.amazonaws.com
+#SIEM_ARCHIVE_S3_REGION=eu-central-1
+#SIEM_ARCHIVE_S3_ACCESS_KEY=
+#SIEM_ARCHIVE_S3_SECRET_KEY=
 
 # Porty (zmiana portu ingest wymaga nowych paczek agentów).
 #VARDR_INGEST_PORT=8443
@@ -371,6 +380,9 @@ if [ $UPGRADE = 1 ]; then
   # Tabela logowań korelacji: widok z warunkami logowań z tej wersji (nowe źródła).
   compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh >/dev/null ||
     warn "refreshing the sign-in table failed – run: cd $DIR && sudo docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh"
+  # Retencja zdarzeń z .env (także per zbiór); bez zmian – nic nie robi.
+  compose exec -T clickhouse bash /docker-entrypoint-initdb.d/04-retention.sh ||
+    warn "applying the event retention failed – check SIEM_EVENTS_TTL_DAYS and SIEM_EVENTS_TTL_DATASETS in $DIR/.env"
 fi
 
 admin_out=""

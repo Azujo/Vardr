@@ -62,6 +62,7 @@ type MemCatalog struct {
 	segSeq    map[string]int64
 	manifests []ManifestRecord
 	verifs    []Verification
+	offsite   map[int64]time.Time // kopia poza serwerem (Offsite)
 }
 
 // NewMemCatalog tworzy pusty katalog w pamięci.

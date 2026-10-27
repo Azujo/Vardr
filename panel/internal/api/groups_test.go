@@ -3,17 +3,23 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/json"
 	"math/big"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"siem/internal/contract"
 	"siem/panel/internal/api/store"
 )
 
@@ -216,4 +222,82 @@ func TestGroupsAndAgentConfig(t *testing.T) {
 		t.Fatalf("agent nie trafił do grupy: %+v", g)
 	}
 	_ = time.Now
+}
+
+func TestAgentAutoUpdate(t *testing.T) {
+	e, _ := newEnrollEnv(t)
+	admin := e.client("10.0.0.1")
+	admin.login("admin", "haslo-admina-123")
+	dir := e.agentDir
+	msi := []byte("instalator MSI agenta")
+	if err := os.WriteFile(filepath.Join(dir, "vardr-agent.msi"), msi, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "AGENT_VERSION"), []byte("0.10.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	download := func(agentID string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "https://panel"+contract.AgentMSIPath, nil)
+		cert := &x509.Certificate{Subject: pkix.Name{CommonName: agentID}, SerialNumber: big.NewInt(77)}
+		r.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
+		w := httptest.NewRecorder()
+		e.h.ServeHTTP(w, r)
+		return w
+	}
+
+	// Bez automatycznych aktualizacji: konfiguracja bez instalatora, pobranie zabronione.
+	w := configRequest(e, "agt-pc1", "")
+	if strings.Contains(w.Body.String(), `"update"`) {
+		t.Fatalf("aktualizacja w grupie bez auto_update: %s", w.Body)
+	}
+	if d := download("agt-pc1"); d.Code != 403 {
+		t.Fatalf("pobranie bez auto_update: %d", d.Code)
+	}
+
+	// Włączenie wymaga hasła.
+	group := map[string]any{"name": "Stacje", "profile": "workstation", "limits": map[string]any{"auto_update": true}}
+	if code, out, _ := admin.do("POST", "/api/v1/groups", group); code != 403 || out["error"] != "reauth_required" {
+		t.Fatalf("auto_update bez hasła: %d %v", code, out)
+	}
+	group["password"] = "haslo-admina-123"
+	code, out, _ := admin.do("POST", "/api/v1/groups", group)
+	if code != 201 {
+		t.Fatalf("grupa: %d %v", code, out)
+	}
+	gid := int64(out["group"].(map[string]any)["id"].(float64))
+	if code, _, _ := admin.do("PUT", "/api/v1/agents/agt-pc1/group", map[string]any{"group_id": gid}); code != 200 {
+		t.Fatalf("przypisanie: %d", code)
+	}
+	_, list, _ := admin.do("GET", "/api/v1/groups", nil)
+	if list["agent_version"] != "0.10.0" {
+		t.Fatalf("wersja instalatora na serwerze: %v", list["agent_version"])
+	}
+
+	w = configRequest(e, "agt-pc1", "")
+	var cfg contract.AgentConfig
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil || cfg.Update == nil {
+		t.Fatalf("konfiguracja z aktualizacją: %s %v", w.Body, err)
+	}
+	sum := sha256.Sum256(msi)
+	if cfg.Update.Version != "0.10.0" || cfg.Update.SHA256 != hex.EncodeToString(sum[:]) || cfg.Update.Size != int64(len(msi)) || cfg.Validate() != nil {
+		t.Fatalf("aktualizacja: %+v", cfg.Update)
+	}
+	if d := download("agt-pc1"); d.Code != 200 || !bytes.Equal(d.Body.Bytes(), msi) {
+		t.Fatalf("pobranie: %d %q", d.Code, d.Body)
+	}
+
+	// Nowy instalator zmienia wersję konfiguracji (agent nie dostanie 304).
+	etag := w.Header().Get("ETag")
+	time.Sleep(10 * time.Millisecond)
+	os.WriteFile(filepath.Join(dir, "vardr-agent.msi"), []byte("nowszy instalator"), 0o600)
+	os.WriteFile(filepath.Join(dir, "AGENT_VERSION"), []byte("0.10.1"), 0o600)
+	if w2 := configRequest(e, "agt-pc1", etag); w2.Code != 200 || !strings.Contains(w2.Body.String(), `"0.10.1"`) {
+		t.Fatalf("nowy instalator: %d %s", w2.Code, w2.Body)
+	}
+
+	// Edycja grupy z już włączonymi aktualizacjami nie wymaga hasła.
+	if code, out, _ := admin.do("PATCH", "/api/v1/groups/"+itoa(gid), map[string]any{"name": "Stacje biurowe", "profile": "workstation",
+		"limits": map[string]any{"auto_update": true, "max_eps": 100}}); code != 200 {
+		t.Fatalf("edycja: %d %v", code, out)
+	}
 }

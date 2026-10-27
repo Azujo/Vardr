@@ -128,6 +128,7 @@ All of them send syslog to the collector address (UDP or TCP 514); the device ne
 | Linux servers (rsyslog) | `linux` | `linux.auth` | `linux` |
 | pfSense, OPNsense | `pfsense` | `pfsense.firewall` | `pfsense` (`opnsense`) |
 | Cisco ASA, Firepower (FTD) | `cisco-asa` | `cisco.asa` | `cisco` (`asa`) |
+| IIS (W3C files, Windows agent – not syslog) | `iis` | `iis.access` | `iis`, `category: webserver` – see [agent.md](agent.md#iis-logs-since-version-010) |
 
 Sign-ins from these sources (fields `event.action: login` and `event.outcome`, on Cisco ASA also `vpn-connect`) go to the sign-in table and to the "success after failures" correlation together with AD, Entra ID and VPN.
 
@@ -144,6 +145,38 @@ auth,authpriv.* action(type="omfwd" target="collector.company.com" port="514" pr
 ```
 
 The `RSYSLOG_SyslogProtocol23Format` template (RFC 5424) sends the time with its time zone – the default RFC 3164 format has none and the time is read in the `SIEM_SYSLOG_TZ` zone (a server in UTC would be shifted). Then `sudo systemctl restart rsyslog`. A system without rsyslog (journald only, e.g. minimal Debian) – install the `rsyslog` package; it reads the systemd journal. Check: `logger -p authpriv.notice "vardr test"` – the message shows up in Mímir (`host.name` of the server).
+
+### Syslog over TLS
+
+Plain syslog travels as clear text without authentication – on a network you do not control (a branch over the internet, a shared network) send it over TLS instead (RFC 5425, port 6514). The collector accepts TLS next to UDP/TCP; devices that support it (rsyslog, syslog-ng, FortiGate with `mode reliable` and `enc-algorithm`) move to the new port, the rest stay on 514.
+
+1. The collector certificate (self-signed, 10 years; the name and address devices use to reach the server):
+   ```bash
+   cd /opt/vardr
+   sudo docker compose run --rm collector tls-cert -dir /collector -host collector.company.com,10.0.0.5
+   ```
+   A certificate from your company CA works too – point `tls_cert`/`tls_key` to it.
+2. In `collector/collector.yaml`, in the `syslog` section:
+   ```yaml
+   tls: ":6514"
+   tls_cert: certs/syslog.crt
+   tls_key: certs/syslog.key
+   ```
+   and `sudo docker compose restart collector`. Port 6514 is published in `docker-compose.yml`; on the firewall open it only to device networks.
+3. On the device, trust `collector/certs/syslog.crt` as the CA. rsyslog (package `rsyslog-gnutls`):
+   ```
+   global(DefaultNetstreamDriverCAFile="/etc/rsyslog.d/vardr-ca.crt")
+   auth,authpriv.* action(type="omfwd" target="collector.company.com" port="6514" protocol="tcp"
+                          StreamDriver="gtls" StreamDriverMode="1"
+                          StreamDriverAuthMode="x509/name" StreamDriverPermittedPeers="collector.company.com"
+                          template="RSYSLOG_SyslogProtocol23Format"
+                          queue.type="LinkedList" queue.filename="vardr" queue.maxDiskSpace="100m"
+                          queue.saveOnShutdown="on" action.resumeRetryCount="-1")
+   ```
+
+**Device certificate (optional).** TLS alone encrypts and proves the collector's identity to the device, but anyone in the `allow` networks can still send. When devices have certificates from your company CA, add `tls_client_ca: certs/devices-ca.crt` (the collector refuses connections without a valid certificate from that CA) and optionally `tls_client_names: ["fw1.company.com", "srv-www"]` (allowed CN or DNS names from the certificate). In rsyslog: `DefaultNetstreamDriverCertFile` and `DefaultNetstreamDriverKeyFile` in `global(...)`. Refused connections are counted as `tls_failed` in the collector log (`syslog: liczniki`).
+
+Messages received over TLS have the source `syslog:tls` in Mímir; decoders work the same as for UDP/TCP.
 
 ### pfSense and OPNsense
 

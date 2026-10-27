@@ -10,6 +10,15 @@
     "24h": "24 h",
     "7d": "7 days"
   },
+  "custom": {
+    "button": "Custom range",
+    "from": "From",
+    "to": "To",
+    "apply": "Show",
+    "incomplete": "Enter the start and end of the range.",
+    "order": "The start must be before the end.",
+    "tooLong": "The range can be at most {{days}} days."
+  },
   "replayTip": "Events replayed from the NIS2 archive are in a separate table – they do not mix with live events",
   "live": "Live",
   "replay": "Replayed from archive",

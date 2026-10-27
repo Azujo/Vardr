@@ -23,7 +23,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { IconCheck, IconCopy, IconFilter, IconHelp, IconLink, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { IconCalendar, IconCheck, IconCopy, IconFilter, IconHelp, IconLink, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { eventsApi, formatDate, formatNumber, type EventDetail, type EventRow } from "../api";
@@ -37,6 +37,75 @@ const ranges: Record<string, number> = {
   "24h": 24 * 3600e3,
   "7d": 7 * 24 * 3600e3,
 };
+
+// Najdłuższy zakres, jaki przyjmuje API wyszukiwania.
+const maxSpanDays = 31;
+
+// datetime-local ↔ Date (czas lokalny przeglądarki).
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// Własny zakres czasu: początek i koniec wpisane ręcznie.
+function CustomRange({ span, onPick }: { span: { from: string; to: string }; onPick: (from: Date, to: Date) => void }) {
+  const { t } = useTranslation("events");
+  const [opened, setOpened] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  const f = new Date(from);
+  const e = new Date(to);
+  let error = "";
+  if (!from || !to || isNaN(f.getTime()) || isNaN(e.getTime())) error = t("custom.incomplete");
+  else if (f >= e) error = t("custom.order");
+  else if (e.getTime() - f.getTime() > maxSpanDays * 24 * 3600e3) error = t("custom.tooLong", { days: maxSpanDays });
+
+  return (
+    <Popover opened={opened} onChange={setOpened} position="bottom-start" withArrow shadow="md" trapFocus>
+      <Popover.Target>
+        <Button
+          size="compact-sm"
+          variant="default"
+          leftSection={<IconCalendar size={14} />}
+          onClick={() => {
+            if (!opened) {
+              setFrom(toLocalInput(span.from));
+              setTo(toLocalInput(span.to));
+            }
+            setOpened((o) => !o);
+          }}
+        >
+          {t("custom.button")}
+        </Button>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <form
+          onSubmit={(ev) => {
+            ev.preventDefault();
+            if (error) return;
+            setOpened(false);
+            onPick(f, e);
+          }}
+        >
+          <Stack gap="xs" w={260}>
+            <TextInput size="xs" type="datetime-local" label={t("custom.from")} value={from} onChange={(ev) => setFrom(ev.currentTarget.value)} />
+            <TextInput size="xs" type="datetime-local" label={t("custom.to")} value={to} onChange={(ev) => setTo(ev.currentTarget.value)} />
+            {error && from && to && (
+              <Text size="xs" c="red">
+                {error}
+              </Text>
+            )}
+            <Button size="xs" type="submit" disabled={!!error}>
+              {t("custom.apply")}
+            </Button>
+          </Stack>
+        </form>
+      </Popover.Dropdown>
+    </Popover>
+  );
+}
 
 const outcomeColor: Record<string, string> = { success: "green", failure: "red" };
 
@@ -458,6 +527,7 @@ export default function EventsPage() {
             onChange={setRange}
             data={Object.keys(ranges).map((value) => ({ value, label: t(`range.${value}`) }))}
           />
+          <CustomRange span={span} onPick={zoom} />
           {range === "custom" && (
             <Badge variant="light" size="lg">
               {fmtTime(span.from)} – {fmtTime(span.to)}

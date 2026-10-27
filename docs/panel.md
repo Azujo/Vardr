@@ -113,6 +113,16 @@ Po haśle panel prosi o 6-cyfrowy kod z aplikacji uwierzytelniającej (TOTP – 
 - **Zgubiony telefon bez kodów**: administrator wybiera przy koncie *Resetuj drugi składnik* (hasło, audyt) – konto skonfiguruje aplikację od nowa. Gdy dotyczy to jedynego administratora – na serwerze: `docker compose run --rm api reset-mfa -username <login>` (wpis w audycie).
 - **Ochrona**: kod działa raz (ten sam kod nie zaloguje drugi raz), tolerancja zegara ±30 s, 5 złych kodów kończy próbę logowania, a nieudane kody liczą się do blokady konta. Sekrety TOTP są w bazie zaszyfrowane (AES-256-GCM) kluczem z pliku `certs/mfa.key` na serwerze – `deploy.sh config` tworzy go raz; plik jest w kopii zapasowej (`certs/`). Utrata klucza unieważnia zapisane aplikacje – konta trzeba zresetować (w panelu albo `reset-mfa`) i skonfigurować od nowa.
 
+### Klucze bezpieczeństwa i passkeys (WebAuthn)
+
+Zamiast kodu z aplikacji można przy logowaniu dotknąć klucza: sprzętowego (YubiKey, Google Titan, Feitian…), Windows Hello, Touch ID albo passkey w telefonie. Klucz jest odporny na phishing – podpisuje tylko dla adresu panelu, pod którym go dodano, więc podrobiona strona logowania nic z nim nie zrobi.
+
+- **Dodanie**: *Moje konto → Bezpieczeństwo konta → Klucze bezpieczeństwa → Dodaj klucz* (nazwa, hasło, dotknięcie klucza); do 10 kluczy na konto, wpis w audycie. Konto musi najpierw mieć aplikację uwierzytelniającą – ona i kody zapasowe zostają drogą awaryjną (zgubiony klucz, inny komputer).
+- **Logowanie**: po haśle przycisk *Użyj klucza bezpieczeństwa* (gdy konto ma klucz dla tego adresu panelu); kod z aplikacji działa nadal.
+- **Wymagania**: panel otwarty **po nazwie** przez HTTPS, np. `https://vardr.firma.pl:8444` – WebAuthn nie działa na adresie IP. Nazwa musi być w certyfikacie panelu i w DNS. Klucz dodany pod jedną nazwą działa tylko pod nią (zmiana nazwy panelu = klucze do dodania od nowa).
+- Konta lokalne i domenowe (LDAP); konta SSO – drugi składnik u dostawcy tożsamości. Wyłączenie drugiego składnika albo reset przez administratora (*Resetuj drugi składnik*, `reset-mfa`) usuwa też klucze konta. Lista kont pokazuje liczbę kluczy przy TOTP.
+- Panel sprawdza podpis wyzwania, adres strony, obecność użytkownika (dotknięcie) i licznik użyć klucza (cofnięty licznik – możliwy klon – odrzuca logowanie). Atestacji producenta nie sprawdza (każdy zgodny klucz).
+
 ## Moduły
 
 Menu jest pogrupowane według rodzaju pracy: **Wykrywanie** (Alerty, Reguły detekcji), **Zdarzenia** (Wyszukiwarka, Tożsamości, Dekodery, Kwarantanna), **Agenci** (Lista agentów, Grupy agentów, Wdrażanie), **System** (Archiwum NIS2, Stan systemu) i **Administracja** (Użytkownicy, Powiadomienia, Kopie zapasowe, Dziennik audytu – tylko administrator). Etykieta mówi, co jest na stronie; nazwa modułu z roadmapy jest podpisem pod nią.
@@ -154,7 +164,7 @@ Zapytanie to lista warunków oddzielonych spacjami, łączonych przez I:
 
 Pola: `host` (`computer`), `agent`, `user`, `domain`, `identity` (`osoba`, `person`), `ip` (`src`), `code` (`id`, `eventid`), `action`, `outcome`, `dataset` (`channel`), `provider`, `process`. Lista z opisami jest w panelu (pomoc przy polu zapytania, `GET /api/v1/events/fields`).
 
-Zakres czasu wybiera się nad wynikami. Wyszukiwanie korzysta z konta ClickHouse tylko do odczytu z limitem czasu (30 s) i wyniku, więc zbyt szerokie zapytanie kończy się komunikatem, a nie obciążeniem serwera; zawęź wtedy czas albo dodaj pole.
+Zakres czasu wybiera się nad wynikami: gotowy (15 min, 1 h, 24 h, 7 dni) albo *Własny zakres* z dokładnym początkiem i końcem (do 31 dni; zaznaczenie słupka histogramu też go zawęża). Wyszukiwanie korzysta z konta ClickHouse tylko do odczytu z limitem czasu (30 s) i wyniku, więc zbyt szerokie zapytanie kończy się komunikatem, a nie obciążeniem serwera; zawęź wtedy czas albo dodaj pole.
 
 ## Ryzyko osób i komputerów
 

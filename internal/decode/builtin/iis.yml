@@ -1,0 +1,43 @@
+id: iis
+title: IIS – dziennik W3C (agent Windows)
+description: |
+  Żądania HTTP z logów IIS w formacie W3C, czytanych przez agenta Windows
+  (opcja grupy „Logi IIS” albo iis.enabled w agent.yaml). Agent przysyła
+  wiersz jako JSON z nazwami pól z dyrektywy #Fields (cs-method,
+  cs-uri-stem, sc-status, c-ip, cs-username, cs(User-Agent)…) – zostają
+  jako pola zdarzenia, więc reguły Sigmy z category webserver działają na
+  tych samych nazwach. Wynik: 401 i 403 – failure, 2xx i 3xx – success.
+  Czas z pól date i time (W3C zapisuje UTC).
+version: 1
+priority: 100
+dataset: iis.access
+match:
+  app: [file:iis]
+parser:
+  type: json
+set:
+  event.action: http-request
+fields:
+  host.name: [s-computername, host]
+  source.ip: c-ip
+  user.name: cs-username
+  message: [cs-uri-stem]
+  http.request.method: cs-method
+  http.response.status_code: sc-status
+  url.path: cs-uri-stem
+  url.query: cs-uri-query
+  user_agent.original: cs(User-Agent)
+  destination.ip: s-ip
+  destination.port: s-port
+  iis.site: site
+outcome:
+  field: sc-status
+  failure: ["401", "403"]
+  success: ["200", "201", "202", "204", "206", "301", "302", "303", "304", "307", "308"]
+time:
+  fields: [date, time]
+  layout: "2006-01-02 15:04:05"
+  timezone: UTC
+samples:
+  - '{"c-ip":"203.0.113.7","cs(User-Agent)":"Mozilla/5.0+(Windows+NT+10.0;+Win64;+x64)","cs-method":"POST","cs-uri-stem":"/owa/auth.owa","date":"2026-10-27","host":"srv-www","s-ip":"10.0.0.5","s-port":"443","sc-status":"401","sc-substatus":"1","sc-win32-status":"1326","site":"W3SVC1","time":"10:00:02","time-taken":"15"}'
+  - '{"c-ip":"192.168.88.120","cs-method":"GET","cs-uri-query":"id=7","cs-uri-stem":"/intranet/news.aspx","cs-username":"AZUJO\\jkowalski","date":"2026-10-27","host":"srv-www","s-ip":"10.0.0.5","s-port":"443","sc-status":"200","site":"W3SVC2","time":"10:00:03","time-taken":"31"}'

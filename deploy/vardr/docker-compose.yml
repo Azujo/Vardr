@@ -60,6 +60,7 @@ services:
       SIEM_PANEL_PASSWORD: ${CLICKHOUSE_PANEL_PASSWORD}
       SIEM_DETECTOR_PASSWORD: ${CLICKHOUSE_DETECTOR_PASSWORD}
       SIEM_EVENTS_TTL_DAYS: ${SIEM_EVENTS_TTL_DAYS:-5}
+      SIEM_EVENTS_TTL_DATASETS: ${SIEM_EVENTS_TTL_DATASETS:-}
       SIEM_RAW_TTL_DAYS: ${SIEM_RAW_TTL_DAYS:-2}
       SIEM_REPLAY_TTL_DAYS: ${SIEM_REPLAY_TTL_DAYS:-7}
     volumes:
@@ -179,6 +180,15 @@ services:
       SIEM_ARCHIVE_POLICY_GRACE: ${SIEM_ARCHIVE_POLICY_GRACE:-24h}
       SIEM_ARCHIVE_EXPORT_DIR: /exports
       SIEM_ARCHIVE_EXCLUDE_AGENTS: ${SIEM_ARCHIVE_EXCLUDE_AGENTS:-}
+      # Kopia archiwum w S3 z Object Lock (docs/instalacja.md#kopia-archiwum-w-s3); pusty kubełek = wyłączona.
+      SIEM_ARCHIVE_S3_BUCKET: ${SIEM_ARCHIVE_S3_BUCKET:-}
+      SIEM_ARCHIVE_S3_ENDPOINT: ${SIEM_ARCHIVE_S3_ENDPOINT:-}
+      SIEM_ARCHIVE_S3_REGION: ${SIEM_ARCHIVE_S3_REGION:-us-east-1}
+      SIEM_ARCHIVE_S3_PREFIX: ${SIEM_ARCHIVE_S3_PREFIX:-}
+      SIEM_ARCHIVE_S3_ACCESS_KEY: ${SIEM_ARCHIVE_S3_ACCESS_KEY:-}
+      SIEM_ARCHIVE_S3_SECRET_KEY: ${SIEM_ARCHIVE_S3_SECRET_KEY:-}
+      SIEM_ARCHIVE_S3_MODE: ${SIEM_ARCHIVE_S3_MODE:-COMPLIANCE}
+      SIEM_ARCHIVE_S3_PATH_STYLE: ${SIEM_ARCHIVE_S3_PATH_STYLE:-}
       GOMEMLIMIT: 300MiB
     depends_on:
       nats: { condition: service_healthy }
@@ -200,6 +210,7 @@ services:
     ports:
       - "514:514/udp"
       - "514:514/tcp"
+      - "6514:6514/tcp" # syslog przez TLS (gdy włączony w collector.yaml)
     environment:
       GOMEMLIMIT: 100MiB
     mem_limit: 160m

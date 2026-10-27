@@ -247,9 +247,10 @@ func orDash(s string) string {
 }
 
 // isSyslog: zdarzenie spoza Windows – z kolektora syslog (urządzenia
-// sieciowe, serwery) albo z konektora API (Entra ID); bez struktury XML.
+// sieciowe, serwery), z konektora API (Entra ID) albo z pliku (IIS); bez
+// struktury XML.
 func isSyslog(r urd.Readable) bool {
-	return strings.HasPrefix(r.Channel, "syslog:") || strings.HasPrefix(r.Channel, "entra:")
+	return strings.HasPrefix(r.Channel, "syslog:") || strings.HasPrefix(r.Channel, "entra:") || strings.HasPrefix(r.Channel, "file:")
 }
 
 // kindOf opisuje rodzaj zdarzenia syslog: zbiór danych i akcja z dekodera.

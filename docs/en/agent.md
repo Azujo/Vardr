@@ -65,6 +65,16 @@ The MSI copies the program and the CA to `C:\Program Files\SiemAgent`, then runs
 
 Every agent release needs a new version number (`const version` in `agent/cmd/vardr-agent/main.go`). A rebuilt installer of the same version is installed by `wixl` next to the previous one as a second product (it does not support `AllowSameVersionUpgrades`).
 
+### Automatic updates (since version 0.10)
+
+An agent group has the option *Automatic agent updates* (panel → Agent groups; off by default). Enabling it needs your password and is audited: the panel can then run the installer on every computer of the group – the same trust as in the account that deploys the MSI through GPO.
+
+- The group configuration carries the version, size and SHA-256 sum of the base installer on the server (`agent-dist/vardr-agent.msi` and `AGENT_VERSION` – the server installation bundle or `deploy.sh agent`).
+- An agent older than that version waits a random time of up to 30 minutes (downloads spread out), downloads the installer from the panel over mTLS (`/enroll/v1/agent.msi`, only for groups with the option on), checks the size and sum, saves it in the state directory (accessible only to administrators and SYSTEM) and runs `msiexec /i … /qn`. From there it is the same as a manual upgrade: the service comes back in the new version with the same enrollment, and protection reports an installer upgrade (alert when the agent is not back within 15 min).
+- Never a downgrade. A failed attempt for a version is retried after 6 hours at the earliest; the error and the path of the `msiexec` log are on the agent page in the panel and in `vardr-agent status`.
+- The agent page shows the state: scheduled, installing, failed, updated (from version → to version).
+- Agents older than 0.10 lack the feature – the first upgrade to 0.10 is manual (MSI, GPO).
+
 ### Protection against stopping and uninstalling (since version 0.7)
 
 There is no complete lock: a local administrator can always change the service permissions, and the SYSTEM account can do anything. The goal is to **make it harder and detect it**. Protection is enabled by the agent group (panel → Agent groups → "Agent protection", enabled by default). An agent without configuration from the panel is unprotected.
@@ -88,6 +98,22 @@ There is no complete lock: a local administrator can always change the service p
 `vardr-agent status` and the agent page in the panel show the protection state and recent events. An agent stopped without a token has a red "stopped without a token" badge in the list. The Sigma rule `system_security_service_stopped` now covers only Sysmon: agent stops are reported by a built-in rule that distinguishes a stop with a token.
 
 In an emergency, when the computer cannot reach the panel and a token cannot be used: `sc sdset SiemAgent` restores ordinary permissions, then `sc stop` / `sc delete`. The panel will then raise an alert – that is intended.
+
+## IIS logs (since version 0.10)
+
+On web servers the agent also reads IIS logs in W3C format (the IIS default). Enable it with the group option *IIS logs (web servers)* in the panel (e.g. a "Web servers" group) or in `agent.yaml`:
+
+```yaml
+iis:
+  enabled: true
+  log_dir: 'C:\inetpub\logs\LogFiles'   # default
+```
+
+- Every subdirectory of `log_dir` with `u_ex*.log` files (site `W3SVC1`, `W3SVC2`…, FTP too) is a separate agent channel (`iis:W3SVC1`) – shown on the agent page in the panel. A new site is picked up the next time reading starts (group configuration change or service restart).
+- The position is saved as for Windows logs: after a break the agent resumes from the next line. A new agent (no saved position) starts with the current day's file, without history.
+- Daily and hourly files (`u_exYYMMDD.log`, `u_exYYMMDDHH.log`); the agent moves on to a newer file when the previous one has not changed for 2 minutes. The date and time fields (`date`, `time` – on by default) are required; also recommended: `cs-username`, `cs(User-Agent)`, `sc-status`, `sc-win32-status`.
+- On the server the built-in decoder `iis` (dataset `iis.access`) parses the events: client address in `source.ip`, user (Windows/Basic authentication) in `user.name`, outcome `failure` for 401 and 403. The W3C fields keep their own names (`cs-method`, `cs-uri-query`, `sc-status`…), so Sigma rules with `logsource: category: webserver` (or `product: iis`) work unchanged.
+- The agent reads the files as SYSTEM; the default IIS directory is readable for it. A missing directory or no W3C files – a warning on the agent page.
 
 ## Resilience to state removal
 

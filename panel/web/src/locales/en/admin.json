@@ -64,7 +64,9 @@
     "resetMfaText": "E.g. for a lost phone. The account loses its app and recovery codes and its sessions are ended; at the next sign-in it sets up the app again (if the second factor is required). The change is recorded in the audit log.",
     "reset": "Reset",
     "ssoTip": "SSO account – sign-in and profile from Entra ID",
-    "ssoProfile": "the profile of an SSO account comes from Entra ID groups (SSO sign-in)"
+    "ssoProfile": "the profile of an SSO account comes from Entra ID groups (SSO sign-in)",
+    "keys_one": "{{count}} key",
+    "keys_other": "{{count}} keys"
   },
   "audit": {
     "title": "Audit log",

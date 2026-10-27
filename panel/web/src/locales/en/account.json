@@ -19,7 +19,10 @@
     "back": "← another account / start over",
     "recoveryUsed_one": "A recovery code was used – {{count}} left. Generate new ones in “Account security”.",
     "recoveryUsed_other": "A recovery code was used – {{count}} left. Generate new ones in “Account security”.",
-    "or": "or"
+    "or": "or",
+    "useKey": "Use a security key",
+    "orCode": "or a code from the app",
+    "keyCancelled": "Sign-in with the key was interrupted – try again or enter a code."
   },
   "mfa": {
     "step1": "Install an authenticator app on your phone, e.g. Microsoft Authenticator, Google Authenticator or Aegis.",
@@ -80,13 +83,32 @@
     "yourPassword": "Your password",
     "next": "Next",
     "oldCodesInvalid": "Your existing recovery codes will stop working.",
-    "disableWarning": "Without the second factor the password alone is enough to sign in.",
+    "disableWarning": "Without a second factor the password alone is enough to sign in. The account's security keys will be removed too.",
     "disabled": "Second factor disabled",
     "generate": "Generate",
     "done": "Done",
     "ssoTitle": "SSO account (Entra ID)",
     "ssoText": "The second sign-in factor is confirmed by the identity provider – Entra ID administrators set it up (e.g. Conditional Access). The panel authenticator app is not used for this account.",
     "ssoSessionMfa": "Current session: signed in with a second factor.",
-    "ssoSessionNoMfa": "Current session: the provider did not confirm a second factor."
+    "ssoSessionNoMfa": "Current session: the provider did not confirm a second factor.",
+    "keys": {
+      "title": "Security keys and passkeys",
+      "intro": "A hardware key (YubiKey, Titan…), Windows Hello, Touch ID or a passkey on your phone instead of the app code – touch the key when signing in. Phishing-resistant: the key works only at this panel address. The authenticator app and recovery codes stay as the fallback.",
+      "totpFirst": "Enable the authenticator app (above) first – it stays as the fallback when the key is not at hand.",
+      "needsName": "Keys work only when the panel is opened by name (e.g. https://vardr.company.com:8444), not by IP address.",
+      "unsupported": "This browser does not support security keys (or the page is not opened over HTTPS).",
+      "name": "Name",
+      "nameHint": "E.g. \"YubiKey on keyring\", \"Windows Hello – laptop\"",
+      "addedAt": "Added",
+      "lastUsed": "Last used",
+      "otherAddress": "registered for {{rp}} – works only at that address",
+      "add": "Add key",
+      "register": "Add and touch the key",
+      "touch": "After clicking, the browser asks you to insert and touch the key (or Windows Hello / Touch ID).",
+      "added": "Key \"{{name}}\" added",
+      "cancelled": "Adding the key was interrupted (or the key is already registered).",
+      "remove": "Remove key",
+      "removeText": "Remove the key \"{{name}}\"? Signing in with it will stop working; the authenticator app stays."
+    }
   }
 }

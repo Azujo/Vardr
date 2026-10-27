@@ -100,6 +100,7 @@ var products = map[string]string{
 	"opnsense":  "pfsense.firewall",
 	"cisco":     "cisco.asa",
 	"asa":       "cisco.asa",
+	"iis":       "iis.",
 }
 
 // azureServices: usługa Sigmy dla product: azure → zbiór danych.
@@ -132,9 +133,21 @@ func (d datasetIs) sql() string {
 }
 
 func compileLogsource(l logsource) (Node, error) {
+	// Sigma: logi serwera WWW (category webserver) – u nas IIS (pola W3C).
+	if strings.EqualFold(l.Category, "webserver") {
+		switch strings.ToLower(l.Product) {
+		case "", "windows", "iis":
+		default:
+			return nil, lang.Errorf("category webserver: product %q nieobsługiwany (iis)", "category webserver: product %q is not supported (iis)", l.Product)
+		}
+		if l.Service != "" {
+			return nil, lang.Errorf("category webserver: service nieobsługiwany", "category webserver: service is not supported")
+		}
+		return and{datasetIs("iis.")}, nil
+	}
 	prefix, ok := products[strings.ToLower(l.Product)]
 	if l.Product != "" && !ok {
-		return nil, lang.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure, linux, pfsense, cisco)", "product %q is not supported (windows, fortigate, mikrotik, azure, linux, pfsense, cisco)", l.Product)
+		return nil, lang.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure, linux, pfsense, cisco, iis)", "product %q is not supported (windows, fortigate, mikrotik, azure, linux, pfsense, cisco, iis)", l.Product)
 	}
 	if prefix == "azure." && l.Service != "" {
 		ds, ok := azureServices[strings.ToLower(l.Service)]

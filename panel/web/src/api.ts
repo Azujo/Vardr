@@ -114,9 +114,10 @@ export interface Profile {
 
 // Wynik kroku logowania: sesja albo prośba o kod / konfigurację drugiego składnika.
 export type LoginFinal = SessionInfo & { mfa_method?: string; recovery_codes?: string[]; recovery_left?: number };
-export type LoginStep = LoginFinal | { mfa: "code" | "enroll"; challenge: string; username: string };
+export type MFAStep = { mfa: "code" | "enroll"; challenge: string; username: string; webauthn?: boolean };
+export type LoginStep = LoginFinal | MFAStep;
 
-export function isMFAStep(r: LoginStep): r is { mfa: "code" | "enroll"; challenge: string; username: string } {
+export function isMFAStep(r: LoginStep): r is MFAStep {
   return typeof (r as { mfa?: unknown }).mfa === "string";
 }
 
@@ -141,6 +142,26 @@ export interface MFAStatus {
 }
 
 export type MFAPolicy = "all" | "admins" | "none";
+
+// Klucz bezpieczeństwa albo passkey konta (WebAuthn).
+export interface WebAuthnKey {
+  id: number;
+  name: string;
+  rp_id: string;
+  alg: number;
+  uv: boolean;
+  created_at: string;
+  last_used_at?: string;
+}
+
+export interface WebAuthnStatus {
+  available: boolean;
+  rp_id?: string;
+  rp_error?: string;
+  keys: WebAuthnKey[];
+}
+
+type WebAuthnAssertion = { id: string; client_data_json: string; authenticator_data: string; signature: string };
 
 export interface AuditEntry {
   id: number;
@@ -191,7 +212,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   if (!res.ok) {
     const code = data.error ?? "error";
     const err = new ApiError(res.status, code, errorMessage(code, data.message ?? i18n.t("httpError", { status: res.status }), data.message_en));
-    if (res.status === 401 && !path.startsWith("/api/v1/auth/login") && !path.startsWith("/api/v1/auth/mfa") && path !== "/api/v1/auth/session")
+    if (res.status === 401 && !path.startsWith("/api/v1/auth/login") && !path.startsWith("/api/v1/auth/mfa") && !path.startsWith("/api/v1/auth/webauthn") && path !== "/api/v1/auth/session")
       onUnauthenticated(err);
     throw err;
   }
@@ -205,6 +226,16 @@ export const api = {
   loginEnroll: (challenge: string) => request<MFASetup>("POST", "/api/v1/auth/mfa/enroll", { challenge }),
   loginEnrollConfirm: (challenge: string, code: string) =>
     request<LoginFinal>("POST", "/api/v1/auth/mfa/enroll/confirm", { challenge, code }),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  loginWebAuthnBegin: (challenge: string) => request<{ publicKey: any }>("POST", "/api/v1/auth/webauthn/begin", { challenge }),
+  loginWebAuthn: (challenge: string, a: WebAuthnAssertion) => request<LoginFinal>("POST", "/api/v1/auth/webauthn", { challenge, ...a }),
+  webauthnStatus: () => request<WebAuthnStatus>("GET", "/api/v1/account/webauthn"),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  webauthnBegin: (password: string) => request<{ publicKey: any }>("POST", "/api/v1/account/webauthn", { password }),
+  webauthnConfirm: (name: string, r: { client_data_json: string; attestation_object: string }) =>
+    request<{ key: WebAuthnKey }>("POST", "/api/v1/account/webauthn/confirm", { name, ...r }),
+  webauthnDelete: (id: number, password: string) =>
+    request<{ ok: boolean }>("POST", `/api/v1/account/webauthn/${id}/delete`, { password }),
   mfaStatus: () => request<MFAStatus>("GET", "/api/v1/account/mfa"),
   mfaSetup: (password: string) => request<MFASetup>("POST", "/api/v1/account/mfa/setup", { password }),
   mfaConfirm: (code: string) => request<{ recovery_codes: string[] }>("POST", "/api/v1/account/mfa/confirm", { code }),
@@ -222,7 +253,13 @@ export const api = {
   health: () => request<{ status: string; database: string }>("GET", "/api/v1/health"),
 
   users: () =>
-    request<{ users: User[]; mfa?: Record<string, string>; mfa_available?: boolean; mfa_policy?: MFAPolicy }>("GET", "/api/v1/users"),
+    request<{
+      users: User[];
+      mfa?: Record<string, string>;
+      webauthn_keys?: Record<string, number>;
+      mfa_available?: boolean;
+      mfa_policy?: MFAPolicy;
+    }>("GET", "/api/v1/users"),
   createUser: (u: { username: string; display_name: string; role: Role }) =>
     request<{ user: User; temp_password: string }>("POST", "/api/v1/users", u),
   updateUser: (id: number, patch: { display_name?: string; role?: Role; disabled?: boolean }) =>
@@ -503,6 +540,8 @@ export interface AgentStatusDoc {
     events?: TamperRecord[];
   };
   stopping?: string;
+  // Automatyczna aktualizacja (agent 0.10+): waiting | installing | failed | done.
+  update?: { target: string; state: string; error?: string; at: string; from?: string };
 }
 
 // Zdarzenie ochrony agenta (dziennik w katalogu stanu agenta).
@@ -734,6 +773,8 @@ export interface AgentLimits {
   heartbeat_alert_min?: number;
   heartbeat_notify_return?: boolean;
   protection?: boolean;
+  auto_update?: boolean;
+  iis_logs?: boolean;
 }
 
 export interface AgentGroup {
@@ -749,10 +790,15 @@ export interface AgentGroup {
 }
 
 export const groupsApi = {
-  list: () => request<{ groups: AgentGroup[] }>("GET", "/api/v1/groups").then((r) => ({ groups: r.groups.map(localGroup) })),
-  create: (g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
+  // agent_version: wersja instalatora MSI na serwerze (automatyczne aktualizacje).
+  list: () =>
+    request<{ groups: AgentGroup[]; agent_version?: string }>("GET", "/api/v1/groups").then((r) => ({
+      groups: r.groups.map(localGroup),
+      agent_version: r.agent_version,
+    })),
+  create: (g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits; password?: string }) =>
     request<{ group: AgentGroup }>("POST", "/api/v1/groups", g),
-  update: (id: number, g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits }) =>
+  update: (id: number, g: { name: string; description: string; profile: AgentProfile; limits: AgentLimits; password?: string }) =>
     request<{ group: AgentGroup }>("PATCH", `/api/v1/groups/${id}`, g),
   remove: (id: number) => request<void>("DELETE", `/api/v1/groups/${id}`),
   assign: (agentId: string, groupId: number) =>

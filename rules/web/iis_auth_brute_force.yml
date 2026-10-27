@@ -1,0 +1,54 @@
+title: IIS – seria nieudanych logowań do aplikacji WWW
+id: 16b82dd9-6ddd-4964-aa6c-3f3c6538a89a
+status: experimental
+description: |
+  Co najmniej 20 odrzuconych logowań (HTTP 401.1 – złe hasło przy
+  uwierzytelnieniu Windows albo Basic) do witryny IIS z jednego adresu
+  w ciągu 5 minut. Typowe dla zgadywania haseł do OWA, RD Web, intranetu
+  albo API wystawionego do internetu. Zwykła wymiana NTLM/Negotiate (401.2
+  bez danych logowania) nie jest liczona.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110
+logsource:
+  category: webserver
+  product: iis
+detection:
+  selection:
+    sc-status: '401'
+    sc-substatus: '1'
+  condition: selection
+falsepositives:
+  - Aplikacja albo skrypt ze starym hasłem konta usługi (stały adres, równe odstępy)
+  - Wiele urządzeń za jednym adresem NAT, w których wygasło hasło użytkownika
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "IIS – series of failed web application logins"
+      description: |
+        At least 20 rejected logins (HTTP 401.1 – wrong password with Windows or
+        Basic authentication) to an IIS site from one address within 5 minutes.
+        Typical of password guessing against OWA, RD Web, an intranet or an API
+        exposed to the internet. The normal NTLM/Negotiate exchange (401.2 without
+        credentials) is not counted.
+      instructions: |
+        {{count}} failed logins to {{iis.site}} on {{host.name}} from {{source.ip}} in
+        {{window}} (last account {{user.name}}, path {{url.path}}). Address from the
+        internet – block it on the firewall or WAF and check whether the application
+        must be exposed (VPN, pre-authentication, MFA). Internal address – find out whose
+        computer it is. Check whether a successful login (HTTP 200) from this address
+        followed the series.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 20
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań do {{iis.site}} na {{host.name}} z adresu
+    {{source.ip}} w {{window}} (ostatnio konto {{user.name}}, ścieżka
+    {{url.path}}). Adres z internetu – zablokuj go na zaporze albo WAF
+    i sprawdź, czy aplikacja musi być wystawiona (VPN, wstępne
+    uwierzytelnienie, MFA). Adres wewnętrzny – ustal, czyj to komputer.
+    Sprawdź, czy po serii nie było udanego logowania (HTTP 200) z tego adresu.

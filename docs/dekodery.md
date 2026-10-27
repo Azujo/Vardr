@@ -126,6 +126,7 @@ Wszystkie wysyłają syslog na adres kolektora (UDP albo TCP 514); sieć urządz
 | Serwery Linux (rsyslog) | `linux` | `linux.auth` | `linux` |
 | pfSense, OPNsense | `pfsense` | `pfsense.firewall` | `pfsense` (`opnsense`) |
 | Cisco ASA, Firepower (FTD) | `cisco-asa` | `cisco.asa` | `cisco` (`asa`) |
+| IIS (pliki W3C, agent Windows – nie syslog) | `iis` | `iis.access` | `iis`, `category: webserver` – zob. [agent.md](agent.md#logi-iis-od-wersji-010) |
 
 Logowania z tych źródeł (pola `event.action: login` i `event.outcome`, w Cisco ASA także `vpn-connect`) trafiają do tabeli logowań i do korelacji „udane po nieudanych” razem z AD, Entra ID i VPN.
 
@@ -142,6 +143,38 @@ auth,authpriv.* action(type="omfwd" target="kolektor.firma.pl" port="514" protoc
 ```
 
 Szablon `RSYSLOG_SyslogProtocol23Format` (RFC 5424) przesyła czas ze strefą – domyślny format RFC 3164 jej nie ma i czas liczy się w strefie `SIEM_SYSLOG_TZ` (serwer w UTC dałby przesunięcie). Potem `sudo systemctl restart rsyslog`. System bez rsyslog (sam journald, np. minimalny Debian) – zainstaluj pakiet `rsyslog`; czyta dziennik systemd. Sprawdzenie: `logger -p authpriv.notice "test vardr"` – wiadomość widać w Mímirze (`host.name` serwera).
+
+### Syslog przez TLS
+
+Zwykły syslog idzie otwartym tekstem i bez uwierzytelnienia – w sieci, której nie kontrolujesz (oddział przez internet, sieć współdzielona), lepiej wysyłać go przez TLS (RFC 5425, port 6514). Kolektor przyjmuje TLS obok UDP/TCP; urządzenia, które to potrafią (rsyslog, syslog-ng, FortiGate z `mode reliable` i `enc-algorithm`), przechodzą na nowy port, reszta zostaje przy 514.
+
+1. Certyfikat kolektora (samopodpisany, 10 lat; nazwa i adres, pod którymi urządzenia łączą się z serwerem):
+   ```bash
+   cd /opt/vardr
+   sudo docker compose run --rm collector tls-cert -dir /collector -host kolektor.firma.pl,10.0.0.5
+   ```
+   Można też użyć certyfikatu z firmowego CA – wtedy wskaż go w `tls_cert`/`tls_key`.
+2. W `collector/collector.yaml`, w sekcji `syslog`:
+   ```yaml
+   tls: ":6514"
+   tls_cert: certs/syslog.crt
+   tls_key: certs/syslog.key
+   ```
+   i `sudo docker compose restart collector`. Port 6514 jest wystawiony w `docker-compose.yml`; na zaporze otwórz go tylko dla sieci urządzeń.
+3. Na urządzeniu wskaż `collector/certs/syslog.crt` jako zaufane CA. rsyslog (pakiet `rsyslog-gnutls`):
+   ```
+   global(DefaultNetstreamDriverCAFile="/etc/rsyslog.d/vardr-ca.crt")
+   auth,authpriv.* action(type="omfwd" target="kolektor.firma.pl" port="6514" protocol="tcp"
+                          StreamDriver="gtls" StreamDriverMode="1"
+                          StreamDriverAuthMode="x509/name" StreamDriverPermittedPeers="kolektor.firma.pl"
+                          template="RSYSLOG_SyslogProtocol23Format"
+                          queue.type="LinkedList" queue.filename="vardr" queue.maxDiskSpace="100m"
+                          queue.saveOnShutdown="on" action.resumeRetryCount="-1")
+   ```
+
+**Certyfikat urządzenia (opcjonalnie).** Samo TLS szyfruje i potwierdza urządzeniu tożsamość kolektora, ale nadal każdy z sieci z listy `allow` może coś wysłać. Gdy urządzenia mają certyfikaty z firmowego CA, dodaj `tls_client_ca: certs/devices-ca.crt` (kolektor odrzuci połączenie bez ważnego certyfikatu z tego CA) i ewentualnie `tls_client_names: ["fw1.firma.pl", "srv-www"]` (dozwolone CN lub nazwy DNS z certyfikatu). W rsyslog: `DefaultNetstreamDriverCertFile` i `DefaultNetstreamDriverKeyFile` w `global(...)`. Odrzucone połączenia liczy `tls_failed` w logu kolektora (`syslog: liczniki`).
+
+Wiadomości z TLS mają w Mímirze źródło `syslog:tls`; dekodery działają tak samo jak dla UDP/TCP.
 
 ### pfSense i OPNsense
 

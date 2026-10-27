@@ -3,18 +3,19 @@
 import { useEffect, useState } from "react";
 import { Alert, Anchor, Button, Center, Divider, Paper, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconBrandWindows, IconShieldHalf } from "@tabler/icons-react";
+import { IconAlertCircle, IconBrandWindows, IconKey, IconShieldHalf } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { ApiError, api, isMFAStep, type LoginFinal, type MFASetup } from "../api";
 import { useAuth } from "../auth";
 import { CodeInput, MFASetupView, RecoveryCodesView } from "../mfa";
 import { ssoError } from "../sso";
+import { getAssertion, webauthnCancelled, webauthnSupported } from "../webauthn";
 
 // Logowanie: hasło, a gdy konto ma drugi składnik albo polityka go wymaga –
 // kod z aplikacji (albo pierwsza konfiguracja aplikacji i kody zapasowe).
 type Step =
   | { kind: "password" }
-  | { kind: "code"; challenge: string; username: string }
+  | { kind: "code"; challenge: string; username: string; webauthn?: boolean }
   | { kind: "enroll"; challenge: string; username: string; setup?: MFASetup }
   | { kind: "codes"; result: LoginFinal };
 
@@ -70,7 +71,7 @@ export default function LoginPage() {
       if (!isMFAStep(r)) {
         finish(r);
       } else if (r.mfa === "code") {
-        setStep({ kind: "code", challenge: r.challenge, username: r.username });
+        setStep({ kind: "code", challenge: r.challenge, username: r.username, webauthn: r.webauthn && webauthnSupported() });
       } else {
         const setup = await api.loginEnroll(r.challenge);
         setStep({ kind: "enroll", challenge: r.challenge, username: r.username, setup });
@@ -92,6 +93,23 @@ export default function LoginPage() {
       finish(step.kind === "code" ? await api.loginMFA(step.challenge, code) : await api.loginEnrollConfirm(step.challenge, code));
     } catch (err) {
       fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Klucz bezpieczeństwa zamiast kodu.
+  const useKey = async () => {
+    if (step.kind !== "code") return;
+    setBusy(true);
+    setError("");
+    try {
+      const { publicKey } = await api.loginWebAuthnBegin(step.challenge);
+      const a = await getAssertion(publicKey);
+      finish(await api.loginWebAuthn(step.challenge, a));
+    } catch (err) {
+      if (webauthnCancelled(err)) setError(t("login.keyCancelled"));
+      else fail(err);
     } finally {
       setBusy(false);
     }
@@ -181,7 +199,15 @@ export default function LoginPage() {
                   <b>{step.username}</b>
                   {t("login.codePrompt.1")}
                 </Text>
-                <CodeInput value={code} onChange={setCode} allowRecovery />
+                {step.webauthn && (
+                  <>
+                    <Button variant="light" leftSection={<IconKey size={18} />} loading={busy} fullWidth onClick={useKey}>
+                      {t("login.useKey")}
+                    </Button>
+                    <Divider label={t("login.orCode")} />
+                  </>
+                )}
+                <CodeInput value={code} onChange={setCode} allowRecovery autoFocus={!step.webauthn} />
                 <Button type="submit" loading={busy} fullWidth>
                   {t("login.confirm")}
                 </Button>

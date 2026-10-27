@@ -166,7 +166,14 @@
     "warnings": "Agent warnings",
     "noWarnings": "No warnings.",
     "showRaw": "Show the full status (JSON)",
-    "hideRaw": "Hide the full status (JSON)"
+    "hideRaw": "Hide the full status (JSON)",
+    "update": {
+      "waiting": "Agent update to {{v}} scheduled",
+      "waitingAt": "At the latest: {{at}}",
+      "installing": "Installing agent {{v}}",
+      "failed": "Agent update to {{v}} failed",
+      "done": "Agent updated automatically from {{from}} to {{v}}"
+    }
   },
   "protection": {
     "title": "Agent protection",
@@ -252,7 +259,9 @@
     "heartbeat": "alert after {{n}} min offline",
     "heartbeatReturn": "alert after {{n}} min offline (and on return)",
     "priority": "priority {{p}}",
-    "defaults": "agent defaults"
+    "defaults": "agent defaults",
+    "autoUpdate": "automatic updates",
+    "iis": "IIS logs"
   },
   "groups": {
     "title": "Agent groups",
@@ -297,7 +306,14 @@
       "protection": "Agent protection (recommended)",
       "protectionHint": "A computer administrator cannot stop or uninstall the agent without a single-use token from the panel (Huginn → agent → Uninstall token); attempts without a token, killing the process and changing the service permissions raise the “Agent tampering attempt” alert. Disabling restores regular service permissions.",
       "notifyReturn": "Also notify when the agent returns",
-      "notifyReturnHint": "When an agent of this group sends a heartbeat again, the connectivity-loss alert closes itself and a “resolved” message with the outage length goes to the notification channels. Requires the connectivity-loss alert."
+      "notifyReturnHint": "When an agent of this group sends a heartbeat again, the connectivity-loss alert closes itself and a “resolved” message with the outage length goes to the notification channels. Requires the connectivity-loss alert.",
+      "autoUpdate": "Automatic agent updates",
+      "autoUpdateHint": "Agents of the group (0.10+) install the agent version from the server themselves: they download the MSI installer from the panel, check its SHA-256 sum and run it within 30 minutes (random – no load spike on the server); a failed attempt is retried after 6 hours. Never a downgrade.",
+      "autoUpdateServer": "Version on the server: {{v}}.",
+      "autoUpdateNoMsi": "The server has no MSI installer with a version number (deploy.sh agent / installation bundle).",
+      "autoUpdatePassword": "The panel will be able to run the installer on the computers of this group – confirm enabling it.",
+      "iis": "IIS logs (web servers)",
+      "iisHint": "Agents of the group (0.10+) also read IIS logs in W3C format from C:\\inetpub\\logs\\LogFiles (each site separately; another directory – iis.log_dir in agent.yaml). A new agent starts with the current day's file, without history. On computers without IIS the agent reports a warning."
     }
   },
   "deploy": {

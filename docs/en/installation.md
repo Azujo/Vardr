@@ -12,7 +12,7 @@ The Vardr server is installed from the bundle `vardr-<version>-linux-amd64.tar.g
 | Disk (Docker directory) | 20 GB | 60 GB or more (queues, event database) |
 | NIS2 archive | | a separate disk for `/srv/vardr` |
 
-Ports: `8443/tcp` (agents), `8444/tcp` (panel), `3000/tcp` (Grafana), optionally `514/udp+tcp` (syslog collector) – who may reach them: [Firewall](#firewall).
+Ports: `8443/tcp` (agents), `8444/tcp` (panel), `3000/tcp` (Grafana), optionally `514/udp+tcp` and `6514/tcp` (syslog collector, TLS) – who may reach them: [Firewall](#firewall).
 
 ## Installation
 
@@ -64,7 +64,7 @@ Only the networks that need the server should reach it:
 | `8443/tcp` (ingest) | networks with computers running the agent |
 | `8444/tcp` (panel) | the administrators' and SOC network |
 | `3000/tcp` (Grafana) | administrators – or nobody (below) |
-| `514/udp+tcp` (collector) | networks of devices sending syslog (plus the collector's `syslog.allow` list) |
+| `514/udp+tcp`, `6514/tcp` (collector, 6514 – TLS) | networks of devices sending syslog (plus the collector's `syslog.allow` list) |
 | `22/tcp` (SSH) | administrators |
 
 **Docker bypasses ufw and firewalld** – container ports are published by Docker's rules, before the INPUT rules. Traffic to containers is filtered in the `DOCKER-USER` chain, by the port before forwarding (`--ctorigdstport`), e.g. the panel and Grafana only from `10.0.10.0/24`:
@@ -78,6 +78,28 @@ sudo apt install iptables-persistent && sudo netfilter-persistent save   # keep 
 SSH and other services of the server itself – as usual (ufw, firewalld).
 
 **Grafana without network access:** `VARDR_GRAFANA_ADDR=127.0.0.1` in `/opt/vardr/.env`, then `sudo systemctl restart vardr`. Grafana is then reachable only through an SSH tunnel (`ssh -L 3000:127.0.0.1:3000 admin@server`, in the browser `http://localhost:3000`); Grafana links in the panel work while the tunnel is open.
+
+## Archive copy in S3
+
+The NIS2 archive lives on the server disk – the server administrator (or an attacker who takes over the server) can delete it. A copy in S3 storage with **Object Lock in COMPLIANCE mode** cannot be deleted or overwritten until the end of retention – not even by the owner of the storage account. The archiver sends every closed hour (segments, then the manifest) within minutes; each object is locked until the end of the hour + the current retention from the panel. Works with AWS S3 and compatible storage: Wasabi, Backblaze B2, MinIO, Ceph RGW.
+
+1. Create a bucket **with Object Lock enabled** (possible only at creation; it also enables versioning). No default rule is needed – Vardr sets the lock on every object.
+2. Create a user (access key) with permissions to that bucket only: `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetBucketObjectLockConfiguration` (no delete).
+3. Add to `/opt/vardr/.env` and restart (`sudo systemctl restart vardr`):
+
+```bash
+SIEM_ARCHIVE_S3_BUCKET=vardr-archive
+SIEM_ARCHIVE_S3_ENDPOINT=https://s3.eu-central-1.amazonaws.com   # MinIO: https://minio.example.local:9000
+SIEM_ARCHIVE_S3_REGION=eu-central-1
+SIEM_ARCHIVE_S3_ACCESS_KEY=…
+SIEM_ARCHIVE_S3_SECRET_KEY=…
+#SIEM_ARCHIVE_S3_PREFIX=server1        # several installations in one bucket
+#SIEM_ARCHIVE_S3_MODE=GOVERNANCE       # a lock an authorised user can remove (testing)
+```
+
+Hours from before the copy was enabled are sent starting with the oldest in retention. A bucket without Object Lock is rejected (nothing is sent). State: *System status → Copy in S3 (Object Lock)*, metrics `siem_archive_offsite_*`, archiver logs (`archive copy`).
+
+Expired objects are removed by a bucket lifecycle rule (e.g. delete noncurrent versions and objects older than retention + 2 days) – the storage will not delete locked ones early anyway. The copy has the same directory layout as the archive: after losing the server, download it into the archive directory of a new installation (e.g. `aws s3 sync`), restore the database from a backup (`restore.sh`) and reconcile the archive in the panel (Urd → inconsistency handling).
 
 ## Syslog collector and API connector
 

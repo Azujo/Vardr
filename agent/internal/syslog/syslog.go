@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package syslog to źródło logów kolektora: odbiór syslog przez UDP i TCP
-// (RFC 3164 i RFC 5424; w TCP ramkowanie „octet counting” z RFC 6587 albo
-// koniec linii). Wiadomość trafia do paczki bez zmian (parsowanie na
+// Package syslog to źródło logów kolektora: odbiór syslog przez UDP, TCP
+// i TLS (RFC 3164 i RFC 5424; w TCP ramkowanie „octet counting” z RFC 6587
+// albo koniec linii; TLS według RFC 5425, opcjonalnie z certyfikatem
+// urządzenia). Wiadomość trafia do paczki bez zmian (parsowanie na
 // serwerze – dekodery), z adresem nadawcy w polu Peer.
 package syslog
 
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -25,12 +27,17 @@ import (
 
 // Config to ustawienia odbioru.
 type Config struct {
-	UDP        string         // adres nasłuchu UDP, np. ":514" (puste = wyłączony)
-	TCP        string         // adres nasłuchu TCP (puste = wyłączony)
-	MaxMessage int            // największa wiadomość w bajtach (dłuższe są przycinane)
-	Allow      []netip.Prefix // dozwoloni nadawcy (puste = wszyscy)
-	MaxConns   int            // najwięcej równoczesnych połączeń TCP
-	IdleTCP    time.Duration  // rozłączenie nieaktywnego połączenia TCP
+	UDP       string      // adres nasłuchu UDP, np. ":514" (puste = wyłączony)
+	TCP       string      // adres nasłuchu TCP (puste = wyłączony)
+	TLS       string      // adres nasłuchu TLS, np. ":6514" (puste = wyłączony)
+	TLSConfig *tls.Config // certyfikat serwera; ClientCAs – wymagany certyfikat urządzenia
+	// ClientNames: dozwolone nazwy z certyfikatu urządzenia (CN albo nazwa
+	// DNS); puste = każdy certyfikat wystawiony przez ClientCAs.
+	ClientNames []string
+	MaxMessage  int            // największa wiadomość w bajtach (dłuższe są przycinane)
+	Allow       []netip.Prefix // dozwoloni nadawcy (puste = wszyscy)
+	MaxConns    int            // najwięcej równoczesnych połączeń TCP
+	IdleTCP     time.Duration  // rozłączenie nieaktywnego połączenia TCP
 }
 
 // Stats to liczniki odbioru.
@@ -39,6 +46,9 @@ type Stats struct {
 	Denied    atomic.Uint64 // nadawca spoza listy dozwolonych
 	Truncated atomic.Uint64
 	Refused   atomic.Uint64 // połączenia TCP ponad limit
+	// TLSFailed: nieudane uzgodnienie TLS (brak albo zły certyfikat urządzenia,
+	// nazwa spoza listy, zwykły TCP na porcie TLS).
+	TLSFailed atomic.Uint64
 }
 
 // Source odbiera syslog. Kanał w stanie agenta: „syslog”.
@@ -145,12 +155,28 @@ func (s *Source) Run(ctx context.Context, start source.Position, out chan<- sour
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errc <- s.serveTCP(ctx, ln, emit)
+			errc <- s.serveTCP(ctx, ln, emit, "tcp")
 		}()
 		s.Log.Info("syslog: listening on TCP", "addr", ln.Addr().String())
 	}
-	if s.Cfg.UDP == "" && s.Cfg.TCP == "" {
-		return start, errors.New("syslog: no listen address (udp or tcp)")
+	if s.Cfg.TLS != "" {
+		if s.Cfg.TLSConfig == nil {
+			return start, errors.New("syslog TLS: no server certificate")
+		}
+		ln, err := net.Listen("tcp", s.Cfg.TLS)
+		if err != nil {
+			return start, fmt.Errorf("syslog TLS %s: %w", s.Cfg.TLS, err)
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errc <- s.serveTCP(ctx, tls.NewListener(ln, s.Cfg.TLSConfig), emit, "tls")
+		}()
+		s.Log.Info("syslog: listening on TLS", "addr", ln.Addr().String(),
+			"client_cert", s.Cfg.TLSConfig.ClientAuth == tls.RequireAndVerifyClientCert, "client_names", s.Cfg.ClientNames)
+	}
+	if s.Cfg.UDP == "" && s.Cfg.TCP == "" && s.Cfg.TLS == "" {
+		return start, errors.New("syslog: no listen address (udp, tcp or tls)")
 	}
 	var err error
 	select {
@@ -190,7 +216,7 @@ func (s *Source) serveUDP(ctx context.Context, pc net.PacketConn, emit func([]by
 	}
 }
 
-func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte, int, netip.Addr, string) bool) error {
+func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte, int, netip.Addr, string) bool, proto string) error {
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
@@ -208,7 +234,7 @@ func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte
 			if errors.As(err, &ne) && ne.Timeout() {
 				continue
 			}
-			return fmt.Errorf("syslog TCP: %w", err)
+			return fmt.Errorf("syslog %s: %w", proto, err)
 		}
 		ip := netip.Addr{}
 		if ta, ok := c.RemoteAddr().(*net.TCPAddr); ok {
@@ -233,14 +259,45 @@ func (s *Source) serveTCP(ctx context.Context, ln net.Listener, emit func([]byte
 			defer c.Close()
 			stop := context.AfterFunc(ctx, func() { _ = c.Close() })
 			defer stop()
-			s.readStream(c, ip, emit)
+			if tc, ok := c.(*tls.Conn); ok && !s.handshake(ctx, tc, ip) {
+				return
+			}
+			s.readStream(c, ip, emit, proto)
 		}()
 	}
 }
 
+// handshake uzgadnia TLS (najwyżej 15 s) i sprawdza nazwę z certyfikatu
+// urządzenia, gdy lista ClientNames nie jest pusta.
+func (s *Source) handshake(ctx context.Context, c *tls.Conn, ip netip.Addr) bool {
+	hctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := c.HandshakeContext(hctx); err != nil {
+		s.Stats.TLSFailed.Add(1)
+		s.Log.Debug("syslog TLS: handshake failed", "peer", ip.Unmap().String(), "err", err)
+		return false
+	}
+	if len(s.Cfg.ClientNames) == 0 {
+		return true
+	}
+	if certs := c.ConnectionState().PeerCertificates; len(certs) > 0 {
+		names := append([]string{certs[0].Subject.CommonName}, certs[0].DNSNames...)
+		for _, n := range names {
+			for _, want := range s.Cfg.ClientNames {
+				if n != "" && strings.EqualFold(n, want) {
+					return true
+				}
+			}
+		}
+		s.Log.Warn("syslog TLS: device certificate name not allowed", "peer", ip.Unmap().String(), "names", names)
+	}
+	s.Stats.TLSFailed.Add(1)
+	return false
+}
+
 // readStream czyta wiadomości z połączenia TCP: „octet counting” (długość,
 // spacja, wiadomość) albo wiadomości zakończone znakiem nowej linii.
-func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, int, netip.Addr, string) bool) {
+func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, int, netip.Addr, string) bool, proto string) {
 	r := bufio.NewReaderSize(c, 64<<10)
 	for {
 		_ = c.SetReadDeadline(time.Now().Add(s.Cfg.IdleTCP))
@@ -280,7 +337,7 @@ func (s *Source) readStream(c net.Conn, ip netip.Addr, emit func([]byte, int, ne
 				msg = append([]byte(nil), line...)
 			}
 		}
-		if !emit(msg, max(size, len(msg)), ip, "tcp") {
+		if !emit(msg, max(size, len(msg)), ip, proto) {
 			return
 		}
 	}

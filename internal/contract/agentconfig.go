@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"siem/internal/lang"
@@ -14,6 +16,10 @@ import (
 // AgentConfigPath to endpoint panelu, z którego agent pobiera konfigurację
 // (mTLS, certyfikat agenta). Odpowiedź 304, gdy wersja się nie zmieniła.
 const AgentConfigPath = "/enroll/v1/config"
+
+// AgentMSIPath to endpoint panelu z bazowym instalatorem MSI agenta (mTLS) –
+// automatyczna aktualizacja (AgentConfig.Update).
+const AgentMSIPath = "/enroll/v1/agent.msi"
 
 // AgentConfig to konfiguracja agenta zarządzana z panelu (grupa agentów).
 // Lokalny agent.yaml decyduje o adresie serwera i certyfikatach; panel –
@@ -27,6 +33,62 @@ type AgentConfig struct {
 	// UninstallTokens: ważne tokeny deinstalacji tego agenta (skróty). Wersja
 	// konfiguracji z tokenami ma przyrostek „.<skrót tokenów>” (WithTokens).
 	UninstallTokens []UninstallToken `json:"uninstall_tokens,omitempty"`
+	// Update: wersja agenta do zainstalowania (grupa z automatycznymi
+	// aktualizacjami). Agent starszy niż Version pobiera instalator
+	// z AgentMSIPath i sprawdza sumę SHA256. Wersja konfiguracji z
+	// aktualizacją ma przyrostek „.<skrót>” (WithUpdate).
+	Update *AgentUpdate `json:"update,omitempty"`
+}
+
+// AgentUpdate to instalator agenta dostępny na serwerze.
+type AgentUpdate struct {
+	Version string `json:"version"` // np. 0.10.0
+	SHA256  string `json:"sha256"`  // instalatora MSI (hex)
+	Size    int64  `json:"size"`
+}
+
+var (
+	agentVersionPattern = regexp.MustCompile(`^[0-9]{1,5}(\.[0-9]{1,5}){1,3}$`)
+	sha256Pattern       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// MaxAgentMSISize: górna granica instalatora pobieranego przez agenta.
+const MaxAgentMSISize = 200 << 20
+
+// Validate sprawdza dane aktualizacji.
+func (u AgentUpdate) Validate() error {
+	switch {
+	case !agentVersionPattern.MatchString(u.Version):
+		return lang.Errorf("aktualizacja: niepoprawna wersja %q", "update: invalid version %q", u.Version)
+	case !sha256Pattern.MatchString(u.SHA256):
+		return lang.Errorf("aktualizacja: niepoprawna suma SHA-256", "update: invalid SHA-256 sum")
+	case u.Size <= 0 || u.Size > MaxAgentMSISize:
+		return lang.Errorf("aktualizacja: niepoprawny rozmiar instalatora", "update: invalid installer size")
+	}
+	return nil
+}
+
+// NewerVersion: czy wersja a jest nowsza niż b (liczby rozdzielone
+// kropkami, brakujące części = 0). Niepoprawna wersja nie jest nowsza
+// od niczego – agent nie aktualizuje się na wersję, której nie rozumie.
+func NewerVersion(a, b string) bool {
+	if !agentVersionPattern.MatchString(a) {
+		return false
+	}
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < 4; i++ {
+		x, y := 0, 0
+		if i < len(pa) {
+			x, _ = strconv.Atoi(pa[i])
+		}
+		if i < len(pb) {
+			y, _ = strconv.Atoi(pb[i])
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
 }
 
 // AgentLimits to limity zasobów agenta („kaganiec”). Wskaźnik nil = wartość
@@ -54,7 +116,16 @@ type AgentLimits struct {
 	// Protection: ochrona usługi przed zatrzymaniem i deinstalacją bez tokenu
 	// z panelu (nil = włączona). Wyłączenie przywraca zwykłe uprawnienia usługi.
 	Protection *bool `json:"protection,omitempty"`
+	// AutoUpdate: agenci grupy instalują wersję agenta z serwera sami
+	// (nil = wyłączone). Panel dołącza wtedy AgentConfig.Update.
+	AutoUpdate *bool `json:"auto_update,omitempty"`
+	// IISLogs: agenci grupy czytają logi IIS (pliki W3C; nil = wyłączone,
+	// chyba że włączone w agent.yaml).
+	IISLogs *bool `json:"iis_logs,omitempty"`
 }
+
+// AutoUpdateOn: czy automatyczne aktualizacje są włączone (domyślnie nie).
+func (l AgentLimits) AutoUpdateOn() bool { return l.AutoUpdate != nil && *l.AutoUpdate }
 
 // ProtectionOn: czy ochrona agenta jest włączona (domyślnie tak).
 func (l AgentLimits) ProtectionOn() bool { return l.Protection == nil || *l.Protection }
@@ -69,6 +140,11 @@ func (c AgentConfig) Validate() error {
 	}
 	if err := validateTokens(c.UninstallTokens); err != nil {
 		return err
+	}
+	if c.Update != nil {
+		if err := c.Update.Validate(); err != nil {
+			return err
+		}
 	}
 	return c.Limits.Validate()
 }
@@ -131,6 +207,18 @@ func (c AgentConfig) WithTokens(ts []UninstallToken) AgentConfig {
 		data, _ := json.Marshal(ts)
 		sum := sha256.Sum256(data)
 		c.Version += "." + hex.EncodeToString(sum[:4])
+	}
+	return c
+}
+
+// WithUpdate dołącza aktualizację agenta; wersja dostaje przyrostek
+// z jej skrótu, więc agent pobiera konfigurację po zmianie instalatora.
+// Wywoływane po WithTokens (ta zaczyna od wersji bazowej).
+func (c AgentConfig) WithUpdate(u *AgentUpdate) AgentConfig {
+	c.Update = u
+	if u != nil {
+		sum := sha256.Sum256([]byte(u.Version + "/" + u.SHA256))
+		c.Version += ".u" + hex.EncodeToString(sum[:4])
 	}
 	return c
 }

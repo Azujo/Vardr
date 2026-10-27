@@ -26,6 +26,7 @@ import { groupsApi, type AgentGroup, type AgentLimits, type AgentProfile } from 
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 // Nazwy profili i priorytetów tłumaczone przy odczycie (agents: profile.*, priority.*).
 export const profileLabels = Object.defineProperties({} as Record<AgentProfile, string>, {
@@ -51,6 +52,8 @@ export function limitsSummary(l: AgentLimits): string {
   if (l.buffer_max_mb !== undefined) parts.push(l.buffer_max_mb ? t("buffer", { n: l.buffer_max_mb }) : t("bufferNone"));
   if (l.require_sysmon) parts.push(t("sysmon"));
   if (l.protection === false) parts.push(t("noProtection"));
+  if (l.auto_update) parts.push(t("autoUpdate"));
+  if (l.iis_logs) parts.push(t("iis"));
   if (l.heartbeat_alert_min) parts.push(t(l.heartbeat_notify_return ? "heartbeatReturn" : "heartbeat", { n: l.heartbeat_alert_min }));
   if (l.priority) parts.push(t("priority", { p: i18n.t(`agents:priority.${l.priority}`) }));
   return parts.length ? parts.join(" · ") : t("defaults");
@@ -95,15 +98,22 @@ export default function GroupsPage() {
   const admin = can("agents", "write");
   const [groups, setGroups] = useState<AgentGroup[]>([]);
   const [error, setError] = useState("");
-  const [edit, setEdit] = useState<{ id?: number; form: Form } | null>(null);
+  // wasAuto: grupa miała już włączone aktualizacje (włączenie wymaga hasła).
+  const [edit, setEdit] = useState<{ id?: number; form: Form; wasAuto?: boolean } | null>(null);
+  const [password, setPassword] = useState("");
+  const [agentVersion, setAgentVersion] = useState<string>();
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     groupsApi
       .list()
-      .then((r) => setGroups(r.groups))
+      .then((r) => {
+        setGroups(r.groups);
+        setAgentVersion(r.agent_version);
+      })
       .catch((e) => setError(msg(e)));
   }, []);
+  const needPassword = !!edit?.form.limits.auto_update && !edit.wasAuto;
   useEffect(load, [load]);
 
   const save = async (e: React.FormEvent) => {
@@ -111,13 +121,15 @@ export default function GroupsPage() {
     if (!edit) return;
     setBusy(true);
     try {
-      if (edit.id) await groupsApi.update(edit.id, edit.form);
-      else await groupsApi.create(edit.form);
+      const body = needPassword ? { ...edit.form, password } : edit.form;
+      if (edit.id) await groupsApi.update(edit.id, body);
+      else await groupsApi.create(body);
       notifications.show({
         color: "green",
         message: t("groups.saved"),
       });
       setEdit(null);
+      setPassword("");
       load();
     } catch (err) {
       notifications.show({ color: "red", message: msg(err) });
@@ -149,7 +161,13 @@ export default function GroupsPage() {
           </Text>
         </div>
         {admin && (
-          <Button leftSection={<IconPlus size={18} />} onClick={() => setEdit({ form: emptyForm })}>
+          <Button
+            leftSection={<IconPlus size={18} />}
+            onClick={() => {
+              setPassword("");
+              setEdit({ form: emptyForm });
+            }}
+          >
             {t("groups.new")}
           </Button>
         )}
@@ -207,9 +225,14 @@ export default function GroupsPage() {
                       <Menu.Dropdown>
                         <Menu.Item
                           leftSection={<IconEdit size={16} />}
-                          onClick={() =>
-                            setEdit({ id: g.id, form: { name: g.name, description: g.description, profile: g.profile, limits: g.limits } })
-                          }
+                          onClick={() => {
+                            setPassword("");
+                            setEdit({
+                              id: g.id,
+                              form: { name: g.name, description: g.description, profile: g.profile, limits: g.limits },
+                              wasAuto: !!g.limits.auto_update,
+                            });
+                          }}
                         >
                           {t("groups.edit")}
                         </Menu.Item>
@@ -348,12 +371,37 @@ export default function GroupsPage() {
                 onChange={(e) => setLimit("protection", e.currentTarget.checked ? undefined : false)}
               />
               <Checkbox
+                label={t("groups.f.iis")}
+                description={t("groups.f.iisHint")}
+                checked={!!edit.form.limits.iis_logs}
+                onChange={(e) => setLimit("iis_logs", e.currentTarget.checked || undefined)}
+              />
+              <Checkbox
                 label={t("groups.f.notifyReturn")}
                 description={t("groups.f.notifyReturnHint")}
                 disabled={!edit.form.limits.heartbeat_alert_min}
                 checked={!!edit.form.limits.heartbeat_notify_return}
                 onChange={(e) => setLimit("heartbeat_notify_return", e.currentTarget.checked || undefined)}
               />
+              <Checkbox
+                label={t("groups.f.autoUpdate")}
+                description={
+                  t("groups.f.autoUpdateHint") +
+                  " " +
+                  (agentVersion ? t("groups.f.autoUpdateServer", { v: agentVersion }) : t("groups.f.autoUpdateNoMsi"))
+                }
+                checked={!!edit.form.limits.auto_update}
+                onChange={(e) => setLimit("auto_update", e.currentTarget.checked || undefined)}
+              />
+              {needPassword && (
+                <ReauthPassword
+                  label={t("yourPassword")}
+                  description={t("groups.f.autoUpdatePassword")}
+                  value={password}
+                  onChange={setPassword}
+                  required
+                />
+              )}
               <Button type="submit" loading={busy}>
                 {t("save")}
               </Button>

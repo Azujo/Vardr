@@ -217,6 +217,33 @@ func NewArchiver() *Archiver {
 	}
 }
 
+// Offsite to metryki kopii archiwum w S3 (Object Lock).
+type Offsite struct {
+	Enabled          prometheus.Gauge
+	Hours            prometheus.Counter
+	Errors           prometheus.Counter
+	Pending          prometheus.Gauge
+	OldestPendingAge prometheus.Gauge
+	LastSuccess      prometheus.Gauge
+}
+
+func NewOffsite() *Offsite {
+	g := func(name, help string) prometheus.Gauge {
+		return promauto.NewGauge(prometheus.GaugeOpts{Namespace: ns, Subsystem: "archive_offsite", Name: name, Help: help})
+	}
+	c := func(name, help string) prometheus.Counter {
+		return promauto.NewCounter(prometheus.CounterOpts{Namespace: ns, Subsystem: "archive_offsite", Name: name, Help: help})
+	}
+	return &Offsite{
+		Enabled:          g("enabled", "1 = archive copy to S3 with Object Lock works (bucket checked)."),
+		Hours:            c("hours_total", "Archive hours copied to S3."),
+		Errors:           c("errors_total", "Archive copy errors (bucket check, upload)."),
+		Pending:          g("pending_hours", "Closed archive hours not yet copied to S3."),
+		OldestPendingAge: g("oldest_pending_age_seconds", "Age of the oldest closed hour without a copy (0 = none)."),
+		LastSuccess:      g("last_success_timestamp_seconds", "Time of the last pass that copied everything pending."),
+	}
+}
+
 // Detector to metryki detekcji (Gjallarhorn).
 type Detector struct {
 	Events     prometheus.Counter

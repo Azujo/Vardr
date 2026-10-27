@@ -64,7 +64,11 @@
     "resetMfaText": "Np. przy zgubionym telefonie. Konto straci aplikację i kody zapasowe, jego sesje zostaną zakończone; przy następnym logowaniu skonfiguruje aplikację od nowa (jeśli drugi składnik jest wymagany). Zmiana trafi do audytu.",
     "reset": "Resetuj",
     "ssoTip": "konto SSO – logowanie i profil z Entra ID",
-    "ssoProfile": "profil konta SSO wynika z grup Entra ID (Logowanie SSO)"
+    "ssoProfile": "profil konta SSO wynika z grup Entra ID (Logowanie SSO)",
+    "keys_one": "{{count}} klucz",
+    "keys_few": "{{count}} klucze",
+    "keys_many": "{{count}} kluczy",
+    "keys_other": "{{count}} klucza"
   },
   "audit": {
     "title": "Dziennik audytu",

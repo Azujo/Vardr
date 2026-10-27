@@ -179,6 +179,25 @@ export default function AgentDetailPage() {
         )}
       </Group>
 
+      {status.update && (
+        <Alert
+          color={{ failed: "red", done: "green" }[status.update.state] ?? "blue"}
+          title={t(`detail.update.${status.update.state}`, {
+            v: status.update.target,
+            from: status.update.from,
+            defaultValue: status.update.state,
+          })}
+        >
+          <Text size="sm">
+            {status.update.state === "failed"
+              ? status.update.error
+              : status.update.state === "waiting"
+                ? t("detail.update.waitingAt", { at: formatDate(status.update.at) })
+                : formatDate(status.update.at)}
+          </Text>
+        </Alert>
+      )}
+
       {agent.problems.length > 0 && (
         <Alert color="orange" title={t("detail.attention")}>
           <List size="sm">

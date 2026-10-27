@@ -86,6 +86,7 @@ Tags in the Sigma convention: technique `attack.t1110.001`, tactic `attack.crede
 | `linux` | – | `linux.auth` (Linux servers via rsyslog) |
 | `pfsense` (`opnsense`) | – | `pfsense.firewall` |
 | `cisco` (`asa`) | – | `cisco.asa` |
+| `iis`, `windows` | `category: webserver` | `iis.access` (IIS logs from the agent; W3C fields: `cs-method`, `cs-uri-query`, `sc-status`…) |
 | `azure` (`entra`) | `signinlogs`, `auditlogs` | Entra ID logs from the connector |
 
 Other values are rejected at load time. A rule without `service`/`category` covers the whole product (e.g. all Windows events).

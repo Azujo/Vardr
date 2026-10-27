@@ -1,1 +1,9 @@
-{}
+{
+  "totp_first": "Najpierw włącz aplikację uwierzytelniającą (TOTP) – zostaje drogą awaryjną.",
+  "webauthn_exists": "Ten klucz jest już zarejestrowany (albo osiągnięto limit kluczy).",
+  "webauthn_invalid": "Niepoprawna odpowiedź klucza bezpieczeństwa.",
+  "webauthn_limit": "Konto osiągnęło limit kluczy bezpieczeństwa – usuń nieużywany.",
+  "webauthn_needs_name": "Klucze bezpieczeństwa wymagają otwarcia panelu po nazwie (nie adresie IP) przez HTTPS.",
+  "webauthn_no_challenge": "Rozpocznij logowanie kluczem jeszcze raz.",
+  "webauthn_no_keys": "Konto nie ma klucza bezpieczeństwa dla tego adresu panelu – użyj kodu."
+}

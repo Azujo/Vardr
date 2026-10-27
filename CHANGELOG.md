@@ -2,7 +2,21 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
-## [Niewydane]
+## [1.7.0] – 2026-10-27 – Aktualizacje agentów, archiwum w S3, syslog TLS, IIS i klucze bezpieczeństwa
+
+### Dodane
+- **Automatyczne aktualizacje agenta Windows** ([docs/agent.md](docs/agent.md#automatyczne-aktualizacje-od-wersji-010)): opcja grupy agentów (domyślnie wyłączona, włączenie potwierdzane hasłem). Agent 0.10+ starszy niż instalator na serwerze pobiera go z panelu przez mTLS w ciągu 30 minut (losowo), sprawdza sumę SHA-256 i uruchamia `msiexec`; bez obniżania wersji, nieudana próba powtarzana po 6 godzinach. Stan aktualizacji na stronie agenta.
+- Agent Windows **0.10.0**.
+- **Retencja zdarzeń per zbiór** ([docs/operacje.md](docs/operacje.md#retencja)): `SIEM_EVENTS_TTL_DATASETS` (np. `fortigate.=3,windows.security=30` – prefiks `event.dataset` = dni) obok `SIEM_EVENTS_TTL_DAYS`; instalator stosuje ją przy aktualizacji, `clickhouse/retention.sh` od ręki.
+- **Kopia archiwum NIS2 w S3 z Object Lock** ([docs/instalacja.md](docs/instalacja.md#kopia-archiwum-w-s3)): archiwizator wysyła każdą zamkniętą godzinę (segmenty i manifest) do kubełka z blokadą obiektów w trybie COMPLIANCE do końca retencji – kopii nie da się usunąć ani nadpisać nawet po przejęciu serwera i konta magazynu. AWS S3, Wasabi, Backblaze B2, MinIO, Ceph. Włączana zmiennymi `SIEM_ARCHIVE_S3_*`; stan w *Stanie systemu* („Kopia w S3 (Object Lock)”).
+- **Syslog przez TLS** ([docs/dekodery.md](docs/dekodery.md#syslog-przez-tls)): kolektor przyjmuje syslog przez TLS (RFC 5425, port 6514) obok UDP/TCP, opcjonalnie tylko od urządzeń z certyfikatem wystawionym przez wskazane CA (i o nazwie z listy). Certyfikat kolektora tworzy `siem-collector tls-cert`. Port 6514 wystawiony w `docker-compose.yml`.
+- **Logi IIS** ([docs/agent.md](docs/agent.md#logi-iis-od-wersji-010)): agent Windows 0.10 czyta dzienniki IIS w formacie W3C (każda witryna osobnym kanałem, pozycja zapisywana jak dla dzienników Windows), włączane opcją grupy *Logi IIS* albo w `agent.yaml`. Wbudowany dekoder `iis` (zbiór `iis.access`), produkt w regułach `iis` oraz `category: webserver` Sigmy.
+- **Klucze bezpieczeństwa i passkeys (WebAuthn)** ([docs/panel.md](docs/panel.md#klucze-bezpieczeństwa-i-passkeys-webauthn)): logowanie do panelu dotknięciem klucza (YubiKey, Windows Hello, Touch ID, passkey) zamiast kodu z aplikacji – odporne na phishing. Klucze dodaje się w *Moje konto → Bezpieczeństwo konta* (hasło, do 10 na konto); aplikacja TOTP i kody zapasowe zostają drogą awaryjną. Wymaga panelu otwieranego po nazwie (nie po adresie IP) przez HTTPS.
+- **Własny zakres czasu w Mímirze**: obok gotowych zakresów (15 min – 7 dni) przycisk *Własny zakres* – początek i koniec wpisane ręcznie (do 31 dni); zakres trafia do adresu strony, więc link można przekazać dalej.
+
+### Aktualizacja
+- Pierwsza aktualizacja agentów do 0.10.0 – ręcznie (MSI, GPO); kolejne mogą już przychodzić automatycznie.
+- Migracja spisu archiwum `012_offsite.sql` (wykonuje ją siem-archiver przy starcie) i bazy panelu `030_webauthn.sql` (siem-api).
 
 ## [1.6.0] – 2026-10-27 – Wydania na GitHubie, SSO Entra ID i nowe źródła syslog
 

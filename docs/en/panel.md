@@ -113,6 +113,16 @@ After the password the panel asks for a 6-digit code from an authenticator app (
 - **Lost phone without codes**: the administrator chooses *Reset second factor* on the account (password, audit) – the account sets up the app again. If this concerns the only administrator – on the server: `docker compose run --rm api reset-mfa -username <login>` (audit entry).
 - **Protection**: a code works once (the same code will not sign in a second time), clock tolerance ±30 s, 5 wrong codes end the sign-in attempt, and failed codes count towards the account lock. TOTP secrets are encrypted in the database (AES-256-GCM) with a key from `certs/mfa.key` on the server – the installer creates it once; the file is in the backup (`certs/`). Losing the key invalidates the stored apps – accounts must be reset (in the panel or with `reset-mfa`) and set up again.
 
+### Security keys and passkeys (WebAuthn)
+
+Instead of the app code you can touch a key when signing in: a hardware key (YubiKey, Google Titan, Feitian…), Windows Hello, Touch ID or a passkey on your phone. The key is phishing-resistant – it signs only for the panel address it was added at, so a fake sign-in page cannot use it.
+
+- **Adding**: *My account → Account security → Security keys → Add key* (name, password, touch the key); up to 10 keys per account, audited. The account must have the authenticator app first – the app and the recovery codes stay as the fallback (lost key, another computer).
+- **Signing in**: after the password the *Use a security key* button (when the account has a key for this panel address); the app code still works.
+- **Requirements**: the panel opened **by name** over HTTPS, e.g. `https://vardr.company.com:8444` – WebAuthn does not work on an IP address. The name must be in the panel certificate and in DNS. A key added under one name works only under that name (renaming the panel = add the keys again).
+- Local and domain (LDAP) accounts; SSO accounts – the second factor is at the identity provider. Disabling the second factor or a reset by the administrator (*Reset second factor*, `reset-mfa`) also removes the account's keys. The user list shows the number of keys next to TOTP.
+- The panel checks the challenge signature, the site address, user presence (touch) and the key's signature counter (a counter going back – a possible clone – rejects the sign-in). It does not verify the manufacturer's attestation (any compliant key works).
+
 ## Modules
 
 The menu is grouped by the kind of work: **Detection** (Alerts, Incidents, Detection rules, MITRE ATT&CK), **Events** (Search, Identities, Decoders, Quarantine), **Agents** (Agent list, Agent groups, Deployment), **System** (NIS2 archive, System health) and **Administration** (Users, Permission profiles, Domain sign-in, Notifications, Backups, Audit log). The label says what is on the page; the module name from the roadmap is the caption below it.
@@ -154,7 +164,7 @@ A query is a list of conditions separated by spaces, combined with AND:
 
 Fields: `host` (`computer`), `agent`, `user`, `domain`, `identity` (`osoba`, `person`), `ip` (`src`), `code` (`id`, `eventid`), `action`, `outcome`, `dataset` (`channel`), `provider`, `process`. The list with descriptions is in the panel (help next to the query field, `GET /api/v1/events/fields`).
 
-The time range is picked above the results. Search uses a read-only ClickHouse account with time (30 s) and result limits, so an overly broad query ends with a message, not with server load; narrow the time or add a field.
+The time range is picked above the results: a preset (15 min, 1 h, 24 h, 7 days) or *Custom range* with an exact start and end (up to 31 days; clicking a histogram bar narrows it too). Search uses a read-only ClickHouse account with time (30 s) and result limits, so an overly broad query ends with a message, not with server load; narrow the time or add a field.
 
 ## Risk of people and computers
 

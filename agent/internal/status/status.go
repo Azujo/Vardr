@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"siem/agent/internal/sysmon"
+	"siem/agent/internal/update"
 	"siem/internal/contract"
 )
 
@@ -47,7 +48,9 @@ type Status struct {
 	Buffer   *BufferStatus   `json:"buffer,omitempty"`
 	Clock    ClockStatus     `json:"clock"`
 	Sysmon   *sysmon.State   `json:"sysmon,omitempty"`
-	Warnings []string        `json:"warnings,omitempty"`
+	// Update: automatyczna aktualizacja agenta (ostatni stan).
+	Update   *update.Status `json:"update,omitempty"`
+	Warnings []string       `json:"warnings,omitempty"`
 	// Protection: ochrona usługi i ostatnie zdarzenia (próby sabotażu).
 	Protection *contract.ProtectionStatus `json:"protection,omitempty"`
 	// Stopping: agent się zatrzymuje (ostatni heartbeat) – powód: shutdown,
@@ -370,6 +373,16 @@ func (t *Tracker) SetStopping(reason string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.s.Stopping = reason
+}
+
+// SetUpdate zapisuje stan automatycznej aktualizacji.
+func (t *Tracker) SetUpdate(s update.Status) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.s.Update = &s
 }
 
 // SetSysmon zapisuje stan Sysmona.

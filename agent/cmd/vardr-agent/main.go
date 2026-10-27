@@ -28,6 +28,7 @@ import (
 	"siem/agent/internal/core"
 	"siem/agent/internal/enrollment"
 	"siem/agent/internal/heartbeat"
+	"siem/agent/internal/iis"
 	"siem/agent/internal/limits"
 	"siem/agent/internal/logging"
 	"siem/agent/internal/logwatch"
@@ -40,13 +41,14 @@ import (
 	"siem/agent/internal/status"
 	"siem/agent/internal/sysmon"
 	"siem/agent/internal/timesync"
+	"siem/agent/internal/update"
 	"siem/agent/internal/winevt"
 	"siem/internal/contract"
 	"siem/internal/lang"
 	"siem/internal/throttle"
 )
 
-const version = "0.9.0"
+const version = "0.10.0"
 
 func usage() {
 	if lang.Local() == "en" {
@@ -507,6 +509,19 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		go poller.Run(bgCtx, current)
 	}
 
+	// Automatyczna aktualizacja (grupa z włączoną opcją): tylko usługa –
+	// instalator MSI zatrzymuje ją i uruchamia nową wersję.
+	var upd *update.Updater
+	if panelURL != "" && g != nil {
+		upd = &update.Updater{Client: client, PanelURL: panelURL, Dir: cfg.StateDir, Version: version, Log: log,
+			Warn: tracker.Warn, Report: tracker.SetUpdate, MaxDelay: 30 * time.Minute}
+		// SIEM_UPDATE_DELAY_SECONDS: krótsze losowe opóźnienie (testy, laboratorium).
+		if s, err := strconv.Atoi(os.Getenv("SIEM_UPDATE_DELAY_SECONDS")); err == nil && s >= 0 {
+			upd.MaxDelay = time.Duration(s) * time.Second
+		}
+		go upd.Run(bgCtx)
+	}
+
 	log.Info("agent started", "version", version, "eventlog", true)
 	defer func() {
 		s := sender.Stats
@@ -526,6 +541,13 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 			cs = status.ConfigStatus{Source: "panel", Group: current.Group, Version: current.Version, AppliedAt: time.Now()}
 		}
 		tracker.SetConfig(cs)
+		if upd != nil {
+			var u *contract.AgentUpdate
+			if current != nil {
+				u = current.Update
+			}
+			upd.Offer(u)
+		}
 
 		// Limity: Job Object aktualizowany w miejscu (bez nakładania kolejnego).
 		if err := lim.Update(eff.Limits.Resource()); err != nil {
@@ -585,6 +607,7 @@ func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender
 			LastRead:    lastRead(tracker, ch.Name),
 		})
 	}
+	sources = append(sources, iisSources(cfg.IIS, tracker, log)...)
 
 	agent := core.New(core.Options{
 		AgentID:       agentID,
@@ -747,4 +770,33 @@ func lastRead(t *status.Tracker, channel string) func() (uint64, bool) {
 		}
 		return 0, false
 	}
+}
+
+// iisSources: po jednym źródle na katalog witryny IIS (włączone w agent.yaml
+// albo w grupie). Nowa witryna – od ponownego uruchomienia odczytu (zmiana
+// konfiguracji albo restart usługi).
+func iisSources(c config.IISConfig, tracker *status.Tracker, log *slog.Logger) []source.Source {
+	if !c.Enabled {
+		return nil
+	}
+	dir := c.LogDir
+	if dir == "" {
+		dir = iis.DefaultDir
+	}
+	sites, err := iis.Sites(dir)
+	if err == nil && len(sites) == 0 {
+		err = fmt.Errorf("no W3C log files (u_ex*.log) in %s", dir)
+	}
+	if err != nil {
+		log.Warn("IIS logs enabled, but not available", "err", err)
+		tracker.Warn(lang.L("logi IIS włączone, ale niedostępne: ", "IIS logs enabled, but not available: ") + err.Error())
+		return nil
+	}
+	host, _ := os.Hostname()
+	out := make([]source.Source, 0, len(sites))
+	for _, d := range sites {
+		out = append(out, &iis.Source{Dir: d, Host: strings.ToLower(host), Log: log})
+	}
+	log.Info("IIS logs", "dir", dir, "sites", len(sites))
+	return out
 }

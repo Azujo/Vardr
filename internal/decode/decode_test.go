@@ -343,3 +343,22 @@ func TestSyslogSources(t *testing.T) {
 		check("cisco-asa", i, "cisco.asa", want)
 	}
 }
+
+func TestIIS(t *testing.T) {
+	set := builtinSet(t)
+	ingested := time.Date(2026, 10, 27, 10, 5, 0, 0, time.UTC)
+	e, err := Event(contract.Event{ID: "a:iis:W3SVC1:g0:1", Source: "file:iis", Raw: builtin(t, "iis", 0)}, "a", ingested, set, warsaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Dataset != "iis.access" || e.HostName != "srv-www" || e.SourceIP != "203.0.113.7" || e.Outcome != "failure" ||
+		e.Action != "http-request" || e.Message != "/owa/auth.owa" || e.Fields["cs-method"] != "POST" ||
+		e.Fields["http.response.status_code"] != "401" || e.Fields["iis.site"] != "W3SVC1" ||
+		!e.Timestamp.Equal(time.Date(2026, 10, 27, 10, 0, 2, 0, time.UTC)) || e.Fields["syslog.peer"] != "" {
+		t.Fatalf("%+v", e)
+	}
+	ok, err := Event(contract.Event{ID: "x", Source: "file:iis", Raw: builtin(t, "iis", 1)}, "a", ingested, set, warsaw)
+	if err != nil || ok.Outcome != "success" || ok.UserDomain != "AZUJO" || ok.UserName != "jkowalski" || ok.Fields["url.query"] != "id=7" {
+		t.Fatalf("%+v %v", ok, err)
+	}
+}

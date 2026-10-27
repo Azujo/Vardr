@@ -21,7 +21,10 @@
     "recoveryUsed_few": "Użyto kodu zapasowego – zostały {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
     "recoveryUsed_many": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
     "recoveryUsed_other": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
-    "or": "albo"
+    "or": "albo",
+    "useKey": "Użyj klucza bezpieczeństwa",
+    "orCode": "albo kod z aplikacji",
+    "keyCancelled": "Logowanie kluczem przerwane – spróbuj ponownie albo wpisz kod."
   },
   "mfa": {
     "step1": "Zainstaluj na telefonie aplikację uwierzytelniającą, np. Microsoft Authenticator, Google Authenticator albo Aegis.",
@@ -82,13 +85,32 @@
     "yourPassword": "Twoje hasło",
     "next": "Dalej",
     "oldCodesInvalid": "Dotychczasowe kody zapasowe przestaną działać.",
-    "disableWarning": "Bez drugiego składnika do zalogowania wystarczy samo hasło.",
+    "disableWarning": "Bez drugiego składnika do zalogowania wystarczy samo hasło. Klucze bezpieczeństwa konta też zostaną usunięte.",
     "disabled": "Drugi składnik wyłączony",
     "generate": "Wygeneruj",
     "done": "Gotowe",
     "ssoTitle": "Konto SSO (Entra ID)",
     "ssoText": "Drugi składnik logowania potwierdza dostawca tożsamości – ustawiają go administratorzy Entra ID (np. dostęp warunkowy). Aplikacji uwierzytelniającej panelu nie używa się dla tego konta.",
     "ssoSessionMfa": "Bieżąca sesja: logowanie z drugim składnikiem.",
-    "ssoSessionNoMfa": "Bieżąca sesja: dostawca nie potwierdził drugiego składnika."
+    "ssoSessionNoMfa": "Bieżąca sesja: dostawca nie potwierdził drugiego składnika.",
+    "keys": {
+      "title": "Klucze bezpieczeństwa i passkeys",
+      "intro": "Klucz sprzętowy (YubiKey, Titan…), Windows Hello, Touch ID albo passkey w telefonie zamiast kodu z aplikacji – dotknięcie klucza przy logowaniu. Odporne na phishing: klucz działa tylko na tym adresie panelu. Aplikacja uwierzytelniająca i kody zapasowe zostają drogą awaryjną.",
+      "totpFirst": "Najpierw włącz aplikację uwierzytelniającą (powyżej) – zostaje drogą awaryjną, gdy klucza nie będzie pod ręką.",
+      "needsName": "Klucze działają tylko, gdy panel jest otwarty po nazwie (np. https://vardr.firma.pl:8444), nie po adresie IP.",
+      "unsupported": "Ta przeglądarka nie obsługuje kluczy bezpieczeństwa (albo strona nie jest otwarta przez HTTPS).",
+      "name": "Nazwa",
+      "nameHint": "Np. „YubiKey w portfelu”, „Windows Hello – laptop”",
+      "addedAt": "Dodany",
+      "lastUsed": "Ostatnio użyty",
+      "otherAddress": "zarejestrowany dla {{rp}} – działa tylko pod tym adresem",
+      "add": "Dodaj klucz",
+      "register": "Dodaj i dotknij klucza",
+      "touch": "Po kliknięciu przeglądarka poprosi o włożenie i dotknięcie klucza (albo Windows Hello / Touch ID).",
+      "added": "Dodano klucz „{{name}}”",
+      "cancelled": "Dodawanie klucza przerwane (albo klucz jest już zarejestrowany).",
+      "remove": "Usuń klucz",
+      "removeText": "Usunąć klucz „{{name}}”? Logowanie nim przestanie działać; aplikacja uwierzytelniająca zostaje."
+    }
   }
 }

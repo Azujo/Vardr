@@ -63,7 +63,7 @@ siem-collector run -config <katalog>/collector.yaml
 siem-collector version
 ```
 
-`collector.yaml`: wspólne klucze z konektorem (`server`, `state_dir`, `batch`, `buffer`, `max_eps`) oraz `syslog.udp`, `syslog.tcp` (adresy nasłuchu, np. `:514`), `syslog.max_message_kb`, `syslog.allow` (lista sieci CIDR, z których przyjmowane są wiadomości – syslog nie ma uwierzytelnienia, więc lista jest zalecana). Rejestracja w laboratorium: `deploy/lab/collector-enroll.sh [grupa]`.
+`collector.yaml`: wspólne klucze z konektorem (`server`, `state_dir`, `batch`, `buffer`, `max_eps`) oraz `syslog.udp`, `syslog.tcp` (adresy nasłuchu, np. `:514`), `syslog.max_message_kb`, `syslog.allow` (lista sieci CIDR, z których przyjmowane są wiadomości – syslog nie ma uwierzytelnienia, więc lista jest zalecana), syslog przez TLS (RFC 5425): `syslog.tls` (np. `:6514`), `syslog.tls_cert`, `syslog.tls_key`, opcjonalnie `syslog.tls_client_ca` (certyfikat urządzenia wymagany, wystawiony przez to CA) i `syslog.tls_client_names` (dozwolone CN/nazwy DNS z certyfikatu urządzenia). Certyfikat samopodpisany: `siem-collector tls-cert -dir <katalog> -host <nazwa>[,<IP>…]` – zob. [Syslog przez TLS](dekodery.md#syslog-przez-tls). Rejestracja w laboratorium: `deploy/lab/collector-enroll.sh [grupa]`.
 
 ## siem-connector – konektor API
 

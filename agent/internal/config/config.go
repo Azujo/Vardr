@@ -29,6 +29,14 @@ type Config struct {
 	Buffer   BufferConfig    `yaml:"buffer"`
 	Logging  LoggingConfig   `yaml:"logging"`
 	Channels []ChannelConfig `yaml:"channels"`
+	IIS      IISConfig       `yaml:"iis"`
+}
+
+// IISConfig: logi IIS w formacie W3C (katalog LogFiles z podkatalogami
+// witryn). Włączane tu albo opcją grupy w panelu.
+type IISConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	LogDir  string `yaml:"log_dir"` // domyślnie C:\inetpub\logs\LogFiles
 }
 
 // LoggingConfig określa log agenta (plik w state_dir w trybie usługi).

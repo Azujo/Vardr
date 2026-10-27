@@ -3,9 +3,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/base32"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +25,7 @@ type memMFA struct {
 	mfa      map[int64]store.MFA
 	codes    map[int64]map[string]bool // skrót → zużyty
 	settings map[string]string
+	keys     []store.WebAuthnKey
 }
 
 func newMemMFA(st *memStore) *memMFA {
@@ -76,7 +79,62 @@ func (m *memMFA) DisableMFA(_ context.Context, id int64) error {
 	defer m.mu.Unlock()
 	delete(m.mfa, id)
 	delete(m.codes, id)
+	m.keys = slices.DeleteFunc(m.keys, func(k store.WebAuthnKey) bool { return k.UserID == id })
 	return nil
+}
+func (m *memMFA) WebAuthnKeys(_ context.Context, id int64) ([]store.WebAuthnKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []store.WebAuthnKey{}
+	for _, k := range m.keys {
+		if k.UserID == id {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+func (m *memMFA) AddWebAuthnKey(_ context.Context, k store.WebAuthnKey) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, x := range m.keys {
+		if bytes.Equal(x.CredentialID, k.CredentialID) {
+			return 0, store.ErrConflict
+		}
+	}
+	k.ID = int64(len(m.keys) + 1)
+	m.keys = append(m.keys, k)
+	return k.ID, nil
+}
+func (m *memMFA) UseWebAuthnKey(_ context.Context, id int64, n uint32, uv bool, now time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, k := range m.keys {
+		if k.ID == id && (k.SignCount < n || (k.SignCount == 0 && n == 0)) {
+			m.keys[i].SignCount, m.keys[i].UV, m.keys[i].LastUsedAt = n, k.UV || uv, &now
+			return true, nil
+		}
+	}
+	return false, nil
+}
+func (m *memMFA) DeleteWebAuthnKey(_ context.Context, uid, id int64) (store.WebAuthnKey, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, k := range m.keys {
+		if k.ID == id && k.UserID == uid {
+			m.keys = slices.Delete(m.keys, i, i+1)
+			return k, nil
+		}
+	}
+	return store.WebAuthnKey{}, store.ErrNotFound
+}
+func (m *memMFA) WebAuthnCounts(context.Context) (map[int64]int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[int64]int{}
+	for _, k := range m.keys {
+		out[k.UserID]++
+	}
+	return out, nil
 }
 func (m *memMFA) AdvanceMFAStep(_ context.Context, id, step int64) (bool, error) {
 	m.mu.Lock()

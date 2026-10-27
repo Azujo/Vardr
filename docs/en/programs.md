@@ -63,7 +63,7 @@ siem-collector run -config <directory>/collector.yaml
 siem-collector version
 ```
 
-`collector.yaml`: keys shared with the connector (`server`, `state_dir`, `batch`, `buffer`, `max_eps`) plus `syslog.udp`, `syslog.tcp` (listen addresses, e.g. `:514`), `syslog.max_message_kb`, `syslog.allow` (a list of CIDR networks from which messages are accepted – syslog has no authentication, so the list is recommended). Enrollment: `sudo ./enroll-service.sh collector [group]` on the server.
+`collector.yaml`: keys shared with the connector (`server`, `state_dir`, `batch`, `buffer`, `max_eps`) plus `syslog.udp`, `syslog.tcp` (listen addresses, e.g. `:514`), `syslog.max_message_kb`, `syslog.allow` (a list of CIDR networks from which messages are accepted – syslog has no authentication, so the list is recommended), syslog over TLS (RFC 5425): `syslog.tls` (e.g. `:6514`), `syslog.tls_cert`, `syslog.tls_key`, optionally `syslog.tls_client_ca` (a device certificate issued by this CA is required) and `syslog.tls_client_names` (allowed CN/DNS names from the device certificate). A self-signed certificate: `siem-collector tls-cert -dir <directory> -host <name>[,<IP>…]` – see [Syslog over TLS](decoders.md#syslog-over-tls). Enrollment: `sudo ./enroll-service.sh collector [group]` on the server.
 
 ## siem-connector – API connector
 

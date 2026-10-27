@@ -79,6 +79,8 @@ type Server struct {
 	UI fs.FS
 	// Enroll (opcjonalne) – rejestracja agentów tokenem.
 	Enroll *Enrollment
+	// updCache: wersja i suma instalatora dla automatycznych aktualizacji.
+	updCache agentUpdateCache
 	// Events (opcjonalne) – wyszukiwarka zdarzeń (Mímir).
 	Events EventSearcher
 	// Archive (opcjonalne) – stan archiwum NIS2 (Urd).
@@ -208,6 +210,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /enroll/v1/register", s.enrollRegister)
 	mux.HandleFunc("POST /enroll/v1/renew", s.enrollRenew)
 	mux.HandleFunc("GET "+contract.AgentConfigPath, s.agentConfig)
+	mux.HandleFunc("GET "+contract.AgentMSIPath, s.agentMSI)
 	mux.HandleFunc("/enroll/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu")
 	})

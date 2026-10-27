@@ -122,7 +122,8 @@ for t in "${targets[@]}"; do
       docker run --rm -u 1000:1000 -v \$PWD/msi:/src:ro -v \$PWD/agent-dist:/out \
         -v \$PWD/agent-dist/vardr-agent.exe:/w/vardr-agent.exe:ro -v \$PWD/certs/ca.crt:/w/ca.crt:ro \
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/vardr-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
-      ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'"
+      ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'; \
+      echo $agent_version > agent-dist/AGENT_VERSION"   # wersja dla automatycznych aktualizacji
     ;;
   ingest | normalizer | writer | archiver | detector | api | backup)
     echo "== $t ($version)"

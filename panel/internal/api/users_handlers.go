@@ -25,14 +25,18 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	if users == nil {
 		users = []store.User{}
 	}
-	mfa := map[int64]time.Time{}
+	mfa, keys := map[int64]time.Time{}, map[int64]int{}
 	if s.mfaEnabled() {
 		if mfa, err = s.MFA.MFAEnabledUsers(r.Context()); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
+		if keys, err = s.MFA.WebAuthnCounts(r.Context()); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users, "mfa": mfa, "mfa_available": s.mfaEnabled(),
+	writeJSON(w, http.StatusOK, map[string]any{"users": users, "mfa": mfa, "webauthn_keys": keys, "mfa_available": s.mfaEnabled(),
 		"mfa_policy": s.mfaPolicy(r.Context())})
 }
 

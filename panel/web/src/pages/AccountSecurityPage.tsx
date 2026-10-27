@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Moje konto → Bezpieczeństwo: drugi składnik logowania (TOTP) – włączenie,
-// nowe kody zapasowe, wyłączenie (gdy polityka panelu go nie wymaga).
+// nowe kody zapasowe, wyłączenie (gdy polityka panelu go nie wymaga) – oraz
+// klucze bezpieczeństwa (WebAuthn).
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Modal, PasswordInput, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -9,6 +10,7 @@ import { IconShieldCheck, IconShieldOff } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { api, formatDate, type MFASetup, type MFAStatus } from "../api";
 import { CodeInput, MFASetupView, RecoveryCodesView } from "../mfa";
+import SecurityKeysCard from "./SecurityKeysCard";
 
 type Dialog =
   | { kind: "enable"; setup?: MFASetup }
@@ -103,6 +105,7 @@ export default function AccountSecurityPage() {
           </Stack>
         </Card>
       )}
+      {st.available && !st.sso && <SecurityKeysCard key={String(st.enabled)} totp={st.enabled} />}
 
       <Modal
         opened={!!dialog}

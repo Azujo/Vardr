@@ -74,6 +74,7 @@ Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_
 | `linux` | – | `linux.auth` (serwery Linux przez rsyslog) |
 | `pfsense` (`opnsense`) | – | `pfsense.firewall` |
 | `cisco` (`asa`) | – | `cisco.asa` |
+| `iis`, `windows` | `category: webserver` | `iis.access` (logi IIS z agenta; pola W3C: `cs-method`, `cs-uri-query`, `sc-status`…) |
 | `azure` (`entra`) | `signinlogs`, `auditlogs` | logi Entra ID z konektora |
 
 Inne wartości są odrzucane przy wczytaniu. Reguła bez `service`/`category` obejmuje cały produkt (np. wszystkie zdarzenia Windows).
