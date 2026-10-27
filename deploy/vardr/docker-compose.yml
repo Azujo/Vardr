@@ -376,7 +376,8 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      - "${VARDR_GRAFANA_PORT:-3000}:3000"
+      # VARDR_GRAFANA_ADDR=127.0.0.1 – tylko z serwera (tunel SSH); domyślnie wszystkie adresy
+      - "${VARDR_GRAFANA_ADDR:-0.0.0.0}:${VARDR_GRAFANA_PORT:-3000}:3000"
     depends_on:
       clickhouse: { condition: service_healthy }
       prometheus: { condition: service_started }

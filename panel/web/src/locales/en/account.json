@@ -18,7 +18,8 @@
     "toPanel": "Go to the panel",
     "back": "← another account / start over",
     "recoveryUsed_one": "A recovery code was used – {{count}} left. Generate new ones in “Account security”.",
-    "recoveryUsed_other": "A recovery code was used – {{count}} left. Generate new ones in “Account security”."
+    "recoveryUsed_other": "A recovery code was used – {{count}} left. Generate new ones in “Account security”.",
+    "or": "or"
   },
   "mfa": {
     "step1": "Install an authenticator app on your phone, e.g. Microsoft Authenticator, Google Authenticator or Aegis.",
@@ -82,6 +83,10 @@
     "disableWarning": "Without the second factor the password alone is enough to sign in.",
     "disabled": "Second factor disabled",
     "generate": "Generate",
-    "done": "Done"
+    "done": "Done",
+    "ssoTitle": "SSO account (Entra ID)",
+    "ssoText": "The second sign-in factor is confirmed by the identity provider – Entra ID administrators set it up (e.g. Conditional Access). The panel authenticator app is not used for this account.",
+    "ssoSessionMfa": "Current session: signed in with a second factor.",
+    "ssoSessionNoMfa": "Current session: the provider did not confirm a second factor."
   }
 }

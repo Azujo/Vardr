@@ -1,0 +1,47 @@
+title: Cisco ASA – seria nieudanych logowań VPN
+id: 836090c6-00de-4a12-bdaa-3e3ec4eed69b
+status: stable
+description: |
+  Co najmniej 10 odrzuconych uwierzytelnień VPN (AnyConnect, AAA) z jednego
+  adresu w ciągu 5 minut. Zgadywanie haseł albo password spraying na
+  bramie VPN – jedna z najczęstszych dróg wejścia do sieci.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110
+  - attack.initial_access
+  - attack.t1133
+logsource:
+  product: cisco
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+    process.name: vpn
+  condition: selection
+falsepositives:
+  - Użytkownik z wygasłym hasłem i klientem VPN ponawiającym logowanie
+level: high
+vardr:
+  i18n:
+    en:
+      title: "Cisco ASA – series of failed VPN logins"
+      description: |
+        At least 10 rejected VPN authentications (AnyConnect, AAA) from one address within
+        5 minutes. Password guessing or password spraying on the VPN gateway – one of the
+        most common ways into a network.
+      instructions: |
+        {{count}} rejected VPN logins on {{host.name}} from {{source.ip}} in {{window}}
+        (last account {{user.name}}). Block the address, check which accounts were tried
+        and whether any of them connected successfully afterwards (vpn-connect). Consider
+        MFA on the VPN and limits on attempts.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 10
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} odrzuconych logowań VPN na {{host.name}} z adresu {{source.ip}}
+    w {{window}} (ostatnio konto {{user.name}}). Zablokuj adres, sprawdź,
+    które konta były próbowane i czy któreś połączyło się potem
+    (vpn-connect). Rozważ MFA na VPN i limity prób.

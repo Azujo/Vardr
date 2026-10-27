@@ -14,10 +14,12 @@
 # do okna korelacji; reszta jak zdarzenia (historia krajów). Partycja rozdziela
 # te dwie grupy, więc wygasłe dane znikają całymi częściami.
 #
-# Obraz ClickHouse uruchamia skrypt przy pierwszym starcie. Istniejąca baza:
+# Obraz ClickHouse uruchamia skrypt przy pierwszym starcie. Istniejąca baza
+# (instalator robi to przy każdej aktualizacji):
 #   docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
 # (bezpieczne do wielokrotnego uruchamiania; przy zakładaniu tabeli dopisuje
-# logowania z siem.events z całej retencji).
+# logowania z siem.events z całej retencji, przy istniejącej – odtwarza widok
+# z bieżącymi warunkami i dopisuje logowania z ostatniej godziny).
 set -euo pipefail
 ttl=${SIEM_EVENTS_TTL_DAYS:-5}
 ch() { clickhouse client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --multiquery "$@"; }
@@ -26,24 +28,32 @@ select="SELECT event_id, timestamp, ingested,
     multiIf(((event_dataset = 'windows.security' AND event_code IN (4625, 4771))
         OR (event_dataset = 'azure.signinlogs' AND event_outcome = 'failure')
         OR (event_dataset = 'fortinet.fortigate' AND (event_action = 'ssl-login-fail' OR (event_action = 'login' AND event_outcome = 'failure')))
-        OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'failure')), 'failure',
+        OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'failure')
+        OR (event_dataset IN ('linux.auth', 'pfsense.firewall', 'cisco.asa') AND event_action = 'login' AND event_outcome = 'failure')), 'failure',
       ((event_dataset = 'windows.security' AND event_code = 4624)
         OR (event_dataset = 'azure.signinlogs' AND event_outcome = 'success')
         OR (event_dataset = 'fortinet.fortigate' AND (event_action IN ('ssl-login', 'tunnel-up') OR (event_action = 'login' AND event_outcome = 'success')))
-        OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'success')), 'success', '') AS outcome,
+        OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'success')
+        OR (event_dataset IN ('linux.auth', 'pfsense.firewall') AND event_action = 'login' AND event_outcome = 'success')
+        OR (event_dataset = 'cisco.asa' AND event_action IN ('login', 'vpn-connect') AND event_outcome = 'success')), 'success', '') AS outcome,
     event_dataset, user_identity, user_name, host_name, agent_id,
     if(source_ip = toIPv6('::'), '', replaceRegexpOne(toString(source_ip), '^::ffff:', '')) AS ip,
     fields['source.geo.country_iso_code'] AS country, fields['source.geo.city_name'] AS city
   FROM siem.events
-  WHERE user_identity != '' AND event_dataset IN ('windows.security', 'azure.signinlogs', 'fortinet.fortigate', 'mikrotik.routeros')
+  WHERE user_identity != '' AND event_dataset IN ('windows.security', 'azure.signinlogs', 'fortinet.fortigate', 'mikrotik.routeros', 'linux.auth', 'pfsense.firewall', 'cisco.asa')
     AND outcome != ''"
 
 if [[ $(ch -q "EXISTS TABLE siem.auth_events") == 1 ]]; then
   ch <<SQL
 ALTER TABLE siem.auth_events MODIFY TTL addDays(toDateTime(ingested), if(event_dataset = 'windows.security' AND outcome = 'success', 1, $ttl));
+DROP VIEW IF EXISTS siem.auth_events_mv;
+CREATE MATERIALIZED VIEW siem.auth_events_mv TO siem.auth_events AS $select;
 GRANT SELECT ON siem.auth_events TO siem_detector;
 SQL
-  echo "siem.auth_events already exists (retention $ttl days)"
+  # Chwila między usunięciem a założeniem widoku i nowe źródła logowań:
+  # ostatnia godzina jeszcze raz (dubel korelacje pomijają – liczą po event_id).
+  ch -q "INSERT INTO siem.auth_events $select AND ingested >= now() - INTERVAL 1 HOUR"
+  echo "siem.auth_events already exists (retention $ttl days, view refreshed)"
   exit 0
 fi
 

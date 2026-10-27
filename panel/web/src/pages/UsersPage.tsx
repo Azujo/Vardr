@@ -11,7 +11,6 @@ import {
   Group,
   Menu,
   Modal,
-  PasswordInput,
   SegmentedControl,
   Select,
   Stack,
@@ -35,6 +34,7 @@ import {
 import { api, formatDate, profileName, roleLabels, type MFAPolicy, type Profile, type Role, type User } from "../api";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 
 function errorMessage(err: unknown) {
@@ -251,6 +251,13 @@ export default function UsersPage() {
                         </Badge>
                       </Tooltip>
                     )}
+                    {u.source === "oidc" && (
+                      <Tooltip label={t("users.ssoTip")}>
+                        <Badge size="xs" color="indigo" variant="light">
+                          SSO
+                        </Badge>
+                      </Tooltip>
+                    )}
                   </Group>
                 </Table.Td>
                 <Table.Td>{u.display_name || "—"}</Table.Td>
@@ -261,8 +268,8 @@ export default function UsersPage() {
                     data={roleOptions}
                     value={u.role}
                     allowDeselect={false}
-                    disabled={!canWrite || u.source === "ldap"}
-                    title={u.source === "ldap" ? t("users.adProfile") : undefined}
+                    disabled={!canWrite || u.source === "ldap" || u.source === "oidc"}
+                    title={u.source === "ldap" ? t("users.adProfile") : u.source === "oidc" ? t("users.ssoProfile") : undefined}
                     aria-label={t("users.profileOf", { user: u.username })}
                     onChange={(v) => v && v !== u.role && void update(u, { role: v as Role })}
                   />
@@ -315,7 +322,7 @@ export default function UsersPage() {
                       </ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
-                      {u.source !== "ldap" && (
+                      {u.source !== "ldap" && u.source !== "oidc" && (
                         <Menu.Item leftSection={<IconKey size={16} />} onClick={() => void reset(u)}>
                           {t("users.newPassword")}
                         </Menu.Item>
@@ -390,7 +397,7 @@ export default function UsersPage() {
             <Text size="sm">
               {policyEdit === "none" ? t("users.policyNone") : policyEdit === "all" ? t("users.policyAll") : t("users.policyAdmins")}
             </Text>
-            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} autoFocus />
             <Button color={policyEdit === "none" ? "red" : undefined} loading={busy} disabled={!password} onClick={() => void savePolicy()}>
               {t("save")}
             </Button>
@@ -403,7 +410,7 @@ export default function UsersPage() {
             <Text size="sm">
               {t("users.resetMfaText")}
             </Text>
-            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} autoFocus />
             <Button color="red" loading={busy} disabled={!password} onClick={() => void resetMFA()}>
               {t("users.reset")}
             </Button>

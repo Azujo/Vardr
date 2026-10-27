@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useState } from "react";
-import { Alert, Anchor, Button, Center, Paper, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
+import { useEffect, useState } from "react";
+import { Alert, Anchor, Button, Center, Divider, Paper, PasswordInput, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconShieldHalf } from "@tabler/icons-react";
+import { IconAlertCircle, IconBrandWindows, IconShieldHalf } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import { ApiError, api, isMFAStep, type LoginFinal, type MFASetup } from "../api";
 import { useAuth } from "../auth";
 import { CodeInput, MFASetupView, RecoveryCodesView } from "../mfa";
+import { ssoError } from "../sso";
 
 // Logowanie: hasło, a gdy konto ma drugi składnik albo polityka go wymaga –
 // kod z aplikacji (albo pierwsza konfiguracja aplikacji i kody zapasowe).
@@ -24,8 +25,18 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    // Powrót z logowania SSO z błędem (/login?sso_error=…).
+    const code = new URLSearchParams(window.location.search).get("sso_error");
+    return code ? ssoError(code) : "";
+  });
   const [busy, setBusy] = useState(false);
+  const [sso, setSso] = useState<{ enabled: boolean; label?: string }>({ enabled: false });
+
+  useEffect(() => {
+    if (window.location.search.includes("sso_error")) window.history.replaceState(null, "", "/");
+    api.oidcInfo().then(setSso, () => {});
+  }, []);
 
   const finish = (r: LoginFinal) => {
     if (r.recovery_codes?.length) {
@@ -145,6 +156,19 @@ export default function LoginPage() {
                 <Button type="submit" loading={busy} fullWidth>
                   {t("login.submit")}
                 </Button>
+                {sso.enabled && (
+                  <>
+                    <Divider label={t("login.or")} />
+                    <Button
+                      variant="default"
+                      fullWidth
+                      leftSection={<IconBrandWindows size={18} />}
+                      onClick={() => (window.location.href = "/api/v1/auth/oidc/start")}
+                    >
+                      {sso.label}
+                    </Button>
+                  </>
+                )}
               </Stack>
             </form>
           )}

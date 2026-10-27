@@ -328,7 +328,7 @@ func (s *Server) loginEnrollConfirm(w http.ResponseWriter, r *http.Request) {
 func (s *Server) accountMFA(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	out := map[string]any{"available": s.mfaEnabled(), "enabled": false, "policy": s.mfaPolicy(r.Context()),
-		"required": s.mfaRequired(r.Context(), a.user), "session_mfa": a.session.MFA}
+		"required": s.mfaRequired(r.Context(), a.user), "session_mfa": a.session.MFA, "sso": a.user.Source == store.SourceOIDC}
 	if s.mfaEnabled() {
 		st, err := s.MFA.MFAState(r.Context(), a.user.ID)
 		switch {
@@ -359,6 +359,12 @@ func (s *Server) accountMFASetup(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	var req struct {
 		Password string `json:"password"`
+	}
+	if a.user.Source == store.SourceOIDC {
+		// Konto SSO potwierdza drugi składnik u dostawcy – kod panelu nie
+		// byłby sprawdzany przy logowaniu.
+		writeError(w, http.StatusConflict, "sso_account", "konto SSO – drugi składnik zapewnia dostawca tożsamości (Entra ID)")
+		return
 	}
 	if !readJSON(w, r, &req) || !s.reauth(w, r, req.Password, "mfa_setup") {
 		return

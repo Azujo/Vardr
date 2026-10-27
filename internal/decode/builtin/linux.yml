@@ -1,0 +1,91 @@
+id: linux
+title: Linux – SSH, sudo, su, konta i grupy
+description: |
+  Dziennik uwierzytelniania serwerów Linux (auth/authpriv) przesyłany przez
+  rsyslog albo syslog-ng do kolektora. Rozpoznaje logowania SSH (udane,
+  nieudane, nieistniejące konta), sudo (polecenia i odmowy), su, nieudane
+  uwierzytelnienia PAM, otwarcie sesji oraz zmiany kont i grup (useradd,
+  userdel, usermod, groupadd, gpasswd, passwd). Wysyłanie: docs/dekodery.md
+  (Linux przez rsyslog).
+version: 1
+priority: 40
+dataset: linux.auth
+match:
+  app: [sshd, sshd-session, sudo, su, useradd, userdel, usermod, groupadd, groupdel, groupmod, gpasswd, passwd, chpasswd, chage, login, systemd-logind]
+parser:
+  type: regex
+  patterns:
+    # SSH
+    - regex: '^Accepted (?P<method>\S+) for (?P<user>\S+) from (?P<src_ip>[0-9a-fA-F.:]+) port (?P<src_port>\d+)'
+      set: {event.action: login, event.outcome: success}
+    - regex: '^Failed (?P<method>\S+) for invalid user (?P<user>\S*) from (?P<src_ip>[0-9a-fA-F.:]+) port (?P<src_port>\d+)'
+      set: {event.action: login, event.outcome: failure, invalid_user: "true"}
+    - regex: '^Failed (?P<method>\S+) for (?P<user>\S+) from (?P<src_ip>[0-9a-fA-F.:]+) port (?P<src_port>\d+)'
+      set: {event.action: login, event.outcome: failure}
+    - regex: '^Invalid user (?P<user>\S*) from (?P<src_ip>[0-9a-fA-F.:]+)(?: port (?P<src_port>\d+))?'
+      set: {event.action: invalid-user, event.outcome: failure, invalid_user: "true"}
+    - regex: '^(?:error: )?maximum authentication attempts exceeded for (?:invalid user )?(?P<user>\S+) from (?P<src_ip>[0-9a-fA-F.:]+) port (?P<src_port>\d+)'
+      set: {event.action: max-auth-attempts, event.outcome: failure}
+    - regex: '^Disconnected from (?:(?:authenticating|invalid) )?user (?P<user>\S+) (?P<src_ip>[0-9a-fA-F.:]+) port (?P<src_port>\d+)'
+      set: {event.action: disconnect}
+    # sudo: odmowa (błąd przed TTY) albo wykonane polecenie
+    - regex: '^\s*(?P<user>\S+) : (?P<sudo_error>[^;]+?) ; TTY=(?P<tty>\S+) ; PWD=(?P<pwd>[^;]*?) ; USER=(?P<target_user>\S+) ;(?: [A-Z]+=[^;]*;)* COMMAND=(?P<command>.+)$'
+      set: {event.action: sudo, event.outcome: failure}
+    - regex: '^\s*(?P<user>\S+) : TTY=(?P<tty>\S+) ; PWD=(?P<pwd>[^;]*?) ; USER=(?P<target_user>\S+) ;(?: [A-Z]+=[^;]*;)* COMMAND=(?P<command>.+)$'
+      set: {event.action: sudo, event.outcome: success}
+    # su
+    - regex: '^\(to (?P<target_user>\S+)\) (?P<user>\S+) on (?P<tty>\S+)'
+      set: {event.action: su, event.outcome: success}
+    - regex: '^FAILED (?:su|SU) (?:\(to (?P<target_user2>\S+)\) (?P<user2>\S+)|for (?P<target_user>\S+) by (?P<user>\S+))'
+      set: {event.action: su, event.outcome: failure}
+    # PAM
+    - regex: '^pam_unix\((?P<pam_service>[^:)]+):auth\): authentication failure;.*?ruser=(?P<ruser>\S*) rhost=(?P<src_ip>\S*)(?:\s+user=(?P<user>\S+))?'
+      set: {event.action: auth-failure, event.outcome: failure}
+    - regex: '^pam_unix\((?P<pam_service>[^:)]+):session\): session opened for user (?P<target_user>[^(\s]+)(?:\(uid=\d+\))?(?: by (?P<user>[^(\s]*))?'
+      set: {event.action: session-open, event.outcome: success}
+    - regex: '^pam_unix\((?P<pam_service>[^:)]+):chauthtok\): password changed for (?P<target_user>\S+)'
+      set: {event.action: password-change, event.outcome: success}
+    - regex: '^New session (?P<session>\S+) of user (?P<user>[^.\s]+)'
+      set: {event.action: session-open, event.outcome: success}
+    # konta i grupy (shadow-utils)
+    - regex: '^new user: name=(?P<target_user>[^,]+), UID=(?P<uid>\d+), GID=(?P<gid>\d+), home=(?P<home>[^,]+), shell=(?P<shell>[^,\s]+)'
+      set: {event.action: user-created}
+    - regex: '^delete user ''(?P<target_user>[^'']+)'''
+      set: {event.action: user-deleted}
+    - regex: '^new group: name=(?P<group>[^,]+), GID=(?P<gid>\d+)'
+      set: {event.action: group-created}
+    - regex: '^(?:group ''(?P<group2>[^'']+)'' removed|removed group ''(?P<group>[^'']+)'')'
+      set: {event.action: group-deleted}
+    - regex: '^add ''(?P<target_user>[^'']+)'' to (?:shadow )?group ''(?P<group>[^'']+)'''
+      set: {event.action: group-member-added}
+    - regex: '^user (?P<target_user>\S+) added by (?P<user>\S+) to group (?P<group>\S+)'
+      set: {event.action: group-member-added}
+    - regex: '^delete ''(?P<target_user>[^'']+)'' from (?:shadow )?group ''(?P<group>[^'']+)'''
+      set: {event.action: group-member-removed}
+    - regex: '^user (?P<target_user>\S+) removed by (?P<user>\S+) from group (?P<group>\S+)'
+      set: {event.action: group-member-removed}
+    - regex: '^change user ''(?P<target_user>[^'']+)'' password'
+      set: {event.action: password-change, event.outcome: success}
+    - regex: '^(?P<lock_action>lock|unlock) user ''(?P<target_user>[^'']+)'' password'
+      set: {event.action: user-lock-change}
+fields:
+  user.name: [user, user2]
+  source.ip: src_ip
+  process.command_line: command
+  process.name: method
+  target_user: [target_user, target_user2]
+  group: [group, group2]
+samples:
+  - '<86>Oct  9 13:00:00 web01 sshd[1234]: Failed password for invalid user oracle from 203.0.113.9 port 50122 ssh2'
+  - '<86>Oct  9 13:00:05 web01 sshd[1234]: Failed password for root from 203.0.113.9 port 50124 ssh2'
+  - '<38>1 2026-10-09T13:00:10.123+02:00 web01 sshd-session 1240 - - Accepted publickey for jan from 192.168.1.5 port 50122 ssh2: ED25519 SHA256:abc'
+  - '<86>Oct  9 13:00:12 web01 sshd[1250]: Invalid user admin from 203.0.113.9 port 50200'
+  - '<85>Oct  9 13:01:00 web01 sudo:      jan : TTY=pts/0 ; PWD=/home/jan ; USER=root ; COMMAND=/usr/bin/apt update'
+  - '<85>Oct  9 13:01:30 web01 sudo:     ewa : 3 incorrect password attempts ; TTY=pts/1 ; PWD=/home/ewa ; USER=root ; COMMAND=/bin/bash'
+  - '<85>Oct  9 13:02:00 web01 su: (to root) jan on pts/0'
+  - '<85>Oct  9 13:02:10 web01 su: pam_unix(su:auth): authentication failure; logname=ewa uid=1001 euid=0 tty=pts/1 ruser=ewa rhost=  user=root'
+  - '<86>Oct  9 13:03:00 web01 useradd[2001]: new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash, from=/dev/pts/0'
+  - '<86>Oct  9 13:03:05 web01 usermod[2010]: add ''backdoor'' to group ''sudo'''
+  - '<86>Oct  9 13:03:10 web01 userdel[2020]: delete user ''backdoor'''
+  - '<86>Oct  9 13:03:20 web01 passwd[2030]: pam_unix(passwd:chauthtok): password changed for jan'
+  - '<86>Oct  9 13:03:30 web01 systemd-logind[600]: New session 42 of user jan.'

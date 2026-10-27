@@ -53,7 +53,8 @@
       "throttled": "Rejected batches (queue full)",
       "queue": "Fullest queue",
       "write_errors": "ClickHouse write errors (15 min)",
-      "quarantine": "Quarantine (last hour)"
+      "quarantine": "Quarantine (last hour)",
+      "unreadable": "Unreadable batches (24 h)"
     },
     "detection": {
       "rules": "Enabled rules",
@@ -92,7 +93,8 @@
       "throttled": "The queue is full – one of the stages cannot keep up. Check queue fill below.",
       "queue": "The queue consumer (in brackets) cannot keep up. Above 80% ingest starts rejecting batches.",
       "write_errors": "The writer keeps retrying; check the writer logs and ClickHouse health.",
-      "quarantine": "Events that could not be normalized or written – they are in siem.quarantine."
+      "quarantine": "Events that could not be normalized or written – they are in siem.quarantine.",
+      "unreadable": "Batches the normalizer could not read (corrupted gzip or JSON) – their events are not searchable, the original is in the NIS2 archive. Details in the normalizer logs (unreadable batch)."
     },
     "detection": {
       "rules": "The detector has no enabled rules – check the rules directory and the panel.",

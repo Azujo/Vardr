@@ -83,6 +83,9 @@ Tags in the Sigma convention: technique `attack.t1110.001`, tactic `attack.crede
 | `windows` | `category: network_connection`, `file_event`, `dns_query`, `registry_set` | Sysmon 3, 11, 22, 13 |
 | `fortigate` (`fortinet`) | – | `fortinet.fortigate` (syslog decoder) |
 | `mikrotik` (`routeros`) | – | `mikrotik.routeros` |
+| `linux` | – | `linux.auth` (Linux servers via rsyslog) |
+| `pfsense` (`opnsense`) | – | `pfsense.firewall` |
+| `cisco` (`asa`) | – | `cisco.asa` |
 | `azure` (`entra`) | `signinlogs`, `auditlogs` | Entra ID logs from the connector |
 
 Other values are rejected at load time. A rule without `service`/`category` covers the whole product (e.g. all Windows events).
@@ -320,6 +323,13 @@ Code: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sil
 | `windows/ps_script_suspicious_keywords.yml` | suspicious words in PowerShell scripts (4104) |
 | `network/fortigate_vpn_brute_force.yml`, `fortigate_admin_login_failures.yml` | a series of failed VPN and FortiGate admin logins |
 | `network/mikrotik_login_brute_force.yml` | a series of failed MikroTik router logins |
+| `linux/linux_ssh_brute_force.yml`, `linux_ssh_user_enumeration.yml` | a series of failed SSH logins; attempts on ≥5 non-existent accounts from one address |
+| `linux/linux_root_ssh_login.yml` | SSH login directly to root |
+| `linux/linux_user_created.yml`, `linux_privileged_group_member_added.yml` | account created; added to sudo, wheel, docker… |
+| `linux/linux_sudo_denied.yml` | sudo denied (outside sudoers, wrong passwords) |
+| `network/pfsense_port_scan.yml`, `pfsense_admin_login_failures.yml` | port scan; a series of failed pfSense/OPNsense web GUI logins |
+| `network/cisco_asa_vpn_brute_force.yml`, `cisco_asa_admin_login_failures.yml` | a series of rejected VPN logins; a series of failed ASA administrator logins |
+| `network/cisco_asa_port_scan.yml` | port scan (ASA access lists) |
 | `cross/password_spraying_multi_source.yml` | spraying from one address across AD, Entra, VPN and the router |
 | `windows/proc_discovery_burst.yml` | discovery: ≥4 different tools (whoami, net, nltest, systeminfo…) on a computer in 10 min |
 | `windows/proc_ad_discovery_tools.yml` | AD discovery: nltest /domain_trusts, `net group "domain admins"`, AdFind, BloodHound |

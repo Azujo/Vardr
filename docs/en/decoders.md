@@ -2,7 +2,7 @@
 
 A decoder turns a non-Windows message into a normalized event. It handles two kinds of messages: syslog from the collector (firewalls, routers) and JSON records from the API connector (Entra ID). Decoders are YAML files:
 
-- **built into** the normalizer program (`internal/decode/builtin/`: `fortigate`, `mikrotik`, `entra-signin`, `entra-audit`);
+- **built into** the normalizer program (`internal/decode/builtin/`: `fortigate`, `mikrotik`, `linux`, `pfsense`, `cisco-asa`, `entra-signin`, `entra-audit`; device setup – [Sources with a built-in decoder](#sources-with-a-built-in-decoder));
 - **from the panel** (*Decoders*, administrator), kept in Saga with a version history and delivered to normalizers through the NATS KV `SIEM_DECODERS` within seconds, without a restart.
 
 A panel decoder with the same `id` as a built-in one replaces it. "Restore the built-in version" reverts this. Code: `internal/decode`.
@@ -116,6 +116,54 @@ A decoder for a new device can be built without writing YAML and regular express
 5. **Saving.** "Save and deploy" (administrator) or "Open in editor" to polish the YAML by hand.
 
 The wizard builds a pattern from the text around the selections: whitespace and numbers are generalised, long stretches are replaced with an anchor from the last words before the field. A word that changes in messages of this kind and is not a field should be marked as "any" – otherwise the pattern covers only messages with the same word (the check shows this).
+
+## Sources with a built-in decoder
+
+All of them send syslog to the collector address (UDP or TCP 514); the device network must be in the collector's `syslog.allow`. Rules for these sources: [rules.md](rules.md#rules-in-the-repository).
+
+| Source | Decoder | `event.dataset` | `product` in rules |
+|---|---|---|---|
+| FortiGate | `fortigate` | `fortinet.fortigate` | `fortigate` |
+| MikroTik RouterOS | `mikrotik` | `mikrotik.routeros` | `mikrotik` |
+| Linux servers (rsyslog) | `linux` | `linux.auth` | `linux` |
+| pfSense, OPNsense | `pfsense` | `pfsense.firewall` | `pfsense` (`opnsense`) |
+| Cisco ASA, Firepower (FTD) | `cisco-asa` | `cisco.asa` | `cisco` (`asa`) |
+
+Sign-ins from these sources (fields `event.action: login` and `event.outcome`, on Cisco ASA also `vpn-connect`) go to the sign-in table and to the "success after failures" correlation together with AD, Entra ID and VPN.
+
+### Linux via rsyslog
+
+The decoder recognises the programs `sshd` (also `sshd-session` from OpenSSH 9.8+), `sudo`, `su`, `useradd`, `userdel`, `usermod`, `groupadd`, `gpasswd`, `passwd`, `chpasswd` and `systemd-logind`: SSH logins (with the `invalid_user` field for non-existent accounts), sudo commands and denials (`process.command_line`, `target_user`, `sudo_error`), su, failed PAM authentications, sessions and account and group changes (`target_user`, `group`). On the server – the file `/etc/rsyslog.d/90-vardr.conf`:
+
+```
+# auth and authpriv to the Vardr collector; disk queue when the connection is down
+auth,authpriv.* action(type="omfwd" target="collector.company.com" port="514" protocol="tcp"
+                       template="RSYSLOG_SyslogProtocol23Format"
+                       queue.type="LinkedList" queue.filename="vardr" queue.maxDiskSpace="100m"
+                       queue.saveOnShutdown="on" action.resumeRetryCount="-1")
+```
+
+The `RSYSLOG_SyslogProtocol23Format` template (RFC 5424) sends the time with its time zone – the default RFC 3164 format has none and the time is read in the `SIEM_SYSLOG_TZ` zone (a server in UTC would be shifted). Then `sudo systemctl restart rsyslog`. A system without rsyslog (journald only, e.g. minimal Debian) – install the `rsyslog` package; it reads the systemd journal. Check: `logger -p authpriv.notice "vardr test"` – the message shows up in Mímir (`host.name` of the server).
+
+### pfSense and OPNsense
+
+- **pfSense:** *Status → System Logs → Settings*: *Enable Remote Logging*, server `collector:514`, contents *Firewall Events* and *System Events* (web GUI logins). Blocked traffic is logged by the default block rule (*Log packets matched from the default block rules*); own rules – the *Log* option.
+- **OPNsense:** *System → Settings → Logging → Remote*: a new destination (UDP or TCP, port 514), applications `filter` (filterlog) and `audit` (web GUI logins); firewall rules with the *Log* option.
+
+The decoder recognises `filterlog` entries (IPv4 and IPv6: `fw_action` – pass/block/reject, `interface`, `direction`, `proto`, addresses and ports, `dst_port`) and successful and failed web GUI logins. SSH logins to the firewall are recognised by the `linux` decoder.
+
+### Cisco ASA and Firepower
+
+```
+logging enable
+logging timestamp
+logging trap informational
+logging host inside 10.0.0.20
+```
+
+(`10.0.0.20` – the collector, `inside` – the interface it is behind.) `logging timestamp` gives the exact event time; without it the receive time is used. With syslog over TCP (`logging host inside 10.0.0.20 tcp/514`) the ASA by default holds traffic when the syslog server is unreachable – add `logging permit-hostdown` or stay with UDP. Firepower (FTD): syslog settings in *Platform Settings* in FMC.
+
+The decoder sets `event.code` to the message number and recognises: denied and permitted access list traffic (106023, 106100, 106001/106006/106007/106015), administrator logins (605004/605005, 611101/611102), AAA and VPN authentications (113004, 113005, 113015), AnyConnect sessions (113039 – `vpn-connect`, 722051, 113019) and administrator commands (111008, 111010). Other messages – `event.action: other` with the text.
 
 ## A new device – step by step
 

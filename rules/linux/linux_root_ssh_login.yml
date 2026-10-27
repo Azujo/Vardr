@@ -1,0 +1,41 @@
+title: Linux – logowanie SSH na konto root
+id: 664ee74e-604f-45de-9e7d-eaeacf12b515
+status: stable
+description: |
+  Udane logowanie SSH bezpośrednio na konto root. Dobra praktyka to
+  logowanie na konto osobiste i sudo (PermitRootLogin no) – wtedy wiadomo,
+  kto wykonał zmiany.
+author: Vardr
+tags:
+  - attack.initial_access
+  - attack.t1078.003
+logsource:
+  product: linux
+detection:
+  selection:
+    event.action: login
+    event.outcome: success
+    user.name: root
+  condition: selection
+falsepositives:
+  - Automatyzacja (Ansible, kopie zapasowe) logująca się na root kluczem – rozważ wyjątek dla jej adresu
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – SSH login to the root account"
+      description: |
+        A successful SSH login directly to the root account. Good practice is logging in
+        to a personal account and using sudo (PermitRootLogin no) – then it is known who
+        made the changes.
+      instructions: |
+        root logged in to {{host.name}} from {{source.ip}} ({{process.name}}). Check whose
+        address it is and whether the login was expected. Unknown address – change the root
+        password, review /root/.ssh/authorized_keys and the commands run in this session.
+  group_by: [host.name, source.ip]
+  suppress: 6h
+  instructions: |
+    root zalogował się do {{host.name}} z {{source.ip}} ({{process.name}}).
+    Sprawdź, czyj to adres i czy logowanie było spodziewane. Nieznany adres –
+    zmień hasło roota, przejrzyj /root/.ssh/authorized_keys i polecenia
+    wykonane w tej sesji.

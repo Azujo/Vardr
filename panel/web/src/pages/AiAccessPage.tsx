@@ -33,6 +33,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { aiApi, assistantApi, formatDate, formatNumber, type AIPolicy, type AIRequest, type AIToolGroup, type AssistantSettings } from "../api";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -193,7 +194,7 @@ function Policy({ onSaved }: { onSaved: () => void }) {
                 <Checkbox label={t("policy.ack")} checked={ack} onChange={(e) => setAck(e.currentTarget.checked)} />
               </Stack>
             )}
-            <PasswordInput label={t("policy.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <ReauthPassword label={t("policy.password")} value={password} onChange={setPassword} />
             <Button loading={busy} disabled={!password || (needAck && !ack)} onClick={() => void save()}>
               {t("policy.save")}
             </Button>
@@ -664,7 +665,7 @@ function AssistantCard() {
         </Alert>
         {edit && (
           <Group align="flex-end">
-            <PasswordInput label={t("policy.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <ReauthPassword label={t("policy.password")} value={password} onChange={setPassword} />
             <Button loading={busy} disabled={!password} onClick={() => void save()}>
               {t("assistant.settings.save")}
             </Button>

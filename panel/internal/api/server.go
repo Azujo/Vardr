@@ -118,6 +118,8 @@ type Server struct {
 	profileCache profileCache
 	// LDAP (opcjonalne, wymaga MFAKey): logowanie kontem domenowym (LDAPS).
 	LDAP LDAPStore
+	// OIDC (opcjonalne, wymaga MFAKey): logowanie przez Entra ID (OIDC, wersja 1.6.1).
+	OIDC OIDCStore
 	// APITokens (opcjonalne): tokeny API dla programów; TokenRatePerMin –
 	// limit zapytań jednego tokenu na minutę (0 – domyślny).
 	APITokens       APITokenStore
@@ -143,6 +145,7 @@ type Server struct {
 	// Incidents (opcjonalne): incydenty i zgłoszenia NIS2.
 	Incidents IncidentStore
 	ldap      ldapState
+	sso       oidcState
 	// Settings (opcjonalne): ustawienia panelu; SysLang – język systemu
 	// (powiadomienia, szkice zgłoszeń) odczytywany z nich.
 	Settings SettingStore

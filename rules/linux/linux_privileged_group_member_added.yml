@@ -1,0 +1,47 @@
+title: Linux – dodanie konta do grupy uprzywilejowanej
+id: b97fd743-2af7-4f68-8b81-c8e3ae8b93c8
+status: stable
+description: |
+  Konto zostało dodane do grupy dającej uprawnienia administratora na
+  serwerze Linux (sudo, wheel, admin, root) albo równoważne (docker, lxd,
+  libvirt – dostęp do roota przez kontenery i maszyny wirtualne).
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098
+logsource:
+  product: linux
+detection:
+  selection:
+    event.action: group-member-added
+    group:
+      - sudo
+      - wheel
+      - admin
+      - root
+      - docker
+      - lxd
+      - libvirt
+  condition: selection
+falsepositives:
+  - Zaplanowane zmiany uprawnień przez administratorów
+level: high
+vardr:
+  i18n:
+    en:
+      title: "Linux – account added to a privileged group"
+      description: |
+        An account was added to a group giving administrator privileges on a Linux
+        server (sudo, wheel, admin, root) or equivalent (docker, lxd, libvirt – root
+        access through containers and virtual machines).
+      instructions: |
+        {{target_user}} was added to group {{group}} on {{host.name}}. Check whether the
+        change was requested. If not – remove the account from the group, lock it and
+        review sudo and SSH logins on this server around that time.
+  group_by: [host.name, target_user, group]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} dodano {{target_user}} do grupy {{group}}. Sprawdź, czy
+    zmiana była zgłoszona. Jeśli nie – usuń konto z grupy, zablokuj je
+    i przejrzyj logowania sudo i SSH na tym serwerze w tym czasie.

@@ -1,0 +1,50 @@
+title: Linux – seria nieudanych logowań SSH
+id: de84df4e-c7a2-44cf-a99a-fd6917a7edb2
+status: stable
+description: |
+  Co najmniej 10 nieudanych logowań SSH do serwera Linux z jednego adresu
+  w ciągu 5 minut (hasło, klucz, nieistniejące konta). Typowe dla
+  zgadywania haseł – z internetu zwykle automatyczne skanery, z sieci
+  wewnętrznej – przejęty komputer albo skrypt ze starym hasłem.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: linux
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+  condition: selection
+falsepositives:
+  - Skrypt albo system monitoringu ze starym hasłem (stały adres, równe odstępy)
+  - Użytkownik z wieloma kluczami SSH w agencie (każdy odrzucony klucz to próba)
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – series of failed SSH logins"
+      description: |
+        At least 10 failed SSH logins to a Linux server from one address within
+        5 minutes (password, key, non-existent accounts). Typical of password guessing –
+        from the internet usually automated scanners, from the internal network a
+        compromised computer or a script with an old password.
+      instructions: |
+        {{count}} failed SSH logins to {{host.name}} from {{source.ip}} in {{window}}
+        (last account {{user.name}}). Address from the internet – check whether SSH must
+        be exposed (VPN, allowed addresses, keys only: PasswordAuthentication no) and
+        block the address. Internal address – find out whose computer it is. Check
+        whether a successful login from this address followed the series.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 10
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań SSH do {{host.name}} z adresu {{source.ip}}
+    w {{window}} (ostatnio konto {{user.name}}). Adres z internetu – sprawdź,
+    czy SSH musi być wystawione (VPN, dozwolone adresy, tylko klucze:
+    PasswordAuthentication no) i zablokuj adres. Adres wewnętrzny – ustal,
+    czyj to komputer. Sprawdź, czy po serii nie było udanego logowania z tego
+    adresu.

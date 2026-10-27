@@ -42,6 +42,7 @@ import {
   type BackupRun,
   type BackupView,
 } from "../api";
+import { ReauthPassword } from "../sso";
 
 // Kopie zapasowe: ustawienia dla usługi siem-backup, zlecenia i historia.
 
@@ -671,13 +672,12 @@ export default function BackupPage() {
         >
           <Stack gap="sm">
             <Text size="sm">{tr("confirm.text")}</Text>
-            <PasswordInput
+            <ReauthPassword
               label={tr("yourPassword")}
               required
               autoFocus
-              autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
+              onChange={setPassword}
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setConfirm(false)}>

@@ -1,0 +1,39 @@
+title: Linux – założenie konta
+id: d0a1306b-fbb5-4094-81a7-8ebe5d95667f
+status: stable
+description: |
+  Na serwerze Linux założono konto (useradd). Nowe konto z powłoką to
+  częsty sposób utrzymania dostępu po włamaniu.
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.t1136.001
+logsource:
+  product: linux
+detection:
+  selection:
+    event.action: user-created
+  condition: selection
+falsepositives:
+  - Zaplanowane zakładanie kont przez administratorów, instalacja pakietów z kontem usługowym (powłoka /usr/sbin/nologin)
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – account created"
+      description: |
+        An account was created on a Linux server (useradd). A new account with a shell
+        is a common way to keep access after an intrusion.
+      instructions: |
+        Account {{target_user}} (UID {{uid}}, shell {{shell}}) was created on {{host.name}}.
+        Check whether the change was requested. A system account of an installed package
+        usually has the shell /usr/sbin/nologin. If not requested – lock the account,
+        check who was logged in at that time (sudo, SSH) and its SSH keys.
+  group_by: [host.name, target_user]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} założono konto {{target_user}} (UID {{uid}}, powłoka
+    {{shell}}). Sprawdź, czy zmiana była zgłoszona. Konto systemowe
+    instalowanego pakietu ma zwykle powłokę /usr/sbin/nologin. Jeśli nie była –
+    zablokuj konto, sprawdź, kto był wtedy zalogowany (sudo, SSH), i jego
+    klucze SSH.

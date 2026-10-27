@@ -35,10 +35,14 @@ import DeployPage from "./pages/DeployPage";
 import EventsPage from "./pages/EventsPage";
 import GroupsPage from "./pages/GroupsPage";
 import ArchivePage from "./pages/ArchivePage";
+import SsoPage from "./pages/SsoPage";
+import { SsoDone } from "./sso";
 
 export default function App() {
   const { user, loading, can } = useAuth();
 
+  // Okienko potwierdzenia SSO – bez układu panelu, niezależnie od sesji.
+  if (window.location.pathname === "/sso/done") return <SsoDone />;
   if (loading) {
     return (
       <Center h="100vh">
@@ -77,6 +81,7 @@ export default function App() {
         {can("users", "read") && <Route path="/admin/users" element={<UsersPage />} />}
         {can("users", "read") && <Route path="/admin/profiles" element={<ProfilesPage />} />}
         {can("users", "read") && <Route path="/admin/ldap" element={<LdapPage />} />}
+        {can("users", "read") && <Route path="/admin/sso" element={<SsoPage />} />}
         {can("users", "read") && <Route path="/admin/api-tokens" element={<ApiTokensPage />} />}
         {can("ai", "read") && <Route path="/admin/ai" element={<AiAccessPage />} />}
         {can("audit", "read") && <Route path="/admin/audit" element={<AuditPage />} />}

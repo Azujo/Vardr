@@ -5,6 +5,9 @@
 #
 #   deploy/vardr/build-bundle.sh [wersja]     domyślnie: git describe
 #
+# VARDR_WINDOWS_BIN=katalog – gotowe programy Windows (vardr-agent.exe,
+# vardr-mcp.exe, odczytaj.exe), np. podpisane w CI, zamiast budowania.
+#
 # Frontend panelu: budowany przez npm, gdy jest dostępny; inaczej używany
 # jest gotowy panel/web/dist (na stacji bez Node: deploy/lab/deploy.sh web).
 # Pliki konfiguracji usług (NATS, ClickHouse, Saga, Grafana, Prometheus)
@@ -50,12 +53,19 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$stage/stack/bin/siem-pki" ./tools/cmd/siem-pki
 
 echo "== Windows agent, export reader and MCP server"
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$stage/stack/agent-dist/vardr-agent.exe" ./agent/cmd/vardr-agent
+if [ -n "${VARDR_WINDOWS_BIN:-}" ]; then
+  # Gotowe (np. podpisane w CI) programy Windows z katalogu – bez budowania.
+  echo "   prebuilt: $VARDR_WINDOWS_BIN"
+  cp "$VARDR_WINDOWS_BIN/vardr-agent.exe" "$VARDR_WINDOWS_BIN/vardr-mcp.exe" "$stage/stack/agent-dist/"
+  cp "$VARDR_WINDOWS_BIN/odczytaj.exe" "$stage/stack/export-tools/"
+else
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o "$stage/stack/agent-dist/vardr-agent.exe" ./agent/cmd/vardr-agent
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" \
+    -o "$stage/stack/export-tools/odczytaj.exe" ./tools/cmd/odczytaj
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version_=$version" \
+    -o "$stage/stack/agent-dist/vardr-mcp.exe" ./tools/cmd/vardr-mcp
+fi
 sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go > "$stage/stack/agent-dist/AGENT_VERSION"
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$version" \
-  -o "$stage/stack/export-tools/odczytaj.exe" ./tools/cmd/odczytaj
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version_=$version" \
-  -o "$stage/stack/agent-dist/vardr-mcp.exe" ./tools/cmd/vardr-mcp
 
 echo "== stack files"
 tar -C "$lab" -cf - Dockerfile backup/Dockerfile msi/Dockerfile msi/agent.wxs nats clickhouse saga grafana prometheus \

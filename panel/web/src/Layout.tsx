@@ -32,6 +32,7 @@ import {
   IconBolt,
   IconCheck,
   IconChevronDown,
+  IconCloudLock,
   IconCode,
   IconDatabaseExport,
   IconDatabaseSearch,
@@ -122,6 +123,7 @@ const sections: Section[] = [
       { to: "/admin/users", label: "nav.users", icon: <IconUsers size={18} />, perm: ["users", "read"] },
       { to: "/admin/profiles", label: "nav.profiles", hint: "nav.profilesHint", icon: <IconLockAccess size={18} />, perm: ["users", "read"] },
       { to: "/admin/ldap", label: "nav.ldap", hint: "Active Directory", icon: <IconBuildingCommunity size={18} />, perm: ["users", "read"] },
+      { to: "/admin/sso", label: "nav.sso", hint: "Microsoft Entra ID", icon: <IconCloudLock size={18} />, perm: ["users", "read"] },
       { to: "/admin/api-tokens", label: "nav.apiTokens", hint: "nav.apiTokensHint", icon: <IconApi size={18} />, perm: ["users", "read"] },
       { to: "/admin/ai", label: "nav.ai", hint: "nav.aiHint", icon: <IconSparkles size={18} />, perm: ["ai", "read"] },
       { to: "/admin/notifications", label: "nav.notifications", hint: "Discord, Teams, webhook", icon: <IconBell size={18} />, perm: ["notify", "read"] },
@@ -214,7 +216,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   </UnstyledButton>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  {user?.source !== "ldap" && (
+                  {user?.source !== "ldap" && user?.source !== "oidc" && (
                     <Menu.Item component={Link} to="/account/password" leftSection={<IconKey size={16} />}>
                       {t("header.changePassword")}
                     </Menu.Item>

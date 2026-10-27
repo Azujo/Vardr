@@ -12,9 +12,11 @@ Serwer Vardr instaluje się z paczki `vardr-<wersja>-linux-amd64.tar.gz`: progra
 | Dysk (katalog Dockera) | 20 GB | 60 GB i więcej (kolejki, baza zdarzeń) |
 | Archiwum NIS2 | | osobny dysk pod `/srv/vardr` |
 
-Porty: `8443/tcp` (agenci), `8444/tcp` (panel), `3000/tcp` (Grafana), opcjonalnie `514/udp+tcp` (kolektor syslog).
+Porty: `8443/tcp` (agenci), `8444/tcp` (panel), `3000/tcp` (Grafana), opcjonalnie `514/udp+tcp` (kolektor syslog) – kto ma do nich dostęp: [Zapora](#zapora).
 
 ## Instalacja
+
+Paczkę i plik `SHA256SUMS` pobierz z [najnowszego wydania](https://github.com/Azujo/Vardr/releases/latest) (albo zbuduj samodzielnie – niżej) i sprawdź sumę: `sha256sum -c --ignore-missing SHA256SUMS`.
 
 ```bash
 tar xzf vardr-<wersja>-linux-amd64.tar.gz
@@ -52,6 +54,30 @@ sudo /opt/vardr/sigmahq-import.sh
 ```
 
 Szczegóły: [reguly.md](reguly.md#import-reguł-sigmahq) i panel: *Reguły → Import reguł SigmaHQ*.
+
+## Zapora
+
+Do serwera powinny mieć dostęp tylko te sieci, które go potrzebują:
+
+| Port | Kto |
+|---|---|
+| `8443/tcp` (ingest) | sieci z komputerami z agentem |
+| `8444/tcp` (panel) | sieć administratorów i SOC |
+| `3000/tcp` (Grafana) | administratorzy – albo wcale (niżej) |
+| `514/udp+tcp` (kolektor) | sieci urządzeń wysyłających syslog (dodatkowo lista `syslog.allow` kolektora) |
+| `22/tcp` (SSH) | administratorzy |
+
+**Docker omija ufw i firewalld** – porty kontenerów są publikowane regułami Dockera, przed regułami INPUT. Ruch do kontenerów filtruje się w łańcuchu `DOCKER-USER`, po porcie sprzed przekierowania (`--ctorigdstport`), np. panel i Grafana tylko z `10.0.10.0/24`:
+
+```bash
+sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 8444 --ctdir ORIGINAL ! -s 10.0.10.0/24 -j DROP
+sudo iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport 3000 --ctdir ORIGINAL ! -s 10.0.10.0/24 -j DROP
+sudo apt install iptables-persistent && sudo netfilter-persistent save   # zachowanie po restarcie
+```
+
+SSH i inne usługi samego serwera – zwykle (ufw, firewalld).
+
+**Grafana bez dostępu z sieci:** `VARDR_GRAFANA_ADDR=127.0.0.1` w `/opt/vardr/.env`, potem `sudo systemctl restart vardr`. Grafana jest wtedy dostępna tylko tunelem SSH (`ssh -L 3000:127.0.0.1:3000 admin@serwer`, w przeglądarce `http://localhost:3000`); odnośniki do Grafany w panelu działają przy otwartym tunelu.
 
 ## Kolektor syslog i konektor API
 

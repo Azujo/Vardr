@@ -73,6 +73,26 @@ go test -count=1 -p 1 -run 'Compat|Chain|Correlations|Postgres|PG' ./server/inte
 
 The result is in the repository's *Actions* tab.
 
+## Releases
+
+A release is a `vX.Y.Z` tag on `master` (changes first in `CHANGELOG.md`, section `## [X.Y.Z] – date – title`). Pushing the tag runs `.github/workflows/release.yml`:
+
+1. **Windows** – `vardr-agent.exe`, `vardr-mcp.exe`, `odczytaj.exe`; with signing enabled – an Authenticode signature and a signature check.
+2. **Linux** – the frontend, the server bundle `deploy/vardr/build-bundle.sh` with the Windows programs from step 1 (`VARDR_WINDOWS_BIN`), `SHA256SUMS`.
+3. **GitHub release** – title and notes from the version's section in `CHANGELOG.md`, files: the server bundle, `vardr-mcp.exe`, `odczytaj.exe`, `SHA256SUMS`. Running it again (*Run workflow* with the tag name) replaces the files of an existing release.
+
+The agent MSI installer is not part of the release – the server builds it during installation with that installation's CA certificate (from the signed `vardr-agent.exe`; the MSI file itself is unsigned).
+
+### Signing Windows programs
+
+Microsoft Defender and SmartScreen block a new, unsigned `.exe` downloaded from a browser by reputation heuristics. Authenticode signing with [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/) (formerly Trusted Signing):
+
+1. In Azure: an *Artifact Signing* account (Basic plan), identity validation (individual or organization), a *Public Trust* certificate profile.
+2. An app registration in Entra ID with a federated credential for GitHub Actions (repository, `refs/tags/*` or an environment) and the *Artifact Signing Certificate Profile Signer* role on the signing account.
+3. In the repository (*Settings → Secrets and variables → Actions*): secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; variables `SIGNING=true`, `SIGNING_ENDPOINT` (e.g. `https://weu.codesigning.azure.net/` – the account's region), `SIGNING_ACCOUNT`, `SIGNING_PROFILE`.
+
+Without `SIGNING=true` the release is built with unsigned programs. Check a signature in the file's Properties (*Digital Signatures*) or with `Get-AuthenticodeSignature vardr-mcp.exe`.
+
 ## Conventions
 
 - **Language:** code comments in Polish, identifiers and commit messages in English. **Service logs, internal errors and server program messages** – in English. Texts for people – in both languages: the panel in translation files, the server through `internal/lang` (below, "…translations"). Documentation in Polish (`docs/`) and English (`docs/en/` – when behaviour changes, update both).
@@ -89,7 +109,7 @@ The result is in the repository's *Actions* tab.
 
 1. A decoder in the panel or in `internal/decode/builtin/<id>.yml` with samples ([decoders.md](decoders.md)).
 2. A product for rules in `internal/detect/compile.go` (`products`).
-3. If the source has sign-ins – conditions in `authFailureSQL`/`authSuccessSQL` (`server/internal/detector/correlate.go`) **and** in `deploy/lab/clickhouse/init/03-auth-events.sh`. `TestCorrelations` checks consistency, and the script must be rerun on the server (the table stays, the view changes – drop `siem.auth_events_mv` before rerunning).
+3. If the source has sign-ins – conditions in `authFailureSQL`/`authSuccessSQL` (`server/internal/detector/correlate.go`) **and** in `deploy/lab/clickhouse/init/03-auth-events.sh`. `TestCorrelations` checks consistency. Rerunning the script recreates the view with the new conditions – the installer does it at every upgrade (in the lab: `docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh`).
 4. Rules in `rules/network/` (with `vardr.i18n.en`) and events in the compatibility test corpus.
 
 ### …a new API source (connector)

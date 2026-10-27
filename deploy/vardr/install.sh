@@ -234,6 +234,8 @@ VARDR_BACKUP_PASS_FILE=/etc/vardr/backup.pass
 #VARDR_INGEST_PORT=8443
 #VARDR_PANEL_PORT=8444
 #VARDR_GRAFANA_PORT=3000
+# Grafana tylko z serwera (dostęp tunelem SSH): docs/instalacja.md#zapora
+#VARDR_GRAFANA_ADDR=127.0.0.1
 EOF
 fi
 chmod 600 "$DIR/.env"
@@ -364,6 +366,12 @@ for i in $(seq 1 90); do
   sleep 2
 done
 echo " ready"
+
+if [ $UPGRADE = 1 ]; then
+  # Tabela logowań korelacji: widok z warunkami logowań z tej wersji (nowe źródła).
+  compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh >/dev/null ||
+    warn "refreshing the sign-in table failed – run: cd $DIR && sudo docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh"
+fi
 
 admin_out=""
 if [ $UPGRADE = 0 ]; then

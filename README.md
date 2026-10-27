@@ -83,7 +83,10 @@ An event goes from the agent to the queue and is acknowledged only after it is w
 
 Requirements: Linux x86_64 with systemd (Debian 12/13, Ubuntu 24.04+), Docker Engine with the compose plugin, 8 GB RAM, 60 GB of disk.
 
+Download `vardr-<version>-linux-amd64.tar.gz` and `SHA256SUMS` from the [latest release](https://github.com/Azujo/Vardr/releases/latest), then:
+
 ```bash
+sha256sum -c --ignore-missing SHA256SUMS
 tar xzf vardr-<version>-linux-amd64.tar.gz
 cd vardr-<version>-linux-amd64
 sudo ./install.sh
@@ -91,7 +94,7 @@ sudo ./install.sh
 
 The installer asks for the server address, prepares everything and finally shows the panel address (`https://<server>:8444`), the administrator's initial password and the backup password. Then in the panel: *Agents* → an installation package or an enrollment token for Windows computers.
 
-The bundle is built from the repository with `deploy/vardr/build-bundle.sh`. Details, upgrades and removal: [docs/en/installation.md](docs/en/installation.md).
+Releases are built by GitHub Actions from a version tag ([development](docs/en/development.md#releases)); a bundle can also be built locally with `deploy/vardr/build-bundle.sh`. Details, upgrades and removal: [docs/en/installation.md](docs/en/installation.md).
 
 ## Documentation
 

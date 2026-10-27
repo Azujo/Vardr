@@ -62,7 +62,9 @@
     "policyAdmins": "Konta administratorów bez drugiego składnika skonfigurują go przy najbliższym logowaniu; ich bieżące sesje bez drugiego składnika zostaną zakończone.",
     "resetMfaTitle": "Reset drugiego składnika – {{user}}",
     "resetMfaText": "Np. przy zgubionym telefonie. Konto straci aplikację i kody zapasowe, jego sesje zostaną zakończone; przy następnym logowaniu skonfiguruje aplikację od nowa (jeśli drugi składnik jest wymagany). Zmiana trafi do audytu.",
-    "reset": "Resetuj"
+    "reset": "Resetuj",
+    "ssoTip": "konto SSO – logowanie i profil z Entra ID",
+    "ssoProfile": "profil konta SSO wynika z grup Entra ID (Logowanie SSO)"
   },
   "audit": {
     "title": "Dziennik audytu",
@@ -417,5 +419,52 @@
     "secretText": "Skopiuj sekret i ustaw go u odbiorcy (w przepływie, funkcji albo usłudze sprawdzającej podpis).",
     "secretOnce": "Panel pokazuje go tylko teraz.",
     "secretHow": "Podpis: HMAC-SHA256 z sekretu nad „<X-Vardr-Timestamp>.<treść>”, nagłówek X-Vardr-Signature: sha256=<hex>. Odrzucaj wiadomości ze znacznikiem czasu starszym niż kilka minut. Szczegóły i przykład: dokumentacja panelu (Powiadomienia)."
+  },
+  "sso": {
+    "title": "Logowanie SSO",
+    "intro": "Logowanie przez Microsoft Entra ID (OpenID Connect). Konto panelu powstaje przy pierwszym logowaniu, a profil uprawnień wynika z grup Entra ID – przy każdym logowaniu na nowo. Konta SSO nie mają hasła w panelu; operacje chronione hasłem potwierdzają ponownym logowaniem w Entra ID. Zostaw przynajmniej jedno konto lokalne administratora na wypadek awarii dostawcy.",
+    "unavailable": "Logowanie SSO niedostępne",
+    "unavailableText": [
+      "Sekret aplikacji jest szyfrowany kluczem z pliku ",
+      " na serwerze – bez niego logowanie SSO jest wyłączone."
+    ],
+    "step1": "1. Aplikacja w Entra ID",
+    "enabled": "włączone",
+    "disabled": "wyłączone",
+    "unsaved": " (niezapisane)",
+    "registerHint": "Entra ID → Rejestracje aplikacji → Nowa rejestracja (platforma Web) z poniższym adresem przekierowania. W „Konfiguracji tokenu” dodaj oświadczenie grup (identyfikatory grup zabezpieczeń) i opcjonalne oświadczenie amr. Szczegóły – dokumentacja (Panel → Logowanie SSO).",
+    "redirect": "Adres przekierowania (Redirect URI)",
+    "redirectHint": "Wpisz go w rejestracji aplikacji – musi się zgadzać co do znaku, z https i portem panelu.",
+    "issuer": "Wystawca (issuer)",
+    "issuerHint": "https://login.microsoftonline.com/<identyfikator dzierżawy>/v2.0",
+    "clientId": "Identyfikator aplikacji (client ID)",
+    "clientIdHint": "Application (client) ID z rejestracji aplikacji",
+    "secret": "Sekret klienta",
+    "secretSaved": "zapisany – zostaw puste, żeby nie zmieniać",
+    "secretNew": "Certyfikaty i wpisy tajne → nowy wpis tajny klienta (wartość, nie identyfikator)",
+    "button": "Napis na przycisku logowania",
+    "buttonHint": "puste – „Microsoft Entra ID”",
+    "test": "Sprawdź dostawcę",
+    "testOk": "Konfiguracja dostawcy pobrana. Zapisz ustawienia i sprawdź logowanie w oknie prywatnym przeglądarki – nie wylogowuj się z tej sesji, dopóki nie zadziała.",
+    "works": "działa",
+    "error": "błąd",
+    "step2": "2. Grupy i profile",
+    "groupsIntro": "Grupa Entra ID (identyfikator obiektu) → profil uprawnień. Konto dostaje profil pierwszej pasującej grupy z listy; bez żadnej pasującej grupy logowanie jest odrzucane. Profil konta zmienia się przy następnym logowaniu.",
+    "noMappings": "Brak powiązań – nikt nie zaloguje się przez SSO.",
+    "col": {
+      "group": "Identyfikator grupy (Object ID)",
+      "name": "Nazwa (opis)",
+      "profile": "Profil"
+    },
+    "namePlaceholder": "np. SOC-Analitycy",
+    "addMapping": "Dodaj grupę",
+    "up": "wyżej",
+    "down": "niżej",
+    "removeMapping": "Usuń powiązanie",
+    "mfaNote": "Drugi składnik dla kont SSO wymusza się w Entra ID (dostęp warunkowy). Gdy polityka MFA panelu wymaga go od konta, panel przyjmuje tylko logowanie z potwierdzonym drugim składnikiem (oświadczenie amr = mfa).",
+    "save": "Zapisz ustawienia",
+    "saveTitle": "Zapis ustawień SSO",
+    "saveText": "Zmiana logowania SSO wpływa na dostęp do panelu – potwierdź ją.",
+    "saved": "Ustawienia SSO zapisane"
   }
 }

@@ -2,7 +2,7 @@
 
 Dekoder zamienia wiadomość spoza Windows na zdarzenie znormalizowane. Obsługuje dwa rodzaje wiadomości: syslog z kolektora (zapory, routery) oraz rekordy JSON z konektora API (Entra ID). Dekodery to pliki YAML:
 
-- **wbudowane** w program normalizatora (`internal/decode/builtin/`: `fortigate`, `mikrotik`, `entra-signin`, `entra-audit`);
+- **wbudowane** w program normalizatora (`internal/decode/builtin/`: `fortigate`, `mikrotik`, `linux`, `pfsense`, `cisco-asa`, `entra-signin`, `entra-audit`; konfiguracja urządzeń – [Źródła z dekoderem wbudowanym](#źródła-z-dekoderem-wbudowanym));
 - **z panelu** (*Dekodery*, administrator), trzymane w Sadze z historią wersji i dostarczane normalizatorom przez NATS KV `SIEM_DECODERS` w ciągu kilku sekund, bez restartu.
 
 Dekoder z panelu o tym samym `id` co wbudowany go zastępuje. „Przywróć wersję wbudowaną” cofa tę zmianę. Kod: `internal/decode`.
@@ -114,6 +114,54 @@ Dekoder dla nowego urządzenia można złożyć bez pisania YAML-a i wyrażeń r
 5. **Zapis.** „Zapisz i wdroż” (administrator) albo „Otwórz w edytorze”, żeby dopracować YAML ręcznie.
 
 Kreator buduje wzorzec z tekstu wokół zaznaczeń: odstępy i liczby są uogólniane, długie odcinki zastępowane kotwicą z ostatnich słów przed polem. Słowo, które w wiadomościach tego rodzaju się zmienia, a nie jest polem, oznacz jako „dowolne” – inaczej wzorzec obejmie tylko wiadomości z tym samym słowem (widać to w sprawdzeniu).
+
+## Źródła z dekoderem wbudowanym
+
+Wszystkie wysyłają syslog na adres kolektora (UDP albo TCP 514); sieć urządzenia musi być w `syslog.allow` kolektora. Reguły dla tych źródeł: [reguly.md](reguly.md#reguły-w-repozytorium).
+
+| Źródło | Dekoder | `event.dataset` | `product` w regułach |
+|---|---|---|---|
+| FortiGate | `fortigate` | `fortinet.fortigate` | `fortigate` |
+| MikroTik RouterOS | `mikrotik` | `mikrotik.routeros` | `mikrotik` |
+| Serwery Linux (rsyslog) | `linux` | `linux.auth` | `linux` |
+| pfSense, OPNsense | `pfsense` | `pfsense.firewall` | `pfsense` (`opnsense`) |
+| Cisco ASA, Firepower (FTD) | `cisco-asa` | `cisco.asa` | `cisco` (`asa`) |
+
+Logowania z tych źródeł (pola `event.action: login` i `event.outcome`, w Cisco ASA także `vpn-connect`) trafiają do tabeli logowań i do korelacji „udane po nieudanych” razem z AD, Entra ID i VPN.
+
+### Linux przez rsyslog
+
+Dekoder rozpoznaje programy `sshd` (także `sshd-session` z OpenSSH 9.8+), `sudo`, `su`, `useradd`, `userdel`, `usermod`, `groupadd`, `gpasswd`, `passwd`, `chpasswd` i `systemd-logind`: logowania SSH (z polem `invalid_user` dla nieistniejących kont), polecenia i odmowy sudo (`process.command_line`, `target_user`, `sudo_error`), su, nieudane uwierzytelnienia PAM, sesje oraz zmiany kont i grup (`target_user`, `group`). Na serwerze – plik `/etc/rsyslog.d/90-vardr.conf`:
+
+```
+# auth i authpriv do kolektora Vardr; kolejka na dysku przy przerwie w łączności
+auth,authpriv.* action(type="omfwd" target="kolektor.firma.pl" port="514" protocol="tcp"
+                       template="RSYSLOG_SyslogProtocol23Format"
+                       queue.type="LinkedList" queue.filename="vardr" queue.maxDiskSpace="100m"
+                       queue.saveOnShutdown="on" action.resumeRetryCount="-1")
+```
+
+Szablon `RSYSLOG_SyslogProtocol23Format` (RFC 5424) przesyła czas ze strefą – domyślny format RFC 3164 jej nie ma i czas liczy się w strefie `SIEM_SYSLOG_TZ` (serwer w UTC dałby przesunięcie). Potem `sudo systemctl restart rsyslog`. System bez rsyslog (sam journald, np. minimalny Debian) – zainstaluj pakiet `rsyslog`; czyta dziennik systemd. Sprawdzenie: `logger -p authpriv.notice "test vardr"` – wiadomość widać w Mímirze (`host.name` serwera).
+
+### pfSense i OPNsense
+
+- **pfSense:** *Status → System Logs → Settings*: *Enable Remote Logging*, serwer `kolektor:514`, zawartość *Firewall Events* i *System Events* (logowania do panelu). Zablokowany ruch jest logowany przez domyślną regułę blokującą (*Log packets matched from the default block rules*); własne reguły – opcja *Log*.
+- **OPNsense:** *System → Settings → Logging → Remote*: nowy cel (UDP albo TCP, port 514), aplikacje `filter` (filterlog) i `audit` (logowania do panelu); reguły zapory z opcją *Log*.
+
+Dekoder rozpoznaje wpisy `filterlog` (IPv4 i IPv6: `fw_action` – pass/block/reject, `interface`, `direction`, `proto`, adresy i porty, `dst_port`) oraz udane i nieudane logowania do panelu WWW. Logowania SSH do zapory rozpoznaje dekoder `linux`.
+
+### Cisco ASA i Firepower
+
+```
+logging enable
+logging timestamp
+logging trap informational
+logging host inside 10.0.0.20
+```
+
+(`10.0.0.20` – kolektor, `inside` – interfejs, za którym jest.) `logging timestamp` daje dokładny czas zdarzenia; bez niego liczy się czas przyjęcia. Przy syslog przez TCP (`logging host inside 10.0.0.20 tcp/514`) ASA domyślnie wstrzymuje ruch, gdy serwer syslog jest niedostępny – dodaj `logging permit-hostdown` albo zostań przy UDP. Firepower (FTD): ustawienia syslog w *Platform Settings* w FMC.
+
+Dekoder ustawia `event.code` na numer komunikatu i rozpoznaje: odrzucony i dozwolony ruch list dostępu (106023, 106100, 106001/106006/106007/106015), logowania administratorów (605004/605005, 611101/611102), uwierzytelnienia AAA i VPN (113004, 113005, 113015), sesje AnyConnect (113039 – `vpn-connect`, 722051, 113019) i polecenia administratorów (111008, 111010). Pozostałe komunikaty – `event.action: other` z treścią.
 
 ## Nowe urządzenie – krok po kroku
 

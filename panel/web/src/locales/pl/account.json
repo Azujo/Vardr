@@ -20,7 +20,8 @@
     "recoveryUsed_one": "Użyto kodu zapasowego – został {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
     "recoveryUsed_few": "Użyto kodu zapasowego – zostały {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
     "recoveryUsed_many": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
-    "recoveryUsed_other": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”."
+    "recoveryUsed_other": "Użyto kodu zapasowego – zostało {{count}}. Wygeneruj nowe w „Bezpieczeństwie konta”.",
+    "or": "albo"
   },
   "mfa": {
     "step1": "Zainstaluj na telefonie aplikację uwierzytelniającą, np. Microsoft Authenticator, Google Authenticator albo Aegis.",
@@ -84,6 +85,10 @@
     "disableWarning": "Bez drugiego składnika do zalogowania wystarczy samo hasło.",
     "disabled": "Drugi składnik wyłączony",
     "generate": "Wygeneruj",
-    "done": "Gotowe"
+    "done": "Gotowe",
+    "ssoTitle": "Konto SSO (Entra ID)",
+    "ssoText": "Drugi składnik logowania potwierdza dostawca tożsamości – ustawiają go administratorzy Entra ID (np. dostęp warunkowy). Aplikacji uwierzytelniającej panelu nie używa się dla tego konta.",
+    "ssoSessionMfa": "Bieżąca sesja: logowanie z drugim składnikiem.",
+    "ssoSessionNoMfa": "Bieżąca sesja: dostawca nie potwierdził drugiego składnika."
   }
 }

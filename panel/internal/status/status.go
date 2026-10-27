@@ -255,6 +255,9 @@ var defs = []def{
 	{id: "pipeline.quarantine", group: "Potok", name: "Kwarantanna (ostatnia godzina)", query: `sum(increase(siem_normalizer_quarantined_total[1h])) + sum(increase(siem_writer_quarantined_total[1h]))`,
 		hint: "Zdarzenia, których nie udało się znormalizować albo zapisać – są w siem.quarantine.",
 		eval: thresholdHigh(0, 1000, func(v float64) value { return num("events", math.Round(v), fmt.Sprintf("%.0f zdarzeń", v)) })},
+	{id: "pipeline.unreadable", group: "Potok", name: "Nieczytelne paczki (24 h)", query: `sum(increase(siem_normalizer_batches_total{result="poison"}[24h])) or vector(0)`,
+		hint: "Paczki, których normalizator nie odczytał (uszkodzony gzip albo JSON) – ich zdarzeń nie ma w wyszukiwaniu, oryginał jest w archiwum NIS2. Szczegóły w logach normalizatora (unreadable batch).",
+		eval: thresholdHigh(0, 10, count)},
 	{id: "detection.rules", group: "Detekcja", name: "Włączone reguły", query: `max(siem_detector_rules) > 0 or max(siem_detector_index_rules)`,
 		eval: func(s []sample) (string, value) {
 			v, ok := one(s)

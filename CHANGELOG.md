@@ -2,6 +2,27 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [Niewydane]
+
+## [1.6.0] – 2026-10-27 – Wydania na GitHubie, SSO Entra ID i nowe źródła syslog
+
+### Dodane
+- **Wydania na GitHubie z tagu** ([docs/rozwoj.md](docs/rozwoj.md#wydania)): paczka instalacyjna serwera, `vardr-mcp.exe`, `odczytaj.exe` i `SHA256SUMS` budowane przez GitHub Actions, opis wydania z CHANGELOG. Szybki start w README i instrukcja instalacji zaczynają się od pobrania paczki z wydania i sprawdzenia sumy.
+- **Podpisywanie programów Windows** (Authenticode, Azure Artifact Signing) w wydaniu – `vardr-agent.exe`, `vardr-mcp.exe`, `odczytaj.exe`; włączane zmienną repozytorium `SIGNING=true` po skonfigurowaniu konta podpisywania. Podpisany agent trafia też do paczki serwera.
+- **Logowanie SSO przez Microsoft Entra ID** ([docs/panel.md](docs/panel.md#logowanie-sso-microsoft-entra-id)): przycisk na stronie logowania (OpenID Connect z PKCE), ustawienia w *Administracja → Logowanie SSO* (aplikacja w Entra ID, sekret zaszyfrowany, powiązania grupa → profil w kolejności). Konto panelu powstaje przy pierwszym logowaniu i jest wiązane po identyfikatorze Entra ID; profil wynika z grup przy każdym logowaniu. Drugi składnik zapewnia Entra ID (dostęp warunkowy) – gdy polityka MFA panelu obejmuje konto, wymagany jest `amr` = `mfa` w tokenie. Konta SSO nie mają hasła w panelu: operacje chronione hasłem potwierdzają przyciskiem *Potwierdź w Entra ID* (okienko z ponownym logowaniem). Konta lokalne, w tym awaryjne konto administratora, działają bez zmian.
+- **Nowe źródła syslog z dekoderem wbudowanym** ([docs/dekodery.md](docs/dekodery.md#źródła-z-dekoderem-wbudowanym)): serwery **Linux** przez rsyslog (logowania SSH, sudo, su, PAM, zmiany kont i grup), **pfSense i OPNsense** (zapora filterlog IPv4/IPv6, logowania do panelu) oraz **Cisco ASA / Firepower** (listy dostępu, logowania administratorów, AAA, sesje VPN AnyConnect, polecenia; numer komunikatu w `event.code`). Konfiguracja urządzeń w dokumentacji. Produkty w regułach: `linux`, `pfsense` (`opnsense`), `cisco` (`asa`).
+- **Reguły dla nowych źródeł**: Linux – seria nieudanych logowań SSH, próby na wiele nieistniejących kont, logowanie SSH na root, założenie konta, dodanie do grupy uprzywilejowanej (sudo, wheel, docker…), odmowa sudo; pfSense/OPNsense – skanowanie portów, seria nieudanych logowań do panelu; Cisco ASA – seria odrzuconych logowań VPN, logowań administratora, skanowanie portów.
+- Logowania z Linuksa, pfSense/OPNsense i Cisco ASA (także połączenia VPN) liczą się w korelacji „udane logowanie po serii nieudanych” i w tabeli logowań.
+- **Stan systemu: „Nieczytelne paczki (24 h)”** – paczki, których normalizator nie odczytał (uszkodzone); ich oryginał zostaje w archiwum NIS2.
+- **Zapora** ([docs/instalacja.md](docs/instalacja.md#zapora)): które sieci potrzebują których portów i jak je ograniczyć (łańcuch DOCKER-USER – Docker omija ufw i firewalld). Nowa zmienna `VARDR_GRAFANA_ADDR` – np. `127.0.0.1`, żeby Grafana była dostępna tylko tunelem SSH.
+
+### Zmienione
+- `deploy/vardr/build-bundle.sh` przyjmuje gotowe programy Windows (`VARDR_WINDOWS_BIN`) zamiast budować je samodzielnie.
+
+### Aktualizacja
+- Migracja bazy panelu `029_oidc.sql` (wykonuje ją siem-api przy starcie). Logowanie SSO jest wyłączone, dopóki administrator go nie skonfiguruje; wymaga klucza `certs/mfa.key`.
+- Instalator przy aktualizacji odświeża widok tabeli logowań w ClickHouse (`03-auth-events.sh`) – nowe źródła logowań działają bez ręcznych kroków. Zaktualizuj normalizator (nowe dekodery) i detektor (nowe produkty reguł) razem.
+
 ## [1.5.3] – 2026-10-27 – Wyjątki reguł i propozycje AI
 
 ### Dodane

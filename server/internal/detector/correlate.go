@@ -17,7 +17,7 @@ import (
 
 // Korelacje międzyźródłowe (etap 7d) – reguły wbudowane, oceniane co minutę
 // zapytaniami do ClickHouse po osobie (user.identity), niezależnie od źródła
-// (AD, Entra ID, VPN FortiGate, router MikroTik). Sigma z progami nie wyraża
+// (AD, Entra ID, VPN FortiGate i Cisco ASA, routery i zapory, serwery Linux). Sigma z progami nie wyraża
 // sekwencji („udane po nieudanych”) ani porównania z historią („nowy kraj”).
 // Alert dotyczy zdarzenia zamykającego sekwencję – para (reguła, zdarzenie)
 // jest w alercie najwyżej raz, więc zakładka okien i restart nie dublują.
@@ -34,11 +34,14 @@ const (
 	authFailureSQL = `((event_dataset = 'windows.security' AND event_code IN (4625, 4771))
 		OR (event_dataset = 'azure.signinlogs' AND event_outcome = 'failure')
 		OR (event_dataset = 'fortinet.fortigate' AND (event_action = 'ssl-login-fail' OR (event_action = 'login' AND event_outcome = 'failure')))
-		OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'failure'))`
+		OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'failure')
+		OR (event_dataset IN ('linux.auth', 'pfsense.firewall', 'cisco.asa') AND event_action = 'login' AND event_outcome = 'failure'))`
 	authSuccessSQL = `((event_dataset = 'windows.security' AND event_code = 4624)
 		OR (event_dataset = 'azure.signinlogs' AND event_outcome = 'success')
 		OR (event_dataset = 'fortinet.fortigate' AND (event_action IN ('ssl-login', 'tunnel-up') OR (event_action = 'login' AND event_outcome = 'success')))
-		OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'success'))`
+		OR (event_dataset = 'mikrotik.routeros' AND event_action = 'login' AND event_outcome = 'success')
+		OR (event_dataset IN ('linux.auth', 'pfsense.firewall') AND event_action = 'login' AND event_outcome = 'success')
+		OR (event_dataset = 'cisco.asa' AND event_action IN ('login', 'vpn-connect') AND event_outcome = 'success'))`
 )
 
 // geoDatasets: zbiory z krajem logowania (source.geo.country_iso_code).
@@ -56,9 +59,9 @@ const (
 func successAfterFailuresText(lang string) alerts.RuleText {
 	return alerts.RuleText{
 		Title: pick(lang, "Udane logowanie po serii nieudanych (wiele źródeł)", "Successful sign-in after a series of failures (multiple sources)"),
-		Description: fmt.Sprintf(pick(lang, "Udane logowanie osoby (AD, Entra ID, VPN, router) poprzedzone co najmniej %d nieudanymi "+
+		Description: fmt.Sprintf(pick(lang, "Udane logowanie osoby (AD, Entra ID, VPN, router, zapora, serwer Linux) poprzedzone co najmniej %d nieudanymi "+
 			"logowaniami tej osoby w ciągu %s – w dowolnych źródłach. Typowe dla odgadniętego hasła: seria prób na VPN "+
-			"albo w chmurze, a potem udane wejście.", "A successful sign-in of a person (AD, Entra ID, VPN, router) preceded by at "+
+			"albo w chmurze, a potem udane wejście.", "A successful sign-in of a person (AD, Entra ID, VPN, router, firewall, Linux server) preceded by at "+
 			"least %d failed sign-ins of that person within %s – in any sources. Typical of a guessed password: a series of "+
 			"attempts on the VPN or in the cloud, then a successful sign-in."), failuresNeeded, fmtWindow(failureWindow)),
 		Instructions: pick(lang, "Ustal z osobą, czy to ona się logowała (telefon, nie e-mail). Porównaj adresy prób i udanego "+

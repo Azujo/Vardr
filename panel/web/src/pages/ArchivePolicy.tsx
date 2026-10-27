@@ -11,7 +11,6 @@ import {
   Modal,
   MultiSelect,
   NumberInput,
-  PasswordInput,
   SimpleGrid,
   Stack,
   Switch,
@@ -44,6 +43,7 @@ import {
 } from "../api";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
+import { ReauthPassword } from "../sso";
 
 // Te same reguły co w serwerze (urd.Weakening) – tylko do podpowiedzi
 // w formularzu; rozstrzyga serwer.
@@ -482,13 +482,12 @@ export default function ArchivePolicy({ admin, onChanged }: { admin: boolean; on
             <Text size="sm">
               {t("policy.confirmText", { grace: b?.grace_s ? formatDuration(b.grace_s) : t("policy.immediately") })}
             </Text>
-            <PasswordInput
+            <ReauthPassword
               label={t("yourPassword")}
               required
               autoFocus
-              autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
+              onChange={setPassword}
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setConfirm(null)}>

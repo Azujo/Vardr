@@ -40,7 +40,8 @@
     "notifications": "Powiadomienia",
     "backup": "Kopie zapasowe",
     "backupHint": "harmonogram i miejsce",
-    "audit": "Dziennik audytu"
+    "audit": "Dziennik audytu",
+    "sso": "Logowanie SSO"
   },
   "header": {
     "light": "Tryb jasny",
@@ -247,5 +248,32 @@
     "author": "Autor reguły: {{author}} · źródło:",
     "license": "· licencja",
     "unknownAuthor": "autor nieznany (brak pola author)"
+  },
+  "sso": {
+    "reauthLabel": "Potwierdzenie tożsamości",
+    "reauthHint": "Konto SSO nie ma hasła w panelu – zaloguj się ponownie u dostawcy tożsamości (ważne kilka minut).",
+    "reauthButton": "Potwierdź w Entra ID",
+    "confirmed": "Tożsamość potwierdzona",
+    "toPanel": "Przejdź do panelu",
+    "err": {
+      "failed": "Logowanie SSO nie powiodło się ({{code}}).",
+      "popup_blocked": "Przeglądarka zablokowała okienko logowania – zezwól na okienka dla panelu.",
+      "cancelled": "Okienko logowania zamknięte przed potwierdzeniem.",
+      "state": "Logowanie SSO wygasło albo zaczęło się w innej karcie – spróbuj jeszcze raz.",
+      "disabled": "Logowanie SSO jest wyłączone.",
+      "provider_unavailable": "Dostawca tożsamości jest niedostępny – spróbuj później albo zgłoś to administratorowi.",
+      "provider_error": "Dostawca tożsamości odrzucił logowanie.",
+      "token": "Nie udało się sprawdzić odpowiedzi dostawcy tożsamości.",
+      "rate_limited": "Zbyt wiele prób – odczekaj chwilę.",
+      "unauthenticated": "Sesja panelu wygasła – zaloguj się ponownie.",
+      "other_account": "Potwierdzono inne konto niż zalogowane.",
+      "groups_overage": "Konto należy do zbyt wielu grup – dostawca nie przekazał listy grup. Zgłoś to administratorowi (przypisanie grup do aplikacji).",
+      "disabled_account": "Konto jest zablokowane w panelu.",
+      "no_access": "Konto nie należy do żadnej grupy z dostępem do panelu.",
+      "username_taken": "Login jest już zajęty przez konto lokalne albo domenowe panelu.",
+      "no_mfa": "Panel wymaga drugiego składnika, a logowanie u dostawcy go nie potwierdziło."
+    },
+    "confirmedClose": "Tożsamość potwierdzona – możesz zamknąć to okno.",
+    "waiting": "Dokończ logowanie w otwartym okienku (albo kliknij ponownie)."
   }
 }

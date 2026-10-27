@@ -13,7 +13,6 @@ import {
   Code,
   Group,
   Modal,
-  PasswordInput,
   Select,
   Stack,
   Table,
@@ -27,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { aiApi, formatDate, rulesApi, type ExceptionMatch, type RuleException, type RuleTestResult } from "../api";
 import { serverText } from "../i18n";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 // Pseudonimy z maskowania danych dla AI (USER-…, HOST-…) – w wyjątku muszą
 // być prawdziwe wartości; odkrycie wymaga uprawnienia i trafia do audytu.
@@ -277,7 +277,7 @@ export function ExceptionModal({
             onChange={(v) => setDays(v ?? "90")}
             allowDeselect={false}
           />
-          <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+          <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
         </Group>
         <Group justify="flex-end">
           <Button loading={busy} disabled={!valid || reason.trim().length < 3 || !password} onClick={() => void save()}>

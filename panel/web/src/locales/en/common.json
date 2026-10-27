@@ -40,7 +40,8 @@
     "notifications": "Notifications",
     "backup": "Backups",
     "backupHint": "schedule and destination",
-    "audit": "Audit log"
+    "audit": "Audit log",
+    "sso": "SSO sign-in"
   },
   "header": {
     "light": "Light mode",
@@ -239,5 +240,32 @@
     "author": "Rule author: {{author}} · source:",
     "license": "· license",
     "unknownAuthor": "unknown author (no author field)"
+  },
+  "sso": {
+    "reauthLabel": "Identity confirmation",
+    "reauthHint": "An SSO account has no password in the panel – sign in again with the identity provider (valid for a few minutes).",
+    "reauthButton": "Confirm with Entra ID",
+    "confirmed": "Identity confirmed",
+    "toPanel": "Go to the panel",
+    "err": {
+      "failed": "SSO sign-in failed ({{code}}).",
+      "popup_blocked": "The browser blocked the sign-in window – allow pop-ups for the panel.",
+      "cancelled": "The sign-in window was closed before confirmation.",
+      "state": "The SSO sign-in expired or started in another tab – try again.",
+      "disabled": "SSO sign-in is turned off.",
+      "provider_unavailable": "The identity provider is unavailable – try later or report it to the administrator.",
+      "provider_error": "The identity provider rejected the sign-in.",
+      "token": "The identity provider's response could not be verified.",
+      "rate_limited": "Too many attempts – wait a moment.",
+      "unauthenticated": "The panel session has expired – sign in again.",
+      "other_account": "A different account than the signed-in one was confirmed.",
+      "groups_overage": "The account belongs to too many groups – the provider did not send the group list. Report it to the administrator (assign groups to the application).",
+      "disabled_account": "The account is disabled in the panel.",
+      "no_access": "The account is not in any group with access to the panel.",
+      "username_taken": "The username is already used by a local or domain account of the panel.",
+      "no_mfa": "The panel requires a second factor and the provider sign-in did not confirm one."
+    },
+    "confirmedClose": "Identity confirmed – you can close this window.",
+    "waiting": "Finish signing in in the opened window (or click again)."
   }
 }

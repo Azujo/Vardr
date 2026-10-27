@@ -71,6 +71,9 @@ Tagi w konwencji Sigmy: technika `attack.t1110.001`, taktyka `attack.credential_
 | `windows` | `category: network_connection`, `file_event`, `dns_query`, `registry_set` | Sysmon 3, 11, 22, 13 |
 | `fortigate` (`fortinet`) | – | `fortinet.fortigate` (dekoder syslog) |
 | `mikrotik` (`routeros`) | – | `mikrotik.routeros` |
+| `linux` | – | `linux.auth` (serwery Linux przez rsyslog) |
+| `pfsense` (`opnsense`) | – | `pfsense.firewall` |
+| `cisco` (`asa`) | – | `cisco.asa` |
 | `azure` (`entra`) | `signinlogs`, `auditlogs` | logi Entra ID z konektora |
 
 Inne wartości są odrzucane przy wczytaniu. Reguła bez `service`/`category` obejmuje cały produkt (np. wszystkie zdarzenia Windows).
@@ -307,6 +310,13 @@ Kod: `server/internal/detector/heartbeat.go`, `tamper.go`, `correlate.go`, `sile
 | `windows/ps_script_suspicious_keywords.yml` | podejrzane słowa w skryptach PowerShell (4104) |
 | `network/fortigate_vpn_brute_force.yml`, `fortigate_admin_login_failures.yml` | seria nieudanych logowań do VPN i panelu FortiGate |
 | `network/mikrotik_login_brute_force.yml` | seria nieudanych logowań do routera MikroTik |
+| `linux/linux_ssh_brute_force.yml`, `linux_ssh_user_enumeration.yml` | seria nieudanych logowań SSH; próby na ≥5 nieistniejących kont z jednego adresu |
+| `linux/linux_root_ssh_login.yml` | logowanie SSH bezpośrednio na root |
+| `linux/linux_user_created.yml`, `linux_privileged_group_member_added.yml` | założenie konta; dodanie do sudo, wheel, docker… |
+| `linux/linux_sudo_denied.yml` | odmowa sudo (spoza sudoers, błędne hasła) |
+| `network/pfsense_port_scan.yml`, `pfsense_admin_login_failures.yml` | skanowanie portów; seria nieudanych logowań do panelu pfSense/OPNsense |
+| `network/cisco_asa_vpn_brute_force.yml`, `cisco_asa_admin_login_failures.yml` | seria odrzuconych logowań VPN; seria nieudanych logowań administratora ASA |
+| `network/cisco_asa_port_scan.yml` | skanowanie portów (listy dostępu ASA) |
 | `cross/password_spraying_multi_source.yml` | spraying z jednego adresu łącznie w AD, Entra, VPN i na routerze |
 | `windows/proc_discovery_burst.yml` | rozpoznanie: ≥4 różne narzędzia (whoami, net, nltest, systeminfo…) na komputerze w 10 min |
 | `windows/proc_ad_discovery_tools.yml` | rozpoznanie AD: nltest /domain_trusts, `net group "domain admins"`, AdFind, BloodHound |

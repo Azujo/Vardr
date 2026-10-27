@@ -1,0 +1,45 @@
+title: Linux – próby SSH na wiele nieistniejących kont
+id: d33c8f24-6324-4b22-91ac-bc0c3a472371
+status: stable
+description: |
+  Jeden adres próbował zalogować się przez SSH na co najmniej 5 różnych
+  kont, które nie istnieją na serwerze, w ciągu 10 minut. Typowe dla
+  słownikowego zgadywania loginów (admin, oracle, test, ubuntu…) przez
+  skanery albo przejęty komputer w sieci.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110.003
+  - attack.reconnaissance
+logsource:
+  product: linux
+detection:
+  selection:
+    invalid_user: 'true'
+  condition: selection
+falsepositives:
+  - Pomyłki w loginie przy konfiguracji nowego narzędzia (zwykle 1–2 konta)
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – SSH attempts on many non-existent accounts"
+      description: |
+        One address tried to log in over SSH to at least 5 different accounts that do
+        not exist on the server within 10 minutes. Typical of dictionary username
+        guessing (admin, oracle, test, ubuntu…) by scanners or a compromised computer
+        in the network.
+      instructions: |
+        Address {{source.ip}} tried {{count}} non-existent accounts on {{host.name}} in
+        {{window}} (accounts: {{values}}). Block the address and check whether SSH must be
+        reachable from it. An internal address – check that computer.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 5
+    window: 10m
+    distinct: user.name
+  suppress: 1h
+  instructions: |
+    Adres {{source.ip}} próbował {{count}} nieistniejących kont na {{host.name}}
+    w {{window}} (konta: {{values}}). Zablokuj adres i sprawdź, czy SSH musi
+    być z niego dostępne. Adres wewnętrzny – sprawdź ten komputer.

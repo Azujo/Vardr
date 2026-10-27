@@ -20,7 +20,7 @@ export interface User {
   last_login_at?: string;
   created_at: string;
   updated_at: string;
-  source?: "local" | "ldap"; // ldap – konto domenowe (hasło i profil z AD)
+  source?: "local" | "ldap" | "oidc"; // ldap – konto domenowe (hasło i profil z AD); oidc – logowanie SSO (Entra ID)
   language?: string; // język panelu wybrany na koncie; pusty – z przeglądarki
 }
 
@@ -67,6 +67,21 @@ export interface LDAPConfig {
   base_dn: string;
   groups_base_dn: string;
   mappings: LDAPMapping[];
+}
+
+export interface OIDCMapping {
+  group: string; // identyfikator obiektu grupy (Entra ID)
+  name: string;
+  profile: string;
+}
+
+export interface OIDCConfig {
+  enabled: boolean;
+  issuer: string;
+  client_id: string;
+  redirect_url: string;
+  button_label: string;
+  mappings: OIDCMapping[];
 }
 
 export interface LDAPGroup {
@@ -122,6 +137,7 @@ export interface MFAStatus {
   policy: MFAPolicy;
   required: boolean;
   session_mfa: boolean;
+  sso?: boolean; // konto SSO – drugi składnik u dostawcy tożsamości
 }
 
 export type MFAPolicy = "all" | "admins" | "none";
@@ -224,6 +240,16 @@ export const api = {
     request<{ groups: LDAPGroup[] }>("POST", "/api/v1/settings/ldap/groups", { config, bind_password }),
   ldapCheck: (config: LDAPConfig, bind_password: string, login: string) =>
     request<LDAPAccountCheck>("POST", "/api/v1/settings/ldap/check", { config, bind_password, login }),
+  oidcInfo: () => request<{ enabled: boolean; label?: string }>("GET", "/api/v1/auth/oidc"),
+  oidcSettings: () => request<{ available: boolean; config?: OIDCConfig; has_secret?: boolean }>("GET", "/api/v1/settings/oidc"),
+  saveOidcSettings: (config: OIDCConfig, client_secret: string, password: string) =>
+    request<{ ok: boolean }>("PUT", "/api/v1/settings/oidc", { config, client_secret, password }),
+  oidcTest: (config: OIDCConfig, client_secret: string) =>
+    request<{ ok: boolean; message?: string; error?: string; error_en?: string; authorization_endpoint?: string }>(
+      "POST",
+      "/api/v1/settings/oidc/test",
+      { config, client_secret },
+    ),
   profiles: () => request<{ profiles: Profile[]; editable: boolean }>("GET", "/api/v1/profiles"),
   saveProfile: (id: string, p: { name: string; description: string; permissions: Permissions; password: string }) =>
     request<{ id: string }>("PUT", `/api/v1/profiles/${encodeURIComponent(id)}`, p),

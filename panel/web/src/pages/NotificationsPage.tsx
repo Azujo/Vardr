@@ -45,6 +45,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { languages } from "../i18n";
+import { ReauthPassword } from "../sso";
 
 const allEvents: NotifyEvent[] = ["alert", "incident", "health", "anchor"];
 
@@ -526,13 +527,12 @@ export default function NotificationsPage() {
             <Text size="sm">
               {t("notify.confirmText", { what: pending?.label })}
             </Text>
-            <PasswordInput
+            <ReauthPassword
               label={t("yourPassword")}
               required
               autoFocus
-              autoComplete="current-password"
               value={password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
+              onChange={setPassword}
             />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setPending(null)}>

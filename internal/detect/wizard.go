@@ -50,6 +50,12 @@ func LogsourceFor(dataset, channel string) (product, service string) {
 		return "fortigate", ""
 	case dataset == "mikrotik.routeros" || strings.HasPrefix(dataset, "mikrotik.routeros."):
 		return "mikrotik", ""
+	case strings.HasPrefix(dataset, "linux."):
+		return "linux", ""
+	case dataset == "pfsense.firewall":
+		return "pfsense", ""
+	case dataset == "cisco.asa":
+		return "cisco", ""
 	}
 	for name, ds := range azureServices {
 		if ds == dataset {

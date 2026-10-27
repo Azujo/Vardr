@@ -164,6 +164,7 @@ func serve(log *slog.Logger) error {
 	apiServer.Backups = db
 	apiServer.Profiles = db
 	apiServer.LDAP = db
+	apiServer.OIDC = db
 	apiServer.Incidents = db
 	apiServer.APITokens = db
 	apiServer.AI = db

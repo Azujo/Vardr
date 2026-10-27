@@ -71,6 +71,9 @@ type Session struct {
 	IP         string
 	UserAgent  string
 	MFA        bool // potwierdzona drugim składnikiem
+	// ReauthAt: ostatnie potwierdzenie tożsamości u dostawcy OIDC (konta SSO
+	// nie mają hasła do ponownego podania).
+	ReauthAt *time.Time
 }
 
 // AuditEntry to wpis dziennika audytu.
@@ -235,13 +238,13 @@ func (s *PG) CreateSession(ctx context.Context, ss Session) error {
 // SessionWithUser zwraca ważną sesję razem z kontem.
 func (s *PG) SessionWithUser(ctx context.Context, id string, now time.Time) (Session, User, error) {
 	var ss Session
-	row := s.pool.QueryRow(ctx, `SELECT s.id, s.user_id, s.csrf, s.created_at, s.last_seen_at, s.expires_at, s.ip, s.user_agent, s.mfa,
+	row := s.pool.QueryRow(ctx, `SELECT s.id, s.user_id, s.csrf, s.created_at, s.last_seen_at, s.expires_at, s.ip, s.user_agent, s.mfa, s.reauth_at,
 			u.id, u.username, u.display_name, u.password_hash, u.role, u.disabled, u.must_change_password,
 			u.failed_logins, u.locked_until, u.last_login_at, u.created_at, u.updated_at, u.source, coalesce(u.external_id, ''), u.ldap_dn
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.id = $1 AND s.expires_at > $2`, id, now)
 	var u User
-	err := row.Scan(&ss.ID, &ss.UserID, &ss.CSRF, &ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt, &ss.IP, &ss.UserAgent, &ss.MFA,
+	err := row.Scan(&ss.ID, &ss.UserID, &ss.CSRF, &ss.CreatedAt, &ss.LastSeenAt, &ss.ExpiresAt, &ss.IP, &ss.UserAgent, &ss.MFA, &ss.ReauthAt,
 		&u.ID, &u.Username, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Disabled, &u.MustChangePassword,
 		&u.FailedLogins, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt, &u.Source, &u.ExternalID, &u.LDAPDN)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -9,7 +9,6 @@ import {
   Group,
   Modal,
   NumberInput,
-  PasswordInput,
   ScrollArea,
   SimpleGrid,
   Stack,
@@ -39,6 +38,7 @@ import { useTranslation } from "react-i18next";
 import i18n, { serverText } from "../i18n";
 import { useAuth } from "../auth";
 import { lineDiff } from "../diff";
+import { ReauthPassword } from "../sso";
 
 const newDecoderTemplate = () => `id: ${i18n.t("decoders:template.id")}
 title: ${i18n.t("decoders:template.title")}
@@ -736,7 +736,7 @@ export default function DecodersPage() {
               onChange={(e) => setReason(e.currentTarget.value)}
             />
             {(needPassword || weakening) && (
-              <PasswordInput label={t("action.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+              <ReauthPassword label={t("action.password")} value={password} onChange={setPassword} />
             )}
             <Group justify="flex-end">
               <Button

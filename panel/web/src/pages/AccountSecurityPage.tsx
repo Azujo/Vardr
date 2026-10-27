@@ -64,7 +64,12 @@ export default function AccountSecurityPage() {
       {!st.available && (
         <Alert color="gray">{t("security.unavailable")}</Alert>
       )}
-      {st.available && (
+      {st.sso && (
+        <Alert color="blue" title={t("security.ssoTitle")}>
+          {t("security.ssoText")} {st.session_mfa ? t("security.ssoSessionMfa") : t("security.ssoSessionNoMfa")}
+        </Alert>
+      )}
+      {st.available && !st.sso && (
         <Card withBorder>
           <Stack gap="xs">
             <Group justify="space-between">

@@ -4,11 +4,12 @@
 // z pliku) – zawsze z powodem i hasłem: hurtowe włączenie może zalać
 // analityków alertami, a wyłączenie osłabia detekcję.
 import { useState } from "react";
-import { Alert as MAlert, Button, Group, Modal, PasswordInput, Stack, Text, Textarea } from "@mantine/core";
+import { Alert as MAlert, Button, Group, Modal, Stack, Text, Textarea } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { rulesApi, type BulkRuleAction } from "../api";
+import { ReauthPassword } from "../sso";
 
 // Nazwy akcji tłumaczone przy odczycie (rules: bulk.<akcja>).
 export const bulkLabels = Object.defineProperties({} as Record<BulkRuleAction, string>, {
@@ -66,7 +67,7 @@ export default function RuleBulkModal({
             value={reason}
             onChange={(e) => setReason(e.currentTarget.value)}
           />
-          <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+          <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
           <Group justify="flex-end">
             <Button
               color={action === "disable" ? "red" : undefined}

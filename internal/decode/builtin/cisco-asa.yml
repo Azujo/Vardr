@@ -1,0 +1,69 @@
+id: cisco-asa
+title: Cisco ASA / Firepower (FTD) – zapora, VPN, logowania administratorów
+description: |
+  Dziennik Cisco ASA i Firepower Threat Defense wysyłany przez syslog
+  (logging host, poziom co najmniej informational dla logowań i VPN).
+  Komunikaty %ASA-/%FTD- z numerem w event.code. Rozpoznaje odrzucony
+  i dozwolony ruch z list dostępu, logowania administratorów (SSH, ASDM,
+  konsola) i użytkowników AAA, sesje VPN AnyConnect (początek, koniec)
+  oraz polecenia administratorów. Czas z treści, gdy włączone jest
+  „logging timestamp” (inaczej – czas przyjęcia).
+version: 1
+priority: 60
+dataset: cisco.asa
+match:
+  regex: '%(?:ASA|FTD)-\d-\d{6}: '
+parser:
+  type: regex
+  patterns:
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>106023): Deny (?P<proto>\S+) src (?P<src_if>[^:\s]+):(?P<src_ip>[0-9a-fA-F.:]+?)(?:/(?P<src_port>\d+))? dst (?P<dst_if>[^:\s]+):(?P<dst_ip>[0-9a-fA-F.:]+?)(?:/(?P<dst_port>\d+))?(?: \(type \d+, code \d+\))? by access-group "(?P<acl>[^"]+)"'
+      set: {event.action: firewall, fw_action: deny}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>106100): access-list (?P<acl>\S+) (?P<fw_action>permitted|denied) (?P<proto>\S+) (?P<src_if>[^/\s]+)/(?P<src_ip>[0-9a-fA-F.:]+)\((?P<src_port>\d+)\)[^-]*-> (?P<dst_if>[^/\s]+)/(?P<dst_ip>[0-9a-fA-F.:]+)\((?P<dst_port>\d+)\)'
+      set: {event.action: firewall}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>106001|106006|106007|106015): (?:Inbound |Outbound )?(?:TCP|UDP|tcp|udp)? ?(?:connection )?[Dd]en(?:y|ied) .*?from (?P<src_ip>[0-9a-fA-F.:]+)/(?P<src_port>\d+) to (?P<dst_ip>[0-9a-fA-F.:]+)/(?P<dst_port>\d+)'
+      set: {event.action: firewall, fw_action: deny}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>605004): Login denied from (?P<src_ip>[0-9a-fA-F.:]+)/(?P<src_port>\d+) to (?P<dst_if>[^:\s]+):(?P<dst_ip>[0-9a-fA-F.:]+)/(?P<method>\S+) for user "(?P<user>[^"]*)"'
+      set: {event.action: login, event.outcome: failure}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>605005): Login permitted from (?P<src_ip>[0-9a-fA-F.:]+)/(?P<src_port>\d+) to (?P<dst_if>[^:\s]+):(?P<dst_ip>[0-9a-fA-F.:]+)/(?P<method>\S+) for user "(?P<user>[^"]*)"'
+      set: {event.action: login, event.outcome: success}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>611101): User authentication succeeded: (?:IP address: (?P<src_ip>[0-9a-fA-F.:]+), )?Uname: (?P<user>\S+)'
+      set: {event.action: login, event.outcome: success, method: admin}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>611102): User authentication failed: (?:IP address: (?P<src_ip>[0-9a-fA-F.:]+), )?Uname: (?P<user>\S+)'
+      set: {event.action: login, event.outcome: failure, method: admin}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>113004): AAA user authentication Successful : server = +(?P<aaa_server>\S+) : user = (?P<user>\S+)'
+      set: {event.action: aaa-auth, event.outcome: success}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>113005|113015): AAA user authentication Rejected : reason = (?P<reason>[^:]+?) : (?:server = +(?P<aaa_server>\S+)|local database) : user = (?P<user>\S+)(?: : user IP = (?P<src_ip>[0-9a-fA-F.:]+))?'
+      set: {event.action: login, event.outcome: failure, method: vpn}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>113039): Group <(?P<group_policy>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[0-9a-fA-F.:]+)> AnyConnect parent session started'
+      set: {event.action: vpn-connect, event.outcome: success, method: vpn}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>722051): Group <(?P<group_policy>[^>]*)> User <(?P<user>[^>]*)> IP <(?P<src_ip>[0-9a-fA-F.:]+)> (?:IPv4 )?Address <(?P<assigned_ip>[0-9a-fA-F.:]+)> assigned to session'
+      set: {event.action: vpn-address-assigned, method: vpn}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>113019): Group = (?P<group_policy>[^,]*), Username = (?P<user>[^,]*), IP = (?P<src_ip>[0-9a-fA-F.:]+), Session disconnected\. Session Type: (?P<session_type>[^,]*), Duration: (?P<duration>[^,]*), .*?Reason: (?P<reason>.+)$'
+      set: {event.action: vpn-disconnect, method: vpn}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>111008|111010): User ''(?P<user>[^'']+)''(?:, running ''(?P<client>[^'']*)'' from IP (?P<src_ip>[0-9a-fA-F.:]+),)? executed (?:the )?''?(?P<command>[^'']+)''?'
+      set: {event.action: config-change}
+    - regex: '^(?:(?P<asa_time>[A-Z][a-z]{2} +\d{1,2} \d{4} \d{2}:\d{2}:\d{2}) .*?)?%(?:ASA|FTD)-(?P<level>\d)-(?P<msg_id>\d{6}): (?P<text>.*)$'
+      set: {event.action: other}
+fields:
+  user.name: user
+  source.ip: src_ip
+  process.name: method
+  process.command_line: command
+  event.code: msg_id
+  message: text
+outcome:
+  field: fw_action
+  failure: [deny, denied]
+  success: [permitted]
+time:
+  fields: [asa_time]
+  layout: "Jan _2 2006 15:04:05"
+samples:
+  - '<164>Oct  9 13:00:00 asa01 %ASA-4-106023: Deny tcp src outside:203.0.113.9/44321 dst inside:192.168.1.10/22 by access-group "OUTSIDE_IN" [0x0, 0x0]'
+  - '<166>Oct  9 13:00:01 asa01 %ASA-6-106100: access-list OUTSIDE_IN permitted tcp outside/198.51.100.7(51234) -> inside/192.168.1.20(443) hit-cnt 1 first hit [0x1234abcd, 0x0]'
+  - '<164>Oct 09 2026 13:00:02 asa01 : %ASA-4-605004: Login denied from 203.0.113.9/40122 to outside:192.0.2.1/ssh for user "admin"'
+  - '<166>Oct  9 13:00:03 asa01 %ASA-6-605005: Login permitted from 192.168.1.5/51234 to inside:192.168.1.1/ssh for user "admin"'
+  - '<166>Oct  9 13:00:04 asa01 %ASA-6-113005: AAA user authentication Rejected : reason = AAA failure : server = 10.1.1.10 : user = jkowalski : user IP = 203.0.113.45'
+  - '<166>Oct  9 13:00:05 asa01 %ASA-6-113039: Group <GP-VPN> User <jkowalski> IP <203.0.113.45> AnyConnect parent session started.'
+  - '<165>Oct  9 13:00:06 asa01 %ASA-5-111008: User ''admin'' executed the ''access-list OUTSIDE_IN extended permit tcp any any eq 3389'' command.'
+  - '<166>%ASA-6-302013: Built inbound TCP connection 12345 for outside:198.51.100.7/51234 (198.51.100.7/51234) to inside:192.168.1.20/443 (192.0.2.20/443)'

@@ -62,7 +62,9 @@
     "policyAdmins": "Administrator accounts without a second factor will set it up at their next sign-in; their current sessions without a second factor will be ended.",
     "resetMfaTitle": "Reset second factor – {{user}}",
     "resetMfaText": "E.g. for a lost phone. The account loses its app and recovery codes and its sessions are ended; at the next sign-in it sets up the app again (if the second factor is required). The change is recorded in the audit log.",
-    "reset": "Reset"
+    "reset": "Reset",
+    "ssoTip": "SSO account – sign-in and profile from Entra ID",
+    "ssoProfile": "the profile of an SSO account comes from Entra ID groups (SSO sign-in)"
   },
   "audit": {
     "title": "Audit log",
@@ -417,5 +419,52 @@
     "secretText": "Copy the secret and set it at the recipient (in the flow, function or service that checks the signature).",
     "secretOnce": "The panel shows it only now.",
     "secretHow": "Signature: HMAC-SHA256 with the secret over “<X-Vardr-Timestamp>.<body>”, header X-Vardr-Signature: sha256=<hex>. Reject messages with a timestamp older than a few minutes. Details and an example: the panel documentation (Notifications)."
+  },
+  "sso": {
+    "title": "SSO sign-in",
+    "intro": "Sign-in with Microsoft Entra ID (OpenID Connect). A panel account is created at the first sign-in and its permission profile comes from Entra ID groups – again at every sign-in. SSO accounts have no password in the panel; password-protected operations are confirmed by signing in again with Entra ID. Keep at least one local administrator account in case the provider fails.",
+    "unavailable": "SSO sign-in unavailable",
+    "unavailableText": [
+      "The application secret is encrypted with the key in ",
+      " on the server – without it SSO sign-in is turned off."
+    ],
+    "step1": "1. Application in Entra ID",
+    "enabled": "on",
+    "disabled": "off",
+    "unsaved": " (unsaved)",
+    "registerHint": "Entra ID → App registrations → New registration (Web platform) with the redirect URI below. In “Token configuration” add the groups claim (security group IDs) and the optional amr claim. Details – documentation (Panel → SSO sign-in).",
+    "redirect": "Redirect URI",
+    "redirectHint": "Enter it in the app registration – it must match exactly, with https and the panel port.",
+    "issuer": "Issuer",
+    "issuerHint": "https://login.microsoftonline.com/<tenant ID>/v2.0",
+    "clientId": "Application (client) ID",
+    "clientIdHint": "Application (client) ID from the app registration",
+    "secret": "Client secret",
+    "secretSaved": "saved – leave empty to keep it",
+    "secretNew": "Certificates & secrets → new client secret (the value, not the ID)",
+    "button": "Sign-in button text",
+    "buttonHint": "empty – “Microsoft Entra ID”",
+    "test": "Check provider",
+    "testOk": "Provider configuration fetched. Save the settings and test sign-in in a private browser window – do not sign out of this session until it works.",
+    "works": "works",
+    "error": "error",
+    "step2": "2. Groups and profiles",
+    "groupsIntro": "Entra ID group (object ID) → permission profile. An account gets the profile of the first matching group in the list; without a matching group the sign-in is rejected. The account profile changes at the next sign-in.",
+    "noMappings": "No mappings – nobody can sign in with SSO.",
+    "col": {
+      "group": "Group ID (Object ID)",
+      "name": "Name (description)",
+      "profile": "Profile"
+    },
+    "namePlaceholder": "e.g. SOC-Analysts",
+    "addMapping": "Add group",
+    "up": "up",
+    "down": "down",
+    "removeMapping": "Remove mapping",
+    "mfaNote": "The second factor for SSO accounts is enforced in Entra ID (Conditional Access). When the panel MFA policy requires it for an account, the panel accepts only sign-ins with a confirmed second factor (amr claim = mfa).",
+    "save": "Save settings",
+    "saveTitle": "Save SSO settings",
+    "saveText": "Changing SSO sign-in affects access to the panel – confirm it.",
+    "saved": "SSO settings saved"
   }
 }

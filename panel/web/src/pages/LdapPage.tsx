@@ -30,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import { api, profileName as builtinName, type LDAPAccountCheck, type LDAPConfig, type LDAPGroup, type Profile } from "../api";
 import { serverText } from "../i18n";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 const empty: LDAPConfig = {
   enabled: false,
@@ -404,7 +405,7 @@ export default function LdapPage() {
       <Modal opened={saveOpen} onClose={() => setSaveOpen(false)} title={t("ldap.saveTitle")} centered>
         <Stack>
           <Text size="sm">{t("ldap.saveText")}</Text>
-          <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+          <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} autoFocus />
           <Button
             loading={busy === "save"}
             disabled={!password}

@@ -1,0 +1,45 @@
+title: pfSense/OPNsense – seria nieudanych logowań do panelu zapory
+id: 20508db1-f89a-4834-9865-615ae2d0a505
+status: stable
+description: |
+  Co najmniej 5 nieudanych logowań do panelu WWW zapory pfSense albo
+  OPNsense z jednego adresu w ciągu 5 minut. Zgadywanie hasła
+  administratora – szczególnie groźne, gdy panel jest dostępny z internetu.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: pfsense
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+  condition: selection
+falsepositives:
+  - Administrator, który pomylił hasło albo ma zapamiętane stare w przeglądarce
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "pfSense/OPNsense – series of failed firewall web GUI logins"
+      description: |
+        At least 5 failed logins to the pfSense or OPNsense web GUI from one address
+        within 5 minutes. Administrator password guessing – especially dangerous when the
+        GUI is reachable from the internet.
+      instructions: |
+        {{count}} failed logins to the web GUI of {{host.name}} from {{source.ip}} in
+        {{window}} (last account {{user.name}}). Address from the internet – restrict the
+        GUI to the management network (anti-lockout rule, interface). Check whether a
+        successful login from this address followed the series.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 5
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań do panelu {{host.name}} z adresu
+    {{source.ip}} w {{window}} (ostatnio konto {{user.name}}). Adres
+    z internetu – ogranicz panel do sieci zarządzania (reguła anti-lockout,
+    interfejs). Sprawdź, czy po serii nie było udanego logowania z tego
+    adresu.

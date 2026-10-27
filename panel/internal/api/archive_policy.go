@@ -284,6 +284,16 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, password, op str
 		writeError(w, http.StatusForbidden, "token_not_allowed", "ta operacja wymaga potwierdzenia hasłem – tylko po zalogowaniu w panelu")
 		return false
 	}
+	if a.user.Source == store.SourceOIDC {
+		// Konto SSO nie ma hasła w panelu: potwierdzenie ponownym logowaniem
+		// u dostawcy (okienko w panelu) z ostatnich minut.
+		if s.ssoReauthOK(a) {
+			return true
+		}
+		s.audit(r, &a.user, "reauth_failed", a.user.Username, map[string]any{"operation": op, "reason": "sso_reauth_needed"})
+		writeError(w, http.StatusForbidden, "reauth_sso", "potwierdź tożsamość ponownym logowaniem w Entra ID")
+		return false
+	}
 	if password == "" {
 		writeError(w, http.StatusForbidden, "reauth_required", "ta zmiana osłabia ochronę – potwierdź ją swoim hasłem")
 		return false

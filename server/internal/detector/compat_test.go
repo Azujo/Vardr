@@ -369,6 +369,51 @@ func (c *corpus) network() {
 	for i := range 25 {
 		add(9*time.Hour+50*time.Minute+time.Duration(i)*time.Second, 0, fmt.Sprintf(traffic, "192.168.1.10", "8.8.8.8", 1000+i, "accept", 1000+i))
 	}
+	c.syslogSources(add)
+}
+
+// syslogSources: serwery Linux (rsyslog), pfSense/OPNsense i Cisco ASA (1.6.2).
+func (c *corpus) syslogSources(add func(at, late time.Duration, line string)) {
+	t0 := 8*time.Hour + 20*time.Minute
+	at := func(s int) time.Duration { return t0 + time.Duration(s)*time.Second }
+	// Linux: 6 kont nieistniejących i 6 prób na root z jednego adresu w 2 min,
+	// 3 próby z innego (poniżej progu); root zalogowany z sieci wewnętrznej.
+	for i, u := range []string{"oracle", "test", "ubuntu", "admin", "pi", "postgres"} {
+		add(at(i*10), time.Duration(i%2)*5*time.Minute, fmt.Sprintf("<86>{bsd} web01 sshd[%d]: Failed password for invalid user %s from 203.0.113.20 port %d ssh2", 100+i, u, 40000+i))
+		add(at(i*10+5), 0, fmt.Sprintf("<86>{bsd} web01 sshd[%d]: Failed password for root from 203.0.113.20 port %d ssh2", 200+i, 41000+i))
+	}
+	for i := range 3 {
+		add(at(30+i*10), 0, fmt.Sprintf("<86>{bsd} web01 sshd[%d]: Failed password for jan from 192.168.1.77 port %d ssh2", 300+i, 42000+i))
+	}
+	add(at(200), 0, "<86>{bsd} web01 sshd[400]: Accepted publickey for root from 192.168.1.5 port 50000 ssh2: ED25519 SHA256:abc")
+	add(at(210), 0, "<86>{bsd} web01 useradd[401]: new user: name=backdoor, UID=1002, GID=1002, home=/home/backdoor, shell=/bin/bash, from=/dev/pts/0")
+	add(at(215), 0, "<86>{bsd} web01 usermod[402]: add 'backdoor' to group 'sudo'")
+	add(at(216), 0, "<86>{bsd} web01 usermod[402]: add 'backdoor' to group 'users'")
+	add(at(220), 0, "<85>{bsd} web01 sudo:     ewa : user NOT in sudoers ; TTY=pts/1 ; PWD=/home/ewa ; USER=root ; COMMAND=/bin/bash")
+	add(at(225), 0, "<85>{bsd} web01 sudo:      jan : TTY=pts/0 ; PWD=/home/jan ; USER=root ; COMMAND=/usr/bin/apt update")
+
+	// pfSense: 22 zablokowane porty z jednego adresu, 5 nieudanych logowań do panelu.
+	for i := range 22 {
+		add(at(300+i*3), 0, fmt.Sprintf("<134>{bsd} filterlog[4321]: 5,,,1000000103,igb0,match,block,in,4,0x0,,64,%d,0,none,6,tcp,60,203.0.113.30,192.0.2.10,44321,%d,0,S,1,,64240,,mss", 1000+i, 20+i))
+	}
+	add(at(370), 0, "<134>{bsd} filterlog[4321]: 9,,,1000000110,igb1,match,pass,out,4,0x0,,64,1,0,DF,17,udp,74,192.168.1.10,9.9.9.9,53022,53,54")
+	for i := range 5 {
+		add(at(400+i*20), 0, "<38>{bsd} pfsense.home php-fpm[345]: /index.php: webConfigurator authentication error for user 'admin' from: 203.0.113.31")
+	}
+
+	// Cisco ASA: 11 odrzuconych logowań VPN z jednego adresu, 5 administratora
+	// (SSH) z innego, 22 porty odrzucone przez listę dostępu; połączenie VPN.
+	for i := range 11 {
+		add(at(600+i*15), 0, fmt.Sprintf("<166>{bsd} asa01 %%ASA-6-113005: AAA user authentication Rejected : reason = AAA failure : server = 10.1.1.10 : user = %s : user IP = 203.0.113.40",
+			[]string{"jkowalski", "anowak", "pwisniewski"}[i%3]))
+	}
+	for i := range 5 {
+		add(at(800+i*30), 0, fmt.Sprintf("<164>{bsd} asa01 %%ASA-4-605004: Login denied from 198.51.100.40/%d to outside:192.0.2.1/ssh for user \"admin\"", 50000+i))
+	}
+	for i := range 22 {
+		add(at(1000+i*3), 0, fmt.Sprintf("<164>{bsd} asa01 %%ASA-4-106023: Deny tcp src outside:203.0.113.41/44321 dst inside:192.168.1.10/%d by access-group \"OUTSIDE_IN\" [0x0, 0x0]", 1000+i))
+	}
+	add(at(1100), 0, "<166>{bsd} asa01 %ASA-6-113039: Group <GP-VPN> User <jkowalski> IP <203.0.113.45> AnyConnect parent session started.")
 }
 
 type hitKey struct{ rule, event, group string }

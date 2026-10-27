@@ -14,7 +14,6 @@ import {
   NumberInput,
   SegmentedControl,
   Checkbox,
-  PasswordInput,
   Select,
   Stack,
   Table,
@@ -29,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import { api, formatDate, formatNumber, profileName, type APIRequest, type APIToken, type APITokenKind, type Profile } from "../api";
 import { AIWarnings } from "./AiAccessPage";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
@@ -442,7 +442,7 @@ export default function ApiTokensPage() {
               value={form.days}
               onChange={(v) => setForm({ ...form, days: typeof v === "number" ? v : limits.def })}
             />
-            <PasswordInput label={t("yourPassword")} required value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <ReauthPassword label={t("yourPassword")} required value={password} onChange={setPassword} />
             <Button type="submit" loading={busy} disabled={!password || form.name.trim().length < 2 || (form.kind === "ai" && !ack)}>
               {t("tokens.create")}
             </Button>

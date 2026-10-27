@@ -203,6 +203,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "bad_credentials", badLogin)
 		return
 	}
+	if err == nil && user.Source == store.SourceOIDC {
+		// Konto SSO loguje się tylko u dostawcy tożsamości.
+		auth.DummyVerify(req.Password)
+		s.audit(r, &user, "login_failed", user.Username, map[string]any{"reason": "sso_account"})
+		writeError(w, http.StatusUnauthorized, "bad_credentials", badLogin)
+		return
+	}
 	if errors.Is(err, store.ErrNotFound) {
 		auth.DummyVerify(req.Password) // ten sam czas odpowiedzi co dla istniejącego konta
 		s.audit(r, nil, "login_failed", req.Username, map[string]any{"reason": "unknown_user"})
@@ -275,21 +282,11 @@ func (s *Server) afterPassword(w http.ResponseWriter, r *http.Request, user stor
 // extra: dodatkowe pola odpowiedzi i wpisu audytu (np. kody zapasowe – tylko
 // w odpowiedzi).
 func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, user store.User, mfa bool, extra map[string]any) {
-	now := s.now()
-	if err := s.Store.RecordLoginSuccess(r.Context(), user.ID); err != nil {
+	sess, err := s.startSession(w, r, user, mfa)
+	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	token := auth.NewToken()
-	sess := store.Session{
-		ID: auth.TokenID(token), UserID: user.ID, CSRF: auth.NewToken(),
-		CreatedAt: now, ExpiresAt: now.Add(s.IdleTimeout), IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 256), MFA: mfa,
-	}
-	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	setCookie(w, token, s.MaxAge)
 	details := map[string]any{}
 	if m, ok := extra["mfa_method"]; ok {
 		details["mfa"] = m
@@ -302,6 +299,24 @@ func (s *Server) finishLogin(w http.ResponseWriter, r *http.Request, user store.
 		out[k] = v
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// startSession zapisuje udane logowanie, zakłada sesję i ustawia ciasteczko.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, user store.User, mfa bool) (store.Session, error) {
+	now := s.now()
+	if err := s.Store.RecordLoginSuccess(r.Context(), user.ID); err != nil {
+		return store.Session{}, err
+	}
+	token := auth.NewToken()
+	sess := store.Session{
+		ID: auth.TokenID(token), UserID: user.ID, CSRF: auth.NewToken(),
+		CreatedAt: now, ExpiresAt: now.Add(s.IdleTimeout), IP: clientIP(r), UserAgent: truncate(r.UserAgent(), 256), MFA: mfa,
+	}
+	if err := s.Store.CreateSession(r.Context(), sess); err != nil {
+		return store.Session{}, err
+	}
+	setCookie(w, token, s.MaxAge)
+	return sess, nil
 }
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
@@ -349,6 +364,10 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 	a := current(r)
 	if a.user.Source == store.SourceLDAP {
 		writeError(w, http.StatusBadRequest, "ldap_account", "hasło konta domenowego zmienia się w Active Directory")
+		return
+	}
+	if a.user.Source == store.SourceOIDC {
+		writeError(w, http.StatusBadRequest, "sso_account", "konto SSO nie ma hasła w panelu – hasło zmienia się w Entra ID")
 		return
 	}
 	var req struct {

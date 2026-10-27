@@ -1,6 +1,6 @@
 # Roadmapa własnego systemu SIEM
 
-Wersja planistyczna 1.7.0 • 26.10.2026 (plan wersji po 1.0: sekcja 17a)
+Wersja planistyczna 1.7.0 • 26.10.2026 (plan wersji po 1.0: sekcja 17a, wersja 1.6: sekcja 17b)
 
 ## Decyzje ustalone (06.10.2026)
 
@@ -529,6 +529,44 @@ Serwer [Model Context Protocol](https://modelcontextprotocol.io) pozwala podłą
 - **Publikacja:** automatyczne wydania na GitHubie (Actions na tagu: paczka serwera, MSI agenta, `odczytaj.exe`), szybki start w README.
 - **Laboratorium:** krótsza retencja surowego XML w ClickHouse (np. 1 dzień zamiast 5 – archiwum Urd przechowuje oryginały).
 
+## 17b. Plan wersji 1.6 (27.10.2026)
+
+Po zamknięciu planu 17a (1.1–1.5) – etap 1.6: Vardr gotowy do instalacji poza laboratorium. Wydania 1.6.x w tej kolejności:
+
+**Stan:** wszystkie punkty planu wydane razem jako **1.6.0** (27.10.2026).
+
+| Wersja | Funkcja | Godziny | Uwagi |
+|---|---|---|---|
+| **1.6.0** | Publikacja i podpisywanie: wydania na GitHubie z tagu, podpis Authenticode programów Windows | 6–10 | podpis – po założeniu konta Azure Artifact Signing (decyzja i koszt właściciela) |
+| **1.6.1** | Logowanie do panelu przez Entra ID (SSO, OIDC) z MFA dostawcy | 20–30 | konto lokalne administratora zostaje jako awaryjne |
+| **1.6.2** | Nowe źródła syslog: Linux (rsyslog), pfSense/OPNsense, Cisco ASA (wybrane 27.10.2026 zamiast agenta Linux) | 30 | agent Linux – później, jeśli syslog nie wystarczy |
+| **1.6.x** | Porządki z przeglądu M2, M5, M6 – po sprawdzeniu, które są aktualne | 3 | M6 już zrobione (agent 0.6); M2 i M5 – 27.10.2026 |
+
+### 1.6.0 – Publikacja i podpisywanie
+
+- **Wydanie z tagu** (`.github/workflows/release.yml`): programy Windows budowane na Windows, paczka serwera na Linuksie z tymi samymi plikami, `SHA256SUMS`, opis z `CHANGELOG.md`; ponowne uruchomienie podmienia pliki.
+- **Podpis Authenticode** przez Azure Artifact Signing (OIDC z GitHub Actions, bez sekretów certyfikatu w repozytorium), włączany zmienną `SIGNING=true`; bez niej wydanie powstaje bez podpisu.
+- **Szybki start w README** – pobranie paczki z wydania i sprawdzenie sumy.
+- **Warunek ukończenia:** tag tworzy wydanie z paczką, programami i sumami; po włączeniu podpisu `Get-AuthenticodeSignature vardr-mcp.exe` zwraca `Valid`, a pobranie z przeglądarki nie jest blokowane.
+
+### 1.6.1 – Logowanie przez Entra ID
+
+Stan: napisane (27.10.2026), do sprawdzenia na prawdziwej dzierżawie Entra ID przed wydaniem.
+
+- OIDC (authorization code + PKCE, bez zewnętrznych bibliotek) z aplikacją w Entra ID; konto panelu wiązane z użytkownikiem Entra ID (`oid`), profil uprawnień z grup Entra ID (powiązania grupa → profil w kolejności, przy każdym logowaniu).
+- MFA i polityki dostępu warunkowego po stronie Entra ID; polityka MFA panelu wymaga `amr` = `mfa` w tokenie; lokalne MFA panelu zostaje dla kont lokalnych.
+- Konta SSO bez hasła w panelu: operacje chronione hasłem potwierdzane ponownym logowaniem w Entra ID (okienko, ważne 5 minut w sesji).
+- Konto lokalne administratora jako awaryjne (break-glass), w audycie.
+- **Warunek ukończenia:** analityk loguje się kontem Entra ID z MFA, dostaje profil z grupy; wyłączenie konta w Entra ID blokuje kolejne logowanie.
+
+### 1.6.2 – Nowe źródła syslog
+
+Stan: napisane i sprawdzone w laboratorium (27.10.2026) – rsyslog z VM: zdarzenia `linux.auth` i alerty (seria SSH, nieistniejące konta, nowe konto, grupa sudo).
+
+- Dekodery wbudowane: `linux` (sshd, sudo, su, PAM, shadow-utils), `pfsense` (filterlog, logowania do panelu; także OPNsense), `cisco-asa` (listy dostępu, logowania, AAA, AnyConnect, polecenia).
+- Produkty Sigmy `linux`, `pfsense`/`opnsense`, `cisco`/`asa`; 11 reguł; logowania z nowych źródeł w tabeli logowań i korelacjach (widok odświeżany przez instalator przy aktualizacji).
+- **Warunek ukończenia:** próbki i korpus zgodności silników przechodzą; prawdziwy serwer Linux przez rsyslog w laboratorium daje zdarzenia `linux.auth` i alert przy serii nieudanych logowań SSH.
+
 ## 18. Pierwsze kroki (etap 0)
 
 1. Postawić laboratorium: DC + 1 stacja Windows, polityka audytu (logowania, zarządzanie kontami, grupami, procesy), Sysmon z gotową konfiguracją bazową.
@@ -839,11 +877,11 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 
 **Mniejsze**
 - M1: brak CI na GitHubie i testu wyścigów – **zrobione 07.10.2026** (GitHub Actions: Linux z `-race` i fuzzingiem, Windows z testami agenta);
-- M2: nieczytelne wiadomości w normalizatorze są pomijane zamiast trafiać do kwarantanny;
+- M2: nieczytelne wiadomości w normalizatorze są pomijane zamiast trafiać do kwarantanny – **zrobione 27.10.2026**: zdarzenia, których nie da się znormalizować, trafiają do kwarantanny (od 6b); cała nieczytelna paczka zostaje w archiwum NIS2 (archiwizator czyta kolejkę niezależnie), a *Stan systemu* pokazuje „Nieczytelne paczki (24 h)”;
 - M3: brak czytelnego opisu większości zdarzeń (decyzja: opis renderowany przez agenta czy mapowanie na serwerze);
 - M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn;
-- M5: Grafana i ingest otwarte na całą sieć lokalną, brak zapory na VM;
-- M6: brak raportowania synchronizacji czasu przez agenta (zaobserwowana różnica ok. 1 s).
+- M5: Grafana i ingest otwarte na całą sieć lokalną, brak zapory na VM – **zrobione 27.10.2026**: rozdział „Zapora” w instrukcji instalacji (łańcuch DOCKER-USER – Docker omija ufw), `VARDR_GRAFANA_ADDR` (Grafana tylko z serwera); ingest musi zostać dostępny dla agentów;
+- M6: brak raportowania synchronizacji czasu przez agenta (zaobserwowana różnica ok. 1 s) – **zrobione wcześniej (agent 0.6)**: agent mierzy różnicę zegara, panel zgłasza problem powyżej 60 s.
 
 ### Etap 1.5 – wykonane poprawki
 

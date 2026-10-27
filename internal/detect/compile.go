@@ -95,6 +95,11 @@ var products = map[string]string{
 	"routeros":  "mikrotik.routeros",
 	"azure":     "azure.",
 	"entra":     "azure.",
+	"linux":     "linux.",
+	"pfsense":   "pfsense.firewall",
+	"opnsense":  "pfsense.firewall",
+	"cisco":     "cisco.asa",
+	"asa":       "cisco.asa",
 }
 
 // azureServices: usługa Sigmy dla product: azure → zbiór danych.
@@ -129,7 +134,7 @@ func (d datasetIs) sql() string {
 func compileLogsource(l logsource) (Node, error) {
 	prefix, ok := products[strings.ToLower(l.Product)]
 	if l.Product != "" && !ok {
-		return nil, lang.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure)", "product %q is not supported (windows, fortigate, mikrotik, azure)", l.Product)
+		return nil, lang.Errorf("product %q nieobsługiwany (windows, fortigate, mikrotik, azure, linux, pfsense, cisco)", "product %q is not supported (windows, fortigate, mikrotik, azure, linux, pfsense, cisco)", l.Product)
 	}
 	if prefix == "azure." && l.Service != "" {
 		ds, ok := azureServices[strings.ToLower(l.Service)]

@@ -1,0 +1,54 @@
+title: pfSense/OPNsense – skanowanie portów z jednego adresu
+id: 380e058b-3dc8-45fc-9b29-934dba121ea8
+status: experimental
+description: |
+  Zapora zablokowała połączenia z jednego adresu na co najmniej 20 różnych
+  portów w ciągu 2 minut. Z internetu to rozpoznanie przed atakiem, z sieci
+  wewnętrznej – skanowanie przez przejęty komputer. Wymaga logowania
+  zablokowanego ruchu (domyślna reguła blokująca albo własne reguły
+  z włączonym „Log”).
+author: Vardr
+tags:
+  - attack.reconnaissance
+  - attack.t1595.001
+  - attack.discovery
+  - attack.t1046
+logsource:
+  product: pfsense
+detection:
+  selection:
+    event.action: firewall
+    fw_action:
+      - block
+      - reject
+  condition: selection
+falsepositives:
+  - Autoryzowany skaner podatności (dodaj jego adres jako wyjątek)
+  - Masowe skanery internetu (Shodan, Censys) – zwykle niegroźne, ale pokazują, co jest wystawione
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "pfSense/OPNsense – port scan from one address"
+      description: |
+        The firewall blocked connections from one address to at least 20 different ports
+        within 2 minutes. From the internet this is reconnaissance before an attack, from
+        the internal network – scanning by a compromised computer. Requires logging of
+        blocked traffic (the default block rule or own rules with "Log" enabled).
+      instructions: |
+        Address {{source.ip}} tried to connect to {{count}} different ports in {{window}}
+        (ports: {{values}}). Internal address – check this computer (compromised or an
+        unapproved scanner). Address from the internet – check whether any connection to
+        exposed services was passed (pass from this address).
+  group_by: [source.ip]
+  threshold:
+    count: 20
+    window: 2m
+    distinct: dst_port
+  suppress: 1h
+  instructions: |
+    Adres {{source.ip}} próbował połączyć się na {{count}} różnych portów
+    w {{window}} (porty: {{values}}). Adres wewnętrzny – sprawdź ten komputer
+    (przejęty albo nieuzgodniony skaner). Adres z internetu – sprawdź, czy
+    któreś połączenie na wystawione usługi zostało przepuszczone (pass z tego
+    adresu).

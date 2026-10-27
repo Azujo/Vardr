@@ -9,7 +9,6 @@ import {
   Group,
   List,
   Modal,
-  PasswordInput,
   Stack,
   Table,
   Text,
@@ -20,6 +19,7 @@ import { IconHistory, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { ApiError, backupApi, formatBytes, formatDate, type BackupFile, type BackupPart, type BackupView } from "../api";
+import { ReauthPassword } from "../sso";
 
 // Przywracanie z kopii (Administracja → Kopie zapasowe → Przywracanie).
 // Usługa kopii przygotowuje przywrócenie (kopia obecnego stanu, pobranie
@@ -241,12 +241,11 @@ function RestoreModal({ file, onClose }: { file: BackupFile; onClose: () => void
             onChange={(e) => setConfirm(e.currentTarget.value)}
             autoComplete="off"
           />
-          <PasswordInput
+          <ReauthPassword
             label={t("yourPassword")}
             required
-            autoComplete="current-password"
             value={password}
-            onChange={(e) => setPassword(e.currentTarget.value)}
+            onChange={setPassword}
           />
           <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>

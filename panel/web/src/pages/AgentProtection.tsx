@@ -11,7 +11,6 @@ import {
   Group,
   Modal,
   NumberInput,
-  PasswordInput,
   Stack,
   Table,
   Text,
@@ -30,6 +29,7 @@ import {
   type UninstallToken,
 } from "../api";
 import { useTranslation } from "react-i18next";
+import { ReauthPassword } from "../sso";
 
 // Kolory stanów; nazwy i opisy – agents: protection.<stan>, token.<stan>.
 const protectionColors: Record<string, string> = { protected: "green", open: "red", other: "red", error: "red", off: "gray", unknown: "gray" };
@@ -258,11 +258,11 @@ msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=${issued.token}`}
               required
             />
             <NumberInput label={t("protection.hours")} min={1} max={168} value={hours} onChange={setHours} w={200} />
-            <PasswordInput
+            <ReauthPassword
               label={t("yourPassword")}
               description={t("protection.passwordHint")}
               value={password}
-              onChange={(e) => setPassword(e.currentTarget.value)}
+              onChange={setPassword}
               required
             />
             <Button loading={busy} disabled={reason.trim().length < 3 || !password} onClick={() => void create()}>

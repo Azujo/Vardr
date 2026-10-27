@@ -278,3 +278,68 @@ func TestEntra(t *testing.T) {
 		t.Fatal("źródło API bez dekodera powinno trafić do kwarantanny")
 	}
 }
+
+// Nowe źródła syslog (1.6.2): pola z próbek wbudowanych dekoderów.
+func TestSyslogSources(t *testing.T) {
+	set := builtinSet(t)
+	check := func(id string, i int, dataset string, want map[string]string) {
+		t.Helper()
+		e, err := Event(contract.Event{ID: "c:syslog:g0:1", Raw: builtin(t, id, i), Peer: "192.168.1.1"}, "c", ingested, set, warsaw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{"action": e.Action, "outcome": e.Outcome, "user": e.UserName, "ip": e.SourceIP, "proc": e.ProcessName,
+			"cmd": e.CommandLine, "code": itoa(e.Code), "host": e.HostName, "time": e.Timestamp.Format(time.RFC3339)}
+		for k, v := range e.Fields {
+			if _, ok := got[k]; !ok {
+				got[k] = v
+			}
+		}
+		if e.Dataset != dataset {
+			t.Errorf("%s %d: zbiór %q, oczekiwano %q", id, i, e.Dataset, dataset)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s %d %s: %q, oczekiwano %q", id, i, k, got[k], v)
+			}
+		}
+	}
+	for i, want := range []map[string]string{
+		{"action": "login", "outcome": "failure", "user": "oracle", "ip": "203.0.113.9", "invalid_user": "true", "proc": "password", "host": "web01"},
+		{"action": "login", "outcome": "failure", "user": "root", "ip": "203.0.113.9"},
+		{"action": "login", "outcome": "success", "user": "jan", "ip": "192.168.1.5", "proc": "publickey"},
+		{"action": "invalid-user", "user": "admin", "ip": "203.0.113.9"},
+		{"action": "sudo", "outcome": "success", "user": "jan", "target_user": "root", "cmd": "/usr/bin/apt update"},
+		{"action": "sudo", "outcome": "failure", "user": "ewa", "sudo_error": "3 incorrect password attempts", "cmd": "/bin/bash"},
+		{"action": "su", "outcome": "success", "user": "jan", "target_user": "root"},
+		{"action": "auth-failure", "outcome": "failure", "user": "root", "pam_service": "su", "ruser": "ewa"},
+		{"action": "user-created", "target_user": "backdoor", "uid": "1002", "shell": "/bin/bash"},
+		{"action": "group-member-added", "target_user": "backdoor", "group": "sudo"},
+		{"action": "user-deleted", "target_user": "backdoor"},
+		{"action": "password-change", "target_user": "jan"},
+		{"action": "session-open", "user": "jan", "session": "42"},
+	} {
+		check("linux", i, "linux.auth", want)
+	}
+	for i, want := range []map[string]string{
+		{"action": "firewall", "outcome": "failure", "fw_action": "block", "ip": "203.0.113.9", "dst_ip": "192.168.1.10", "dst_port": "22", "proto": "tcp", "interface": "igb0", "direction": "in"},
+		{"action": "firewall", "outcome": "success", "ip": "192.168.1.10", "dst_ip": "9.9.9.9", "dst_port": "53", "proto": "udp", "host": "opnsense.local"},
+		{"action": "firewall", "outcome": "failure", "ip": "2001:db8::9", "dst_port": "443", "ip_version": "6"},
+		{"action": "login", "outcome": "failure", "user": "admin", "ip": "203.0.113.9", "proc": "webgui"},
+		{"action": "login", "outcome": "success", "user": "admin", "ip": "192.168.1.5"},
+	} {
+		check("pfsense", i, "pfsense.firewall", want)
+	}
+	for i, want := range []map[string]string{
+		{"action": "firewall", "outcome": "failure", "code": "106023", "ip": "203.0.113.9", "dst_port": "22", "acl": "OUTSIDE_IN", "host": "asa01"},
+		{"action": "firewall", "outcome": "success", "code": "106100", "ip": "198.51.100.7", "dst_ip": "192.168.1.20", "dst_port": "443"},
+		{"action": "login", "outcome": "failure", "code": "605004", "user": "admin", "ip": "203.0.113.9", "proc": "ssh", "time": "2026-10-09T11:00:02Z"},
+		{"action": "login", "outcome": "success", "code": "605005", "user": "admin", "ip": "192.168.1.5"},
+		{"action": "login", "outcome": "failure", "code": "113005", "user": "jkowalski", "ip": "203.0.113.45", "reason": "AAA failure", "proc": "vpn"},
+		{"action": "vpn-connect", "outcome": "success", "user": "jkowalski", "ip": "203.0.113.45", "group_policy": "GP-VPN"},
+		{"action": "config-change", "user": "admin", "cmd": "access-list OUTSIDE_IN extended permit tcp any any eq 3389"},
+		{"action": "other", "code": "302013", "host": "192.168.1.1"},
+	} {
+		check("cisco-asa", i, "cisco.asa", want)
+	}
+}

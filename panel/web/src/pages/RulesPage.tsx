@@ -12,7 +12,6 @@ import {
   Modal,
   MultiSelect,
   Pagination,
-  PasswordInput,
   ScrollArea,
   SegmentedControl,
   Select,
@@ -62,6 +61,7 @@ import RuleBulkModal, { bulkLabels } from "./RuleBulkModal";
 import RuleTester from "./RuleTester";
 import { RuleExceptions } from "./RuleExceptions";
 import SigmaImportHelp from "./SigmaImportHelp";
+import { ReauthPassword } from "../sso";
 
 function modeLabel(r: RuleInfo): string {
   if (r.mode === "correlation" && r.file === "(wbudowana)") return i18n.t("rules:mode.builtinCorrelation");
@@ -648,7 +648,7 @@ export default function RulesPage() {
               {t("delete.warning")}
             </MAlert>
             <Textarea label={t("reason")} autosize minRows={2} value={reason} onChange={(e) => setReason(e.currentTarget.value)} />
-            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
             <Group justify="flex-end">
               <Button color="red" loading={busy} disabled={reason.trim().length < 3 || !password} onClick={() => void applyDelete()}>
                 {t("delete.confirm")}
@@ -706,7 +706,7 @@ export default function RulesPage() {
               onChange={(e) => setReason(e.currentTarget.value)}
             />
             {(needPassword || disabling) && (
-              <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+              <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
             )}
             <Group justify="space-between">
               {toggle.rule.override ? (

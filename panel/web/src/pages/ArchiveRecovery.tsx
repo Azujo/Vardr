@@ -10,7 +10,6 @@ import {
   Code,
   Group,
   List,
-  PasswordInput,
   Radio,
   ScrollArea,
   Stack,
@@ -22,6 +21,7 @@ import { notifications } from "@mantine/notifications";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { ApiError, archiveApi, formatDate, type ArchiveRecovery, type ArchiveVerification } from "../api";
+import { ReauthPassword } from "../sso";
 
 // Rodzaje obsługi tłumaczone przy odczycie (archive: recovery.kind.*).
 export const recoveryKindLabels = Object.defineProperties({} as Record<ArchiveRecovery["kind"], string>, {
@@ -137,7 +137,7 @@ export function UnknownFiles({
           value={reason}
           onChange={(e) => setReason(e.currentTarget.value)}
         />
-        <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+        <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
         <Group justify="flex-end">
           <Button
             color={action === "quarantine" ? "orange" : undefined}

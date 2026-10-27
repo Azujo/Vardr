@@ -11,7 +11,6 @@ import {
   Modal,
   MultiSelect,
   NumberInput,
-  PasswordInput,
   SegmentedControl,
   Select,
   SimpleGrid,
@@ -42,6 +41,7 @@ import {
 } from "../api";
 import { useAuth } from "../auth";
 import { RiskNote, riskLevelColors, riskLevelLabel } from "../risk";
+import { ReauthPassword } from "../sso";
 
 const levels: RiskLevel[] = ["critical", "high", "medium", "low"];
 const alertLevels: AlertLevel[] = ["informational", "low", "medium", "high", "critical"];
@@ -236,7 +236,7 @@ function Settings({ opened, onClose, onSaved }: { opened: boolean; onClose: () =
               </Button>
             )}
           </Group>
-          <PasswordInput label={t("settings.password")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+          <ReauthPassword label={t("settings.password")} value={password} onChange={setPassword} />
           <Button loading={busy} disabled={!password} onClick={() => void save()}>
             {t("settings.save")}
           </Button>

@@ -10,7 +10,6 @@ import {
   Button,
   Group,
   Modal,
-  PasswordInput,
   SegmentedControl,
   Stack,
   Table,
@@ -25,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { api, formatDate, permHelp, permLabel, permLevel, profileName, type PermModule, type Permissions, type Profile } from "../api";
 import { useAuth } from "../auth";
+import { ReauthPassword } from "../sso";
 
 interface Draft {
   id: string;
@@ -281,7 +281,7 @@ export default function ProfilesPage() {
                 {t("profiles.adminWarning")}
               </Alert>
             )}
-            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+            <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} />
             <Group justify="flex-end">
               <Button loading={busy} disabled={!password || draft.name.trim().length < 2 || !!idProblem} onClick={() => void save()}>
                 {t("profiles.save")}
@@ -295,7 +295,7 @@ export default function ProfilesPage() {
         {del && (
           <Stack>
             <Text size="sm">{t("profiles.deleteText")}</Text>
-            <PasswordInput label={t("yourPassword")} value={password} onChange={(e) => setPassword(e.currentTarget.value)} autoFocus />
+            <ReauthPassword label={t("yourPassword")} value={password} onChange={setPassword} autoFocus />
             <Button color="red" loading={busy} disabled={!password} onClick={() => void remove()}>
               {t("profiles.delete")}
             </Button>

@@ -1,0 +1,46 @@
+title: Cisco ASA – seria nieudanych logowań administratora
+id: 874fd57f-6067-4c83-8375-3dc2a54dff30
+status: stable
+description: |
+  Co najmniej 5 nieudanych logowań do zarządzania ASA (SSH, ASDM/HTTPS,
+  Telnet, konsola) z jednego adresu w ciągu 5 minut. Zgadywanie hasła
+  administratora zapory.
+author: Vardr
+tags:
+  - attack.credential_access
+  - attack.t1110.001
+logsource:
+  product: cisco
+detection:
+  selection:
+    event.action: login
+    event.outcome: failure
+  vpn:
+    process.name: vpn
+  condition: selection and not vpn
+falsepositives:
+  - Administrator, który pomylił hasło albo system zarządzania ze starym hasłem
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Cisco ASA – series of failed administrator logins"
+      description: |
+        At least 5 failed logins to ASA management (SSH, ASDM/HTTPS, Telnet, console)
+        from one address within 5 minutes. Firewall administrator password guessing.
+      instructions: |
+        {{count}} failed administrator logins to {{host.name}} from {{source.ip}} in
+        {{window}} (last account {{user.name}}, {{process.name}}). Management should be
+        reachable only from the management network (ssh/http commands with allowed
+        addresses). Check whether a successful login from this address followed.
+  group_by: [host.name, source.ip]
+  threshold:
+    count: 5
+    window: 5m
+  suppress: 1h
+  instructions: |
+    {{count}} nieudanych logowań administratora do {{host.name}} z adresu
+    {{source.ip}} w {{window}} (ostatnio konto {{user.name}},
+    {{process.name}}). Zarządzanie powinno być dostępne tylko z sieci
+    zarządzania (polecenia ssh/http z dozwolonymi adresami). Sprawdź, czy
+    potem nie było udanego logowania z tego adresu.

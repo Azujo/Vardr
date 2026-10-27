@@ -82,6 +82,28 @@ Behaviour:
 - An empty password is always rejected (in LDAP it would mean an anonymous bind). Testing a connection to a new controller address requires re-entering the service account password – the stored password goes only to stored addresses.
 - **The local administrator account remains** as a break-glass account (AD unavailable – domain sign-in reports an error, local accounts work).
 
+## SSO sign-in (Microsoft Entra ID)
+
+Entra ID accounts sign in with a button on the sign-in page (OpenID Connect, authorization code flow with PKCE). Settings: *Administration → SSO sign-in*.
+
+1. **App registration** in Entra ID (*App registrations → New registration*): single tenant, **Web** platform, the redirect URI shown in the panel (`https://<panel>:8444/api/v1/auth/oidc/callback` – exactly, with https and the port). Then:
+   - *Certificates & secrets* → new **client secret** (enter the value in the panel, not the ID; note the expiry date – SSO stops working after it).
+   - *Token configuration* → **groups claim** (security groups, as group ID in the ID token) and the **optional `amr` claim** (ID token) – without `amr` the panel cannot tell that the sign-in used a second factor.
+   - With many groups on an account (over about 200) Entra ID sends a reference instead of the list and the panel rejects the sign-in (`groups_overage`) – then assign only the panel groups to the application in *Enterprise applications* and choose "Groups assigned to the application" in the groups claim.
+2. **Panel**: issuer `https://login.microsoftonline.com/<tenant ID>/v2.0`, application (client) ID, the secret and optionally the button text. *Check provider* fetches the configuration and signing keys. The secret is stored encrypted (key `certs/mfa.key`) and is sent only to the stored issuer and application.
+3. **Groups and profiles** – group object ID → permission profile. **The order decides** – an account gets the profile of the first matching group; without a matching group the sign-in is rejected.
+
+After saving, test the sign-in in a private browser window without signing out of the current session.
+
+Behaviour:
+
+- The first sign-in creates the account (marked "SSO" in *Users*) with the username from `preferred_username` (usually the UPN). The account is linked by the stable Entra ID identifier (`oid`) – a UPN change does not create a second one. A username taken by a local or domain account – SSO sign-in refuses.
+- The profile is set **at every sign-in** from the groups in the token (a change – `sso_profile_changed` audit entry). It cannot be changed in *Users*; the account can be **disabled** there.
+- SSO accounts **have no password in the panel** (no "Change password" or password reset). Password-protected operations are confirmed with the *Confirm with Entra ID* button – a window with a new sign-in of the same account; the confirmation is valid for 5 minutes in that session. The browser must allow pop-ups for the panel.
+- **The second factor** is provided by Entra ID – enforce it with Conditional Access for the application. When the panel MFA policy covers the account, the panel accepts only a token with `amr` = `mfa` (otherwise `no_mfa`). SSO accounts do not use the panel authenticator app.
+- The panel does not track Entra ID accounts between sign-ins: an account disabled or removed from the group **keeps its current session** until it expires (idle timeout) and is rejected at the next sign-in. If urgent – disable the account in *Users* too (ends its sessions).
+- **The local administrator account remains** as a break-glass account (Entra ID unavailable or an expired secret – password sign-in works).
+
 ## Second sign-in factor (MFA)
 
 After the password the panel asks for a 6-digit code from an authenticator app (TOTP – Microsoft/Google Authenticator, Aegis, 1Password).

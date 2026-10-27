@@ -129,6 +129,10 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "ldap_account", "profil konta domenowego wynika z grup AD (Logowanie domenowe → powiązania)")
 		return
 	}
+	if target.Source == store.SourceOIDC && req.Role != nil && *req.Role != target.Role {
+		writeError(w, http.StatusBadRequest, "sso_account", "profil konta SSO wynika z grup Entra ID (Logowanie SSO → powiązania)")
+		return
+	}
 	if id == a.user.ID && req.Disabled != nil && *req.Disabled {
 		writeError(w, http.StatusConflict, "self", "nie można wyłączyć własnego konta")
 		return
@@ -191,6 +195,10 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if target.Source == store.SourceLDAP {
 		writeError(w, http.StatusBadRequest, "ldap_account", "hasło konta domenowego zmienia się w Active Directory")
+		return
+	}
+	if target.Source == store.SourceOIDC {
+		writeError(w, http.StatusBadRequest, "sso_account", "konto SSO nie ma hasła w panelu – hasło zmienia się w Entra ID")
 		return
 	}
 	temp := auth.TempPassword()

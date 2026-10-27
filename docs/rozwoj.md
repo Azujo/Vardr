@@ -71,6 +71,26 @@ go test -count=1 -p 1 -run 'Compat|Chain|Correlations|Postgres|PG' ./server/inte
 
 Wynik jest w zakładce *Actions* repozytorium.
 
+## Wydania
+
+Wydanie to tag `vX.Y.Z` na `master` (opis zmian najpierw w `CHANGELOG.md`, sekcja `## [X.Y.Z] – data – tytuł`). Wypchnięcie tagu uruchamia `.github/workflows/release.yml`:
+
+1. **Windows** – `vardr-agent.exe`, `vardr-mcp.exe`, `odczytaj.exe`; przy włączonym podpisywaniu – podpis Authenticode i sprawdzenie podpisu.
+2. **Linux** – frontend, paczka serwera `deploy/vardr/build-bundle.sh` z programami Windows z kroku 1 (`VARDR_WINDOWS_BIN`), `SHA256SUMS`.
+3. **Wydanie na GitHubie** – tytuł i opis z sekcji wersji w `CHANGELOG.md`, pliki: paczka serwera, `vardr-mcp.exe`, `odczytaj.exe`, `SHA256SUMS`. Ponowne uruchomienie (*Run workflow* z nazwą tagu) podmienia pliki istniejącego wydania.
+
+Instalator MSI agenta nie jest w wydaniu – serwer buduje go przy instalacji z certyfikatem CA tej instalacji (z podpisanego `vardr-agent.exe`, sam plik MSI niepodpisany).
+
+### Podpisywanie programów Windows
+
+Niepodpisany, nowy plik `.exe` pobrany z przeglądarki Microsoft Defender i SmartScreen blokują heurystyką reputacji. Podpis Authenticode przez [Azure Artifact Signing](https://learn.microsoft.com/azure/artifact-signing/) (dawniej Trusted Signing):
+
+1. W Azure: konto *Artifact Signing* (plan Basic), weryfikacja tożsamości (*Identity validation* – osoba albo firma), profil certyfikatu *Public Trust*.
+2. Rejestracja aplikacji w Entra ID z poświadczeniem federacyjnym dla GitHub Actions (repozytorium, `refs/tags/*` albo środowisko) i rolą *Artifact Signing Certificate Profile Signer* na koncie podpisywania.
+3. W repozytorium (*Settings → Secrets and variables → Actions*): sekrety `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`; zmienne `SIGNING=true`, `SIGNING_ENDPOINT` (np. `https://weu.codesigning.azure.net/` – region konta), `SIGNING_ACCOUNT`, `SIGNING_PROFILE`.
+
+Bez `SIGNING=true` wydanie powstaje z programami niepodpisanymi. Podpis sprawdza się we Właściwościach pliku (*Podpisy cyfrowe*) albo `Get-AuthenticodeSignature vardr-mcp.exe`.
+
 ## Konwencje
 
 - **Język:** komentarze w kodzie po polsku, identyfikatory i opisy commitów po angielsku. **Logi usług, błędy wewnętrzne i komunikaty programów serwera** – po angielsku. Teksty dla ludzi – w obu językach: panelu w plikach tłumaczeń, serwera przez `internal/lang` (niżej, „…tłumaczenie”). Dokumentacja po polsku (`docs/`) i po angielsku (`docs/en/` – przy zmianie zachowania popraw obie).
@@ -87,7 +107,7 @@ Wynik jest w zakładce *Actions* repozytorium.
 
 1. Dekoder w panelu albo w `internal/decode/builtin/<id>.yml` z próbkami ([dekodery.md](dekodery.md)).
 2. Produkt dla reguł w `internal/detect/compile.go` (`products`).
-3. Jeśli źródło ma logowania – warunki w `authFailureSQL`/`authSuccessSQL` (`server/internal/detector/correlate.go`) **i** w `deploy/lab/clickhouse/init/03-auth-events.sh`. `TestCorrelations` sprawdzi zgodność, a skrypt trzeba uruchomić na serwerze ponownie (tabela zostaje, zmienia się widok – usuń `siem.auth_events_mv` przed ponownym uruchomieniem).
+3. Jeśli źródło ma logowania – warunki w `authFailureSQL`/`authSuccessSQL` (`server/internal/detector/correlate.go`) **i** w `deploy/lab/clickhouse/init/03-auth-events.sh`. `TestCorrelations` sprawdzi zgodność. Skrypt odtwarza widok z nowymi warunkami przy ponownym uruchomieniu – instalator robi to przy każdej aktualizacji (w laboratorium: `docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh`).
 4. Reguły w `rules/network/` i zdarzenia w korpusie testu zgodności.
 
 ### …nowe źródło API (konektor)

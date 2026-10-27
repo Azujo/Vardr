@@ -1,0 +1,40 @@
+title: Linux – odmowa sudo
+id: 86c899b0-d0c8-426d-a541-428a9fa82d7c
+status: stable
+description: |
+  sudo odmówiło wykonania polecenia: konto spoza sudoers, polecenie
+  niedozwolone albo kilka błędnych haseł. Po włamaniu na zwykłe konto
+  napastnik sprawdza, czy może zostać rootem.
+author: Vardr
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003
+logsource:
+  product: linux
+detection:
+  selection:
+    event.action: sudo
+    event.outcome: failure
+  condition: selection
+falsepositives:
+  - Pomyłka w haśle albo nowy pracownik bez nadanych uprawnień
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – sudo denied"
+      description: |
+        sudo refused to run a command: an account outside sudoers, a command not
+        allowed or several wrong passwords. After breaking into a regular account an
+        attacker checks whether they can become root.
+      instructions: |
+        {{user.name}} on {{host.name}}: {{sudo_error}} (command {{process.command_line}},
+        as {{target_user}}). Ask the person whether it was them. If not – the account may be
+        compromised: check its SSH logins and keys.
+  group_by: [host.name, user.name]
+  suppress: 1h
+  instructions: |
+    {{user.name}} na {{host.name}}: {{sudo_error}} (polecenie
+    {{process.command_line}}, jako {{target_user}}). Zapytaj osobę, czy to
+    ona. Jeśli nie – konto mogło zostać przejęte: sprawdź jego logowania SSH
+    i klucze.

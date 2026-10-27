@@ -1,0 +1,157 @@
+# Wydanie na GitHubie przy tagu v* (wersja 1.6): paczka instalacyjna
+# serwera i programy Windows z sumami SHA-256, opis z CHANGELOG.md.
+#
+# Programy Windows (vardr-agent.exe, vardr-mcp.exe, odczytaj.exe) budowane
+# na Windows i – gdy zmienna repozytorium SIGNING=true – podpisywane przez
+# Azure Artifact Signing (Authenticode); te same pliki trafiają do paczki
+# serwera. Konfiguracja podpisywania: docs/rozwoj.md (Wydania).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Istniejący tag do (ponownego) wydania, np. v1.6.0"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    name: Programy Windows (budowanie i podpis)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # logowanie OIDC do Azure (podpisywanie)
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Budowanie
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p win
+          go build -trimpath -o win/vardr-agent.exe ./agent/cmd/vardr-agent
+          go build -trimpath -ldflags="-s -w -X main.version=$TAG" -o win/odczytaj.exe ./tools/cmd/odczytaj
+          go build -trimpath -ldflags="-s -w -X main.version_=$TAG" -o win/vardr-mcp.exe ./tools/cmd/vardr-mcp
+
+      - name: Logowanie do Azure (podpisywanie)
+        if: vars.SIGNING == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Podpis Authenticode (Azure Artifact Signing)
+        if: vars.SIGNING == 'true'
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\win
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Sprawdzenie podpisu
+        if: vars.SIGNING == 'true'
+        shell: pwsh
+        run: |
+          Get-ChildItem win\*.exe | ForEach-Object {
+            $s = Get-AuthenticodeSignature $_.FullName
+            "{0}: {1} ({2})" -f $_.Name, $s.Status, $s.SignerCertificate.Subject
+            if ($s.Status -ne 'Valid') { throw "niepoprawny podpis: $($_.Name)" }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: win/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Paczka serwera i wydanie
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: panel/web/package-lock.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: win
+
+      - name: Paczka instalacyjna serwera
+        env:
+          VARDR_WINDOWS_BIN: win
+        run: deploy/vardr/build-bundle.sh "$TAG"
+
+      - name: Pliki wydania i sumy SHA-256
+        run: |
+          mkdir -p release
+          cp dist/vardr-$TAG-linux-amd64.tar.gz release/
+          cp win/vardr-mcp.exe win/odczytaj.exe release/
+          (cd release && sha256sum * > SHA256SUMS)
+          cat release/SHA256SUMS
+
+      - name: Opis wydania z CHANGELOG.md
+        run: |
+          v="${TAG#v}"
+          awk -v v="$v" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md | sed "s|](docs/|](https://github.com/${GITHUB_REPOSITORY}/blob/$TAG/docs/|g" > notes.md
+          [ -s notes.md ] || echo "Zmiany: CHANGELOG.md" > notes.md
+          title=$(grep -m1 "^## \[$v\]" CHANGELOG.md | sed 's/^## \[[^]]*\] – [0-9-]* – //')
+          echo "TITLE=${title:-}" >> "$GITHUB_ENV"
+          cat >> notes.md <<'EOF'
+
+          ---
+          **Instalacja / aktualizacja serwera** (Linux x86_64, Docker): pobierz `vardr-…-linux-amd64.tar.gz`, sprawdź sumę z `SHA256SUMS`, potem `tar xzf …`, `cd …`, `sudo ./install.sh` – [docs/instalacja.md](https://github.com/Azujo/Vardr/blob/master/docs/instalacja.md) · [English](https://github.com/Azujo/Vardr/blob/master/docs/en/installation.md). Agent Windows (MSI) i `vardr-mcp.exe` pobiera się z panelu po instalacji.
+          EOF
+
+      - name: Wydanie na GitHubie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="Vardr ${TAG#v}${TITLE:+ – $TITLE}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+            gh release edit "$TAG" --title "$name" --notes-file notes.md
+          else
+            gh release create "$TAG" release/* --title "$name" --notes-file notes.md --verify-tag
+          fi

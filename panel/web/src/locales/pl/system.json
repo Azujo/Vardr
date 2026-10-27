@@ -53,7 +53,8 @@
       "throttled": "Odmowy przyjęcia (kolejka pełna)",
       "queue": "Najbardziej zapełniona kolejka",
       "write_errors": "Błędy zapisu do ClickHouse (15 min)",
-      "quarantine": "Kwarantanna (ostatnia godzina)"
+      "quarantine": "Kwarantanna (ostatnia godzina)",
+      "unreadable": "Nieczytelne paczki (24 h)"
     },
     "detection": {
       "rules": "Włączone reguły",
@@ -92,7 +93,8 @@
       "throttled": "Kolejka jest pełna – któryś etap nie nadąża. Sprawdź zapełnienie kolejek poniżej.",
       "queue": "Odbiorca kolejki nie nadąża (wskazany w nawiasie). Powyżej 80% ingest zaczyna odmawiać przyjęcia.",
       "write_errors": "Writer ponawia zapis; sprawdź logi writera i stan ClickHouse.",
-      "quarantine": "Zdarzenia, których nie udało się znormalizować albo zapisać – są w siem.quarantine."
+      "quarantine": "Zdarzenia, których nie udało się znormalizować albo zapisać – są w siem.quarantine.",
+      "unreadable": "Paczki, których normalizator nie odczytał (uszkodzony gzip albo JSON) – ich zdarzeń nie ma w wyszukiwaniu, oryginał jest w archiwum NIS2. Szczegóły w logach normalizatora (unreadable batch)."
     },
     "detection": {
       "rules": "Detektor nie ma włączonych reguł – sprawdź katalog reguł i panel.",

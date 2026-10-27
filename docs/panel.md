@@ -82,6 +82,28 @@ Zachowanie:
 - Puste hasło jest zawsze odrzucane (w LDAP oznaczałoby logowanie anonimowe). Test połączenia z nowym adresem kontrolera wymaga ponownego wpisania hasła konta usługowego – zapisane hasło trafia tylko do zapisanych adresów.
 - **Konto lokalne administratora zostaje** jako awaryjne (AD niedostępne – logowanie domenowe zgłasza błąd, konta lokalne działają).
 
+## Logowanie SSO (Microsoft Entra ID)
+
+Konta Entra ID logują się przyciskiem na stronie logowania (OpenID Connect, przepływ z kodem i PKCE). Ustawienia: *Administracja → Logowanie SSO*.
+
+1. **Rejestracja aplikacji** w Entra ID (*Rejestracje aplikacji → Nowa rejestracja*): jedna dzierżawa, platforma **Web**, adres przekierowania z ekranu panelu (`https://<panel>:8444/api/v1/auth/oidc/callback` – co do znaku, z https i portem). Potem:
+   - *Certyfikaty i wpisy tajne* → nowy **wpis tajny klienta** (do panelu wpisuje się wartość, nie identyfikator; zapisz datę wygaśnięcia – po niej SSO przestanie działać).
+   - *Konfiguracja tokenu* → **oświadczenie grup** (grupy zabezpieczeń, w tokenie identyfikatora jako identyfikator grupy) oraz **opcjonalne oświadczenie `amr`** (token identyfikatora) – bez `amr` panel nie wie, że logowanie było z drugim składnikiem.
+   - Przy wielu grupach na koncie (powyżej ok. 200) Entra ID zamiast listy wysyła odsyłacz i panel odrzuca logowanie (`groups_overage`) – wtedy w *Aplikacjach dla przedsiębiorstw* przypisz do aplikacji tylko grupy panelu i w oświadczeniu grup wybierz „Grupy przypisane do aplikacji”.
+2. **Panel**: wystawca `https://login.microsoftonline.com/<identyfikator dzierżawy>/v2.0`, identyfikator aplikacji (client ID), wpis tajny i opcjonalnie napis na przycisku. *Sprawdź dostawcę* pobiera konfigurację i klucze podpisu. Sekret jest zapisany zaszyfrowany (klucz `certs/mfa.key`) i trafia tylko do zapisanego wystawcy i aplikacji.
+3. **Grupy i profile** – identyfikator obiektu grupy (Object ID) → profil uprawnień. **Kolejność decyduje** – konto dostaje profil pierwszej pasującej grupy; bez pasującej grupy logowanie jest odrzucane.
+
+Po zapisie sprawdź logowanie w oknie prywatnym przeglądarki, nie wylogowując się z bieżącej sesji.
+
+Zachowanie:
+
+- Pierwsze logowanie zakłada konto (oznaczone „SSO” w *Użytkownikach*), z loginem z `preferred_username` (zwykle UPN). Konto jest powiązane po stałym identyfikatorze Entra ID (`oid`) – zmiana UPN nie tworzy drugiego. Login zajęty przez konto lokalne albo domenowe – logowanie SSO odmawia.
+- Profil jest ustalany **przy każdym logowaniu** z grup w tokenie (zmiana – wpis `sso_profile_changed` w audycie). Nie da się go zmienić w *Użytkownikach*; konto można tam **wyłączyć**.
+- Konta SSO **nie mają hasła w panelu** (bez „Zmień hasło” i resetu hasła). Operacje chronione hasłem potwierdza się przyciskiem *Potwierdź w Entra ID* – okienko z ponownym logowaniem tego samego konta; potwierdzenie jest ważne 5 minut w tej sesji. Przeglądarka musi zezwalać panelowi na okienka.
+- **Drugi składnik** zapewnia Entra ID – wymuś go dostępem warunkowym (Conditional Access) dla aplikacji. Gdy polityka MFA panelu obejmuje konto, panel przyjmuje tylko token z `amr` = `mfa` (inaczej `no_mfa`). Aplikacji uwierzytelniającej panelu konta SSO nie używają.
+- Panel nie śledzi kont w Entra ID między logowaniami: konto wyłączone albo usunięte z grupy **zachowuje bieżącą sesję** do jej wygaśnięcia (bezczynność), a przy następnym logowaniu zostaje odrzucone. Pilnie – wyłącz konto także w *Użytkownikach* (kończy sesje).
+- **Konto lokalne administratora zostaje** jako awaryjne (Entra ID niedostępne albo wygasły wpis tajny – logowanie hasłem działa).
+
 ## Drugi składnik logowania (MFA)
 
 Po haśle panel prosi o 6-cyfrowy kod z aplikacji uwierzytelniającej (TOTP – Microsoft/Google Authenticator, Aegis, 1Password).
