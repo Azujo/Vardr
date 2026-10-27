@@ -293,10 +293,13 @@ func (c *corpus) network() {
 		c.n++
 		ts := compatT0.Add(at).In(loc)
 		raw := strings.NewReplacer("{bsd}", ts.Format(time.Stamp), "{date}", ts.Format("2006-01-02"),
-			"{time}", ts.Format("15:04:05")).Replace(line)
+			"{time}", ts.Format("15:04:05"), "{udate}", ts.UTC().Format("2006-01-02"), "{utime}", ts.UTC().Format("15:04:05")).Replace(line)
 		src := "syslog:udp"
 		if strings.HasPrefix(raw, "{") {
 			src = "entra:signin"
+			if strings.Contains(raw, `"sc-status"`) {
+				src = "file:iis"
+			}
 		}
 		e, err := decode.Event(contract.Event{ID: fmt.Sprintf("collector:syslog:g0:%d", c.n), Source: src, Raw: raw, Peer: "192.168.88.1"},
 			"agt-collector", compatT0.Add(at+late+2*time.Second), set, loc)
@@ -414,6 +417,21 @@ func (c *corpus) syslogSources(add func(at, late time.Duration, line string)) {
 		add(at(1000+i*3), 0, fmt.Sprintf("<164>{bsd} asa01 %%ASA-4-106023: Deny tcp src outside:203.0.113.41/44321 dst inside:192.168.1.10/%d by access-group \"OUTSIDE_IN\" [0x0, 0x0]", 1000+i))
 	}
 	add(at(1100), 0, "<166>{bsd} asa01 %ASA-6-113039: Group <GP-VPN> User <jkowalski> IP <203.0.113.45> AnyConnect parent session started.")
+
+	// IIS (1.7.2): 22 logowania 401.1 z jednego adresu w ~2 min, 5 z innego
+	// (poniżej progu), wymiana NTLM 401.2 i udane żądania się nie liczą.
+	iis := `{"c-ip":"%s","cs-method":"POST","cs-uri-stem":"/owa/auth.owa","cs-username":"%s","date":"{udate}","host":"srv-www",` +
+		`"s-ip":"10.0.0.5","s-port":"443","sc-status":"%s","sc-substatus":"%s","site":"W3SVC1","time":"{utime}"}`
+	for i := range 22 {
+		add(at(1200+i*5), 0, fmt.Sprintf(iis, "203.0.113.50", []string{"jan", "ewa"}[i%2], "401", "1"))
+	}
+	for i := range 5 {
+		add(at(1200+i*5), 0, fmt.Sprintf(iis, "198.51.100.50", "adam", "401", "1"))
+	}
+	for i := range 25 {
+		add(at(1200+i*2), 0, fmt.Sprintf(iis, "192.168.1.60", "", "401", "2"))
+		add(at(1201+i*2), 0, fmt.Sprintf(iis, "192.168.1.60", "jan", "200", "0"))
+	}
 }
 
 type hitKey struct{ rule, event, group string }
