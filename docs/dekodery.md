@@ -59,6 +59,7 @@ Warunki powinny być na tyle wąskie, żeby dekoder nie przechwytywał cudzych w
 | `json` | obiekt JSON; zagnieżdżone pola jako `a.b.c`, tablice z indeksem (`targetResources.0.userPrincipalName`) | – |
 | `csv` | kolumny rozdzielone separatorem | `separator` (jeden znak), `columns: [..]` |
 | `regex` | pierwszy pasujący wzorzec; grupy nazwane `(?P<nazwa>…)` to pola | `patterns: [{regex, set}]` – `set` to stałe pola dla danego wzorca (np. `event.action: login`) |
+| `audit` | zdarzenie Linux Audit (auditd): rekordy `type=… msg=audit(…)` jednego zdarzenia; pola rekordów, tłumaczenia formatu ENRICHED (wielkie litery) i pola znormalizowane: `action`, `outcome`, `user`, `target_user`, `cmdline`, `file.path`, `src_ip`, `dest_ip`, `key`, `audit.ms` (czas) – dekoder `linux-audit` | – |
 | `none` | bez rozbioru (sama treść w `message`) | – |
 
 Wszystkie pola z parsera trafiają do `fields` pod swoimi nazwami (poza zarezerwowanymi nazwami nagłówka i dekodera). W regułach i w Mímirze są dostępne jako `fields.nazwa`.

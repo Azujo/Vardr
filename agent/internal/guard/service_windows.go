@@ -26,10 +26,6 @@ const (
 	// uprawnień agent wykrywa, zgłasza i cofa. Zwykli użytkownicy nie wysyłają
 	// poleceń agenta.
 	ProtectedSDDL = "D:(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCLCSWRPLOCRRCWD;;;BA)(A;;CCLCSWLORC;;;IU)(A;;CCLCSWLORC;;;SU)"
-
-	// Stany uprawnień usługi.
-	StateProtected = "protected"
-	StateOpen      = "open"
 )
 
 // ControlRestart: polecenie użytkownika usługi – ponowne uruchomienie agenta

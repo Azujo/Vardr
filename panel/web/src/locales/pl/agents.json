@@ -372,6 +372,9 @@
     "msiText": "Jeden plik z wpisanym adresem serwera i tokenem: podwójne kliknięcie instaluje i rejestruje agenta, a na komputerze z agentem – aktualizuje go. Ten sam plik wdrożysz przez GPO, Intune albo SCCM bez parametrów. Plik zawiera token – każdy, kto go dostanie, może zarejestrować komputer, dopóki token jest ważny (ustaw krótką ważność albo limit instalacji). Agent generuje klucz na komputerze, w pliku nie ma klucza prywatnego.",
     "zip": "paczka ZIP (program, CA, token, skrypty – instalacja bez MSI)",
     "mass": "Wdrożenie masowe (GPO, Intune, SCCM) – polecenie uruchamiane jako SYSTEM lub administrator:",
+    "linux": "Linux (systemd)",
+    "linuxPackage": "paczka tar.gz – {{arch}}",
+    "linuxText": "Program, CA, adres serwera, token i install.sh. Rozpakuj na serwerze i uruchom sudo ./install.sh. Wdrożenie masowe (Ansible, skrypt) – polecenie z folderu z programem:",
     "done": "Gotowe"
   },
   "defaultGroup": {

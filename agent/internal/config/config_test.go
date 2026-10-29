@@ -87,3 +87,17 @@ channels: [{name: System}, {name: System}]
 		}
 	}
 }
+
+func TestFiles(t *testing.T) {
+	base := "server: {url: https://x, ca_file: ca.crt, cert_file: a.crt, key_file: a.key}\n"
+	c, err := Load(write(t, base+"files: [{path: /var/log/nginx/*.log, app: nginx}]\n"))
+	if err != nil || !c.LinuxSources() || c.Files[0].App != "nginx" {
+		t.Fatalf("files jako jedyne źródło: %v %+v", err, c)
+	}
+	_, err = Load(write(t, base+"files: [{path: logs/app.log}, {path: '/var/log/[x.log'}, {path: /var/log/a.log, app: 'moja app'}]\n"))
+	for _, want := range []string{"files[0]", "files[1]", "files[2]"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("brak błędu %q w: %v", want, err)
+		}
+	}
+}

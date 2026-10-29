@@ -2,6 +2,8 @@ module siem
 
 go 1.27.0
 
+toolchain go1.27.3
+
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
 	github.com/go-ldap/ldap/v3 v3.4.15

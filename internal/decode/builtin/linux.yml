@@ -45,7 +45,8 @@ parser:
       set: {event.action: session-open, event.outcome: success}
     - regex: '^pam_unix\((?P<pam_service>[^:)]+):chauthtok\): password changed for (?P<target_user>\S+)'
       set: {event.action: password-change, event.outcome: success}
-    - regex: '^New session (?P<session>\S+) of user (?P<user>[^.\s]+)'
+    # systemd 256+: nazwy w apostrofach (New session '42' of user 'jan' with class …)
+    - regex: '^New session ''?(?P<session>[^''\s]+)''? of user ''?(?P<user>[^.''\s]+)'
       set: {event.action: session-open, event.outcome: success}
     # konta i grupy (shadow-utils)
     - regex: '^new user: name=(?P<target_user>[^,]+), UID=(?P<uid>\d+), GID=(?P<gid>\d+), home=(?P<home>[^,]+), shell=(?P<shell>[^,\s]+)'
@@ -89,3 +90,4 @@ samples:
   - '<86>Oct  9 13:03:10 web01 userdel[2020]: delete user ''backdoor'''
   - '<86>Oct  9 13:03:20 web01 passwd[2030]: pam_unix(passwd:chauthtok): password changed for jan'
   - '<86>Oct  9 13:03:30 web01 systemd-logind[600]: New session 42 of user jan.'
+  - "<38>1 2026-10-28T10:08:38.990000Z siem systemd-logind 1290 - - New session '15228' of user 'siem' with class 'user' and type 'tty'."

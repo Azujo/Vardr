@@ -42,12 +42,20 @@ import (
 // SIEM_INDEX_MAX_ROWS.
 const MaxIndexRows = 100000
 
+// MaxBatchSQL: najwięcej znaków warunków reguł w jednym zapytaniu (warunek
+// występuje w nim dwa razy – w WHERE i w tablicy flag). ClickHouse odrzuca
+// zapytania dłuższe niż max_query_size (256 KB) – 120 włączonych reguł Sigmy
+// z długimi listami wartości już go przekraczało i silnik stał (lab, 1.7.0).
+const MaxBatchSQL = 64 << 10
+
 // Index to silnik zapytań.
 type Index struct {
 	Conn  driver.Conn
 	Table string // domyślnie siem.events
 	// MaxRows: limit wierszy przebiegu (domyślnie MaxIndexRows).
 	MaxRows int
+	// BatchSQL: limit długości warunków reguł w jednym zapytaniu (domyślnie MaxBatchSQL).
+	BatchSQL int
 	// Known zwraca zdarzenia reguły, które już są w alertach (zaczepienie
 	// łańcucha progów, gdy okno wypadło z zakresu zapytania). Może być nil.
 	Known func(ctx context.Context, rule string, ids []string) (map[string]bool, error)
@@ -149,6 +157,35 @@ func (x *Index) rangeSQL(from Cursor, to time.Time) string {
 		ms(from.Ingested), detect.Quote(from.EventID), ms(from.Ingested), ms(to))
 }
 
+// after: kursor a leży za kursorem b (porządek ingested, event_id).
+func (a Cursor) after(b Cursor) bool {
+	if !a.Ingested.Equal(b.Ingested) {
+		return a.Ingested.After(b.Ingested)
+	}
+	return a.EventID > b.EventID
+}
+
+// batches dzieli reguły na porcje o łącznej długości warunków najwyżej max
+// (reguła dłuższa od max idzie sama).
+func batches(rules []*detect.Rule, max int) [][]*detect.Rule {
+	var out [][]*detect.Rule
+	var cur []*detect.Rule
+	size := 0
+	for _, r := range rules {
+		n := len(r.SQL())
+		if len(cur) > 0 && size+n > max {
+			out = append(out, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, r)
+		size += n
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
 // Run ocenia zdarzenia przyjęte od from (kursor) do to.
 func (x *Index) Run(ctx context.Context, rules []*detect.Rule, from Cursor, to time.Time) (IndexResult, error) {
 	res := IndexResult{Reached: to}
@@ -186,19 +223,43 @@ func (x *Index) Run(ctx context.Context, rules []*detect.Rule, from Cursor, to t
 	return res, nil
 }
 
+// match: zdarzenie pasujące do reguły (indeks w regułach przebiegu).
+type match struct {
+	cur  Cursor
+	ev   detect.Event
+	rule int
+}
+
+// scan ocenia reguły porcjami (MaxBatchSQL) na tym samym zakresie. Gdy
+// porcja trafi na limit wierszy, zakres wszystkich porcji kończy się na jej
+// ostatnim wierszu: dalsze porcje pytają tylko do niego, a trafienia
+// wcześniejszych porcji za nim są odrzucane – zdarzenia za granicą oceni
+// następny przebieg, każde przez wszystkie reguły.
 func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to time.Time, res *IndexResult) error {
-	conds := make([]string, len(rules))
-	flags := make([]string, len(rules))
-	for i, r := range rules {
-		conds[i] = r.SQL()
-		flags[i] = "toUInt8(" + conds[i] + ")"
+	var matches []match
+	var limit *Cursor
+	base := 0
+	size := x.BatchSQL
+	if size <= 0 {
+		size = MaxBatchSQL
 	}
-	q := fmt.Sprintf(`SELECT %s, [%s] FROM %s WHERE %s AND (%s) ORDER BY ingested, event_id LIMIT %d`,
-		eventCols, strings.Join(flags, ", "), x.table(), x.rangeSQL(from, to), strings.Join(conds, " OR "), x.maxRows())
-	rows, err := x.Conn.Query(ctx, q)
-	if err != nil {
-		return fmt.Errorf("rules query: %w", err)
+	for _, b := range batches(rules, size) {
+		m, n, last, err := x.scanBatch(ctx, b, base, from, to, limit)
+		if err != nil {
+			return err
+		}
+		matches = append(matches, m...)
+		if n == x.maxRows() {
+			limit = &last
+		}
+		base += len(b)
 	}
+	if limit != nil {
+		// Limit – reszta od ostatniego wiersza; ocenione na pewno tylko
+		// zdarzenia przyjęte przed jego chwilą.
+		res.More, res.Next, res.Reached = true, *limit, limit.Ingested
+	}
+
 	type cand struct {
 		events []detect.Event
 		keys   map[string][]string // klucz → wartości pól klucza
@@ -206,53 +267,40 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 	}
 	cands := map[int]*cand{}
 	seen := map[string]bool{} // reguła + zdarzenie (duplikaty w ReplacingMergeTree)
-	var last Cursor
-	for rows.Next() {
-		var fl []uint8
-		e, err := scanEvent(rows, &fl)
-		if err != nil {
-			rows.Close()
-			return err
+	counted := map[string]bool{}
+	for _, mt := range matches {
+		if limit != nil && mt.cur.after(*limit) {
+			continue
 		}
-		res.Rows++
-		last = Cursor{Ingested: e.Ingested, EventID: e.ID}
-		ev := detect.Event{Event: &e}
-		for i, f := range fl {
-			if f == 0 || seen[rules[i].ID+"\x00"+e.ID] {
-				continue
-			}
-			seen[rules[i].ID+"\x00"+e.ID] = true
-			r := rules[i]
-			if !r.IsThreshold() {
-				h := hitFor(r, ev)
-				h.Engine = "index_query"
-				res.Hits = append(res.Hits, h)
-				continue
-			}
-			c := cands[i]
-			if c == nil {
-				c = &cand{keys: map[string][]string{}, lo: e.Timestamp, hi: e.Timestamp}
-				cands[i] = c
-			}
-			c.events = append(c.events, ev)
-			c.keys[strings.Join(r.GroupKey(ev), "\x1f")] = r.GroupKey(ev)
-			if e.Timestamp.Before(c.lo) {
-				c.lo = e.Timestamp
-			}
-			if e.Timestamp.After(c.hi) {
-				c.hi = e.Timestamp
-			}
+		i, ev, e := mt.rule, mt.ev, mt.ev.Event
+		if !counted[e.ID] {
+			counted[e.ID] = true
+			res.Rows++
 		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return err
-	}
-	if res.Rows == x.maxRows() {
-		// Limit – reszta od ostatniego wiersza; ocenione na pewno tylko
-		// zdarzenia przyjęte przed jego chwilą.
-		res.More, res.Next, res.Reached = true, last, last.Ingested
+		if seen[rules[i].ID+"\x00"+e.ID] {
+			continue
+		}
+		seen[rules[i].ID+"\x00"+e.ID] = true
+		r := rules[i]
+		if !r.IsThreshold() {
+			h := hitFor(r, ev)
+			h.Engine = "index_query"
+			res.Hits = append(res.Hits, h)
+			continue
+		}
+		c := cands[i]
+		if c == nil {
+			c = &cand{keys: map[string][]string{}, lo: e.Timestamp, hi: e.Timestamp}
+			cands[i] = c
+		}
+		c.events = append(c.events, ev)
+		c.keys[strings.Join(r.GroupKey(ev), "\x1f")] = r.GroupKey(ev)
+		if e.Timestamp.Before(c.lo) {
+			c.lo = e.Timestamp
+		}
+		if e.Timestamp.After(c.hi) {
+			c.hi = e.Timestamp
+		}
 	}
 	idx := make([]int, 0, len(cands))
 	for i := range cands {
@@ -268,6 +316,49 @@ func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to 
 		res.Hits = append(res.Hits, hits...)
 	}
 	return nil
+}
+
+// scanBatch: jedno zapytanie dla porcji reguł (indeksy od base) w zakresie
+// za kursorem from do to, a gdy jest limit – najwyżej do niego. Zwraca
+// dopasowania, liczbę wierszy i ostatni wiersz.
+func (x *Index) scanBatch(ctx context.Context, rules []*detect.Rule, base int, from Cursor, to time.Time,
+	limit *Cursor) ([]match, int, Cursor, error) {
+	conds := make([]string, len(rules))
+	flags := make([]string, len(rules))
+	for i, r := range rules {
+		conds[i] = r.SQL()
+		flags[i] = "toUInt8(" + conds[i] + ")"
+	}
+	where := x.rangeSQL(from, to)
+	if limit != nil {
+		where += fmt.Sprintf(" AND (ingested, event_id) <= (%s, %s)", ms(limit.Ingested), detect.Quote(limit.EventID))
+	}
+	q := fmt.Sprintf(`SELECT %s, [%s] FROM %s WHERE %s AND (%s) ORDER BY ingested, event_id LIMIT %d`,
+		eventCols, strings.Join(flags, ", "), x.table(), where, strings.Join(conds, " OR "), x.maxRows())
+	rows, err := x.Conn.Query(ctx, q)
+	if err != nil {
+		return nil, 0, Cursor{}, fmt.Errorf("rules query: %w", err)
+	}
+	defer rows.Close()
+	var out []match
+	var last Cursor
+	n := 0
+	for rows.Next() {
+		var fl []uint8
+		e, err := scanEvent(rows, &fl)
+		if err != nil {
+			return nil, 0, Cursor{}, err
+		}
+		n++
+		last = Cursor{Ingested: e.Ingested, EventID: e.ID}
+		ev := detect.Event{Event: &e}
+		for i, f := range fl {
+			if f != 0 {
+				out = append(out, match{cur: last, ev: ev, rule: base + i})
+			}
+		}
+	}
+	return out, n, last, rows.Err()
 }
 
 // threshold dociąga kontekst kluczy reguły progowej (jednym zapytaniem,

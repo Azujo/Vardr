@@ -121,3 +121,32 @@ channels:
 #iis:
 #  enabled: true
 #  log_dir: 'C:\inetpub\logs\LogFiles'
+
+# Agent Linux: dziennik systemd (zamiast channels). Domyślnie uwierzytelnianie
+# (auth, authpriv) i wpisy o priorytecie warning lub wyższym; units /
+# identifiers – dodatkowe jednostki albo programy w całości, all – cały dziennik.
+#journald:
+#  enabled: true
+#  units: [nginx.service]
+#  identifiers: [cron]
+#  all: false
+#  journalctl: /usr/bin/journalctl
+
+# Agent Linux: dziennik Linux Audit (auditd). Zdarzenia według reguł audytu
+# (zalecane: vardr-agent audit-rules | sudo tee /etc/audit/rules.d/50-vardr.rules).
+# exclude – pomijane typy rekordów (brak – lista domyślna, [] – wszystkie).
+#auditd:
+#  enabled: true
+#  path: /var/log/audit/audit.log
+#  exclude: [CRED_ACQ, CRED_DISP, CRED_REFR, USER_ACCT, USER_START, USER_END, LOGIN, SERVICE_START, SERVICE_STOP, BPF, NETFILTER_CFG]
+
+# Agent Linux: dowolne pliki logów, wiersz po wierszu (źródło syslog:file).
+# Wiersz trafia na serwer jako syslog z nazwą programu app – dekoder
+# dopasowany po app (Dekodery w panelu) rozbiera go jak wiadomość z rsyslog,
+# bez dekodera zdarzenie ma zbiór syslog.generic. Rotacja przez zmianę nazwy
+# (logrotate) i przez obcięcie (copytruncate). Wzorzec rozwijany przy starcie
+# agenta – każdy plik to osobny kanał (file:<ścieżka>).
+#files:
+#  - path: /var/log/nginx/*.log
+#    app: nginx
+#  - path: /opt/app/logs/app.log   # app domyślnie: nazwa pliku (app)

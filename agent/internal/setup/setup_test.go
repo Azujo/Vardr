@@ -101,3 +101,22 @@ func TestPathHelpers(t *testing.T) {
 		t.Fatalf("RemoveFromPath: %q %v", p, changed)
 	}
 }
+
+func TestGenerateLinuxConfig(t *testing.T) {
+	text, err := GenerateLinuxConfig(Options{ServerURL: "https://siem.lab:8443"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "agent.yaml")
+	if err := os.WriteFile(p, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Journald.Enabled || len(cfg.Channels) != 0 || cfg.Server.CertFile != filepath.Join(dir, "certs", "agent.crt") || cfg.StartAt != "now" {
+		t.Fatalf("%+v", cfg)
+	}
+}

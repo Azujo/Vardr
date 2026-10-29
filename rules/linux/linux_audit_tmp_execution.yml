@@ -1,0 +1,42 @@
+title: Linux – uruchomienie programu z /tmp albo /dev/shm
+id: c45dcc31-d958-4c21-b42f-498c21e7efa2
+status: stable
+description: |
+  Uruchomiono program z katalogu tymczasowego (/tmp, /var/tmp, /dev/shm).
+  Napastnik pobiera tam narzędzia (koparki, skanery, eksploity), bo każdy
+  może tam pisać.
+author: Vardr
+tags:
+  - attack.execution
+  - attack.t1204.002
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    Image|startswith:
+      - /tmp/
+      - /var/tmp/
+      - /dev/shm/
+  condition: selection
+falsepositives:
+  - Instalatory i aktualizacje rozpakowywane do /tmp, kompilacja w /tmp
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – program started from /tmp or /dev/shm"
+      description: |
+        A program was started from a temporary directory (/tmp, /var/tmp, /dev/shm). Attackers
+        download tools there (miners, scanners, exploits) because anyone can write there.
+      instructions: |
+        On {{host.name}} account {{user.name}} started {{Image}} ({{process.command_line}}).
+        Check the file (sha256sum, origin) and its network connections. An unknown program –
+        stop it, keep a copy for analysis and check how it got there.
+  group_by: [host.name, Image]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} konto {{user.name}} uruchomiło {{Image}}
+    ({{process.command_line}}). Sprawdź plik (sha256sum, pochodzenie) i jego
+    połączenia sieciowe. Nieznany program – zatrzymaj go, zachowaj kopię do
+    analizy i sprawdź, skąd się wziął.

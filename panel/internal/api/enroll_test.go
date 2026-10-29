@@ -3,8 +3,10 @@
 package api
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -167,6 +169,7 @@ func newEnrollEnv(t *testing.T) (*env, *[]string) {
 	dir := t.TempDir()
 	exe, ca := filepath.Join(dir, "vardr-agent.exe"), filepath.Join(dir, "ca.crt")
 	os.WriteFile(exe, []byte("MZ-program-agenta"), 0o644)
+	os.WriteFile(filepath.Join(dir, "vardr-agent-linux-amd64"), []byte("ELF-program-agenta"), 0o644)
 	os.WriteFile(ca, []byte("-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"), 0o644)
 	var revoked []string
 	srv := &Server{Store: e.st, Log: slog.New(slog.DiscardHandler), Enroll: &Enrollment{
@@ -318,6 +321,51 @@ func TestEnrollPackage(t *testing.T) {
 	for name, data := range files {
 		if strings.Contains(name, ".key") || strings.Contains(data, "PRIVATE KEY") {
 			t.Fatalf("paczka zawiera klucz prywatny: %s", name)
+		}
+	}
+	// Paczka Linux: tar.gz z programem (0755), tokenem (0600) i install.sh.
+	b, _ = json.Marshal(map[string]string{"secret": secret, "os": "linux"})
+	r = httptest.NewRequest("POST", "https://panel/api/v1/enroll-tokens/package", bytes.NewReader(b))
+	r.AddCookie(admin.cookie)
+	r.Header.Set(csrfHeader, admin.csrf)
+	w = httptest.NewRecorder()
+	e.h.ServeHTTP(w, r)
+	if w.Code != 200 || !strings.Contains(w.Header().Get("Content-Disposition"), "vardr-agent-serwery-iis-linux-amd64.tar.gz") {
+		t.Fatalf("paczka linux: %d %v", w.Code, w.Header())
+	}
+	gz, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(gz)
+	lin, modes := map[string]string{}, map[string]int64{}
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(tr)
+		lin[h.Name], modes[h.Name] = string(data), h.Mode
+	}
+	const d = "vardr-agent-serwery-iis/"
+	if lin[d+"vardr-agent"] != "ELF-program-agenta" || modes[d+"vardr-agent"] != 0o755 || modes[d+"install.sh"] != 0o755 ||
+		modes[d+"token.txt"] != 0o600 || strings.TrimSpace(lin[d+"token.txt"]) != secret || strings.TrimSpace(lin[d+"server.txt"]) != "192.168.88.98" ||
+		!strings.HasPrefix(lin[d+"install.sh"], "#!/bin/sh\n") || strings.Contains(lin[d+"install.sh"], "\r") || !strings.Contains(lin[d+"ca.crt"], "BEGIN CERTIFICATE") {
+		t.Fatalf("zawartość paczki linux: %v", keys(lin))
+	}
+	for _, c := range []struct {
+		req  map[string]string
+		code int
+	}{
+		{map[string]string{"secret": secret, "os": "linux", "arch": "arm64"}, 503}, // brak programu w agent-dist
+		{map[string]string{"secret": secret, "os": "linux", "arch": "386"}, 400},
+		{map[string]string{"secret": secret, "os": "macos"}, 400},
+	} {
+		if code, _, _ := admin.do("POST", "/api/v1/enroll-tokens/package", c.req); code != c.code {
+			t.Fatalf("%v: %d", c.req, code)
 		}
 	}
 	// Viewer nie może pobrać paczki; unieważniony token – brak paczki.

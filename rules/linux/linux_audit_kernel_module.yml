@@ -1,0 +1,46 @@
+title: Linux – załadowanie modułu jądra przez użytkownika
+id: 92cd0c9a-021e-4df3-acd0-54a2a8d14845
+status: stable
+description: |
+  auditd (klucz vardr_modules): zalogowany użytkownik załadował moduł
+  jądra (insmod, modprobe). Moduł jądra to najgłębszy sposób ukrycia
+  napastnika (rootkit). Ładowanie przy starcie systemu (bez konta
+  logowania) jest pomijane.
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.t1547.006
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: vardr_modules
+    SYSCALL:
+      - init_module
+      - finit_module
+    success: 'yes'
+  boot:
+    auid: '4294967295'
+  condition: selection and not boot
+falsepositives:
+  - Instalacja sterownika albo modułu (np. DKMS, VirtualBox) przez administratora
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – kernel module loaded by a user"
+      description: |
+        auditd (key vardr_modules): a logged-in user loaded a kernel module (insmod, modprobe).
+        A kernel module is the deepest way for an attacker to hide (rootkit). Loading at system
+        start (without a login account) is skipped.
+      instructions: |
+        {{user.name}} loaded a kernel module on {{host.name}} ({{process.command_line}}).
+        Check lsmod and the module origin (modinfo). An unknown module without a package
+        – isolate the server.
+  group_by: [host.name, user.name]
+  suppress: 1h
+  instructions: |
+    {{user.name}} załadował moduł jądra na {{host.name}}
+    ({{process.command_line}}). Sprawdź lsmod i pochodzenie modułu
+    (modinfo). Nieznany moduł spoza pakietu – odizoluj serwer.

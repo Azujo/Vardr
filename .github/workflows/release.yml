@@ -141,7 +141,7 @@ jobs:
           cat >> notes.md <<'EOF'
 
           ---
-          **Instalacja / aktualizacja serwera** (Linux x86_64, Docker): pobierz `vardr-…-linux-amd64.tar.gz`, sprawdź sumę z `SHA256SUMS`, potem `tar xzf …`, `cd …`, `sudo ./install.sh` – [docs/instalacja.md](https://github.com/Azujo/Vardr/blob/master/docs/instalacja.md) · [English](https://github.com/Azujo/Vardr/blob/master/docs/en/installation.md). Agent Windows (MSI) i `vardr-mcp.exe` pobiera się z panelu po instalacji.
+          **Instalacja / aktualizacja serwera** (Linux x86_64, Docker): pobierz `vardr-…-linux-amd64.tar.gz`, sprawdź sumę z `SHA256SUMS`, potem `tar xzf …`, `cd …`, `sudo ./install.sh` – [docs/instalacja.md](https://github.com/Azujo/Vardr/blob/master/docs/instalacja.md) · [English](https://github.com/Azujo/Vardr/blob/master/docs/en/installation.md). Agenta Windows (MSI), agenta Linux (tar.gz, amd64 i arm64) i `vardr-mcp.exe` pobiera się z panelu po instalacji.
           EOF
 
       - name: Wydanie na GitHubie

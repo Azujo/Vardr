@@ -668,6 +668,9 @@ export const enrollApi = {
 
   // Paczka ZIP: token w treści żądania (nie w adresie), plik zapisywany przez przeglądarkę.
   downloadPackage: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/package", { secret }, "vardr-agent.zip"),
+  // Paczka tar.gz agenta Linux (program, CA, adres, token, install.sh).
+  downloadLinuxPackage: (secret: string, arch: "amd64" | "arm64") =>
+    downloadFile("POST", "/api/v1/enroll-tokens/package", { secret, os: "linux", arch }, `vardr-agent-linux-${arch}.tar.gz`),
   // Jeden plik MSI z adresem serwera i tokenem – instalacja albo aktualizacja podwójnym kliknięciem.
   downloadMSI: (secret: string) => downloadFile("POST", "/api/v1/enroll-tokens/msi", { secret }, "vardr-agent.msi"),
   // Bazowy instalator bez tokenu – aktualizacja zainstalowanych agentów.

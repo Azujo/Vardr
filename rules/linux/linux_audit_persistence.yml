@@ -1,0 +1,56 @@
+title: Linux – nowe zadanie cron, usługa systemd albo ld.so.preload
+id: 0dec8166-4c3f-4bca-949f-290376a6b145
+status: stable
+description: |
+  auditd (klucze vardr_cron, vardr_systemd, vardr_preload): zmieniono
+  zadania cron, jednostki systemd w /etc/systemd/system albo
+  /etc/ld.so.preload poza instalacją pakietów. To typowe sposoby na
+  uruchamianie kodu napastnika po restarcie.
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.t1053.003
+  - attack.t1543.002
+  - attack.t1574.006
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key:
+      - vardr_cron
+      - vardr_systemd
+      - vardr_preload
+  managers:
+    exe|endswith:
+      - /dpkg
+      - /rpm
+      - /systemd
+      - /systemctl
+      - /vardr-agent
+      - /snapd
+      - /cron
+      - /crond
+  condition: selection and not managers
+falsepositives:
+  - Zadanie cron albo usługa dodana przez administratora (crontab -e, edycja jednostki)
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – new cron job, systemd service or ld.so.preload"
+      description: |
+        auditd (keys vardr_cron, vardr_systemd, vardr_preload): cron jobs, systemd units in
+        /etc/systemd/system or /etc/ld.so.preload were changed outside package installation.
+        These are typical ways to run the attacker's code after a restart.
+      instructions: |
+        {{exe}} changed {{file.path}} on {{host.name}} (logged-in account {{user.name}}).
+        Check the content: the command of the job or ExecStart of the unit. /etc/ld.so.preload
+        should normally not exist. Remove unknown entries and check the account's logins.
+  group_by: [host.name, file.path]
+  suppress: 1h
+  instructions: |
+    {{exe}} zmienił {{file.path}} na {{host.name}} (konto logowania
+    {{user.name}}). Sprawdź treść: polecenie zadania albo ExecStart
+    jednostki. /etc/ld.so.preload zwykle nie istnieje. Usuń nieznane wpisy
+    i sprawdź logowania konta.

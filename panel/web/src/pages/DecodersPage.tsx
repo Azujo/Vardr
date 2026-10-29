@@ -54,7 +54,7 @@ match:
   # host: [nas01]
   # regex: 'failed'
 parser:
-  type: regex   # kv | json | csv | regex | none
+  type: regex   # kv | json | csv | regex | audit | none
   patterns:
     - regex: 'Failed password for (?:invalid user )?(?P<user>\\S+) from (?P<src_ip>[0-9a-fA-F.:]+)'
       set: {event.action: login, event.outcome: failure}

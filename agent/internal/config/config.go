@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -30,6 +32,53 @@ type Config struct {
 	Logging  LoggingConfig   `yaml:"logging"`
 	Channels []ChannelConfig `yaml:"channels"`
 	IIS      IISConfig       `yaml:"iis"`
+	Journald JournaldConfig  `yaml:"journald"`
+	Auditd   AuditdConfig    `yaml:"auditd"`
+	Files    []FileConfig    `yaml:"files"`
+}
+
+// AuditdConfig: dziennik Linux Audit (agent Linux). Brak auditd nie jest
+// błędem – agent czeka, aż plik się pojawi.
+type AuditdConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// Path: dziennik auditd (domyślnie /var/log/audit/audit.log).
+	Path string `yaml:"path"`
+	// Exclude: pomijane typy rekordów (brak – lista domyślna: CRED_*,
+	// USER_ACCT, USER_START, USER_END, LOGIN, SERVICE_*, BPF, NETFILTER_CFG;
+	// [] – bez pomijania).
+	Exclude []string `yaml:"exclude"`
+}
+
+// FileConfig: plik logu czytany wiersz po wierszu (agent Linux). Wiersze
+// trafiają na serwer jako syslog z nazwą programu App – dekodery dopasowane
+// po app rozbierają je jak wiadomości z rsyslog, bez dekodera zdarzenie ma
+// zbiór syslog.generic.
+type FileConfig struct {
+	// Path: ścieżka pliku albo wzorzec (np. /var/log/nginx/*.log), rozwijany
+	// przy uruchomieniu agenta.
+	Path string `yaml:"path"`
+	// App: nazwa programu w nagłówku syslog (domyślnie nazwa pliku bez
+	// rozszerzenia, np. access).
+	App string `yaml:"app"`
+}
+
+// LinuxSources: agent Linux ma własne źródła (journald, auditd albo pliki).
+func (c *Config) LinuxSources() bool {
+	return c.Journald.Enabled || c.Auditd.Enabled || len(c.Files) > 0
+}
+
+// JournaldConfig: dziennik systemd (agent Linux). Domyślnie wpisy
+// uwierzytelniania (auth, authpriv) i o priorytecie warning lub wyższym.
+type JournaldConfig struct {
+	Enabled bool `yaml:"enabled"`
+	// All: wszystkie wpisy dziennika (duży wolumen – zwykle niepotrzebne).
+	All bool `yaml:"all"`
+	// Units: jednostki systemd zbierane w całości (np. nginx.service).
+	Units []string `yaml:"units"`
+	// Identifiers: programy (SYSLOG_IDENTIFIER) zbierane w całości (np. sshd).
+	Identifiers []string `yaml:"identifiers"`
+	// Journalctl: ścieżka programu (domyślnie journalctl z PATH).
+	Journalctl string `yaml:"journalctl"`
 }
 
 // IISConfig: logi IIS w formacie W3C (katalog LogFiles z podkatalogami
@@ -125,6 +174,14 @@ const (
 	StartAtOldest = "oldest"
 )
 
+// DefaultStateDir: katalog stanu zainstalowanego agenta.
+func DefaultStateDir() string {
+	if runtime.GOOS == "linux" {
+		return "/var/lib/vardr-agent"
+	}
+	return filepath.Join(os.Getenv("ProgramData"), "SiemAgent")
+}
+
 // Load wczytuje plik YAML, uzupełnia wartości domyślne i waliduje.
 // Ścieżki względne są rozwiązywane względem katalogu pliku konfiguracji.
 func Load(path string) (*Config, error) {
@@ -152,7 +209,7 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) applyDefaults(baseDir string) {
 	if c.StateDir == "" {
-		c.StateDir = filepath.Join(os.Getenv("ProgramData"), "SiemAgent")
+		c.StateDir = DefaultStateDir()
 	}
 	if c.StartAt == "" {
 		c.StartAt = StartAtNow
@@ -265,8 +322,28 @@ func (c *Config) Validate() error {
 	if c.Buffer.MinFreeMB < 0 {
 		errs = append(errs, lang.Errorf("buffer.min_free_mb nie może być ujemne", "buffer.min_free_mb cannot be negative"))
 	}
-	if len(c.Channels) == 0 {
-		errs = append(errs, lang.Errorf("brak skonfigurowanych kanałów", "no channels configured"))
+	if len(c.Channels) == 0 && !c.LinuxSources() {
+		errs = append(errs, lang.Errorf("brak skonfigurowanych źródeł (channels, journald, auditd albo files)", "no sources configured (channels, journald, auditd or files)"))
+	}
+	for i, t := range c.Auditd.Exclude {
+		if t == "" || strings.ToUpper(t) != t || strings.ContainsAny(t, " \t=") {
+			errs = append(errs, lang.Errorf("auditd.exclude: niepoprawny typ rekordu %q (pozycja %d; wielkie litery, np. CRED_ACQ)", "auditd.exclude: invalid record type %q (item %d; upper case, e.g. CRED_ACQ)", t, i))
+		}
+	}
+	for i, u := range append(append([]string{}, c.Journald.Units...), c.Journald.Identifiers...) {
+		if u == "" || strings.ContainsAny(u, " \t=+") {
+			errs = append(errs, lang.Errorf("journald: niepoprawna nazwa jednostki albo programu %q (pozycja %d)", "journald: invalid unit or program name %q (item %d)", u, i))
+		}
+	}
+	for i, f := range c.Files {
+		if !filepath.IsAbs(f.Path) && !strings.HasPrefix(f.Path, "/") {
+			errs = append(errs, lang.Errorf("files[%d]: ścieżka musi być bezwzględna (%q)", "files[%d]: the path must be absolute (%q)", i, f.Path))
+		} else if _, err := filepath.Match(f.Path, ""); err != nil {
+			errs = append(errs, lang.Errorf("files[%d]: niepoprawny wzorzec %q", "files[%d]: invalid pattern %q", i, f.Path))
+		}
+		if strings.ContainsAny(f.App, " \t") {
+			errs = append(errs, lang.Errorf("files[%d]: app bez spacji (%q)", "files[%d]: app without spaces (%q)", i, f.App))
+		}
 	}
 	seen := map[string]bool{}
 	for i, ch := range c.Channels {

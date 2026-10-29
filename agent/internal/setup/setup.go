@@ -115,6 +115,86 @@ channels:
 	return b.String(), nil
 }
 
+// GenerateLinuxConfig tworzy treść agent.yaml agenta Linux (/etc/vardr-agent).
+// Źródło: dziennik systemd; profil grupy (kanały Event Log) go nie dotyczy.
+func GenerateLinuxConfig(o Options) (string, error) {
+	if _, err := ServerURL(o.ServerURL); err != nil {
+		return "", err
+	}
+	if o.StartAt == "" {
+		o.StartAt = "now"
+	}
+	text := `# Konfiguracja agenta Vardr (Linux) – utworzona przez "vardr-agent install".
+# Zmiana adresu serwera: vardr-agent set-server <adres>
+# Pozostałe opcje i opis: agent/configs/agent.example.yaml w repozytorium projektu.
+
+server:
+  url: %s
+  ca_file: certs/ca.crt
+  cert_file: certs/agent.crt
+  key_file: certs/agent.key
+
+# Skąd zacząć przy pierwszym uruchomieniu: now (nowe wpisy) | oldest (cały dziennik).
+start_at: %s
+
+# Dziennik systemd: uwierzytelnianie (auth, authpriv – SSH, sudo, su, PAM,
+# zmiany kont) i wpisy o priorytecie warning lub wyższym. Dodatkowe jednostki
+# albo programy w całości: units / identifiers.
+journald:
+  enabled: true
+  # units: [nginx.service]
+  # identifiers: [cron]
+
+# Linux Audit (auditd): uruchamiane programy, zmiany plików i konfiguracji
+# audytu według reguł audytu (zalecane: vardr-agent audit-rules). Bez auditd
+# agent czeka na plik dziennika.
+auditd:
+  enabled: true
+  # exclude: [CRED_ACQ, CRED_DISP, CRED_REFR, USER_ACCT, USER_START, USER_END, LOGIN, SERVICE_START, SERVICE_STOP, BPF, NETFILTER_CFG]
+# Pliki logów aplikacji (wiersz po wierszu, z rotacją). app – nazwa programu
+# dla dekoderów (domyślnie nazwa pliku); wzorce rozwijane przy starcie.
+# files:
+#   - path: /var/log/nginx/*.log
+#     app: nginx
+`
+	if lang.Local() == "en" {
+		text = `# Vardr agent configuration (Linux) – created by "vardr-agent install".
+# Changing the server address: vardr-agent set-server <address>
+# Other options and descriptions: agent/configs/agent.example.yaml in the project repository.
+
+server:
+  url: %s
+  ca_file: certs/ca.crt
+  cert_file: certs/agent.crt
+  key_file: certs/agent.key
+
+# Where to start on the first run: now (new entries) | oldest (the whole journal).
+start_at: %s
+
+# systemd journal: authentication (auth, authpriv – SSH, sudo, su, PAM, account
+# changes) and entries with priority warning or higher. Additional units or
+# programs in full: units / identifiers.
+journald:
+  enabled: true
+  # units: [nginx.service]
+  # identifiers: [cron]
+
+# Linux Audit (auditd): started programs, changes of files and of the audit
+# configuration according to the audit rules (recommended: vardr-agent
+# audit-rules). Without auditd the agent waits for the log file.
+auditd:
+  enabled: true
+  # exclude: [CRED_ACQ, CRED_DISP, CRED_REFR, USER_ACCT, USER_START, USER_END, LOGIN, SERVICE_START, SERVICE_STOP, BPF, NETFILTER_CFG]
+# Application log files (line by line, with rotation). app – program name
+# for decoders (default: the file name); patterns expanded at start.
+# files:
+#   - path: /var/log/nginx/*.log
+#     app: nginx
+`
+	}
+	return fmt.Sprintf(text, o.ServerURL, o.StartAt), nil
+}
+
 func joinIDs(ids []uint32) string {
 	parts := make([]string, len(ids))
 	for i, id := range ids {

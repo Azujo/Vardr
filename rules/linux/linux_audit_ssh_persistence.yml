@@ -1,0 +1,47 @@
+title: Linux – zmiana kluczy SSH roota albo konfiguracji sshd
+id: de42c12e-088e-49eb-b100-159bbf4e170a
+status: stable
+description: |
+  auditd (klucze vardr_ssh_keys, vardr_sshd): zmieniono pliki w /root/.ssh
+  (authorized_keys) albo konfigurację serwera SSH. Dopisany klucz to trwały
+  dostęp bez hasła; zmiana sshd_config może włączyć logowanie roota albo
+  hasłem.
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.t1098.004
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key:
+      - vardr_ssh_keys
+      - vardr_sshd
+  packages:
+    exe|endswith:
+      - /dpkg
+      - /rpm
+  condition: selection and not packages
+falsepositives:
+  - Dodanie klucza administratora, zmiana konfiguracji SSH przez administratora albo narzędzie konfiguracyjne
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – root SSH keys or sshd configuration changed"
+      description: |
+        auditd (keys vardr_ssh_keys, vardr_sshd): files in /root/.ssh (authorized_keys) or the
+        SSH server configuration were changed. An added key means permanent access without a
+        password; a change of sshd_config can enable root or password logins.
+      instructions: |
+        {{exe}} changed {{file.path}} on {{host.name}} (logged-in account {{user.name}}).
+        Check the keys in authorized_keys and the PermitRootLogin and PasswordAuthentication
+        options. Remove unknown keys and check who was logged in at that time.
+  group_by: [host.name, file.path]
+  suppress: 1h
+  instructions: |
+    {{exe}} zmienił {{file.path}} na {{host.name}} (konto logowania
+    {{user.name}}). Sprawdź klucze w authorized_keys oraz opcje
+    PermitRootLogin i PasswordAuthentication. Usuń nieznane klucze i sprawdź,
+    kto był wtedy zalogowany.

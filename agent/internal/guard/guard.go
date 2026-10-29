@@ -50,6 +50,11 @@ const (
 	// UnlockFresh: jak długo znacznik odblokowania wstrzymuje pilnowanie
 	// uprawnień (polecenie z tokenem zatrzymuje albo usuwa usługę).
 	UnlockFresh = 2 * time.Minute
+
+	// Stany ochrony usługi: Windows – uprawnienia (SDDL), Linux – drop-in
+	// RefuseManualStop.
+	StateProtected = "protected"
+	StateOpen      = "open"
 )
 
 var journalMu sync.Mutex

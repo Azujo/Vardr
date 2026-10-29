@@ -1,0 +1,61 @@
+title: Linux – odwrócona powłoka (reverse shell)
+id: 25eb6e78-207a-4ca0-9325-1ae662603bc0
+status: stable
+description: |
+  Uruchomione polecenie łączy powłokę z adresem zdalnym: /dev/tcp,
+  nc/ncat -e, socat exec, Python albo Perl z gniazdem i powłoką. To typowy
+  krok po wykorzystaniu podatności aplikacji.
+author: Vardr
+tags:
+  - attack.execution
+  - attack.t1059.004
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  devtcp:
+    CommandLine|contains:
+      - /dev/tcp/
+      - /dev/udp/
+  netcat:
+    CommandLine|contains:
+      - 'nc -e '
+      - 'ncat -e '
+      - 'nc -c '
+      - 'ncat -c '
+      - 'netcat -e '
+  socat:
+    CommandLine|contains|all:
+      - socat
+      - exec
+  script:
+    CommandLine|contains|all:
+      - socket
+      - connect
+    CommandLine|contains:
+      - /bin/sh
+      - /bin/bash
+      - pty.spawn
+  condition: devtcp or netcat or socat or script
+falsepositives:
+  - Testy penetracyjne i skrypty diagnostyczne administratorów
+level: high
+vardr:
+  i18n:
+    en:
+      title: "Linux – reverse shell"
+      description: |
+        A started command connects a shell to a remote address: /dev/tcp, nc/ncat -e, socat exec,
+        Python or Perl with a socket and a shell. A typical step after exploiting an application
+        vulnerability.
+      instructions: |
+        On {{host.name}} account {{user.name}} ran: {{process.command_line}}. Check the remote address
+        and the parent process (ppid {{ppid}}). If it was not a test – isolate the server, find the
+        entry point (web application, SSH) and change the passwords and keys.
+  group_by: [host.name, user.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}} konto {{user.name}} uruchomiło: {{process.command_line}}.
+    Sprawdź adres zdalny i proces nadrzędny (ppid {{ppid}}). Jeśli to nie
+    test – odizoluj serwer, znajdź drogę wejścia (aplikacja WWW, SSH)
+    i zmień hasła oraz klucze.

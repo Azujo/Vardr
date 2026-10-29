@@ -67,6 +67,12 @@ else
 fi
 sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go > "$stage/stack/agent-dist/AGENT_VERSION"
 
+echo "== Linux agent (panel tar.gz packages)"
+for arch in amd64 arm64; do
+  GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+    -o "$stage/stack/agent-dist/vardr-agent-linux-$arch" ./agent/cmd/vardr-agent
+done
+
 echo "== stack files"
 tar -C "$lab" -cf - Dockerfile backup/Dockerfile msi/Dockerfile msi/agent.wxs nats clickhouse saga grafana prometheus \
   backup.sh restore.sh enroll-service.sh | tar -C "$stage/stack" -xf -

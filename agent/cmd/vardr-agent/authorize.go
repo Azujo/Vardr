@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//go:build windows
+//go:build windows || linux
 
 package main
 
@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
-	"golang.org/x/sys/windows"
 
 	"siem/agent/internal/config"
 	"siem/agent/internal/enrollment"
@@ -30,12 +28,12 @@ import (
 // zatrzymanie tokenem. Zły albo brakujący token trafia do dziennika ochrony
 // (alert w panelu).
 func authorize(cfgPath, action, token string) error {
-	acl, err := guard.ServiceACL(serviceName)
-	if errors.Is(err, windows.ERROR_SERVICE_DOES_NOT_EXIST) {
-		return nil
-	}
+	acl, installed, err := serviceProtection()
 	if err != nil {
-		return fmt.Errorf(lang.L("odczyt uprawnień usługi: %w", "reading service permissions: %w"), err)
+		return err
+	}
+	if !installed {
+		return nil
 	}
 	if acl == guard.StateOpen && token == "" {
 		return nil // usługa bez ochrony
@@ -63,6 +61,11 @@ func authorize(cfgPath, action, token string) error {
 		if token == "" {
 			return guard.ErrNoTokenArg
 		}
+		// Token z innego agenta (np. starszy wpis o tej samej nazwie komputera):
+		// identyfikator wskazuje, przy którym agencie w panelu go wygenerować.
+		if errors.Is(verr, guard.ErrNoTokens) || errors.Is(verr, guard.ErrBadToken) {
+			return fmt.Errorf(lang.L("%w – identyfikator tego agenta: %s", "%w – this agent's ID: %s"), verr, agentID)
+		}
 		return verr
 	}
 	if err := guard.MarkUsed(dir, t.ID); err != nil {
@@ -72,7 +75,7 @@ func authorize(cfgPath, action, token string) error {
 		return err
 	}
 	_ = guard.RecordState(dir, guard.StateOpen)
-	if err := guard.SetServiceACL(serviceName, guard.StateOpen); err != nil {
+	if err := openService(); err != nil {
 		guard.RemoveUnlock(dir)
 		return fmt.Errorf(lang.L("odblokowanie usługi: %w", "unlocking the service: %w"), err)
 	}

@@ -1,0 +1,65 @@
+title: Linux – bezpośrednia zmiana plików kont
+id: ccf4506f-701d-4b39-9422-fb06ad3e44f3
+status: stable
+description: |
+  auditd (klucz vardr_identity): /etc/passwd, /etc/shadow, /etc/group albo
+  /etc/gshadow zmienił program inny niż narzędzia do zarządzania kontami
+  (useradd, usermod, passwd…). Ręczna edycja tych plików to sposób na
+  ukryte konto z UID 0 albo zmianę hasła z pominięciem dzienników PAM.
+author: Vardr
+tags:
+  - attack.persistence
+  - attack.t1136.001
+  - attack.t1098
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: vardr_identity
+  tools:
+    exe|endswith:
+      - /useradd
+      - /usermod
+      - /userdel
+      - /groupadd
+      - /groupmod
+      - /groupdel
+      - /gpasswd
+      - /passwd
+      - /chpasswd
+      - /chage
+      - /chsh
+      - /chfn
+      - /newusers
+      - /adduser
+      - /deluser
+      - /systemd-sysusers
+      - /dpkg
+      - /rpm
+      - /sssd
+  condition: selection and not tools
+falsepositives:
+  - Edycja przez vipw/vigr albo narzędzie konfiguracyjne (Ansible, Puppet) – dodaj wyjątek dla jego programu
+level: medium
+vardr:
+  i18n:
+    en:
+      title: "Linux – direct change of account files"
+      description: |
+        auditd (key vardr_identity): /etc/passwd, /etc/shadow, /etc/group or /etc/gshadow
+        was changed by a program other than the account management tools (useradd,
+        usermod, passwd…). Editing these files by hand is a way to a hidden UID 0 account
+        or a password change bypassing the PAM logs.
+      instructions: |
+        {{exe}} changed {{file.path}} on {{host.name}} (logged-in account {{user.name}}).
+        Compare the file with the backup (/etc/passwd-, /etc/shadow-): look for new accounts,
+        UID 0 and changed hashes. If the change was not requested – lock the account
+        and check its SSH and sudo logins.
+  group_by: [host.name, file.path]
+  suppress: 1h
+  instructions: |
+    {{exe}} zmienił {{file.path}} na {{host.name}} (konto logowania
+    {{user.name}}). Porównaj plik z kopią (/etc/passwd-, /etc/shadow-):
+    szukaj nowych kont, UID 0 i zmienionych skrótów haseł. Jeśli zmiana
+    nie była zgłoszona – zablokuj konto i sprawdź jego logowania SSH i sudo.

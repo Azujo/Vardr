@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//go:build windows
+//go:build windows || linux
 
 package main
 
@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +22,14 @@ import (
 // svcGuard: ochrona agenta w procesie usługi (nil w trybie konsoli).
 var svcGuard *guardian
 
+// currentGuard: ochrona usługi (nil w trybie konsoli).
+func currentGuard() agentGuard {
+	if svcGuard == nil {
+		return nil
+	}
+	return svcGuard
+}
+
 // guardian pilnuje uprawnień i konfiguracji usługi, zapisuje zdarzenia
 // ochrony i ustala powód zatrzymania (guard – opis całości).
 type guardian struct {
@@ -31,21 +38,12 @@ type guardian struct {
 
 	agentID  atomic.Pointer[string]
 	cfg      atomic.Pointer[contract.AgentConfig] // konfiguracja z panelu (nil – brak: ochrona wyłączona)
-	expected guard.ServiceConfig                  // konfiguracja usługi, która uruchomiła agenta
+	watch    serviceWatch                         // stan usługi pilnowany przez enforce (zależny od systemu)
 	stopping atomic.Pointer[string]
 
 	mu     sync.Mutex
 	state  string // protected | open | inne SDDL
 	errMsg string
-}
-
-func newGuardian(dir string, log *slog.Logger) *guardian {
-	g := &guardian{dir: dir, log: log}
-	if c, err := guard.ReadConfig(serviceName); err == nil {
-		c.StartType = 0
-		g.expected = c
-	}
-	return g
 }
 
 // startup: wykrycie zabicia poprzedniego procesu i zużycie znacznika
@@ -112,60 +110,6 @@ func (g *guardian) setState(state string, err error) {
 	}
 }
 
-func (g *guardian) enforce(now time.Time) {
-	acl, err := guard.ServiceACL(serviceName)
-	if err != nil {
-		g.setState("", err)
-		return
-	}
-	if u, _ := guard.ReadUnlock(g.dir); u.Fresh(now) {
-		g.setState(acl, nil) // polecenie z tokenem albo instalator właśnie działa
-		return
-	}
-	recorded := guard.RecordedState(g.dir)
-	if !g.enabled() {
-		if acl != guard.StateOpen {
-			if err := guard.SetServiceACL(serviceName, guard.StateOpen); err != nil {
-				g.setState(acl, err)
-				return
-			}
-			_ = guard.RecordState(g.dir, guard.StateOpen)
-			if recorded == guard.StateProtected {
-				g.record(contract.TamperRecord{Kind: contract.TamperProtectionOff, Detail: lang.L("uprawnienia usługi przywrócone do zwykłych", "service permissions restored to the ordinary ones")})
-			}
-			acl = guard.StateOpen
-		}
-		g.setState(acl, nil)
-		return
-	}
-	if acl != guard.StateProtected {
-		if recorded == guard.StateProtected {
-			what := lang.L("zwykłe uprawnienia (jak po instalacji)", "ordinary permissions (as after installation)")
-			if acl != guard.StateOpen {
-				what = acl
-			}
-			g.record(contract.TamperRecord{Kind: contract.TamperACL, Detail: lang.L("uprawnienia usługi zmienione z zewnątrz: ", "service permissions changed from outside: ") + what})
-		}
-		if err := guard.SetServiceACL(serviceName, guard.StateProtected); err != nil {
-			g.setState(acl, err)
-			return
-		}
-		_ = guard.RecordState(g.dir, guard.StateProtected)
-		acl = guard.StateProtected
-	}
-	if g.expected.BinaryPath != "" {
-		diffs, err := guard.CheckConfig(serviceName, g.expected, true)
-		if len(diffs) > 0 {
-			g.record(contract.TamperRecord{Kind: contract.TamperConfig, Detail: strings.Join(diffs, "; ")})
-		}
-		if err != nil {
-			g.setState(acl, fmt.Errorf(lang.L("konfiguracja usługi: %w", "service configuration: %w"), err))
-			return
-		}
-	}
-	g.setState(acl, nil)
-}
-
 // probe uzupełnia status o stan ochrony.
 func (g *guardian) probe(s *status.Status) {
 	now := time.Now().UTC()
@@ -216,7 +160,7 @@ func (g *guardian) stopReason() string {
 	case !g.enabled():
 		return contract.TamperStop // ochrona wyłączona – bez wpisu (alarmuje utrata łączności)
 	default:
-		rec.Detail = lang.L("zatrzymanie z pominięciem tokenu (konto SYSTEM albo zmienione uprawnienia usługi)", "stop bypassing the token (SYSTEM account or changed service permissions)")
+		rec.Detail = stopBypassDetail()
 	}
 	g.record(rec)
 	return rec.Kind

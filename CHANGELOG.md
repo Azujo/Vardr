@@ -2,6 +2,32 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.8.0] – 2026-10-29 – Agent Linux, auditd i poprawki bezpieczeństwa
+
+### Dodane
+- **Agent Linux** ([docs/agent.md](docs/agent.md#agent-linux-od-wersji-011)): `vardr-agent` 0.11 dla Linuksa z systemd (amd64, arm64) – instalacja `sudo ./vardr-agent install -server … -token …` (usługa `vardr-agent.service`, pliki w `/etc/vardr-agent` i `/var/lib/vardr-agent`), te same polecenia, rejestracja tokenem, bufor dyskowy, heartbeat i limity grupy co agent Windows. Źródło: dziennik systemd (uwierzytelnianie i ostrzeżenia, dodatkowe jednostki i programy) wysyłany jako syslog – działają wbudowany dekoder i reguły Linuksa. Ochrona jak w Windows (grupa agentów): `systemctl stop` odmawia (drop-in `RefuseManualStop`), zatrzymanie, aktualizacja i deinstalacja tylko tokenem z panelu; `kill`, zabicie procesu, zmiany usługi i próby bez tokenu trafiają do panelu jako alert.
+- **auditd na agencie Linux** ([docs/agent.md](docs/agent.md#agent-linux-od-wersji-011)): źródło `auditd` (dziennik `/var/log/audit/audit.log` z rotacją, rekordy zdarzenia zgrupowane), nowy parser dekoderów `audit` i wbudowany dekoder `linux-audit` (zbiór `linux.audit`: uruchomione programy z argumentami, logowania, sudo, zmiany kont, zmiany konfiguracji audytu, klucze reguł), Sigma `product: linux` z `service: auditd` i `category: process_creation`, zalecane reguły audytu (`vardr-agent audit-rules`) i 8 reguł detekcji: wyłączenie audytu, ręczna zmiana plików kont, zmiana sudoers, klucze SSH roota i sshd_config, cron/systemd/ld.so.preload, moduł jądra, odwrócona powłoka, program z /tmp.
+- **Pliki logów na agencie Linux** ([docs/agent.md](docs/agent.md#agent-linux-od-wersji-011)): sekcja `files:` – dowolne pliki tekstowe wiersz po wierszu (wzorce `*.log`, rotacja logrotate i copytruncate, wznowienie bez duplikatów), wysyłane jako syslog z nazwą programu `app`, więc działają dekodery z panelu dopasowane po programie; bez dekodera – `syslog.generic`.
+- **Usługa czasu na agencie Linux**: agent zgłasza stan synchronizacji czasu (systemd-timesyncd, chrony, ntpd) – w szczegółach agenta zamiast „unknown”.
+- **Paczka agenta Linux w panelu** ([docs/agent.md](docs/agent.md#agent-linux-od-wersji-011)): Bifröst przy tokenie wydaje paczkę tar.gz dla amd64 albo arm64 (program, CA, adres serwera, token, `install.sh` – instalacja `sudo ./install.sh`) i pokazuje polecenie do wdrożenia masowego (Ansible, skrypt); `deploy.sh agent` buduje też programy Linux do `agent-dist/`.
+
+### Poprawione
+- Dekoder `linux`: komunikaty systemd-logind 256+ z nazwami w apostrofach (`New session '42' of user 'jan'`) – konto bez apostrofów.
+- **Silnik zapytań stawał przy wielu włączonych regułach**: wszystkie reguły szły jednym zapytaniem do ClickHouse, które po włączeniu ok. 120 reguł Sigmy przekraczało limit długości zapytania (256 KB) – każdy przebieg kończył się błędem, a zaległość (korelacje, progi) rosła bez końca. Reguły idą teraz porcjami (do 64 KB warunków na zapytanie) na wspólnym zakresie zdarzeń; aktualizacja detektora nadrabia zaległość sama.
+- Agent: przy niepoprawnym tokenie deinstalacji (np. wygenerowanym dla innego agenta o tej samej nazwie komputera) komunikat podaje identyfikator agenta.
+
+### Bezpieczeństwo
+- **Go 1.27.3**: wszystkie programy (serwer, panel, agenci) budowane poprawioną wersją Go (`toolchain` w `go.mod`) – 11 podatności biblioteki standardowej w 1.27.0 (HTTP/2, TLS, x509, nagłówki MIME), z których korzysta kod Vardr.
+- **Klucz API asystenta AI zaszyfrowany w bazie** (AES-GCM kluczem MFA, jak sekret SSO i hasło konta LDAP); klucz zapisany wcześniej otwartym tekstem jest szyfrowany przy pierwszym odczycie. Zmiana klucza MFA wymaga ponownego wpisania klucza API.
+- **Skanowanie podatności w CI**: `govulncheck` (Linux i Windows) i `npm audit` (wysokie i krytyczne przerywają CI), także co tydzień bez zmian w kodzie; w repozytorium włączone alerty i poprawki Dependabota, skanowanie sekretów i blokada wypchnięcia sekretu.
+- **Reguły a SQL**: test rozmyty kompilatora reguł (wartości i nazwy pól nie zmieniają struktury zapytania ClickHouse, także w CI) i test literałów na prawdziwym ClickHouse.
+
+### Aktualizacja
+- Serwer: paczka instalacyjna jak zwykle (`sudo ./install.sh`), bez migracji baz. Paczka zawiera programy agenta Linux (amd64, arm64) dla Bifröst.
+- Agent Windows 0.11.0 – w grupach z automatycznymi aktualizacjami sam, pozostałe przez MSI (Huginn → „Pobierz aktualizację agenta (MSI)”, GPO).
+- Agent Linux 0.11.0 – nowy: paczka tar.gz z tokenem w Bifröst, instalacja `sudo ./install.sh`; zalecany auditd z regułami `vardr-agent audit-rules`.
+- Klucz API asystenta AI zapisany wcześniej otwartym tekstem szyfruje się sam przy pierwszym odczycie ustawień.
+
 ## [1.7.0] – 2026-10-27 – Aktualizacje agentów, archiwum w S3, syslog TLS, IIS i klucze bezpieczeństwa
 
 ### Dodane

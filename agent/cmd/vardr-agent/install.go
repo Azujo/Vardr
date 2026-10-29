@@ -5,7 +5,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -361,76 +360,6 @@ func listInstances() []string {
 	defer k.Close()
 	names, _ := k.ReadSubKeyNames(-1)
 	return names
-}
-
-// setServer zmienia adres serwera w konfiguracji, sprawdza połączenie
-// i restartuje usługę.
-func setServer(cfgPath, input string) error {
-	if err := requireAdmin(lang.L("Zmiana adresu serwera", "Changing the server address")); err != nil {
-		return err
-	}
-	serverURL, err := setup.ServerURL(input)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		return err
-	}
-	updated, err := setup.SetServerURL(data, serverURL)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(cfgPath+".tmp", updated, 0o600); err != nil {
-		return err
-	}
-	if _, err := config.Load(cfgPath + ".tmp"); err != nil {
-		_ = os.Remove(cfgPath + ".tmp")
-		return fmt.Errorf(lang.L("konfiguracja po zmianie byłaby niepoprawna: %w", "the configuration would be invalid after the change: %w"), err)
-	}
-	if err := os.Rename(cfgPath+".tmp", cfgPath); err != nil {
-		return err
-	}
-	fmt.Println(lang.L("Nowy adres serwera:", "New server address:"), serverURL)
-	if err := testConnection(cfgPath); err != nil {
-		fmt.Println(lang.L("UWAGA:", "WARNING:"), err)
-	}
-	if st, err := queryService(); err == nil && st.State == svc.Running {
-		return restartService()
-	}
-	return nil
-}
-
-// testConnection sprawdza połączenie z serwerem z bieżącej konfiguracji.
-func testConnection(cfgPath string) error {
-	cfg, err := config.Load(cfgPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrPermission) {
-			return errors.New(lang.L("brak dostępu do konfiguracji – uruchom jako administrator", "no access to the configuration – run as administrator"))
-		}
-		return err
-	}
-	client, agentID, err := shipper.NewTLSClient(cfg.Server.CAFile, cfg.Server.CertFile, cfg.Server.KeyFile, 10*time.Second)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	start := time.Now()
-	if err := shipper.CheckServer(ctx, client, cfg.Server.URL); err != nil {
-		return fmt.Errorf(lang.L("połączenie z %s nieudane: %w", "connection to %s failed: %w"), cfg.Server.URL, err)
-	}
-	fmt.Printf(lang.L("Połączenie z %s: OK (agent %s, %s)\n", "Connection to %s: OK (agent %s, %s)\n"), cfg.Server.URL, agentID, time.Since(start).Round(time.Millisecond))
-	return nil
-}
-
-func prompt(question string) (string, error) {
-	fmt.Print(question)
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil && !(errors.Is(err, io.EOF) && line != "") {
-		return "", errors.New(lang.L("nie podano adresu serwera (użyj: vardr-agent install -server <adres>)", "no server address given (use: vardr-agent install -server <address>)"))
-	}
-	return strings.TrimSpace(line), nil
 }
 
 func copyFile(src, dst string) error {

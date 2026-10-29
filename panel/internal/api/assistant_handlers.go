@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"siem/internal/mcp"
+	"siem/panel/internal/api/auth"
 	"siem/panel/internal/api/store"
 	"siem/panel/internal/assistant"
 )
@@ -28,7 +29,19 @@ import (
 // widzi najwyżej to, co analityk, w granicach polityki AI (narzędzia,
 // limity, maskowanie).
 
-const assistantKey = "ai_assistant"
+const (
+	assistantKey = "ai_assistant"
+	// assistantKeyUsage: przeznaczenie szyfrogramu klucza API (SealData).
+	assistantKeyUsage = "ai-assistant-api-key"
+)
+
+// assistantSaved: zapis w panel_settings – klucz API zaszyfrowany kluczem
+// MFA (AES-GCM), jak sekret SSO i hasło konta LDAP. Starszy zapis z kluczem
+// otwartym tekstem (api_key) jest szyfrowany przy pierwszym odczycie.
+type assistantSaved struct {
+	AssistantSettings
+	APIKeyEnc []byte `json:"api_key_enc,omitempty"`
+}
 
 // AssistantSettings: ustawienia asystenta (panel_settings „ai_assistant”).
 type AssistantSettings struct {
@@ -107,10 +120,41 @@ func (s *Server) assistantSettings(ctx context.Context) (AssistantSettings, erro
 	case err != nil:
 		return a, err
 	}
-	if err := json.Unmarshal([]byte(raw), &a); err != nil {
+	var saved assistantSaved
+	if err := json.Unmarshal([]byte(raw), &saved); err != nil {
 		return a, err
 	}
+	a = saved.AssistantSettings
+	if len(saved.APIKeyEnc) > 0 {
+		key, err := auth.OpenData(s.MFAKey, saved.APIKeyEnc, assistantKeyUsage)
+		if err != nil {
+			return a, errors.New("the AI assistant API key cannot be read (MFA key changed?) – enter it again")
+		}
+		a.APIKey = string(key)
+	} else if a.APIKey != "" && len(s.MFAKey) > 0 {
+		// Klucz otwartym tekstem (zapis sprzed szyfrowania) – szyfrowanie od razu.
+		if raw, err := s.sealAssistant(a); err == nil {
+			if err := s.Settings.SetSetting(ctx, assistantKey, raw, "system", s.now()); err != nil {
+				s.Log.Warn("encrypting the AI assistant API key failed", "err", err)
+			}
+		}
+	}
 	return a.normalize(), nil
+}
+
+// sealAssistant: ustawienia do zapisu – klucz API zaszyfrowany (bez klucza
+// MFA w konfiguracji panelu – otwartym tekstem, jak przed szyfrowaniem).
+func (s *Server) sealAssistant(a AssistantSettings) (string, error) {
+	saved := assistantSaved{AssistantSettings: a}
+	if a.APIKey != "" && len(s.MFAKey) > 0 {
+		enc, err := auth.SealData(s.MFAKey, []byte(a.APIKey), assistantKeyUsage)
+		if err != nil {
+			return "", err
+		}
+		saved.APIKeyEnc, saved.APIKey = enc, ""
+	}
+	raw, err := json.Marshal(saved)
+	return string(raw), err
 }
 
 type assistantView struct {
@@ -177,12 +221,12 @@ func (s *Server) setAssistant(w http.ResponseWriter, r *http.Request) {
 	if !s.reauth(w, r, req.Password, "ai_assistant") {
 		return
 	}
-	raw, err := json.Marshal(next)
+	raw, err := s.sealAssistant(next)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	if err := s.Settings.SetSetting(r.Context(), assistantKey, string(raw), a.user.Username, s.now()); err != nil {
+	if err := s.Settings.SetSetting(r.Context(), assistantKey, raw, a.user.Username, s.now()); err != nil {
 		s.internalError(w, r, err)
 		return
 	}

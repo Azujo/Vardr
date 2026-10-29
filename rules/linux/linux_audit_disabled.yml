@@ -1,0 +1,49 @@
+title: Linux – reguły audytu usunięte albo audyt wyłączony
+id: 43b93bfc-cd11-4524-8917-4b85b1c88f3b
+status: stable
+description: |
+  auditd: usunięto reguły audytu (auditctl -D, -d), wyłączono audyt
+  (auditctl -e 0) albo zatrzymano demona auditd poza zamknięciem systemu.
+  Napastnik wyłącza audyt przed dalszymi działaniami, żeby nie zostawić
+  śladów.
+author: Vardr
+tags:
+  - attack.defense_impairment
+  - attack.t1685.004
+logsource:
+  product: linux
+  service: auditd
+detection:
+  removed:
+    event.action: audit-config-change
+    op: remove_rule
+  disabled:
+    event.action: audit-config-change
+    audit_enabled: '0'
+  stopped:
+    event.action:
+      - audit-daemon-stop
+      - audit-daemon-abort
+  condition: removed or disabled or stopped
+falsepositives:
+  - Przeładowanie reguł przez administratora (augenrules --load usuwa i dodaje reguły), aktualizacja pakietu audit, ponowne uruchomienie serwera (zatrzymanie demona)
+level: high
+vardr:
+  i18n:
+    en:
+      title: "Linux – audit rules removed or auditing disabled"
+      description: |
+        auditd: audit rules were removed (auditctl -D, -d), auditing was disabled
+        (auditctl -e 0) or the auditd daemon was stopped outside a system shutdown.
+        An attacker disables auditing before further actions so as not to leave traces.
+      instructions: |
+        On {{host.name}}: {{message}} (account {{user.name}}). Check whether an administrator
+        reloaded the rules or restarted the server. If not – restore the rules (augenrules --load),
+        check who was logged in (SSH, sudo) and what was done after the change.
+  group_by: [host.name]
+  suppress: 1h
+  instructions: |
+    Na {{host.name}}: {{message}} (konto {{user.name}}). Sprawdź, czy
+    administrator przeładował reguły albo uruchamiał serwer ponownie. Jeśli
+    nie – przywróć reguły (augenrules --load), sprawdź, kto był zalogowany
+    (SSH, sudo) i co robił po zmianie.

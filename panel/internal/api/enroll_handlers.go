@@ -152,6 +152,8 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Secret string `json:"secret"`
+		OS     string `json:"os"`   // "" / windows albo linux
+		Arch   string `json:"arch"` // linux: amd64 (domyślnie) albo arm64
 	}
 	if !readJSON(w, r, &req) {
 		return
@@ -167,6 +169,20 @@ func (s *Server) tokenPackage(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.internalError(w, r, err)
+		return
+	}
+	switch req.OS {
+	case "", "windows":
+	case "linux":
+		if req.Arch == "" {
+			req.Arch = "amd64"
+		}
+		if s.linuxPackage(w, r, t, req.Secret, req.Arch) {
+			s.audit(r, &a.user, "enroll_package_downloaded", t.Name, map[string]any{"os": "linux", "arch": req.Arch})
+		}
+		return
+	default:
+		writeError(w, http.StatusBadRequest, "bad_os", "system: windows albo linux")
 		return
 	}
 	exe, err := os.Open(s.Enroll.AgentExe)

@@ -61,6 +61,7 @@ Conditions should be narrow enough for the decoder not to capture other devices'
 | `json` | a JSON object; nested fields as `a.b.c`, arrays with an index (`targetResources.0.userPrincipalName`) | – |
 | `csv` | columns separated by a separator | `separator` (one character), `columns: [..]` |
 | `regex` | the first matching pattern; named groups `(?P<name>…)` are fields | `patterns: [{regex, set}]` – `set` holds constant fields for that pattern (e.g. `event.action: login`) |
+| `audit` | a Linux Audit (auditd) event: the `type=… msg=audit(…)` records of one event; record fields, ENRICHED format translations (upper case) and normalized fields: `action`, `outcome`, `user`, `target_user`, `cmdline`, `file.path`, `src_ip`, `dest_ip`, `key`, `audit.ms` (time) – decoder `linux-audit` | – |
 | `none` | no parsing (the content only in `message`) | – |
 
 All parser fields go to `fields` under their names (except the reserved header and decoder names). In rules and in Mímir they are available as `fields.name`.

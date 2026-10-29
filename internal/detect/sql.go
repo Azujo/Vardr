@@ -152,6 +152,8 @@ func (c channelIs) sql() string {
 	return fmt.Sprintf("(lowerUTF8(fields['winlog.channel']) = %s)", Quote(strings.ToLower(string(c))))
 }
 
+func (a actionIs) sql() string { return fmt.Sprintf("(event_action = %s)", Quote(string(a))) }
+
 func (c codeIs) sql() string { return fmt.Sprintf("(event_code = %d)", uint32(c)) }
 
 // globRE zamienia maskę Sigmy (już małymi literami) na wyrażenie RE2.

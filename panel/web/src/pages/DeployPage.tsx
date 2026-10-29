@@ -45,11 +45,13 @@ function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; se
   const [busy, setBusy] = useState("");
   if (!data) return null;
   const cmd = `vardr-agent.exe install -server ${server || location.hostname} -token ${data.secret}`;
-  const download = async (kind: "msi" | "zip") => {
+  const linuxCmd = `sudo ./vardr-agent install -server ${server || location.hostname} -token ${data.secret}`;
+  const download = async (kind: "msi" | "zip" | "amd64" | "arm64") => {
     setBusy(kind);
     try {
       if (kind === "msi") await enrollApi.downloadMSI(data.secret);
-      else await enrollApi.downloadPackage(data.secret);
+      else if (kind === "zip") await enrollApi.downloadPackage(data.secret);
+      else await enrollApi.downloadLinuxPackage(data.secret, kind);
     } catch (e) {
       notifications.show({ color: "red", message: msg(e) });
     } finally {
@@ -92,6 +94,34 @@ function SecretModal({ data, server, onClose }: { data: { token: EnrollToken; se
               {cmd}
             </Code>
             <CopyButton value={cmd}>
+              {({ copied, copy }) => (
+                <Button variant="default" onClick={copy}>
+                  {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                </Button>
+              )}
+            </CopyButton>
+          </Group>
+        </div>
+        <div>
+          <Text size="sm" fw={500} mb={4}>
+            {t("deploy.linux")}
+          </Text>
+          <Group gap="xs" mb={4}>
+            <Button variant="light" size="xs" leftSection={<IconDownload size={14} />} loading={busy === "amd64"} onClick={() => void download("amd64")}>
+              {t("deploy.linuxPackage", { arch: "x86-64" })}
+            </Button>
+            <Button variant="light" size="xs" leftSection={<IconDownload size={14} />} loading={busy === "arm64"} onClick={() => void download("arm64")}>
+              {t("deploy.linuxPackage", { arch: "ARM64" })}
+            </Button>
+          </Group>
+          <Text size="sm" c="dimmed" mb={4}>
+            {t("deploy.linuxText")}
+          </Text>
+          <Group wrap="nowrap" align="flex-start">
+            <Code block style={{ flex: 1, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {linuxCmd}
+            </Code>
+            <CopyButton value={linuxCmd}>
               {({ copied, copy }) => (
                 <Button variant="default" onClick={copy}>
                   {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}

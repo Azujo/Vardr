@@ -71,6 +71,11 @@ func (c channelIs) Eval(e Event) bool {
 	return strings.EqualFold(v, string(c))
 }
 
+// actionIs: event.action (np. process-start dla category process_creation na Linuksie).
+type actionIs string
+
+func (a actionIs) Eval(e Event) bool { return e.Action == string(a) }
+
 type codeIs uint32
 
 func (c codeIs) Eval(e Event) bool { return e.Code == uint32(c) }
@@ -158,6 +163,21 @@ func compileLogsource(l logsource) (Node, error) {
 			return nil, lang.Errorf("product azure: category nieobsługiwana", "product azure: category is not supported")
 		}
 		return and{datasetIs(ds)}, nil
+	}
+	if prefix == "linux." && (l.Service != "" || l.Category != "") {
+		// Linux Audit (agent Linux, dekoder linux-audit): service auditd albo
+		// uruchomienie programu (EXECVE).
+		n := and{datasetIs("linux.audit")}
+		switch {
+		case l.Service != "" && !strings.EqualFold(l.Service, "auditd"):
+			return nil, lang.Errorf("product linux: service %q nieobsługiwany (auditd)", "product linux: service %q is not supported (auditd)", l.Service)
+		case l.Category == "":
+		case strings.EqualFold(l.Category, "process_creation"):
+			n = append(n, actionIs("process-start"))
+		default:
+			return nil, lang.Errorf("product linux: category %q nieobsługiwana (process_creation)", "product linux: category %q is not supported (process_creation)", l.Category)
+		}
+		return n, nil
 	}
 	if prefix != "windows." && (l.Service != "" || l.Category != "") {
 		return nil, lang.Errorf("product %s: service i category tylko dla windows i azure", "product %s: service and category only for windows and azure", l.Product)

@@ -318,6 +318,7 @@ func TestSyslogSources(t *testing.T) {
 		{"action": "user-deleted", "target_user": "backdoor"},
 		{"action": "password-change", "target_user": "jan"},
 		{"action": "session-open", "user": "jan", "session": "42"},
+		{"action": "session-open", "user": "siem", "session": "15228", "host": "siem"},
 	} {
 		check("linux", i, "linux.auth", want)
 	}

@@ -124,6 +124,12 @@ for t in "${targets[@]}"; do
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/vardr-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
       ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'; \
       echo $agent_version > agent-dist/AGENT_VERSION"   # wersja dla automatycznych aktualizacji
+    # Agent Linux do paczek tar.gz z panelu (Bifröst), obie architektury.
+    for arch in amd64 arm64; do
+      GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "deploy/lab/bin/vardr-agent-linux-$arch" ./agent/cmd/vardr-agent
+      copy "deploy/lab/bin/vardr-agent-linux-$arch" "$host:$dir/agent-dist/vardr-agent-linux-$arch"
+    done
+    echo "   agent Linux: amd64, arm64"
     ;;
   ingest | normalizer | writer | archiver | detector | api | backup)
     echo "== $t ($version)"

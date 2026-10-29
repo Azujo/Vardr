@@ -5,8 +5,6 @@
 package main
 
 import (
-	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
@@ -16,83 +14,8 @@ import (
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
 
-	"siem/agent/internal/enrollment"
-	"siem/agent/internal/heartbeat"
-	"siem/agent/internal/setup"
 	"siem/internal/lang"
 )
-
-type enrollOptions struct {
-	server, token, ca, panel, dir, profile string
-}
-
-// enrollOnly rejestruje agenta tokenem i przygotowuje samodzielny katalog
-// (certyfikaty + agent.yaml) bez instalowania usługi – do testów, do
-// uruchomienia w konsoli (vardr-agent run) albo do własnych skryptów.
-// Nie wymaga uprawnień administratora.
-func enrollOnly(o enrollOptions) error {
-	if o.server == "" || o.token == "" || o.dir == "" {
-		return errors.New(lang.L("użycie: vardr-agent enroll -server <adres> -token <token> -dir <katalog> [-ca ca.crt] [-panel URL] [-profile …]", "usage: vardr-agent enroll -server <address> -token <token> -dir <directory> [-ca ca.crt] [-panel URL] [-profile …]"))
-	}
-	serverURL, err := setup.ServerURL(o.server)
-	if err != nil {
-		return err
-	}
-	if o.panel == "" {
-		if o.panel, err = enrollment.PanelURL(serverURL); err != nil {
-			return err
-		}
-	}
-	if o.ca == "" {
-		exe, _ := os.Executable()
-		o.ca = filepath.Join(filepath.Dir(exe), "ca.crt")
-	}
-	caPEM, err := os.ReadFile(o.ca)
-	if err != nil {
-		return fmt.Errorf(lang.L("plik CA (-ca): %w", "CA file (-ca): %w"), err)
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(caPEM) {
-		return errors.New(lang.L("niepoprawny plik CA", "invalid CA file"))
-	}
-	if _, err := os.Stat(filepath.Join(o.dir, "certs", "agent.key")); err == nil {
-		return fmt.Errorf(lang.L("%s zawiera już klucz agenta – wskaż pusty katalog", "%s already contains an agent key – choose an empty directory"), o.dir)
-	}
-
-	host, _ := os.Hostname()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	res, keyPEM, err := enrollment.Register(ctx, o.panel, roots, o.token, enrollment.Info{Hostname: host, OS: heartbeat.OSVersion(), Version: version})
-	if err != nil {
-		return err
-	}
-	certDir := filepath.Join(o.dir, "certs")
-	if err := os.MkdirAll(certDir, 0o700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(certDir, "ca.crt"), caPEM, 0o644); err != nil {
-		return err
-	}
-	if err := enrollment.WritePair(filepath.Join(certDir, "agent.crt"), filepath.Join(certDir, "agent.key"), []byte(res.Certificate), keyPEM); err != nil {
-		return err
-	}
-	profile := o.profile
-	if profile == "" {
-		profile = res.Profile
-	}
-	cfg, err := setup.GenerateConfig(setup.Options{ServerURL: serverURL, Profile: profile})
-	if err != nil {
-		return err
-	}
-	cfg += "\n# Katalog stanu obok konfiguracji (rejestracja poleceniem vardr-agent enroll).\nstate_dir: state\n"
-	cfgPath := filepath.Join(o.dir, "agent.yaml")
-	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
-		return err
-	}
-	fmt.Printf(lang.L("Zarejestrowano agenta %s (profil %s, certyfikat ważny do %s).\n", "Agent %s enrolled (profile %s, certificate valid until %s).\n"), res.AgentID, profile, res.NotAfter.Local().Format("2006-01-02"))
-	fmt.Printf("Konfiguracja: %s\nUruchomienie w konsoli: vardr-agent -config %s run\n", cfgPath, cfgPath)
-	return nil
-}
 
 // upgrade podmienia program zainstalowanej usługi na wersję, z której
 // uruchomiono polecenie. Konfiguracja, certyfikaty i stan zostają.

@@ -7,6 +7,10 @@ on:
     branches: [master]
   pull_request:
   workflow_dispatch:
+  # Co tydzień (poniedziałek 5:00 UTC) – nowe podatności (govulncheck,
+  # npm audit) pojawiają się także bez zmian w kodzie.
+  schedule:
+    - cron: "0 5 * * 1"
 
 permissions:
   contents: read
@@ -54,6 +58,11 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # Znane podatności w bibliotece standardowej i zależnościach – tylko te,
+      # których kod faktycznie używa (wersja Go z toolchain w go.mod).
+      - name: Znane podatności (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
       - name: Testy z wykrywaniem wyścigów
         run: go test -race -count=1 ./...
 
@@ -67,6 +76,10 @@ jobs:
 
       - name: Fuzzing parsera XML zdarzeń (60 s)
         run: go test -run '^$' -fuzz FuzzParseWinEvent -fuzztime 60s ./server/internal/normalize
+
+      # Wartości i nazwy pól z reguł (panel) nie zmieniają struktury SQL ClickHouse.
+      - name: Fuzzing kompilatora reguł do SQL (60 s)
+        run: go test -run '^$' -fuzz FuzzRuleSQL -fuzztime 60s ./internal/detect
 
       - name: Budowanie usług serwera
         env:
@@ -92,6 +105,10 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      # Kod agenta tylko dla Windows (usługa, Event Log) – osobna analiza.
+      - name: Znane podatności (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
       - name: Testy
         run: go test -count=1 ./...
 
@@ -115,4 +132,7 @@ jobs:
           cache: npm
           cache-dependency-path: panel/web/package-lock.json
       - run: npm ci --no-audit --no-fund
+      # Podatności paczek frontendu (wysokie i krytyczne przerywają CI).
+      - name: Znane podatności (npm audit)
+        run: npm audit --audit-level=high
       - run: npm run build

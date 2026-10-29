@@ -66,13 +66,17 @@ func Apply(base *config.Config, m *contract.AgentConfig) (*config.Config, error)
 	if m == nil {
 		return &eff, nil
 	}
-	chans, err := setup.ProfileChannels(m.Profile)
-	if err != nil {
-		return nil, err
-	}
-	eff.Channels = make([]config.ChannelConfig, 0, len(chans))
-	for _, ch := range chans {
-		eff.Channels = append(eff.Channels, config.ChannelConfig{Name: ch.Name, EventIDs: ch.EventIDs})
+	// Profil grupy (kanały Event Log) dotyczy agenta Windows; agent Linux
+	// zbiera źródła z agent.yaml (journald, auditd), z grupy bierze limity i opcje.
+	if len(base.Channels) > 0 || !base.LinuxSources() {
+		chans, err := setup.ProfileChannels(m.Profile)
+		if err != nil {
+			return nil, err
+		}
+		eff.Channels = make([]config.ChannelConfig, 0, len(chans))
+		for _, ch := range chans {
+			eff.Channels = append(eff.Channels, config.ChannelConfig{Name: ch.Name, EventIDs: ch.EventIDs})
+		}
 	}
 	l := m.Limits
 	if l.Priority != nil {

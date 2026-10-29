@@ -366,6 +366,9 @@
     "msiText": "One file with the server address and token built in: double-clicking it installs and enrols the agent, and on a computer that already has the agent – upgrades it. Deploy the same file via GPO, Intune or SCCM without parameters. The file contains the token – anyone who gets it can enrol a computer while the token is valid (set a short validity or an install limit). The agent generates its key on the computer; there is no private key in the file.",
     "zip": "ZIP package (program, CA, token, scripts – installation without MSI)",
     "mass": "Mass deployment (GPO, Intune, SCCM) – command run as SYSTEM or administrator:",
+    "linux": "Linux (systemd)",
+    "linuxPackage": "tar.gz package – {{arch}}",
+    "linuxText": "Program, CA, server address, token and install.sh. Extract it on the server and run sudo ./install.sh. Mass deployment (Ansible, script) – command run from the program folder:",
     "done": "Done"
   },
   "defaultGroup": {

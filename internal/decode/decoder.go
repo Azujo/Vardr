@@ -55,7 +55,7 @@ type MatchDef struct {
 
 // ParserDef to sposób rozbioru treści.
 type ParserDef struct {
-	Type      string       `yaml:"type" json:"type"`                     // kv | json | csv | regex | none
+	Type      string       `yaml:"type" json:"type"`                     // kv | json | csv | regex | audit | none
 	Separator string       `yaml:"separator" json:"separator,omitempty"` // csv
 	Columns   []string     `yaml:"columns" json:"columns,omitempty"`     // csv
 	Patterns  []PatternDef `yaml:"patterns" json:"patterns,omitempty"`   // regex: pierwszy pasujący
@@ -167,7 +167,7 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 		return nil, lang.Errorf("match: podaj co najmniej jeden warunek (peer, host, app, contains, regex, any)", "match: specify at least one condition (peer, host, app, contains, regex, any)")
 	}
 	switch d.Parser.Type {
-	case "kv", "json", "none":
+	case "kv", "json", "audit", "none":
 	case "csv":
 		if len(d.Parser.Columns) == 0 {
 			return nil, lang.Errorf("parser csv: podaj columns", "parser csv: specify columns")
@@ -187,7 +187,7 @@ func Compile(d Def, defaultLoc *time.Location) (*Decoder, error) {
 			dec.patterns = append(dec.patterns, re)
 		}
 	default:
-		return nil, lang.Errorf("parser.type: kv, json, csv, regex albo none", "parser.type: kv, json, csv, regex or none")
+		return nil, lang.Errorf("parser.type: kv, json, csv, regex, audit albo none", "parser.type: kv, json, csv, regex, audit or none")
 	}
 	if d.Time != nil {
 		if len(d.Time.Fields) == 0 || d.Time.Layout == "" {
@@ -318,6 +318,10 @@ func (d *Decoder) Decode(h Header) (Result, error) {
 	switch d.Parser.Type {
 	case "kv":
 		parseKV(h.Message, res.Fields)
+	case "audit":
+		if err := parseAudit(h.Message, res.Fields); err != nil {
+			return res, err
+		}
 	case "json":
 		var v any
 		if err := json.Unmarshal([]byte(h.Message), &v); err != nil {

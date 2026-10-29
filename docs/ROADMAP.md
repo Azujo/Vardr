@@ -565,7 +565,7 @@ Stan: napisane i sprawdzone w laboratorium (27.10.2026) – rsyslog z VM: zdarze
 
 Po 1.6 (instalacja poza laboratorium) – etap 1.7: utrzymanie wdrożenia (aktualizacje agentów, archiwum zgodne z NIS2, bezpieczne źródła, silniejsze logowanie), potem 1.8: agent Linux (decyzja właściciela 27.10.2026). Jak przy 1.6 – całość pisana najpierw, wydanie na końcu.
 
-**Stan:** punkty 1.7.0–1.7.3 wydane razem jako **1.7.0** (27.10.2026); w następnej kolejności 1.8 (agent Linux).
+**Stan:** punkty 1.7.0–1.7.3 wydane razem jako **1.7.0** (27.10.2026); punkty 1.8.0–1.8.2 (agent Linux) wydane razem jako **1.8.0** (29.10.2026).
 
 | Wersja | Funkcja | Godziny | Uwagi |
 |---|---|---|---|
@@ -581,6 +581,18 @@ Po 1.6 (instalacja poza laboratorium) – etap 1.7: utrzymanie wdrożenia (aktua
 - Konfiguracja grupy podaje wersję i sumę SHA-256 instalatora MSI z serwera; agent starszy niż ta wersja pobiera MSI z panelu (mTLS, certyfikat agenta), sprawdza sumę i uruchamia `msiexec` (aktualizacja jak przez GPO – usługa wraca z tą samą rejestracją). Bez obniżania wersji.
 - Rozłożenie w czasie: losowe opóźnienie (do 30 min), jedna próba danej wersji na 6 godzin; wynik w heartbeacie i w panelu.
 - **Warunek ukończenia:** stacja w laboratorium w grupie z włączonymi aktualizacjami sama przechodzi na nową wersję agenta po `deploy.sh agent`; panel pokazuje nową wersję, a przy nieudanej instalacji – błąd z dziennika MSI.
+
+### 1.8 – Agent Linux (plan 28.10.2026)
+
+Ten sam program `vardr-agent` zbudowany dla Linuksa (amd64, arm64, bez cgo): wspólny rdzeń z agentem Windows (bufor dyskowy, wysyłka mTLS, heartbeat, rejestracja tokenem, odnowienie certyfikatu, konfiguracja grupy z panelu), osobne tylko źródła, usługa i instalacja. Po stronie serwera wpisy trafiają jako syslog (RFC 5424) – działają istniejące dekodery i reguły Linuksa z 1.6.2.
+
+| Etap | Zakres | Uwagi |
+|---|---|---|
+| **1.8.0** | Program i usługa: `sudo ./vardr-agent install -server … -token …` (systemd, `/etc/vardr-agent`, `/var/lib/vardr-agent`), polecenia jak w Windows (status, start/stop/restart, test, check, run, enroll, set-server, uninstall); źródło **journald** (`journalctl -o json`, domyślnie auth/authpriv i priorytet ≤ warning) | stan odczytu po czasie wpisu; uprawnienia plików 0600/0700 root; **ochrona** (przeniesiona z 1.8.2): drop-in `RefuseManualStop`, polecenia z tokenem, `kill`/zabicie/zmiany usługi → alert |
+| **1.8.1** | Źródło **auditd** (`/var/log/audit/audit.log` z rotacją), dekoder `linux.audit` (EXECVE, logowania, zmiany kont, `-k` klucze), zalecane reguły audit i reguły detekcji | auditd opcjonalny – bez niego agent działa na journald |
+| **1.8.2** | Panel: paczka Linux z tokenem do pobrania (tar.gz), system agenta na liście, dowolne pliki logów (`files:`) | automatyczne aktualizacje dla Linuksa – po 1.8 |
+
+- **Warunek ukończenia:** agent zainstalowany na serwerze laboratorium wysyła logowania SSH i sudo z journald, auditd i plików; panel pokazuje go w Huginnie z systemem i stanem kanałów, a reguły Linuksa z 1.6.2 dają alerty jak dla rsyslog.
 
 ## 18. Pierwsze kroki (etap 0)
 

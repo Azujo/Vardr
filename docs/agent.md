@@ -112,6 +112,59 @@ iis:
 - Na serwerze zdarzenia rozbiera wbudowany dekoder `iis` (zbiór `iis.access`): adres klienta w `source.ip`, użytkownik (uwierzytelnienie Windows/Basic) w `user.name`, wynik `failure` dla 401 i 403. Pola W3C zostają pod własnymi nazwami (`cs-method`, `cs-uri-query`, `sc-status`…), więc reguły Sigmy z `logsource: category: webserver` (albo `product: iis`) działają bez zmian.
 - Agent czyta pliki jako SYSTEM; katalog domyślny IIS jest dla niego dostępny. Brak katalogu albo plików W3C – ostrzeżenie na stronie agenta.
 
+## Agent Linux (od wersji 0.11)
+
+Ten sam program `vardr-agent` w wersji dla Linuksa z systemd (amd64, arm64; Ubuntu, Debian, RHEL i pochodne, SUSE). Rdzeń jest wspólny z agentem Windows: rejestracja tokenem z panelu, wysyłka po mTLS, bufor dyskowy, heartbeat (Huginn), odnowienie certyfikatu i limity z grupy agentów.
+
+```bash
+# w folderze z vardr-agent, ca.crt (z serwera, certs/ca.crt) i tokenem z panelu (Bifröst)
+sudo ./vardr-agent install -server 192.168.88.98 -token hdt_…
+sudo vardr-agent status
+```
+
+- **Pliki:** program `/usr/local/sbin/vardr-agent`, konfiguracja i certyfikaty `/etc/vardr-agent` (tylko root, klucz `0600`), stan, bufor i log `/var/lib/vardr-agent`; usługa `vardr-agent.service` (start z systemem, restart po awarii, system plików tylko do odczytu poza tymi katalogami). Log usługi także w `journalctl -u vardr-agent`.
+- **Polecenia** jak w Windows: `status`, `start`, `stop`, `restart`, `test`, `check`, `set-server`, `run` (konsola), `enroll` (rejestracja bez usługi), `./vardr-agent upgrade` (z folderu nowej wersji), `uninstall [-purge]` (klucz prywatny usuwany zawsze).
+- **Źródło – dziennik systemd** (`journalctl -o json`, bez dodatkowych bibliotek): domyślnie wpisy uwierzytelniania (auth, authpriv – SSH, sudo, su, PAM, logind, zmiany kont i grup) oraz wszystkie o priorytecie *warning* i wyższym. Na serwer trafiają jako syslog RFC 5424 (źródło `syslog:journald`), więc działają wbudowany dekoder `linux` (`linux.auth`) i reguły Linuksa – tak samo jak dla serwerów wysyłających przez rsyslog. Dodatkowe jednostki albo programy w całości:
+
+```yaml
+journald:
+  enabled: true
+  units: [nginx.service]     # cała jednostka systemd
+  identifiers: [cron]        # cały program (SYSLOG_IDENTIFIER)
+  # all: true                # cały dziennik (duży wolumen)
+```
+
+- Pozycja odczytu to czas wpisu: po przerwie agent wznawia od niego, bez duplikatów (identyfikator zdarzenia z kursora dziennika). Nowy agent zaczyna od bieżących wpisów (`start_at: oldest` – od początku dziennika).
+- **Źródło – Linux Audit (auditd)**: dziennik `/var/log/audit/audit.log` z rotacją. Rekordy jednego zdarzenia (SYSCALL, EXECVE, CWD, PATH… do EOE) trafiają na serwer razem (źródło `file:auditd`), rozbiera je wbudowany dekoder `linux-audit` (zbiór `linux.audit`, parser `audit`): uruchomione programy z argumentami (`process-start`, pola Sigmy `Image`, `CommandLine`), logowania i uwierzytelnienia, sudo, zmiany kont i grup, zmiany konfiguracji audytu, odmowy SELinux/AppArmor i zdarzenia reguł audytu (pole `key`). Konto `user` to konto logowania (AUID) – także po sudo. Domyślnie pomijane są typy powtarzane przy każdym zadaniu cron i sesji (CRED_*, USER_ACCT, USER_START, USER_END, LOGIN, SERVICE_*, BPF, NETFILTER_CFG); lista: `auditd.exclude`. Bez auditd agent czeka na plik (kanał bez błędu). Zalecane reguły audytu z kluczami `vardr_*` dla reguł detekcji (`rules/linux/linux_audit_*`):
+
+```bash
+sudo apt install auditd          # albo: sudo dnf install audit
+vardr-agent audit-rules | sudo tee /etc/audit/rules.d/50-vardr.rules
+sudo augenrules --load
+```
+
+```yaml
+auditd:
+  enabled: true                  # agent zainstalowany w 0.11.0 przed 1.8.1 – dopisz ręcznie
+  # exclude: [CRED_ACQ, …]       # [] – bez pomijania
+```
+
+  Reguły Sigmy: `logsource: {product: linux, service: auditd}` albo `{product: linux, category: process_creation}`.
+- **Limity z grupy:** priorytet jako waga CPU i I/O jednostki, limit CPU i twardy limit pamięci w cgroup usługi (`systemctl set-property --runtime`, zmiana bez restartu), miękki limit pamięci, EPS i przepustowość jak w Windows. Profil grupy (kanały Event Log) agenta Linux nie dotyczy.
+- Bez roota (`vardr-agent run` jako zwykły użytkownik, np. w teście) agent czyta tylko to, co pokazuje mu `journalctl` – użytkownik w grupie `adm` albo `systemd-journal` widzi dziennik systemowy.
+- **Ochrona** (włączana w grupie agentów, jak w Windows): agent zapisuje drop-in `/etc/systemd/system/vardr-agent.service.d/50-vardr-protect.conf` z `RefuseManualStop=yes` – `systemctl stop` i `restart` odmawiają. Zatrzymanie, aktualizacja i deinstalacja tylko z jednorazowym tokenem z panelu: `sudo vardr-agent stop -token …`, `sudo ./vardr-agent upgrade -token …`, `sudo vardr-agent uninstall -token …`; `sudo vardr-agent restart` działa bez tokenu (ponowne uruchomienie w procesie, SIGHUP). Do dziennika ochrony (alert w panelu) trafiają: polecenie bez ważnego tokenu, SIGTERM wysłany z pominięciem systemd (`kill`, `systemctl kill` – ignorowany, agent działa dalej), zabicie procesu (SIGKILL – systemd uruchamia agenta ponownie po 10 s, a ten zgłasza zabicie), zatrzymanie z pominięciem tokenu (np. `systemctl isolate`), zdjęcie drop-inu ochrony (przywracany), zmiana albo usunięcie pliku usługi (przywracany), wyłączenie startu z systemem (`systemctl disable` – włączany ponownie), maskowanie i obce drop-iny usługi (zgłaszane). Zamknięcie systemu nie jest alarmem. Root może ochronę obejść (np. zmieniając usługę i od razu ją zatrzymując) – celem jest utrudnić i wykryć, a przerwę w heartbeatach panel zgłasza i tak.
+- **Źródło – pliki logów** (`files:`): dowolne pliki tekstowe, wiersz po wierszu, z rotacją przez zmianę nazwy (logrotate) i przez obcięcie (copytruncate). Wiersz trafia na serwer jako syslog z nazwą hosta agenta i nazwą programu `app` (źródło `syslog:file`, kanał `file:<ścieżka>`), więc rozbiera go dekoder dopasowany po `app` – ten sam, co dla wiadomości z rsyslog (kreator dekoderów w panelu); bez dekodera zdarzenie ma zbiór `syslog.generic`. Czas zdarzenia to chwila odczytu, chyba że dekoder bierze czas z treści. Wzorce (`*.log`) rozwijane są przy starcie agenta; nowe pliki – po `sudo vardr-agent restart`. Pierwsze uruchomienie czyta od końca pliku (`start_at: oldest` – od początku). Usługa ma własny `/tmp` (`PrivateTmp`) – pliki z `/tmp` nie są dla niej widoczne.
+
+```yaml
+files:
+  - path: /var/log/nginx/*.log
+    app: nginx
+  - path: /opt/app/logs/app.log   # app domyślnie: nazwa pliku bez rozszerzenia
+```
+
+- **Paczka z panelu:** Bifröst przy tokenie wydaje `vardr-agent-<nazwa>-linux-<amd64|arm64>.tar.gz` – program, `ca.crt`, `server.txt`, `token.txt` (0600) i `install.sh`. Na serwerze: `tar xzf …`, `cd vardr-agent-<nazwa>/`, `sudo ./install.sh` (adres i token z plików obok). Programy dla obu architektur budowane są do `agent-dist/` (`deploy.sh agent`, `vardr-agent-linux-amd64`, `vardr-agent-linux-arm64`).
+- Jeszcze nie w 0.11: automatyczne aktualizacje agenta Linux – po 1.8 (`docs/ROADMAP.md`).
+
 ## Odporność na usunięcie stanu
 
 Pozycje odczytu są zapisywane w `<state_dir>\state.json` oraz (co 30 s) w kopii

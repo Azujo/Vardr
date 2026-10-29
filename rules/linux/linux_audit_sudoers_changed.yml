@@ -1,0 +1,43 @@
+title: Linux – zmiana sudoers
+id: 2debfefd-c2e8-47a2-92fc-ea22481ab0c6
+status: stable
+description: |
+  auditd (klucz vardr_sudoers): zmieniono /etc/sudoers albo plik
+  w /etc/sudoers.d. Wpis NOPASSWD dla przejętego konta daje napastnikowi
+  stały dostęp do roota.
+author: Vardr
+tags:
+  - attack.privilege_escalation
+  - attack.t1548.003
+logsource:
+  product: linux
+  service: auditd
+detection:
+  selection:
+    key: vardr_sudoers
+  packages:
+    exe|endswith:
+      - /dpkg
+      - /rpm
+  condition: selection and not packages
+falsepositives:
+  - Zmiana uprawnień przez administratora (visudo) albo narzędzie konfiguracyjne
+level: high
+vardr:
+  i18n:
+    en:
+      title: "Linux – sudoers changed"
+      description: |
+        auditd (key vardr_sudoers): /etc/sudoers or a file in /etc/sudoers.d was changed.
+        A NOPASSWD entry for a compromised account gives an attacker permanent root access.
+      instructions: |
+        {{exe}} changed {{file.path}} on {{host.name}} (logged-in account {{user.name}}).
+        Check the content (sudo visudo -c; look for NOPASSWD and ALL entries). If the change
+        was not requested – remove the entry and check the account's logins.
+  group_by: [host.name, file.path]
+  suppress: 1h
+  instructions: |
+    {{exe}} zmienił {{file.path}} na {{host.name}} (konto logowania
+    {{user.name}}). Sprawdź treść (sudo visudo -c; szukaj wpisów NOPASSWD
+    i ALL). Jeśli zmiana nie była zgłoszona – usuń wpis i sprawdź logowania
+    konta.
