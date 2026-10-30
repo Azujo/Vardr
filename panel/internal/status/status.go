@@ -288,21 +288,32 @@ var defs = []def{
 			}
 			return st, num("lag", math.Round(v), fmt.Sprintf("%.0f s (w tym opóźnienie 2 min)", v))
 		}},
-	{id: "archive.integrity", group: "Archiwum NIS2", name: "Weryfikacja integralności", query: `min(siem_archive_verify_ok)`,
-		hint: "Dane w archiwum zmieniono, usunięto albo dodano poza archiwizatorem – szczegóły: panel → Urd.",
+	// Przed pierwszą weryfikacją (nowe archiwum) metryki mają 0 – -1 to
+	// „weryfikacja w toku”, a nie niezgodność.
+	{id: "archive.integrity", group: "Archiwum NIS2", name: "Weryfikacja integralności",
+		query: `((max(siem_archive_last_verify_timestamp_seconds) == 0) - 1) or min(siem_archive_verify_ok)`,
+		hint:  "Dane w archiwum zmieniono, usunięto albo dodano poza archiwizatorem – szczegóły: panel → Urd.",
 		eval: func(s []sample) (string, value) {
 			v, ok := one(s)
 			switch {
 			case !ok:
 				return Unknown, noData
+			case v < 0:
+				return OK, val("verify_pending", "pierwsza weryfikacja w toku")
 			case v < 1:
 				return Crit, val("integrity_problems", "wykryto niezgodności")
 			}
 			return OK, val("compliant", "zgodne")
 		}},
-	{id: "archive.last_verify", group: "Archiwum NIS2", name: "Ostatnia weryfikacja", query: `time() - max(siem_archive_last_verify_timestamp_seconds)`,
-		hint: "Weryfikacja powinna przechodzić co 6 h – sprawdź logi archiwizatora.",
-		eval: thresholdHigh(13*3600, 26*3600, ago)},
+	{id: "archive.last_verify", group: "Archiwum NIS2", name: "Ostatnia weryfikacja",
+		query: `((max(siem_archive_last_verify_timestamp_seconds) == 0) - 1) or (time() - max(siem_archive_last_verify_timestamp_seconds))`,
+		hint:  "Weryfikacja powinna przechodzić co 6 h – sprawdź logi archiwizatora.",
+		eval: func(s []sample) (string, value) {
+			if v, ok := one(s); ok && v < 0 {
+				return OK, val("verify_pending", "pierwsza weryfikacja w toku")
+			}
+			return thresholdHigh(13*3600, 26*3600, ago)(s)
+		}},
 	{id: "archive.enabled", group: "Archiwum NIS2", name: "Archiwizacja", query: `min(siem_archive_policy_enabled) * (1 - max(siem_archive_paused))`,
 		hint: "Archiwizacja wyłączona w polityce albo wstrzymana z braku miejsca – panel → Urd.",
 		eval: func(s []sample) (string, value) {

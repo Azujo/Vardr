@@ -24,7 +24,7 @@ go build -o bin/ ./server/cmd/siem-loadgen ./tools/cmd/...
 cd panel/web; npm ci; npm run build
 ```
 
-Wersję usług serwera ustawia `-ldflags "-X siem/internal/svc.Version=<wersja>"` (kolektor i konektor: `-X main.version=…`); `deploy.sh` bierze ją z `git describe`. Agent ma własny numer wersji w `agent/cmd/vardr-agent/main.go` – podnoś go przy każdym wydaniu MSI (instalator nie aktualizuje tej samej wersji). MSI buduje `deploy.sh agent` (wixl w kontenerze, `deploy/lab/msi`).
+Wersję usług serwera ustawia `-ldflags "-X siem/internal/svc.Version=<wersja>"` (kolektor i konektor: `-X main.version=…`); `deploy.sh` bierze ją z `git describe`. Agent ma własny numer wersji w `agent/cmd/vardr-agent/version.go` – podnoś go przy każdym wydaniu MSI (instalator nie aktualizuje tej samej wersji). MSI buduje `deploy.sh agent` (wixl w kontenerze, `deploy/lab/msi`).
 
 ## Testy
 

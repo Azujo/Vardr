@@ -285,6 +285,42 @@ func TestAgentAutoUpdate(t *testing.T) {
 	if d := download("agt-pc1"); d.Code != 200 || !bytes.Equal(d.Body.Bytes(), msi) {
 		t.Fatalf("pobranie: %d %q", d.Code, d.Body)
 	}
+	// Środowisko testowe ma program amd64 (paczki Bifröst) – tu bez niego.
+	os.Remove(filepath.Join(dir, "vardr-agent-linux-amd64"))
+	if w = configRequest(e, "agt-pc1", ""); strings.Contains(w.Body.String(), "linux_updates") {
+		t.Fatalf("programy Linux bez plików: %s", w.Body)
+	}
+
+	// Agent Linux: program dla architektury z tej samej paczki (ta sama wersja).
+	elf := []byte("ELF-program-agenta-linux")
+	os.WriteFile(filepath.Join(dir, "vardr-agent-linux-arm64"), elf, 0o644)
+	w = configRequest(e, "agt-pc1", "")
+	cfg = contract.AgentConfig{}
+	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil || cfg.Validate() != nil {
+		t.Fatalf("konfiguracja z programem Linux: %s %v", w.Body, err)
+	}
+	esum := sha256.Sum256(elf)
+	if u := cfg.LinuxUpdates["arm64"]; len(cfg.LinuxUpdates) != 1 || u == nil || u.Version != "0.10.0" || u.SHA256 != hex.EncodeToString(esum[:]) {
+		t.Fatalf("programy Linux: %v", cfg.LinuxUpdates)
+	}
+	get := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "https://panel"+path, nil)
+		cert := &x509.Certificate{Subject: pkix.Name{CommonName: "agt-pc1"}, SerialNumber: big.NewInt(77)}
+		r.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}, VerifiedChains: [][]*x509.Certificate{{cert}}}
+		w := httptest.NewRecorder()
+		e.h.ServeHTTP(w, r)
+		return w
+	}
+	if d := get(contract.AgentLinuxPath + "arm64"); d.Code != 200 || !bytes.Equal(d.Body.Bytes(), elf) {
+		t.Fatalf("pobranie programu Linux: %d %q", d.Code, d.Body)
+	}
+	if d := get(contract.AgentLinuxPath + "amd64"); d.Code != 404 {
+		t.Fatalf("brak programu amd64: %d", d.Code)
+	}
+	if d := get(contract.AgentLinuxPath + "..%2fvardr-agent.msi"); d.Code != 404 {
+		t.Fatalf("niepoprawna architektura: %d", d.Code)
+	}
+	os.Remove(filepath.Join(dir, "vardr-agent-linux-arm64"))
 
 	// Nowy instalator zmienia wersję konfiguracji (agent nie dostanie 304).
 	etag := w.Header().Get("ETag")

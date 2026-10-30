@@ -65,7 +65,7 @@ else
   GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version_=$version" \
     -o "$stage/stack/agent-dist/vardr-mcp.exe" ./tools/cmd/vardr-mcp
 fi
-sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go > "$stage/stack/agent-dist/AGENT_VERSION"
+sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/version.go > "$stage/stack/agent-dist/AGENT_VERSION"
 
 echo "== Linux agent (panel tar.gz packages)"
 for arch in amd64 arm64; do

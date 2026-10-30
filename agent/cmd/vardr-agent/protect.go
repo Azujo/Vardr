@@ -140,7 +140,7 @@ func (g *guardian) stopReason() string {
 	}
 	rec := contract.TamperRecord{Kind: contract.TamperStop}
 	switch {
-	case u != nil && (u.Action == "upgrade" || u.Action == "install"):
+	case u != nil && (u.Action == "upgrade" || u.Action == "install" || u.Action == "auto-update"):
 		rec = contract.TamperRecord{Kind: contract.TamperUpgrade, User: u.User, Detail: lang.L("zatrzymanie przez instalator (", "stopped by the installer (") + u.Action + ")"}
 		if u.Token != "" {
 			if t, err := g.verify(u.Token, now); err == nil {

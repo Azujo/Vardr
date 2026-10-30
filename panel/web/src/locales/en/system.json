@@ -135,6 +135,7 @@
     "stream_only": "disabled (SIEM_DETECTION_MODE=stream)",
     "lag": "{{n}} s (including the 2 min delay)",
     "integrity_problems": "mismatches found",
+    "verify_pending": "first verification in progress",
     "compliant": "compliant",
     "enabled": "enabled",
     "disabled_or_paused": "disabled or paused",

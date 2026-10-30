@@ -30,8 +30,6 @@ import (
 	"siem/internal/lang"
 )
 
-const version = "0.11.0"
-
 func usage() {
 	if lang.Local() == "en" {
 		fmt.Fprintf(os.Stderr, usageEn, version, installCfg)

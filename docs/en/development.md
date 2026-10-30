@@ -24,7 +24,7 @@ go build -o bin/ ./server/cmd/siem-loadgen ./tools/cmd/...
 cd panel/web; npm ci; npm run build
 ```
 
-The server service version is set with `-ldflags "-X siem/internal/svc.Version=<version>"` (collector and connector: `-X main.version=…`); `deploy.sh` and `build-bundle.sh` take it from `git describe`. The agent has its own version number in `agent/cmd/vardr-agent/main.go` – raise it with every MSI release (the installer does not upgrade the same version). The installation bundle: `deploy/vardr/build-bundle.sh` ([installation.md](installation.md#building-the-bundle)).
+The server service version is set with `-ldflags "-X siem/internal/svc.Version=<version>"` (collector and connector: `-X main.version=…`); `deploy.sh` and `build-bundle.sh` take it from `git describe`. The agent has its own version number in `agent/cmd/vardr-agent/version.go` – raise it with every MSI release (the installer does not upgrade the same version). The installation bundle: `deploy/vardr/build-bundle.sh` ([installation.md](installation.md#building-the-bundle)).
 
 ## Tests
 

@@ -565,7 +565,7 @@ Stan: napisane i sprawdzone w laboratorium (27.10.2026) – rsyslog z VM: zdarze
 
 Po 1.6 (instalacja poza laboratorium) – etap 1.7: utrzymanie wdrożenia (aktualizacje agentów, archiwum zgodne z NIS2, bezpieczne źródła, silniejsze logowanie), potem 1.8: agent Linux (decyzja właściciela 27.10.2026). Jak przy 1.6 – całość pisana najpierw, wydanie na końcu.
 
-**Stan:** punkty 1.7.0–1.7.3 wydane razem jako **1.7.0** (27.10.2026); punkty 1.8.0–1.8.2 (agent Linux) wydane razem jako **1.8.0** (29.10.2026).
+**Stan:** punkty 1.7.0–1.7.3 wydane razem jako **1.7.0** (27.10.2026); punkty 1.8.0–1.8.2 (agent Linux) wydane razem jako **1.8.0** (29.10.2026); punkt 1.9.0 (utrzymanie agentów) wydany jako **1.9.0** (30.10.2026).
 
 | Wersja | Funkcja | Godziny | Uwagi |
 |---|---|---|---|
@@ -593,6 +593,12 @@ Ten sam program `vardr-agent` zbudowany dla Linuksa (amd64, arm64, bez cgo): wsp
 | **1.8.2** | Panel: paczka Linux z tokenem do pobrania (tar.gz), system agenta na liście, dowolne pliki logów (`files:`) | automatyczne aktualizacje dla Linuksa – po 1.8 |
 
 - **Warunek ukończenia:** agent zainstalowany na serwerze laboratorium wysyła logowania SSH i sudo z journald, auditd i plików; panel pokazuje go w Huginnie z systemem i stanem kanałów, a reguły Linuksa z 1.6.2 dają alerty jak dla rsyslog.
+
+### 1.9 – utrzymanie agentów
+
+| Wersja | Zakres | Uwagi |
+|---|---|---|
+| **1.9.0** | Automatyczne aktualizacje agenta Linux (program z paczki serwera dla architektury, podmiana przez `systemd-run … apply-update`, powrót do poprzedniej wersji bez potwierdzenia startu); nowe pliki z wzorców `files:` bez restartu (co 30 s); jedna wersja agenta Windows i Linux | agent 0.12; 0.11 → 0.12 ręcznie |
 
 ## 18. Pierwsze kroki (etap 0)
 

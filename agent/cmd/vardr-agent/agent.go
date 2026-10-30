@@ -56,6 +56,9 @@ type pipelineSources struct {
 	sources []source.Source
 	filters map[string]map[uint32]bool // kanał → dozwolone Event ID (filtr po stronie agenta)
 	watch   func(ctx context.Context)  // dodatkowy nadzór na czas odczytu (może być nil)
+	// rescan czeka na nowe źródła (np. nowy plik pasujący do wzorca) – true:
+	// odczyt rusza od nowa z nową listą (może być nil).
+	rescan func(ctx context.Context) bool
 }
 
 // runAgent buduje komponenty z konfiguracji i uruchamia rdzeń agenta.
@@ -219,12 +222,14 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		go poller.Run(bgCtx, current)
 	}
 
-	// Automatyczna aktualizacja (grupa z włączoną opcją): tylko usługa Windows –
-	// instalator MSI zatrzymuje ją i uruchamia nową wersję.
+	// Automatyczna aktualizacja (grupa z włączoną opcją): tylko usługa –
+	// Windows: instalator MSI zatrzymuje ją i uruchamia nową wersję; Linux:
+	// apply-update nowego programu (update_linux.go).
 	var upd *update.Updater
 	if autoUpdate && panelURL != "" && g != nil {
 		upd = &update.Updater{Client: client, PanelURL: panelURL, Dir: cfg.StateDir, Version: version, Log: log,
 			Warn: tracker.Warn, Report: tracker.SetUpdate, MaxDelay: 30 * time.Minute}
+		platformUpdater(upd)
 		// SIEM_UPDATE_DELAY_SECONDS: krótsze losowe opóźnienie (testy, laboratorium).
 		if s, err := strconv.Atoi(os.Getenv("SIEM_UPDATE_DELAY_SECONDS")); err == nil && s >= 0 {
 			upd.MaxDelay = time.Duration(s) * time.Second
@@ -252,11 +257,7 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		}
 		tracker.SetConfig(cs)
 		if upd != nil {
-			var u *contract.AgentUpdate
-			if current != nil {
-				u = current.Update
-			}
-			upd.Offer(u)
+			upd.Offer(updateOffer(current))
 		}
 
 		// Limity zmieniane w miejscu (Windows: ten sam Job Object).
@@ -295,6 +296,18 @@ func runAgent(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 // zwraca ją – pozycje odczytu są już zapisane, odczyt wznowi się od nich).
 func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender core.Sender, store *state.Store,
 	tracker *status.Tracker, log *slog.Logger, reload <-chan *contract.AgentConfig) (*contract.AgentConfig, error) {
+	for {
+		next, again, err := runSources(ctx, cfg, agentID, sender, store, tracker, log, reload)
+		if !again || ctx.Err() != nil {
+			return next, err
+		}
+		log.Info("new sources found – restarting the readers")
+	}
+}
+
+// runSources: jeden przebieg odczytu; again – źródła się zmieniły (rescan).
+func runSources(ctx context.Context, cfg *config.Config, agentID string, sender core.Sender, store *state.Store,
+	tracker *status.Tracker, log *slog.Logger, reload <-chan *contract.AgentConfig) (next *contract.AgentConfig, again bool, err error) {
 	src := platformSources(cfg, tracker, log)
 
 	agent := core.New(core.Options{
@@ -316,6 +329,15 @@ func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender
 	if src.watch != nil {
 		go src.watch(runCtx)
 	}
+	rescanned := make(chan struct{}, 1)
+	if src.rescan != nil {
+		go func() {
+			if src.rescan(runCtx) {
+				rescanned <- struct{}{}
+				stop()
+			}
+		}()
+	}
 
 	// Nowa konfiguracja przerywa odczyt; przekazujemy ją kanałem (bez wspólnej zmiennej).
 	nextCh := make(chan *contract.AgentConfig, 1)
@@ -327,13 +349,18 @@ func runPipeline(ctx context.Context, cfg *config.Config, agentID string, sender
 		case <-runCtx.Done():
 		}
 	}()
-	err := agent.Run(runCtx)
+	err = agent.Run(runCtx)
 	stop()
 	select {
 	case c := <-nextCh:
-		return c, nil
+		return c, false, nil
 	default:
-		return nil, err
+	}
+	select {
+	case <-rescanned:
+		return nil, true, nil
+	default:
+		return nil, false, err
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -23,14 +24,30 @@ import (
 	"siem/agent/internal/state"
 	"siem/agent/internal/status"
 	"siem/agent/internal/timesync"
+	"siem/agent/internal/update"
+	"siem/internal/contract"
 	"siem/internal/lang"
 )
 
 // Część agenta zależna od Linuksa: dziennik systemd, uprawnienia plików
 // (root, 0600/0700), usługa systemd. Kopii stanu poza katalogiem stanu,
-// ochrony usługi i automatycznych aktualizacji (MSI) tu nie ma.
+// ochrony usługi w Windows (ACL) tu nie ma.
 
-const autoUpdate = false
+// autoUpdate: automatyczne aktualizacje programem z panelu (update_linux.go).
+const autoUpdate = true
+
+// updateOffer: program dla architektury tego agenta z konfiguracji grupy.
+func updateOffer(c *contract.AgentConfig) *contract.AgentUpdate {
+	if c == nil {
+		return nil
+	}
+	return c.LinuxUpdates[runtime.GOARCH]
+}
+
+func platformUpdater(u *update.Updater) {
+	u.Path = contract.AgentLinuxPath + runtime.GOARCH
+	u.Install = startSelfUpdate
+}
 
 func isPrivileged() bool { return os.Geteuid() == 0 }
 
@@ -127,12 +144,22 @@ func platformSources(cfg *config.Config, _ *status.Tracker, log *slog.Logger) pi
 	}
 	if a := cfg.Auditd; a.Enabled {
 		self, _ := os.Executable()
-		p.sources = append(p.sources, &auditd.Source{Path: a.Path, Exclude: auditExclude(a), Oldest: oldest, Host: host, SelfExe: self, Log: log})
+		p.sources = append(p.sources, &auditd.Source{Path: a.Path, Exclude: auditExclude(a), Oldest: oldest, Host: host, SelfExe: self,
+			SelfUpdate: filepath.Join(cfg.StateDir, "update", "vardr-agent-"), Log: log})
 	}
-	// Pliki logów: wzorzec rozwijany przy starcie, każdy plik osobnym kanałem.
+	// Pliki logów: każdy plik osobnym kanałem; nowy plik pasujący do wzorca
+	// (np. log z datą w nazwie) – odczyt rusza od nowa z nim (co 30 s).
+	var known, patterns []string
 	for _, f := range cfg.Files {
+		patterns = append(patterns, f.Path)
 		for _, path := range logfile.Expand([]string{f.Path}, cfg.StateDir) {
+			known = append(known, path)
 			p.sources = append(p.sources, &logfile.Source{Path: path, App: f.App, Host: host, Oldest: oldest, Log: log})
+		}
+	}
+	if len(patterns) > 0 {
+		p.rescan = func(ctx context.Context) bool {
+			return logfile.WaitNew(ctx, patterns, cfg.StateDir, known, 30*time.Second, log)
 		}
 	}
 	return p

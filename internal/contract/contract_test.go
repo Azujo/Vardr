@@ -122,4 +122,16 @@ func TestAgentUpdate(t *testing.T) {
 			t.Errorf("przyjęto %+v", bad)
 		}
 	}
+	l := w.WithLinuxUpdates(map[string]*AgentUpdate{"amd64": u})
+	if l.Version == w.Version || BaseVersion(l.Version) != c.Version || l.Validate() != nil {
+		t.Fatalf("linux: %q %v", l.Version, l.Validate())
+	}
+	if w.WithLinuxUpdates(nil).Version != w.Version {
+		t.Fatal("brak programów Linux zmienia wersję")
+	}
+	for _, bad := range []map[string]*AgentUpdate{{"386": u}, {"amd64": nil}, {"arm64": {Version: "1.x", SHA256: u.SHA256, Size: 1}}} {
+		if (AgentConfig{Profile: "server", LinuxUpdates: bad}).Validate() == nil {
+			t.Errorf("przyjęto %v", bad)
+		}
+	}
 }

@@ -70,8 +70,11 @@ type Source struct {
 	Oldest  bool            // start_at: oldest – od najstarszego pliku przy pierwszym uruchomieniu
 	Host    string          // node= dla wierszy bez nazwy hosta
 	SelfExe string          // program agenta – jego wywołania są pomijane (pętla)
-	Poll    time.Duration   // domyślnie 500 ms
-	Log     *slog.Logger
+	// SelfUpdate: przedrostek programu nowej wersji agenta w trakcie
+	// automatycznej aktualizacji (apply-update) – też pomijany.
+	SelfUpdate string
+	Poll       time.Duration // domyślnie 500 ms
+	Log        *slog.Logger
 }
 
 func (s *Source) Channel() string { return Channel }
@@ -446,7 +449,8 @@ func (r *reader) emit(ctx context.Context, g *group) bool {
 
 // wanted: zdarzenie nie jest wyłączone (typ) ani wywołaniem samego agenta.
 func (r *reader) wanted(g *group) bool {
-	if r.src.SelfExe != "" && g.exe == r.src.SelfExe {
+	if r.src.SelfExe != "" && g.exe == r.src.SelfExe ||
+		r.src.SelfUpdate != "" && strings.HasPrefix(g.exe, r.src.SelfUpdate) {
 		return false
 	}
 	main := false

@@ -32,8 +32,6 @@ import (
 	"siem/internal/lang"
 )
 
-const version = "0.11.0"
-
 func usage() {
 	if lang.Local() == "en" {
 		fmt.Fprintf(os.Stderr, usageEn, version, installCfg)
@@ -144,6 +142,7 @@ func main() {
 	var eo enrollOptions
 	purge := new(bool)
 	token := new(string)
+	logPath := new(string)
 	switch cmd {
 	case "install":
 		cf.StringVar(&opts.server, "server", "", lang.L("adres serwera", "server address"))
@@ -155,6 +154,8 @@ func main() {
 	case "uninstall":
 		purge = cf.Bool("purge", false, lang.L("usuń także konfigurację, certyfikaty i stan", "also remove configuration, certificates and state"))
 		token = cf.String("token", "", lang.L("token deinstalacji z panelu (agent chroniony)", "uninstall token from the panel (protected agent)"))
+	case "apply-update": // uruchamiane przez agenta (automatyczna aktualizacja)
+		logPath = cf.String("log", "", "log file")
 	case "stop", "upgrade":
 		token = cf.String("token", "", lang.L("token deinstalacji z panelu (agent chroniony)", "uninstall token from the panel (protected agent)"))
 	case "enroll":
@@ -180,6 +181,8 @@ func main() {
 		err = uninstall(*cfgPath, *purge, *token)
 	case "upgrade":
 		err = upgrade(*cfgPath, *token)
+	case "apply-update":
+		err = applyUpdate(*cfgPath, *logPath)
 	case "enroll":
 		err = enrollOnly(eo)
 	case "start":

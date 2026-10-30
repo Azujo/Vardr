@@ -225,6 +225,7 @@ type MaintainConfig struct {
 // i weryfikuje archiwum (okresowo i na zlecenie z panelu). Działa w osobnej
 // gorutynie – Expire i Verify nie mogą się na siebie nakładać.
 func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver, c MaintainConfig) {
+	restoreVerifyMetrics(ctx, a, log, m)
 	verifyAt := time.Now().Add(c.FirstVerify)
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
@@ -284,19 +285,39 @@ func Maintain(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.
 	}
 }
 
-// RunVerify weryfikuje archiwum i zapisuje wynik w spisie.
-func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver, opt urd.VerifyOptions) urd.Verification {
-	v := a.Verify(ctx, opt)
-	if _, err := a.Cat.SaveVerification(context.WithoutCancel(ctx), v); err != nil {
-		log.Error("recording the verification result failed", "err", err)
+// restoreVerifyMetrics: wynik ostatniej weryfikacji ze spisu w metrykach od
+// startu – bez tego do pierwszej weryfikacji po restarcie (FirstVerify)
+// metryki mają 0, a stan systemu w panelu pokazuje fałszywe niezgodności
+// i weryfikację sprzed 1970 r.
+func restoreVerifyMetrics(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver) {
+	v, ok, err := a.Cat.LastVerification(ctx)
+	if err != nil {
+		log.Warn("reading the last verification failed", "err", err)
+		return
 	}
+	if !ok {
+		return
+	}
+	setVerifyMetrics(m, v, v.FinishedAt)
+}
+
+func setVerifyMetrics(m *metrics.Archiver, v urd.Verification, at time.Time) {
 	ok := 0.0
 	if v.OK {
 		ok = 1
 	}
 	m.VerifyOK.Set(ok)
 	m.VerifyProblem.Set(float64(len(v.Problems)))
-	m.LastVerify.Set(float64(time.Now().Unix()))
+	m.LastVerify.Set(float64(at.Unix()))
+}
+
+// RunVerify weryfikuje archiwum i zapisuje wynik w spisie.
+func RunVerify(ctx context.Context, a *urd.Archive, log *slog.Logger, m *metrics.Archiver, opt urd.VerifyOptions) urd.Verification {
+	v := a.Verify(ctx, opt)
+	if _, err := a.Cat.SaveVerification(context.WithoutCancel(ctx), v); err != nil {
+		log.Error("recording the verification result failed", "err", err)
+	}
+	setVerifyMetrics(m, v, time.Now())
 	args := []any{"manifests", v.Manifests, "segments", v.Segments, "full_manifests", v.FullManifests,
 		"unverified", v.Unverified, "hashed_batches", v.Records, "hashed_bytes", v.Bytes,
 		"took", v.FinishedAt.Sub(v.StartedAt).Round(time.Millisecond).String()}

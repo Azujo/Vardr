@@ -113,10 +113,17 @@ for t in "${targets[@]}"; do
   agent)
     echo "== agent Windows -> agent-dist/ (program i instalator MSI)"
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o deploy/lab/bin/vardr-agent.exe ./agent/cmd/vardr-agent
-    agent_version=$(sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/main.go)
+    agent_version=$(sed -n 's/^const version = "\(.*\)"/\1/p' agent/cmd/vardr-agent/version.go)
     remote "mkdir -p agent-dist msi"
     copy deploy/lab/bin/vardr-agent.exe "$host:$dir/agent-dist/vardr-agent.exe"
     copy deploy/lab/msi/Dockerfile deploy/lab/msi/agent.wxs "$host:$dir/msi/"
+    # Agent Linux do paczek tar.gz z panelu (Bifröst) i automatycznych aktualizacji,
+    # obie architektury – przed AGENT_VERSION (panel nie poda nowej wersji ze starym programem).
+    for arch in amd64 arm64; do
+      GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "deploy/lab/bin/vardr-agent-linux-$arch" ./agent/cmd/vardr-agent
+      copy "deploy/lab/bin/vardr-agent-linux-$arch" "$host:$dir/agent-dist/vardr-agent-linux-$arch"
+    done
+    echo "   agent Linux: amd64, arm64"
     # MSI z CA tej instalacji (certs/ca.crt na serwerze), narzędziem wixl w kontenerze.
     remote "docker image inspect siem/wixl:lab >/dev/null 2>&1 || docker build -q -t siem/wixl:lab msi >/dev/null; \
       docker run --rm -u 1000:1000 -v \$PWD/msi:/src:ro -v \$PWD/agent-dist:/out \
@@ -124,12 +131,6 @@ for t in "${targets[@]}"; do
         siem/wixl:lab -a x64 -D Version=$agent_version -o /out/vardr-agent.msi /src/agent.wxs 2>&1 | grep -v GLib-GObject-WARNING | grep -v '^\$' || true; \
       ls -l agent-dist/vardr-agent.msi | awk '{print \"   MSI: \" \$5 \" B\"}'; \
       echo $agent_version > agent-dist/AGENT_VERSION"   # wersja dla automatycznych aktualizacji
-    # Agent Linux do paczek tar.gz z panelu (Bifröst), obie architektury.
-    for arch in amd64 arm64; do
-      GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "deploy/lab/bin/vardr-agent-linux-$arch" ./agent/cmd/vardr-agent
-      copy "deploy/lab/bin/vardr-agent-linux-$arch" "$host:$dir/agent-dist/vardr-agent-linux-$arch"
-    done
-    echo "   agent Linux: amd64, arm64"
     ;;
   ingest | normalizer | writer | archiver | detector | api | backup)
     echo "== $t ($version)"

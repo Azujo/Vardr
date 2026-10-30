@@ -382,6 +382,10 @@ func (t *Tracker) SetUpdate(s update.Status) {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if s.State == "" {
+		t.s.Update = nil // oferta wycofana
+		return
+	}
 	t.s.Update = &s
 }
 

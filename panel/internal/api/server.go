@@ -211,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /enroll/v1/renew", s.enrollRenew)
 	mux.HandleFunc("GET "+contract.AgentConfigPath, s.agentConfig)
 	mux.HandleFunc("GET "+contract.AgentMSIPath, s.agentMSI)
+	mux.HandleFunc("GET "+contract.AgentLinuxPath+"{arch}", s.agentLinux)
 	mux.HandleFunc("/enroll/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "nie ma takiego zasobu")
 	})

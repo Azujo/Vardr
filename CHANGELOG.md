@@ -2,6 +2,20 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.9.0] – 2026-10-30 – Automatyczne aktualizacje agenta Linux
+
+### Dodane
+- **Automatyczne aktualizacje agenta Linux** ([docs/agent.md](docs/agent.md#automatyczne-aktualizacje-od-wersji-010)): grupa z włączonymi aktualizacjami podaje agentowi Linux program dla jego architektury z paczki serwera (ta sama wersja co MSI). Agent sprawdza sumę SHA-256, podmienia program przez przejściową usługę systemd i wraca do poprzedniej wersji, gdy nowa nie wystartuje w 3 minuty. Stan aktualizacji widać na stronie agenta jak w Windows.
+- **Nowe pliki logów bez restartu**: agent Linux sprawdza wzorce z `files:` co 30 s i od razu czyta nowy pasujący plik (np. log z datą w nazwie).
+
+### Aktualizacja
+- Agent 0.12: agenta Linux 0.11 zaktualizuj raz ręcznie (`sudo ./vardr-agent upgrade` z folderu nowej wersji, przy ochronie z tokenem) – kolejne wersje przyjdą same w grupach z automatycznymi aktualizacjami. Windows bez zmian.
+
+### Poprawione
+- **Fałszywy alarm archiwum po restarcie archiwizatora**: przez ok. 2 minuty po każdym uruchomieniu siem-archiver stan systemu pokazywał „wykryto niezgodności” i „ostatnia weryfikacja 20756 dni temu” (metryki miały 0 do pierwszej weryfikacji). Archiwizator odtwarza teraz wynik ostatniej weryfikacji ze spisu przy starcie, a panel pokazuje „pierwsza weryfikacja w toku” dla archiwum jeszcze nigdy niesprawdzonego.
+- Automatyczne aktualizacje (także Windows): po nieudanej próbie strona agenta pokazywała tylko „zaplanowana aktualizacja”, bez błędu – teraz „nieudana, zaplanowano ponowienie” z błędem i godziną ponowienia; wycofana oferta (wersja na serwerze cofnięta) znika ze strony agenta.
+- Agent Linux zgłaszał wersję 0.11.0 niezależnie od numeru agenta Windows – jedna wersja w `agent/cmd/vardr-agent/version.go`, z niej `AGENT_VERSION` paczki.
+
 ## [1.8.0] – 2026-10-29 – Agent Linux, auditd i poprawki bezpieczeństwa
 
 ### Dodane

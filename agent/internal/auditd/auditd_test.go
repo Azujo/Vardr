@@ -21,6 +21,8 @@ type=CRED_ACQ msg=audit(1793268001.000:101): pid=1 uid=0 auid=0 ses=1 msg='op=PA
 type=USER_LOGIN msg=audit(1793268002.000:102): pid=2 uid=0 auid=4294967295 ses=4294967295 msg='op=login acct="root" exe="/usr/sbin/sshd" hostname=? addr=203.0.113.9 terminal=ssh res=failed'
 type=SYSCALL msg=audit(1793268003.000:103): arch=c000003e syscall=257 success=yes exit=3 auid=0 uid=0 comm="vardr-agent" exe="/usr/local/sbin/vardr-agent" key="x"
 type=EOE msg=audit(1793268003.000:103):
+type=SYSCALL msg=audit(1793268003.500:110): arch=c000003e syscall=257 success=yes exit=3 auid=0 uid=0 comm="vardr-agent-0.1" exe="/var/lib/vardr-agent/update/vardr-agent-0.12.0" key="vardr_persistence"
+type=EOE msg=audit(1793268003.500:110):
 type=SYSCALL msg=audit(1793268004.000:104): arch=c000003e syscall=257 success=yes exit=3 auid=1000 uid=0 comm="vi" exe="/usr/bin/vi" key="vardr_identity"
 type=PATH msg=audit(1793268004.000:104): item=0 name="/etc/shadow" nametype=NORMAL
 `
@@ -58,7 +60,8 @@ func TestGroupsAndFilters(t *testing.T) {
 	for _, t := range DefaultExclude {
 		ex[t] = true
 	}
-	s := &Source{Path: path, Exclude: ex, Oldest: true, Host: "web01", SelfExe: "/usr/local/sbin/vardr-agent", Poll: 20 * time.Millisecond}
+	s := &Source{Path: path, Exclude: ex, Oldest: true, Host: "web01", SelfExe: "/usr/local/sbin/vardr-agent",
+		SelfUpdate: "/var/lib/vardr-agent/update/vardr-agent-", Poll: 20 * time.Millisecond}
 	recs, cancel, done := collect(t, s, source.Position{}, 3)
 	defer cancel()
 	// 1: execve (4 wiersze), 2: USER_LOGIN (CRED_ACQ pominięty), 3: PATH bez EOE – po chwili ciszy.

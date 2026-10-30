@@ -57,6 +57,10 @@ func (s *Server) listGroups(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"groups": out}
 	if u := s.agentUpdate(); u != nil {
 		resp["agent_version"] = u.Version // wersja instalatora na serwerze
+	} else {
+		for _, u := range s.linuxUpdates() {
+			resp["agent_version"] = u.Version // ta sama wersja dla każdej architektury
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -197,7 +201,7 @@ func (s *Server) agentConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := g.Config().WithTokens(tokens) // tokeny deinstalacji tego agenta (skróty)
 	if g.Limits.AutoUpdateOn() {
-		cfg = cfg.WithUpdate(s.agentUpdate())
+		cfg = cfg.WithUpdate(s.agentUpdate()).WithLinuxUpdates(s.linuxUpdates())
 	}
 	etag := `"` + cfg.Version + `"`
 	w.Header().Set("ETag", etag)

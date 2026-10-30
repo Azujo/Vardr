@@ -135,6 +135,7 @@
     "stream_only": "wyłączony (SIEM_DETECTION_MODE=stream)",
     "lag": "{{n}} s (w tym opóźnienie 2 min)",
     "integrity_problems": "wykryto niezgodności",
+    "verify_pending": "pierwsza weryfikacja w toku",
     "compliant": "zgodne",
     "enabled": "włączona",
     "disabled_or_paused": "wyłączona albo wstrzymana",

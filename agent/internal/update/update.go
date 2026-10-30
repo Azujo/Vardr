@@ -9,6 +9,9 @@
 // rejestracją (jak aktualizacja przez GPO). Próba jest zapisana w
 // update.json w katalogu stanu: nowa wersja po starcie zgłasza powodzenie,
 // a nieudana próba danej wersji powtarza się najwcześniej po Retry.
+//
+// Agent Linux (1.9.0) pobiera tak samo program dla swojej architektury
+// (Path), a podmianę wykonuje Install (usługa systemd – main).
 package update
 
 import (
@@ -43,7 +46,7 @@ const (
 type Status struct {
 	Target string    `json:"target"`
 	State  string    `json:"state"`
-	Error  string    `json:"error,omitempty"`
+	Error  string    `json:"error,omitempty"` // StateWaiting: błąd poprzedniej próby
 	At     time.Time `json:"at"`
 	From   string    `json:"from,omitempty"` // wersja przed aktualizacją (StateDone)
 }
@@ -69,10 +72,13 @@ type Updater struct {
 	Report   func(Status) // stan dla panelu (może być nil)
 	MaxDelay time.Duration
 	Retry    time.Duration
+	// Path: endpoint panelu z pakietem (domyślnie instalator MSI).
+	Path string
+	// Install uruchamia pobrany pakiet i zwraca funkcję czekającą na koniec
+	// instalatora (nil – instalator systemu, np. msiexec).
+	Install func(pkg, logPath string) (wait func() error, err error)
 
-	// install uruchamia instalator i zwraca funkcję czekającą na jego koniec
-	// (zastępowane w testach).
-	install func(msi, logPath string) (wait func() error, err error)
+	install func(pkg, logPath string) (wait func() error, err error)
 	now     func() time.Time
 	offers  chan *contract.AgentUpdate
 	once    sync.Once
@@ -86,7 +92,13 @@ func (u *Updater) setup() {
 		u.offers = make(chan *contract.AgentUpdate, 1)
 	}
 	if u.install == nil {
+		u.install = u.Install
+	}
+	if u.install == nil {
 		u.install = startInstaller
+	}
+	if u.Path == "" {
+		u.Path = contract.AgentMSIPath
 	}
 	if u.now == nil {
 		u.now = time.Now
@@ -165,8 +177,27 @@ func (u *Updater) checkPrevious() {
 	u.report(Status{Target: a.Version, State: StateFailed, Error: a.Error, At: a.AttemptedAt})
 }
 
-func (u *Updater) msiPath(v string) string { return filepath.Join(u.dir(), "vardr-agent-"+v+".msi") }
-func (u *Updater) logPath(v string) string { return filepath.Join(u.dir(), "msiexec-"+v+".log") }
+func (u *Updater) pkgPath(v string) string { return filepath.Join(u.dir(), "vardr-agent-"+v+pkgSuffix) }
+func (u *Updater) logPath(v string) string { return filepath.Join(u.dir(), logPrefix+v+".log") }
+
+// MarkFailed zapisuje błąd próby aktualizacji (proces podmieniający program
+// agenta Linux przywrócił poprzednią wersję); agent zgłosi go po starcie.
+func MarkFailed(dir, msg string) error {
+	u := &Updater{Dir: dir}
+	a, err := u.loadAttempt()
+	if err != nil {
+		return err
+	}
+	a.Error = msg
+	return u.saveAttempt(a)
+}
+
+// Pending: czy próba aktualizacji czeka na potwierdzenie nowej wersji
+// (update.json usuwa nowa wersja po starcie).
+func Pending(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, stateFile))
+	return err == nil
+}
 
 // Run obsługuje oferty do końca ctx.
 func (u *Updater) Run(ctx context.Context) {
@@ -186,7 +217,11 @@ func (u *Updater) Run(ctx context.Context) {
 		stop()
 		timer = time.NewTimer(d)
 		fire = timer.C
-		u.report(Status{Target: target.Version, State: StateWaiting, At: u.now().Add(d)})
+		s := Status{Target: target.Version, State: StateWaiting, At: u.now().Add(d)}
+		if a, err := u.loadAttempt(); err == nil && a.Version == target.Version {
+			s.Error = a.Error // ponowienie po nieudanej próbie – błąd zostaje widoczny
+		}
+		u.report(s)
 	}
 	for {
 		select {
@@ -197,6 +232,9 @@ func (u *Updater) Run(ctx context.Context) {
 			if up == nil || !contract.NewerVersion(up.Version, u.Version) {
 				if target != nil {
 					u.Log.Info("automatic update withdrawn", "version", target.Version)
+					if done == nil {
+						u.report(Status{}) // stan „zaplanowana” znika z panelu
+					}
 				}
 				target = nil
 				stop()
@@ -276,8 +314,8 @@ func (u *Updater) attempt(ctx context.Context, up *contract.AgentUpdate) (func()
 	if err := os.MkdirAll(u.dir(), 0o700); err != nil {
 		return nil, err
 	}
-	msi := u.msiPath(up.Version)
-	if err := u.download(ctx, up, msi); err != nil {
+	pkg := u.pkgPath(up.Version)
+	if err := u.download(ctx, up, pkg); err != nil {
 		return nil, err
 	}
 	if err := u.saveAttempt(attempt{Version: up.Version, From: u.Version, AttemptedAt: u.now()}); err != nil {
@@ -285,14 +323,14 @@ func (u *Updater) attempt(ctx context.Context, up *contract.AgentUpdate) (func()
 	}
 	u.Log.Info("starting the agent installer", "from", u.Version, "to", up.Version, "eventlog", true)
 	u.report(Status{Target: up.Version, State: StateInstalling, At: u.now()})
-	return u.install(msi, u.logPath(up.Version))
+	return u.install(pkg, u.logPath(up.Version))
 }
 
 // download zapisuje instalator, gdy suma i rozmiar zgadzają się z konfiguracją.
 func (u *Updater) download(ctx context.Context, up *contract.AgentUpdate, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.PanelURL+contract.AgentMSIPath, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.PanelURL+u.Path, nil)
 	if err != nil {
 		return err
 	}

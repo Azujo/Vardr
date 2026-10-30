@@ -60,7 +60,7 @@ msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # odins
 
 MSI kopiuje program i CA do `C:\Program Files\SiemAgent`, a potem uruchamia `vardr-agent msi-install` (rejestracja tokenem i usługa – ta sama ścieżka co `install`). Nowsza wersja najpierw usuwa starą (bez danych), więc aktualizacja nie zużywa tokenu. Agent zainstalowany wcześniej bez MSI zostaje przejęty: MSI zatrzymuje go, podmienia program i zostawia rejestrację. Token nie trafia do dziennika instalatora. Przebieg kroków agenta: `C:\ProgramData\SiemAgent\msi.log`.
 
-Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/vardr-agent/main.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
+Każde wydanie agenta potrzebuje nowego numeru wersji (`const version` w `agent/cmd/vardr-agent/version.go`). Przebudowany instalator tej samej wersji `wixl` instaluje obok poprzedniego jako drugi produkt (nie obsługuje `AllowSameVersionUpgrades`).
 
 ### Automatyczne aktualizacje (od wersji 0.10)
 
@@ -71,6 +71,7 @@ Grupa agentów ma opcję *Automatyczne aktualizacje agenta* (panel → Grupy age
 - Nigdy nie obniża wersji. Nieudana próba danej wersji powtarza się najwcześniej po 6 godzinach; błąd i ścieżka dziennika `msiexec` są na stronie agenta w panelu i w `vardr-agent status`.
 - Strona agenta pokazuje stan: zaplanowana, trwa instalacja, nieudana, zaktualizowano (z wersji → do wersji).
 - Agenci starsi niż 0.10 nie mają tej funkcji – pierwszą aktualizację do 0.10 robi się ręcznie (MSI, GPO).
+- **Agent Linux (od 0.12):** konfiguracja grupy podaje też program dla każdej architektury (`agent-dist/vardr-agent-linux-amd64` i `-arm64`, ta sama wersja z `AGENT_VERSION`). Agent pobiera go z `/enroll/v1/agent-linux/<arch>`, sprawdza sumę i uruchamia go jako przejściową usługę systemd (`systemd-run`, poza ograniczeniami usługi agenta) z poleceniem `apply-update`. Ta zapisuje poprzedni program jako `/usr/local/sbin/vardr-agent.previous`, podmienia program i plik usługi, uruchamia usługę ponownie i czeka do 3 minut, aż nowa wersja potwierdzi start (i działa jeszcze 15 s). Bez potwierdzenia przywraca poprzednią wersję, a błąd widać w panelu. Dziennik: `/var/lib/vardr-agent/update/update-<wersja>.log` i `journalctl -u 'vardr-agent-update-*'`. Agenta 0.11 aktualizuje się do 0.12 ręcznie (`sudo ./vardr-agent upgrade`).
 
 ### Ochrona przed zatrzymaniem i deinstalacją (od wersji 0.7)
 
@@ -153,7 +154,7 @@ auditd:
 - **Limity z grupy:** priorytet jako waga CPU i I/O jednostki, limit CPU i twardy limit pamięci w cgroup usługi (`systemctl set-property --runtime`, zmiana bez restartu), miękki limit pamięci, EPS i przepustowość jak w Windows. Profil grupy (kanały Event Log) agenta Linux nie dotyczy.
 - Bez roota (`vardr-agent run` jako zwykły użytkownik, np. w teście) agent czyta tylko to, co pokazuje mu `journalctl` – użytkownik w grupie `adm` albo `systemd-journal` widzi dziennik systemowy.
 - **Ochrona** (włączana w grupie agentów, jak w Windows): agent zapisuje drop-in `/etc/systemd/system/vardr-agent.service.d/50-vardr-protect.conf` z `RefuseManualStop=yes` – `systemctl stop` i `restart` odmawiają. Zatrzymanie, aktualizacja i deinstalacja tylko z jednorazowym tokenem z panelu: `sudo vardr-agent stop -token …`, `sudo ./vardr-agent upgrade -token …`, `sudo vardr-agent uninstall -token …`; `sudo vardr-agent restart` działa bez tokenu (ponowne uruchomienie w procesie, SIGHUP). Do dziennika ochrony (alert w panelu) trafiają: polecenie bez ważnego tokenu, SIGTERM wysłany z pominięciem systemd (`kill`, `systemctl kill` – ignorowany, agent działa dalej), zabicie procesu (SIGKILL – systemd uruchamia agenta ponownie po 10 s, a ten zgłasza zabicie), zatrzymanie z pominięciem tokenu (np. `systemctl isolate`), zdjęcie drop-inu ochrony (przywracany), zmiana albo usunięcie pliku usługi (przywracany), wyłączenie startu z systemem (`systemctl disable` – włączany ponownie), maskowanie i obce drop-iny usługi (zgłaszane). Zamknięcie systemu nie jest alarmem. Root może ochronę obejść (np. zmieniając usługę i od razu ją zatrzymując) – celem jest utrudnić i wykryć, a przerwę w heartbeatach panel zgłasza i tak.
-- **Źródło – pliki logów** (`files:`): dowolne pliki tekstowe, wiersz po wierszu, z rotacją przez zmianę nazwy (logrotate) i przez obcięcie (copytruncate). Wiersz trafia na serwer jako syslog z nazwą hosta agenta i nazwą programu `app` (źródło `syslog:file`, kanał `file:<ścieżka>`), więc rozbiera go dekoder dopasowany po `app` – ten sam, co dla wiadomości z rsyslog (kreator dekoderów w panelu); bez dekodera zdarzenie ma zbiór `syslog.generic`. Czas zdarzenia to chwila odczytu, chyba że dekoder bierze czas z treści. Wzorce (`*.log`) rozwijane są przy starcie agenta; nowe pliki – po `sudo vardr-agent restart`. Pierwsze uruchomienie czyta od końca pliku (`start_at: oldest` – od początku). Usługa ma własny `/tmp` (`PrivateTmp`) – pliki z `/tmp` nie są dla niej widoczne.
+- **Źródło – pliki logów** (`files:`): dowolne pliki tekstowe, wiersz po wierszu, z rotacją przez zmianę nazwy (logrotate) i przez obcięcie (copytruncate). Wiersz trafia na serwer jako syslog z nazwą hosta agenta i nazwą programu `app` (źródło `syslog:file`, kanał `file:<ścieżka>`), więc rozbiera go dekoder dopasowany po `app` – ten sam, co dla wiadomości z rsyslog (kreator dekoderów w panelu); bez dekodera zdarzenie ma zbiór `syslog.generic`. Czas zdarzenia to chwila odczytu, chyba że dekoder bierze czas z treści. Wzorce (`*.log`) agent sprawdza co 30 s – nowy pasujący plik (np. log z datą w nazwie) czyta od razu od początku, bez restartu (od 0.12). Pierwsze uruchomienie czyta od końca pliku (`start_at: oldest` – od początku). Usługa ma własny `/tmp` (`PrivateTmp`) – pliki z `/tmp` nie są dla niej widoczne.
 
 ```yaml
 files:
@@ -163,7 +164,7 @@ files:
 ```
 
 - **Paczka z panelu:** Bifröst przy tokenie wydaje `vardr-agent-<nazwa>-linux-<amd64|arm64>.tar.gz` – program, `ca.crt`, `server.txt`, `token.txt` (0600) i `install.sh`. Na serwerze: `tar xzf …`, `cd vardr-agent-<nazwa>/`, `sudo ./install.sh` (adres i token z plików obok). Programy dla obu architektur budowane są do `agent-dist/` (`deploy.sh agent`, `vardr-agent-linux-amd64`, `vardr-agent-linux-arm64`).
-- Jeszcze nie w 0.11: automatyczne aktualizacje agenta Linux – po 1.8 (`docs/ROADMAP.md`).
+- **Automatyczne aktualizacje** (od 0.12) – jak w Windows, opis w [Automatyczne aktualizacje](#automatyczne-aktualizacje-od-wersji-010).
 
 ## Odporność na usunięcie stanu
 

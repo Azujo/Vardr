@@ -11,6 +11,12 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// Pakiet: instalator MSI; dziennik msiexec.
+const (
+	pkgSuffix = ".msi"
+	logPrefix = "msiexec-"
+)
+
 // startInstaller uruchamia msiexec bez okna, w osobnej grupie procesów:
 // instalator zatrzymuje usługę agenta (a więc i ten proces) i musi działać
 // dalej. Agent działa jako SYSTEM, więc instalacja nie pyta o uprawnienia.

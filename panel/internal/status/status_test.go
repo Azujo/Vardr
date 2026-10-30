@@ -77,3 +77,28 @@ func TestReportLive(t *testing.T) {
 	}
 	t.Logf("stan ogólny: %s", rep.Overall)
 }
+
+// Archiwum przed pierwszą weryfikacją: zapytania dają -1 – „w toku”, nie alarm.
+func TestArchiveVerifyPending(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		res := `[]`
+		if strings.Contains(r.URL.Query().Get("query"), "siem_archive_last_verify_timestamp_seconds) == 0") {
+			res = `[{"metric":{},"value":[0,"-1"]}]`
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{"result": json.RawMessage(res)}})
+	}))
+	defer srv.Close()
+	rep := (&Prometheus{URL: srv.URL}).Report(context.Background(), time.Now())
+	n := 0
+	for _, c := range rep.Checks {
+		if c.ID == "archive.integrity" || c.ID == "archive.last_verify" {
+			n++
+			if c.Status != OK || c.ValueKey != "verify_pending" {
+				t.Fatalf("%s: %+v", c.ID, c)
+			}
+		}
+	}
+	if n != 2 {
+		t.Fatalf("sprawdzeń archiwum: %d", n)
+	}
+}

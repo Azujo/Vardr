@@ -87,7 +87,7 @@ func TestUpdateInstallsAndRetries(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("instalator nie uruchomiony")
 	}
-	if data, err := os.ReadFile(path); err != nil || string(data) != "instalator" || !strings.HasSuffix(path, "vardr-agent-0.10.0.msi") {
+	if data, err := os.ReadFile(path); err != nil || string(data) != "instalator" || !strings.HasSuffix(path, "vardr-agent-0.10.0"+pkgSuffix) {
 		t.Fatalf("instalator: %q %v %s", data, err, path)
 	}
 	a, err := h.u.loadAttempt()
@@ -109,6 +109,12 @@ func TestUpdateInstallsAndRetries(t *testing.T) {
 		t.Fatal("ponowna instalacja przed upływem Retry")
 	case <-time.After(200 * time.Millisecond):
 	}
+
+	// Oferta wycofana (np. wersja na serwerze cofnięta) – stan pusty.
+	h.u.Offer(nil)
+	if s := h.waitState(t, ""); s != (Status{}) {
+		t.Fatalf("wycofanie: %+v", s)
+	}
 }
 
 func TestUpdateRejectsBadSum(t *testing.T) {
@@ -123,7 +129,7 @@ func TestUpdateRejectsBadSum(t *testing.T) {
 	if len(h.installs) != 0 {
 		t.Fatal("uruchomiono instalator z niezgodną sumą")
 	}
-	if _, err := os.Stat(h.u.msiPath("0.10.0")); err == nil {
+	if _, err := os.Stat(h.u.pkgPath("0.10.0")); err == nil {
 		t.Fatal("niezgodny instalator został na dysku")
 	}
 }
@@ -133,7 +139,7 @@ func TestUpdateAfterRestart(t *testing.T) {
 	h := newHarness(t, nil)
 	h.u.init()
 	os.MkdirAll(h.u.dir(), 0o700)
-	os.WriteFile(h.u.msiPath("0.10.0"), []byte("x"), 0o600)
+	os.WriteFile(h.u.pkgPath("0.10.0"), []byte("x"), 0o600)
 	h.u.saveAttempt(attempt{Version: "0.10.0", From: "0.9.0", AttemptedAt: time.Now()})
 	h.u.Version = "0.10.0"
 	h.start()
@@ -155,7 +161,12 @@ func TestUpdateAfterRestart(t *testing.T) {
 	h2.u.saveAttempt(attempt{Version: "0.10.0", From: "0.9.0", AttemptedAt: time.Now()})
 	h2.start()
 	defer h2.cancel()
-	if s := h2.waitState(t, StateFailed); !strings.Contains(s.Error, "msiexec-0.10.0.log") {
+	if s := h2.waitState(t, StateFailed); !strings.Contains(s.Error, logPrefix+"0.10.0.log") {
 		t.Fatalf("stan: %+v", s)
+	}
+	// Ta sama oferta: ponowienie po Retry, z błędem poprzedniej próby.
+	h2.u.Offer(offer([]byte("x"), "0.10.0"))
+	if s := h2.waitState(t, StateWaiting); !strings.Contains(s.Error, logPrefix+"0.10.0.log") || s.At.Before(time.Now().Add(5*time.Hour)) {
+		t.Fatalf("ponowienie: %+v", s)
 	}
 }

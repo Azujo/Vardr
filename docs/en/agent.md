@@ -63,7 +63,7 @@ msiexec /x vardr-agent.msi /qn UNINSTALL_TOKEN=XXXXX-XXXXX-XXXXX-XXXXX   # unins
 
 The MSI copies the program and the CA to `C:\Program Files\SiemAgent`, then runs `vardr-agent msi-install` (token enrollment and the service – the same path as `install`). A newer version first removes the old one (without data), so an upgrade does not use up a token. An agent installed earlier without MSI is taken over: the MSI stops it, replaces the program and keeps the enrollment. The token does not end up in the installer log. The agent steps: `C:\ProgramData\SiemAgent\msi.log`.
 
-Every agent release needs a new version number (`const version` in `agent/cmd/vardr-agent/main.go`). A rebuilt installer of the same version is installed by `wixl` next to the previous one as a second product (it does not support `AllowSameVersionUpgrades`).
+Every agent release needs a new version number (`const version` in `agent/cmd/vardr-agent/version.go`). A rebuilt installer of the same version is installed by `wixl` next to the previous one as a second product (it does not support `AllowSameVersionUpgrades`).
 
 ### Automatic updates (since version 0.10)
 
@@ -74,6 +74,7 @@ An agent group has the option *Automatic agent updates* (panel → Agent groups;
 - Never a downgrade. A failed attempt for a version is retried after 6 hours at the earliest; the error and the path of the `msiexec` log are on the agent page in the panel and in `vardr-agent status`.
 - The agent page shows the state: scheduled, installing, failed, updated (from version → to version).
 - Agents older than 0.10 lack the feature – the first upgrade to 0.10 is manual (MSI, GPO).
+- **Linux agent (since 0.12):** the group configuration also lists the program for each architecture (`agent-dist/vardr-agent-linux-amd64` and `-arm64`, the same version from `AGENT_VERSION`). The agent downloads it from `/enroll/v1/agent-linux/<arch>`, checks the sum and runs it as a transient systemd service (`systemd-run`, outside the agent service's restrictions) with the `apply-update` command. It saves the previous program as `/usr/local/sbin/vardr-agent.previous`, replaces the program and the unit file, restarts the service and waits up to 3 minutes for the new version to confirm its start (and keep running for another 15 s). Without confirmation it restores the previous version, and the error shows in the panel. Log: `/var/lib/vardr-agent/update/update-<version>.log` and `journalctl -u 'vardr-agent-update-*'`. A 0.11 agent is upgraded to 0.12 manually (`sudo ./vardr-agent upgrade`).
 
 ### Protection against stopping and uninstalling (since version 0.7)
 
@@ -156,7 +157,7 @@ auditd:
 - **Limits from the group:** priority as the unit's CPU and I/O weight, CPU limit and hard memory limit in the service cgroup (`systemctl set-property --runtime`, changed without a restart), soft memory limit, EPS and bandwidth as on Windows. The group profile (Event Log channels) does not apply to the Linux agent.
 - Without root (`vardr-agent run` as an ordinary user, e.g. in a test) the agent reads only what `journalctl` shows it – a user in the `adm` or `systemd-journal` group sees the system journal.
 - **Protection** (enabled in the agent group, as on Windows): the agent writes the drop-in `/etc/systemd/system/vardr-agent.service.d/50-vardr-protect.conf` with `RefuseManualStop=yes` – `systemctl stop` and `restart` refuse. Stopping, upgrading and uninstalling only with a one-time token from the panel: `sudo vardr-agent stop -token …`, `sudo ./vardr-agent upgrade -token …`, `sudo vardr-agent uninstall -token …`; `sudo vardr-agent restart` works without a token (restart inside the process, SIGHUP). The protection journal (alert in the panel) records: a command without a valid token, SIGTERM sent bypassing systemd (`kill`, `systemctl kill` – ignored, the agent keeps running), killing the process (SIGKILL – systemd starts the agent again after 10 s and it reports the kill), a stop bypassing the token (e.g. `systemctl isolate`), removing the protection drop-in (restored), changing or removing the service file (restored), disabling start with the system (`systemctl disable` – enabled again), masking and foreign drop-ins of the service (reported). A system shutdown is not an alarm. Root can bypass the protection (e.g. by changing the service and stopping it right away) – the goal is to make it harder and detect it, and the panel reports the gap in heartbeats anyway.
-- **Source – log files** (`files:`): any text files, line by line, with rotation by rename (logrotate) and by truncation (copytruncate). A line reaches the server as syslog with the agent's host name and the program name `app` (source `syslog:file`, channel `file:<path>`), so it is parsed by a decoder matched on `app` – the same as for messages from rsyslog (the decoder wizard in the panel); without a decoder the event has the `syslog.generic` dataset. The event time is the moment of reading unless the decoder takes the time from the content. Patterns (`*.log`) are expanded when the agent starts; new files – after `sudo vardr-agent restart`. The first run reads from the end of the file (`start_at: oldest` – from the beginning). The service has its own `/tmp` (`PrivateTmp`) – files in `/tmp` are not visible to it.
+- **Source – log files** (`files:`): any text files, line by line, with rotation by rename (logrotate) and by truncation (copytruncate). A line reaches the server as syslog with the agent's host name and the program name `app` (source `syslog:file`, channel `file:<path>`), so it is parsed by a decoder matched on `app` – the same as for messages from rsyslog (the decoder wizard in the panel); without a decoder the event has the `syslog.generic` dataset. The event time is the moment of reading unless the decoder takes the time from the content. The agent checks patterns (`*.log`) every 30 s – a new matching file (e.g. a log with a date in its name) is read right away from the beginning, without a restart (since 0.12). The first run reads from the end of the file (`start_at: oldest` – from the beginning). The service has its own `/tmp` (`PrivateTmp`) – files in `/tmp` are not visible to it.
 
 ```yaml
 files:
@@ -166,7 +167,7 @@ files:
 ```
 
 - **Package from the panel:** for a token Bifröst issues `vardr-agent-<name>-linux-<amd64|arm64>.tar.gz` – the program, `ca.crt`, `server.txt`, `token.txt` (0600) and `install.sh`. On the server: `tar xzf …`, `cd vardr-agent-<name>/`, `sudo ./install.sh` (address and token from the files next to it). Programs for both architectures are built into `agent-dist/` (`deploy.sh agent`, `vardr-agent-linux-amd64`, `vardr-agent-linux-arm64`).
-- Not yet in 0.11: automatic updates of the Linux agent – after 1.8 (`docs/ROADMAP.md`).
+- **Automatic updates** (since 0.12) – as in Windows, see [Automatic updates](#automatic-updates-since-version-010).
 
 ## Resilience to state removal
 

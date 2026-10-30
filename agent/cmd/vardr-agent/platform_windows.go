@@ -25,7 +25,9 @@ import (
 	"siem/agent/internal/status"
 	"siem/agent/internal/sysmon"
 	"siem/agent/internal/timesync"
+	"siem/agent/internal/update"
 	"siem/agent/internal/winevt"
+	"siem/internal/contract"
 	"siem/internal/lang"
 )
 
@@ -34,6 +36,16 @@ import (
 
 // autoUpdate: automatyczne aktualizacje instalatorem MSI.
 const autoUpdate = true
+
+// updateOffer: instalator MSI z konfiguracji grupy.
+func updateOffer(c *contract.AgentConfig) *contract.AgentUpdate {
+	if c == nil {
+		return nil
+	}
+	return c.Update
+}
+
+func platformUpdater(*update.Updater) {}
 
 func isPrivileged() bool { return secure.IsPrivileged() }
 

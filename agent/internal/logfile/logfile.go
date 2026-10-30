@@ -80,6 +80,32 @@ func Expand(paths []string, skip string) []string {
 	return out
 }
 
+// WaitNew czeka (sprawdzenie co every), aż wzorce rozwiną się w plik spoza
+// known; false – koniec ctx.
+func WaitNew(ctx context.Context, patterns []string, skip string, known []string, every time.Duration, log *slog.Logger) bool {
+	have := make(map[string]bool, len(known))
+	for _, k := range known {
+		have[k] = true
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+		}
+		for _, f := range Expand(patterns, skip) {
+			if !have[f] {
+				if log != nil {
+					log.Info("new log file matches the pattern", "path", f)
+				}
+				return true
+			}
+		}
+	}
+}
+
 // AppName: domyślna nazwa programu – nazwa pliku bez rozszerzenia.
 func AppName(path string) string {
 	b := filepath.Base(path)

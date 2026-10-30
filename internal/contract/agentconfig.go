@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -20,6 +21,13 @@ const AgentConfigPath = "/enroll/v1/config"
 // AgentMSIPath to endpoint panelu z bazowym instalatorem MSI agenta (mTLS) –
 // automatyczna aktualizacja (AgentConfig.Update).
 const AgentMSIPath = "/enroll/v1/agent.msi"
+
+// AgentLinuxPath to endpoint panelu z programem agenta Linux (mTLS) dla
+// architektury dopisanej na końcu (amd64, arm64) – AgentConfig.LinuxUpdates.
+const AgentLinuxPath = "/enroll/v1/agent-linux/"
+
+// LinuxArchs: architektury agenta Linux budowane w paczce serwera.
+var LinuxArchs = []string{"amd64", "arm64"}
 
 // AgentConfig to konfiguracja agenta zarządzana z panelu (grupa agentów).
 // Lokalny agent.yaml decyduje o adresie serwera i certyfikatach; panel –
@@ -38,6 +46,9 @@ type AgentConfig struct {
 	// z AgentMSIPath i sprawdza sumę SHA256. Wersja konfiguracji z
 	// aktualizacją ma przyrostek „.<skrót>” (WithUpdate).
 	Update *AgentUpdate `json:"update,omitempty"`
+	// LinuxUpdates: to samo dla agenta Linux – program dla architektury
+	// (klucz: amd64, arm64) z AgentLinuxPath+arch (1.9.0).
+	LinuxUpdates map[string]*AgentUpdate `json:"linux_updates,omitempty"`
 }
 
 // AgentUpdate to instalator agenta dostępny na serwerze.
@@ -146,6 +157,14 @@ func (c AgentConfig) Validate() error {
 			return err
 		}
 	}
+	for arch, u := range c.LinuxUpdates {
+		if !slices.Contains(LinuxArchs, arch) || u == nil {
+			return lang.Errorf("aktualizacja: nieznana architektura %q", "update: unknown architecture %q", arch)
+		}
+		if err := u.Validate(); err != nil {
+			return err
+		}
+	}
 	return c.Limits.Validate()
 }
 
@@ -219,6 +238,19 @@ func (c AgentConfig) WithUpdate(u *AgentUpdate) AgentConfig {
 	if u != nil {
 		sum := sha256.Sum256([]byte(u.Version + "/" + u.SHA256))
 		c.Version += ".u" + hex.EncodeToString(sum[:4])
+	}
+	return c
+}
+
+// WithLinuxUpdates dołącza programy agenta Linux; wersja dostaje przyrostek
+// z ich skrótu (po WithUpdate).
+func (c AgentConfig) WithLinuxUpdates(us map[string]*AgentUpdate) AgentConfig {
+	c.LinuxUpdates = nil
+	if len(us) > 0 {
+		c.LinuxUpdates = us
+		data, _ := json.Marshal(us) // klucze mapy w kolejności – skrót stały
+		sum := sha256.Sum256(data)
+		c.Version += ".l" + hex.EncodeToString(sum[:4])
 	}
 	return c
 }

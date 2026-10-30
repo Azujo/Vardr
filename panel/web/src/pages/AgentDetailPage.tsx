@@ -181,8 +181,12 @@ export default function AgentDetailPage() {
 
       {status.update && (
         <Alert
-          color={{ failed: "red", done: "green" }[status.update.state] ?? "blue"}
-          title={t(`detail.update.${status.update.state}`, {
+          color={
+            status.update.state === "waiting" && status.update.error
+              ? "orange"
+              : ({ failed: "red", done: "green" }[status.update.state] ?? "blue")
+          }
+          title={t(`detail.update.${status.update.state === "waiting" && status.update.error ? "retry" : status.update.state}`, {
             v: status.update.target,
             from: status.update.from,
             defaultValue: status.update.state,
@@ -192,7 +196,9 @@ export default function AgentDetailPage() {
             {status.update.state === "failed"
               ? status.update.error
               : status.update.state === "waiting"
-                ? t("detail.update.waitingAt", { at: formatDate(status.update.at) })
+                ? [status.update.error, t("detail.update.waitingAt", { at: formatDate(status.update.at) })]
+                    .filter(Boolean)
+                    .join(" – ")
                 : formatDate(status.update.at)}
           </Text>
         </Alert>
