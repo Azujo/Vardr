@@ -7,9 +7,9 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -120,12 +120,14 @@ func run(log *slog.Logger) error {
 			time.Sleep(time.Second)
 			continue
 		}
+		var got []jetstream.Msg
 		for msg := range msgs.Messages() {
-			if firstPending.IsZero() {
-				firstPending = time.Now()
-			}
-			p.add(cur, msg)
+			got = append(got, msg)
 		}
+		if len(got) > 0 && firstPending.IsZero() {
+			firstPending = time.Now()
+		}
+		p.addAll(cur, got)
 		if len(cur.msgs) > 0 && (len(cur.events)+len(cur.quarantine) >= maxRows || time.Since(firstPending) >= flushEvery) {
 			select {
 			case toInsert <- cur:
@@ -167,17 +169,41 @@ type pipeline struct {
 	rows, quarantined, rejected, dups, errors atomic.Int64
 }
 
-func (p *pipeline) add(cur *pending, msg jetstream.Msg) {
-	data, err := bus.Gunzip(msg.Data(), 256<<20)
-	var b model.Batch
-	if err == nil {
-		err = json.Unmarshal(data, &b)
+// decodeWorkers: równoległe rozpakowanie i dekodowanie pobranych wiadomości
+// (W7) – kolejność wiadomości w paczce zostaje.
+var decodeWorkers = min(runtime.GOMAXPROCS(0), 4)
+
+func (p *pipeline) addAll(cur *pending, msgs []jetstream.Msg) {
+	type decoded struct {
+		b   model.Batch
+		err error
 	}
-	if err != nil {
-		p.log.Error("unreadable message in SIEM_EVENTS – skipped", "subject", msg.Subject(), "err", err)
-		_ = msg.Term()
-		return
+	out := make([]decoded, len(msgs))
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	for range min(decodeWorkers, len(msgs)) {
+		wg.Go(func() {
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(msgs) {
+					return
+				}
+				out[i].b, out[i].err = bus.UnpackEvents(msgs[i].Data())
+			}
+		})
 	}
+	wg.Wait()
+	for i, msg := range msgs {
+		if err := out[i].err; err != nil {
+			p.log.Error("unreadable message in SIEM_EVENTS – skipped", "subject", msg.Subject(), "err", err)
+			_ = msg.Term()
+			continue
+		}
+		p.add(cur, msg, &out[i].b)
+	}
+}
+
+func (p *pipeline) add(cur *pending, msg jetstream.Msg, b *model.Batch) {
 	cur.msgs = append(cur.msgs, msg)
 	p.seenMu.Lock()
 	for _, e := range b.Events {

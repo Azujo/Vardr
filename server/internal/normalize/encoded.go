@@ -3,7 +3,6 @@
 package normalize
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"time"
@@ -18,7 +17,7 @@ import (
 var ErrUnreadable = errors.New("unreadable message")
 
 // Encoded to pełna ścieżka normalizatora dla jednej wiadomości: rozpakowanie
-// paczki agenta, normalizacja i spakowanie wyniku (model.Batch, gzip+JSON).
+// paczki agenta, normalizacja i spakowanie wyniku (bus.PackEvents).
 // Wydzielona z programu, żeby dało się ją mierzyć bez NATS.
 //
 // replayID ≠ 0 oznacza paczkę odtworzoną z archiwum: zdarzenia dostają
@@ -41,13 +40,6 @@ func Encoded(gz []byte, agentID string, receivedAt time.Time, replayID uint32, m
 			nb.Quarantine[i].Source = "replay/" + nb.Quarantine[i].Source
 		}
 	}
-	var out bytes.Buffer
-	out.Grow(len(data) + len(data)/2)
-	enc := json.NewEncoder(&out)
-	enc.SetEscapeHTML(false) // XML bez 003c – krótsza i szybsza serializacja
-	if err := enc.Encode(nb); err != nil {
-		return nil, nb, errors.Join(ErrUnreadable, err)
-	}
-	packed, err := bus.Gzip(out.Bytes())
+	packed, err := bus.PackEvents(&nb, len(data)+len(data)/2)
 	return packed, nb, err
 }

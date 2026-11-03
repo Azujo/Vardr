@@ -32,7 +32,7 @@ import (
 //
 //	SIEM_TEST_CH_ADDR=127.0.0.1:9000 [SIEM_TEST_CH_USER, SIEM_TEST_CH_PASSWORD]
 
-const compatDDL = `CREATE TABLE compat_test.events
+const compatBaseDDL = `CREATE TABLE compat_test.events
 (
     timestamp            DateTime64(3, 'UTC'),
     ingested             DateTime64(3, 'UTC'),
@@ -61,6 +61,9 @@ const compatDDL = `CREATE TABLE compat_test.events
 ENGINE = ReplacingMergeTree(ingested)
 PARTITION BY toYYYYMMDD(ingested)
 ORDER BY (event_dataset, toStartOfHour(ingested), host_name, timestamp, event_id)`
+
+// compatDDL: tabela jak siem.events, z kolumnami częstych pól (05-fields.sh).
+var compatDDL = strings.Replace(compatBaseDDL, "\n)\n", ",\n"+strings.Join(detect.ColumnDDL(), ",\n")+"\n)\n", 1)
 
 var compatT0 = time.Date(2026, 10, 9, 8, 0, 0, 0, time.UTC)
 

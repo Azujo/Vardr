@@ -2,6 +2,21 @@
 
 Vardr wychodzi w wydaniach (aktualizacjach). Tu jest to, co zmienia się między nimi – dla administratora, który aktualizuje serwer: nowe funkcje, zmiany zachowania i to, co trzeba zrobić przy aktualizacji. Format według [Keep a Changelog](https://keepachangelog.com/pl/1.1.0/), numery wersji według [SemVer](https://semver.org/lang/pl/). Aktualizacja serwera: [docs/instalacja.md](docs/instalacja.md) ([English](docs/en/installation.md#upgrade)).
 
+## [1.10.0] – 2026-11-03 – Lżejszy zapis zdarzeń i kolumny częstych pól
+
+### Dodane
+- **Częste pola zdarzeń w osobnych kolumnach**: `CommandLine`, `Image`, `ParentImage`, `TargetFilename`, `TargetObject`, `ScriptBlockText`, `Details`, `ParentCommandLine`, `ProcessName` i `TargetUserName`. Reguły i wyszukiwanie `fields.<pole>` nie czytają już dla nich całej mapy `fields` (w pomiarze na 2 mln wierszy filtr `LIKE` po `CommandLine` 22–45 razy szybciej). Starsze dane działają bez przepisywania – ClickHouse liczy dla nich wartość z mapy przy odczycie, więc pełny zysk mają nowe dane. Koszt: ok. 7% więcej miejsca i ok. 9 µs na wiersz przy zapisie.
+
+### Zmienione
+- **Lżejszy zapis zdarzeń**: normalizator przekazuje paczki w formacie binarnym zamiast JSON (dekodowanie ok. 4,5 razy szybsze, paczki ok. 10% mniejsze), writer dekoduje je równolegle i wysyła do ClickHouse bloki po 2000 wierszy (koszt po stronie writera na wiersz ponad 2 razy mniejszy, 4 razy mniej przydzielanej pamięci). Przy 10 000 zdarzeń/s writer zajmuje ok. 0,6 rdzenia. Sufit zapisu na VM z 8 vCPU to nadal ok. 11 400 wierszy/s, bo wyznacza go teraz czas zapisu w ClickHouse ([testy-obciazeniowe.md](docs/testy-obciazeniowe.md)).
+
+### Poprawione
+- **Wolne usuwanie alertów**: brakował indeks na `outbox.alert_id`, więc każdy usuwany alert (retencja, sprzątanie po teście obciążeniowym) skanował całą kolejkę powiadomień. Usunięcie 431 tys. alertów nie skończyło się w ponad 9 minut – z indeksem całe sprzątanie trwa ok. 90 s. Migracja 016 dodaje indeks przy starcie detektora.
+
+### Aktualizacja
+- Instalator zatrzymuje normalizator, writer i detekcję na czas aktualizacji, a kolumny dodaje przed ich startem. Zaległe wiadomości JSON z kolejki są dalej czytane.
+- **Powrót do starszej wersji wymaga pustej kolejki:** starszy writer i detektor nie czytają formatu binarnego i odrzuciłyby takie wiadomości. Przed cofnięciem aktualizacji zatrzymaj przyjmowanie zdarzeń (`siem-ingest`) i poczekaj na opróżnienie kolejek.
+
 ## [1.9.0] – 2026-10-30 – Automatyczne aktualizacje agenta Linux
 
 ### Dodane

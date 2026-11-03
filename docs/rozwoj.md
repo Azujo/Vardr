@@ -131,6 +131,7 @@ Wzór: `server/internal/detector/silence.go` (cisza źródła).
 
 - **Saga:** nowy plik `NNN_opis.sql` w katalogu migracji właściciela schematu (`panel/internal/api/store/migrations`, `internal/alerts/migrations`, `internal/urd/migrations`). Pliki są wbudowane w program i stosowane przy starcie po kolei. Uprawnienia ról nadaje się w tej samej migracji. W testach PostgreSQL dopisz nową tabelę do listy czyszczonej przed testem.
 - **ClickHouse:** zmiana w `deploy/lab/clickhouse/init/` (idempotentna: `IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) i opis polecenia dla istniejących instalacji w [operacje.md](operacje.md#migracje). Schemat w testach (`compatDDL` w `compat_test.go`) musi odpowiadać serwerowi.
+- **Kolumna częstego pola:** lista `fieldColumns` w `internal/detect/columns.go` – tylko dopisywanie na końcu (pozycja to bit w `f_present`), definicje w `05-fields.sh` z `ColumnDDL()` (sprawdza `TestColumnsScript`).
 
 ### …moduł panelu
 

@@ -43,7 +43,7 @@ The panel has a certificate from the local Vardr authority: import `/opt/vardr/c
 
 ## Upgrade
 
-The same command from a newer bundle: `sudo ./install.sh`. The installer replaces the programs, stack files and rules (the new version in `rules/v<time>`, the last 3 are kept), appends new settings to `.env` and recreates only the changed services. Configuration, certificates and data stay. The server certificate (valid for a year) is renewed when less than 45 days remain.
+The same command from a newer bundle: `sudo ./install.sh`. The installer replaces the programs, stack files and rules (the new version in `rules/v<time>`, the last 3 are kept), appends new settings to `.env` and recreates only the changed services. Configuration, certificates and data stay. The server certificate (valid for a year) is renewed when less than 45 days remain. Before going back to an older version, check the upgrade notes in the [CHANGELOG](../../CHANGELOG.md) – a queue format change may require draining the queue first.
 
 ## SigmaHQ rules
 

@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,13 +16,15 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"siem/internal/model"
 )
 
 const (
 	// StreamRaw: surowe paczki agentów (skompresowane, jak przyszły).
 	StreamRaw     = "SIEM_RAW"
 	SubjectRawAll = "siem.raw.>"
-	// StreamEvents: znormalizowane paczki (model.Batch, gzip+JSON).
+	// StreamEvents: znormalizowane paczki (PackEvents, UnpackEvents).
 	StreamEvents     = "SIEM_EVENTS"
 	SubjectEventsAll = "siem.events.>"
 
@@ -280,6 +283,27 @@ func Gunzip(data []byte, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("decompressed content exceeds %d B", limit)
 	}
 	return out, nil
+}
+
+// PackEvents pakuje znormalizowaną paczkę do wiadomości SIEM_EVENTS (format
+// binarny model.AppendBatch + gzip).
+func PackEvents(b *model.Batch, sizeHint int) ([]byte, error) {
+	return Gzip(model.AppendBatch(make([]byte, 0, sizeHint), b))
+}
+
+// UnpackEvents czyta wiadomość SIEM_EVENTS: format binarny albo JSON
+// (wiadomości zapisane przed aktualizacją do 1.10, czekające w kolejce).
+func UnpackEvents(data []byte) (model.Batch, error) {
+	raw, err := Gunzip(data, 256<<20)
+	if err != nil {
+		return model.Batch{}, err
+	}
+	if model.IsBinary(raw) {
+		return model.DecodeBatch(raw)
+	}
+	var b model.Batch
+	err = json.Unmarshal(raw, &b)
+	return b, err
 }
 
 // Pipeline to zestaw strumieni i odbiorców jednej ścieżki przetwarzania.

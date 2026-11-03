@@ -81,6 +81,9 @@ jobs:
       - name: Fuzzing kompilatora reguł do SQL (60 s)
         run: go test -run '^$' -fuzz FuzzRuleSQL -fuzztime 60s ./internal/detect
 
+      - name: Fuzzing dekodera binarnych paczek zdarzeń (30 s)
+        run: go test -run '^$' -fuzz FuzzDecodeBatch -fuzztime 30s ./internal/model
+
       - name: Budowanie usług serwera
         env:
           CGO_ENABLED: "0"

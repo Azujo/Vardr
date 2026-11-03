@@ -24,13 +24,13 @@ func TestParse(t *testing.T) {
 		"event_code = ?",
 		"startsWith(host_name, ?)",
 		"NOT (event_action = ?)",
-		"fields[?] = ?",
+		"f_targetusername = ?",
 		"source_ip = toIPv6OrDefault(?)",
 	}
 	if !reflect.DeepEqual(sqls, wantSQL) {
 		t.Fatalf("SQL:\n%v\nchcę\n%v", sqls, wantSQL)
 	}
-	wantArgs := []any{"jkowalski", uint32(4625), "pc0", "logged-out", "TargetUserName", "admin", "10.0.5.23"}
+	wantArgs := []any{"jkowalski", uint32(4625), "pc0", "logged-out", "admin", "10.0.5.23"}
 	if !reflect.DeepEqual(args, wantArgs) {
 		t.Fatalf("argumenty: %v", args)
 	}

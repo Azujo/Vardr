@@ -99,6 +99,14 @@ func fieldSQL(field string) (val, present string) {
 	case "message":
 		return column("message")
 	}
+	if i := columnIndex(field); i >= 0 {
+		return columnName(field), fmt.Sprintf("bitTest(%s, %d)", presentColumn, i)
+	}
+	return mapFieldSQL(field)
+}
+
+// mapFieldSQL: wartość i obecność pola odczytane z mapy fields.
+func mapFieldSQL(field string) (val, present string) {
 	names := aliases[field]
 	if names == nil {
 		names = []string{field}

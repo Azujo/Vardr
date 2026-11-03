@@ -3,9 +3,11 @@
 package detector
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -165,6 +167,22 @@ func (a Cursor) after(b Cursor) bool {
 	return a.EventID > b.EventID
 }
 
+// columnsFirst: reguły korzystające tylko z kolumn na początku, żeby trafiły
+// do wspólnych porcji – jedna reguła czytająca mapę fields kazałaby całej
+// porcji czytać mapę dla każdego wiersza.
+func columnsFirst(rules []*detect.Rule) []*detect.Rule {
+	readsMap := func(r *detect.Rule) int {
+		s := r.SQL()
+		if strings.Contains(s, "fields[") || strings.Contains(s, "(fields") || strings.Contains(s, "mapKeys(") {
+			return 1
+		}
+		return 0
+	}
+	out := slices.Clone(rules)
+	slices.SortStableFunc(out, func(a, b *detect.Rule) int { return cmp.Compare(readsMap(a), readsMap(b)) })
+	return out
+}
+
 // batches dzieli reguły na porcje o łącznej długości warunków najwyżej max
 // (reguła dłuższa od max idzie sama).
 func batches(rules []*detect.Rule, max int) [][]*detect.Rule {
@@ -236,6 +254,7 @@ type match struct {
 // wcześniejszych porcji za nim są odrzucane – zdarzenia za granicą oceni
 // następny przebieg, każde przez wszystkie reguły.
 func (x *Index) scan(ctx context.Context, rules []*detect.Rule, from Cursor, to time.Time, res *IndexResult) error {
+	rules = columnsFirst(rules) // numery reguł w dopasowaniach – według tej kolejności
 	var matches []match
 	var limit *Cursor
 	base := 0

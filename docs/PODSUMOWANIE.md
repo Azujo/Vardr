@@ -53,7 +53,7 @@ Kolejność prac różni się od numeracji w roadmapie. Po etapie 1 był etap 1.
 
 **Sprawdzone:** potok nadąża przy 10 000 zdarzeń/s na VM z 4 vCPU.
 
-**Do zrobienia później:** wydajność writera (W7, sufit ok. 10–11 tys. wierszy/s na kopię).
+**Do zrobienia później:** wydajność writera (W7, sufit ok. 10–11 tys. wierszy/s na kopię) – koszt writera obniżony 03.11.2026; ok. 11 400 wierszy/s wyznacza teraz INSERT w ClickHouse.
 
 ---
 

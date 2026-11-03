@@ -133,6 +133,7 @@ Pattern: `server/internal/detector/silence.go` (silent source).
 
 - **Saga:** a new `NNN_description.sql` file in the migration directory of the schema owner (`panel/internal/api/store/migrations`, `internal/alerts/migrations`, `internal/urd/migrations`). Files are embedded in the program and applied at start in order. Role privileges are granted in the same migration. In PostgreSQL tests add a new table to the list cleaned before the test.
 - **ClickHouse:** a change in `deploy/lab/clickhouse/init/` (idempotent: `IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`) and a description of the command for existing installations in [operations.md](operations.md#migrations). The schema in tests (`compatDDL` in `compat_test.go`) must match the server.
+- **Column for a frequent field:** the `fieldColumns` list in `internal/detect/columns.go` – append only (the position is a bit in `f_present`), definitions in `05-fields.sh` from `ColumnDDL()` (checked by `TestColumnsScript`).
 
 ### …a panel module
 

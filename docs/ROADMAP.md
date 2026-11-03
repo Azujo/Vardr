@@ -906,13 +906,13 @@ Szczyt ruchu (poniedziałek o 8:00, powrót serwera po awarii, pierwsze wdrożen
 | W4 | Certyfikaty: 3 miesiące, ręcznie, brak unieważniania, klucz CA tylko na stacji administratora | rejestracja tokenem, automatyczne odnawianie, lista unieważnień (etap 2 – obowiązkowo). **Zrobione 07.10.2026**: rejestracja tokenem, CA agentów (tylko certyfikaty klientów), odnawianie 30 dni przed końcem, unieważnianie przez NATS KV |
 | W5 | Konfiguracja agenta wyłącznie lokalna | konfiguracja z serwera per grupa (etap 2). **Zrobione 07.10.2026** |
 | W6 | Każdy element w jednej kopii na jednej VM | laboratorium: kopia VM w Proxmoxie; HA w etapie 8 |
-| W7 | Writer po W1 jest najdroższym etapem: ok. 1,3 rdzenia przy 10 000 wierszy/s (rozpakowanie, JSON, przygotowanie kolumn) i sufit ok. 10–11 tys. wierszy/s na kopię | profil writera; lżejszy format wiadomości między normalizatorem a writerem; równoległe dekodowanie; kopie writera na osobnych rdzeniach |
+| W7 | Writer po W1 jest najdroższym etapem: ok. 1,3 rdzenia przy 10 000 wierszy/s (rozpakowanie, JSON, przygotowanie kolumn) i sufit ok. 10–11 tys. wierszy/s na kopię | profil writera; lżejszy format wiadomości między normalizatorem a writerem; równoległe dekodowanie; kopie writera na osobnych rdzeniach. **W toku (03.11.2026):** format binarny, równoległe dekodowanie i bloki po 2000 wierszy zrobione: przy 10 000 wierszy/s writer zajmuje ok. 0,6 rdzenia (było 1,3, pomiar na 4 vCPU). Sufit na VM z 8 vCPU to nadal ok. 11 400 wierszy/s, ale teraz wyznacza go czas INSERT w ClickHouse, nie writer. Do sprawdzenia: równoległe INSERT-y lub kopie writera ([testy-obciazeniowe.md](testy-obciazeniowe.md#wyniki-vm-8-vcpu-94-gb-ram)) |
 
 **Mniejsze**
 - M1: brak CI na GitHubie i testu wyścigów – **zrobione 07.10.2026** (GitHub Actions: Linux z `-race` i fuzzingiem, Windows z testami agenta);
 - M2: nieczytelne wiadomości w normalizatorze są pomijane zamiast trafiać do kwarantanny – **zrobione 27.10.2026**: zdarzenia, których nie da się znormalizować, trafiają do kwarantanny (od 6b); cała nieczytelna paczka zostaje w archiwum NIS2 (archiwizator czyta kolejkę niezależnie), a *Stan systemu* pokazuje „Nieczytelne paczki (24 h)”;
 - M3: brak czytelnego opisu większości zdarzeń (decyzja: opis renderowany przez agenta czy mapowanie na serwerze);
-- M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn;
+- M4: wyszukiwanie po mapie `fields` przy dużej skali – częste pola do osobnych kolumn – **zrobione 03.11.2026**: 10 pól w kolumnach `f_*` plus maska obecności `f_present` (`internal/detect/columns.go`);
 - M5: Grafana i ingest otwarte na całą sieć lokalną, brak zapory na VM – **zrobione 27.10.2026**: rozdział „Zapora” w instrukcji instalacji (łańcuch DOCKER-USER – Docker omija ufw), `VARDR_GRAFANA_ADDR` (Grafana tylko z serwera); ingest musi zostać dostępny dla agentów;
 - M6: brak raportowania synchronizacji czasu przez agenta (zaobserwowana różnica ok. 1 s) – **zrobione wcześniej (agent 0.6)**: agent mierzy różnicę zegara, panel zgłasza problem powyżej 60 s.
 

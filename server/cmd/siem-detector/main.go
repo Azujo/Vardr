@@ -20,7 +20,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -37,7 +36,6 @@ import (
 	"siem/internal/alerts"
 	"siem/internal/attack"
 	"siem/internal/detect"
-	"siem/internal/model"
 	"siem/internal/risk"
 	"siem/internal/svc"
 	"siem/server/internal/bus"
@@ -375,11 +373,7 @@ func serve(log *slog.Logger) error {
 		var hits []alerts.Hit
 		var obs []alerts.Observation
 		for msg := range msgs.Messages() {
-			data, err := bus.Gunzip(msg.Data(), 256<<20)
-			var b model.Batch
-			if err == nil {
-				err = json.Unmarshal(data, &b)
-			}
+			b, err := bus.UnpackEvents(msg.Data())
 			if err != nil {
 				m.Errors.WithLabelValues("decode").Inc()
 				log.Error("unreadable message in SIEM_EVENTS – skipped", "subject", msg.Subject(), "err", err)

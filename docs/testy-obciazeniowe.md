@@ -114,6 +114,9 @@ docker compose start detector
 | 7000/s, 4 h (15.10) | przerwany: od ok. 40 min ClickHouse 3–4 rdzenie, zaległości rosły – przyczyny poprawione (ścieżka awaryjna silnika zapytań, korelacje na tabeli logowań, logi systemowe ClickHouse) |
 | 7000/s, 8 h (16/17.10) | 201,8 mln zdarzeń bez strat; zapis i silnik zapytań nadążały; VM na granicy (85–90% CPU), detektor w locie ustępował od 3. godziny |
 | 7000/s, 2 h (17.10) | po nadaniu detekcji pierwszeństwa CPU i poprawce korelacji: 50,6 mln bez strat, zaległość detektora 30–340 zdarzeń, **kryterium spełnione** |
+| 10 000 / 15 000 / 20 000/s przez 3 / 3 / 2 min (03.11, format binarny, kolumny `f_*`) | 7 345 889 zdarzeń bez strat i duplikatów. Przy 10 000/s writer 0,6 rdzenia, p99 3,2 s, bez narastania. Przy 15 000/s i 20 000/s kolejka writera rośnie: w szczycie ok. 11 400 wierszy/s (krótko do 14 800/s po spadku ruchu), writer 0,8 rdzenia, INSERT ok. 2,2 s (w trakcie scaleń do 8 s), load 16–24 |
+
+**Pomiar z 03.11:** writer nie jest już ograniczony własnym procesorem; limitem na wysyconej VM jest czas INSERT w ClickHouse. Detekcja w locie zatrzymała się na ok. 2800 zdarzeń/s przez włączoną w laboratorium regułę SigmaHQ „User Logoff Event” (alert na każde wylogowanie, ok. 560 nowych alertów/s). Tempem rządzi wtedy zapis alertów w Sadze, dlatego przy teście z taką regułą zaległość detektora rośnie.
 
 Wnioski: na tej VM ok. 5000 zdarzeń/s z zapasem, 7000/s bez narastającej zaległości. Koszt całego stosu to ok. 0,6–1 rdzenia na 1000 zdarzeń/s. ClickHouse zajmuje ok. 125 B na zdarzenie z surowym XML. Szczegóły i historia: [PODSUMOWANIE.md](PODSUMOWANIE.md), zasady skalowania: [ROADMAP.md, załącznik E](ROADMAP.md#załącznik-e-skalowanie-i-przeciążenie).
 

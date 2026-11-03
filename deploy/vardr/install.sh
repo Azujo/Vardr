@@ -360,6 +360,16 @@ systemctl enable -q vardr.service vardr-restore.timer
 
 # ---- start ----
 say "starting the stack"
+# Aktualizacja: normalizator i odbiorcy SIEM_EVENTS startują razem w nowej
+# wersji – stary writer lub detektor odrzuciłby wiadomość w nowym formacie.
+# Zdarzenia czekają w trwałej kolejce SIEM_RAW.
+compose stop normalizer normalizer-replay writer writer-replay detector >/dev/null 2>&1 || true
+if [ $UPGRADE = 1 ]; then
+  # Kolumny częstych pól przed startem detekcji – jej zapytania z nich korzystają.
+  compose up -d --wait --quiet-pull clickhouse || { compose ps; die "starting ClickHouse failed – docker compose logs clickhouse (in $DIR)"; }
+  compose exec -T clickhouse bash /docker-entrypoint-initdb.d/05-fields.sh ||
+    die "adding the field columns failed – run: cd $DIR && sudo docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/05-fields.sh"
+fi
 # compose up odtwarza tylko kontenery ze zmienionym obrazem lub konfiguracją;
 # usługa systemd przejmuje stos (start z systemem, zatrzymanie przy wyłączeniu).
 compose up -d --remove-orphans --quiet-pull || { compose ps; die "starting the stack failed – docker compose logs (in $DIR)"; }

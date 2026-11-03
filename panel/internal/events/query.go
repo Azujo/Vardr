@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"siem/internal/detect"
 	"siem/internal/lang"
 )
 
@@ -135,6 +136,13 @@ func fieldCondition(name, value string) (Condition, error) {
 	if key, ok := strings.CutPrefix(name, "fields."); ok {
 		if !fieldsKeyPattern.MatchString(key) {
 			return Condition{}, fmt.Errorf("niepoprawna nazwa pola %q", key)
+		}
+		// Częste pole ma własną kolumnę – bez czytania całej mapy.
+		if col, ok := detect.ExactColumn(key); ok {
+			if v, prefix := strings.CutSuffix(value, "*"); prefix {
+				return wrap(Condition{"startsWith(" + col + ", ?)", []any{v}}), nil
+			}
+			return wrap(Condition{col + " = ?", []any{value}}), nil
 		}
 		if v, prefix := strings.CutSuffix(value, "*"); prefix {
 			return wrap(Condition{"startsWith(fields[?], ?)", []any{key, v}}), nil

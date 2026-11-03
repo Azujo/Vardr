@@ -218,11 +218,7 @@ func handleReprocess(ctx context.Context, js jetstream.JetStream, pl bus.Pipelin
 	sort.Strings(agents)
 	for _, agentID := range agents {
 		nb := model.Batch{BatchID: fmt.Sprintf("reprocess-%d-%d-%s", req.Job, req.Chunk, agentID), AgentID: agentID, Events: evs[agentID]}
-		raw, err := json.Marshal(nb)
-		if err != nil {
-			return reprocess.Reply{Error: err.Error()}
-		}
-		gz, err := bus.Gzip(raw)
+		gz, err := bus.PackEvents(&nb, 0)
 		if err != nil {
 			return reprocess.Reply{Error: err.Error()}
 		}

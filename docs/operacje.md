@@ -140,6 +140,7 @@ Planowanie dysku: ok. 125 B na zdarzenie w ClickHouse z surowym XML (ok. 75 GB n
   ```bash
   docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/02-replay.sh
   docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
+  docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/05-fields.sh
   ```
 
   Zmiana klucza sortowania `siem.events` (instalacje sprzed etapu 8): `bash clickhouse/events-order.sh`.

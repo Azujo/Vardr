@@ -28,6 +28,12 @@ const insertReplayEvents = `INSERT INTO siem.events_replay (timestamp, ingested,
 
 const insertQuarantine = `INSERT INTO siem.quarantine (ingested, agent_id, event_id, source, reason, raw, peer, truncated)`
 
+// insertBlockRows: wierszy w bloku wysyłanym do ClickHouse (W7). Paczka 20 000
+// wierszy w jednym bloku to ok. 25% czasu na powiększanie buforów kolumn
+// i 280 MB alokacji. Serwer i tak skleja bloki jednego INSERT-u w jedną część
+// (min_insert_block_size_rows).
+const insertBlockRows = 2000
+
 // Writer zapisuje wiersze do ClickHouse.
 type Writer struct {
 	Conn driver.Conn
@@ -70,7 +76,14 @@ func (w *Writer) InsertEvents(ctx context.Context, events []model.Event) error {
 	if err != nil {
 		return err
 	}
-	for _, e := range events {
+	for i, e := range events {
+		// Blok po insertBlockRows wierszy: bufor kolumn jest używany ponownie.
+		if i > 0 && i%insertBlockRows == 0 {
+			if err := b.Flush(); err != nil {
+				_ = b.Abort()
+				return err
+			}
+		}
 		row := []any{e.Timestamp, e.Ingested, e.ID, e.AgentID, e.Dataset, e.Code,
 			e.Provider, e.Action, e.Outcome, e.HostName, e.UserName, e.UserDomain, ipv6(e.SourceIP), e.ProcessName,
 			e.CommandLine, e.Message, nonNil(e.Fields), e.Raw, e.Truncated, e.Parser, e.TimeQuality, e.Identity}

@@ -43,7 +43,7 @@ Panel ma certyfikat lokalnego urzędu Vardra: zaimportuj `/opt/vardr/certs/ca.cr
 
 ## Aktualizacja
 
-To samo polecenie z nowszej paczki: `sudo ./install.sh`. Instalator podmienia programy, pliki stosu i reguły (nowa wersja w `rules/v<czas>`, zostają 3 ostatnie), dopisuje do `.env` nowe ustawienia i odtwarza tylko zmienione usługi. Konfiguracja, certyfikaty i dane zostają. Certyfikat serwera (ważny rok) jest odnawiany, gdy do wygaśnięcia zostało mniej niż 45 dni.
+To samo polecenie z nowszej paczki: `sudo ./install.sh`. Instalator podmienia programy, pliki stosu i reguły (nowa wersja w `rules/v<czas>`, zostają 3 ostatnie), dopisuje do `.env` nowe ustawienia i odtwarza tylko zmienione usługi. Konfiguracja, certyfikaty i dane zostają. Certyfikat serwera (ważny rok) jest odnawiany, gdy do wygaśnięcia zostało mniej niż 45 dni. Przed powrotem do starszej wersji sprawdź sekcję „Aktualizacja” w [CHANGELOG](../CHANGELOG.md) – nie każda zmiana formatu kolejki pozwala na cofnięcie bez jej opróżnienia.
 
 ## Reguły SigmaHQ
 

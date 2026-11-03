@@ -141,6 +141,7 @@ Disk planning: about 125 B per event in ClickHouse with raw XML (about 75 GB a d
   ```bash
   docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/02-replay.sh
   docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/03-auth-events.sh
+  docker compose exec -T clickhouse bash /docker-entrypoint-initdb.d/05-fields.sh
   ```
 
   Changing the sorting key of `siem.events` (old installations): `bash clickhouse/events-order.sh`.
