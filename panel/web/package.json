@@ -16,7 +16,7 @@
     "@mantine/hooks": "^8.3.0",
     "@mantine/notifications": "^8.3.0",
     "@tabler/icons-react": "^3.34.0",
-    "i18next": "^25.5.2",
+    "i18next": "^27.2.7",
     "i18next-resources-to-backend": "^1.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
